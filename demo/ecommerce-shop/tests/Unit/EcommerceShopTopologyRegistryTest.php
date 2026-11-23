@@ -68,6 +68,7 @@ use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
@@ -90,6 +91,7 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
@@ -1268,6 +1270,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([EcommerceShopDbContext::productWarehouseStocks], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::productWarehouseStocks]->asList());
         self::assertSame([EcommerceShopDbContext::products, EcommerceShopDbContext::warehouses], StockLibraryAgent::readDbCollections());
+
+        $signal = EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE;
+        self::assertSame('stock_place_unique', $signal);
+        self::assertSame([$signal => ProductWarehousePlaceSignalData::class], StockLibraryAgent::AGENT_SIGNALS);
+        self::assertSame(AgentType::STOCK_LIBRARY, Hilos::getAgentSignalRoutes()[$signal]);
+        self::assertSame(ProductWarehousePlaceSignalData::class, Hilos::getAgentSignalDtoRoutes()[$signal]);
     }
 
     /**
@@ -1572,11 +1580,32 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(PageAccessLevel::ADMIN, AdminProductPage::ACCESS_LEVEL);
         self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageRoutes()[AdminProductPage::PAGE]);
         $action = EcommerceShopSignalConstants::PRODUCT_UPDATE;
+        $place = EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE;
         self::assertSame('product_update', $action);
-        self::assertSame([$action => ProductUpdateActionDTO::class], AdminProductPage::ACTIONS);
+        self::assertSame('product_warehouse_place', $place);
+        self::assertSame(
+            [$action => ProductUpdateActionDTO::class, $place => ProductWarehousePlaceActionDTO::class],
+            AdminProductPage::ACTIONS,
+        );
         self::assertSame(ProductUpdateActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
         self::assertSame(AdminProductPage::PAGE, Hilos::getPageActionRoutes()[$action]);
         self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getActionAgentRoutes()[$action]);
+        self::assertSame(ProductWarehousePlaceActionDTO::class, Hilos::getActionDtoRoutes()[$place]);
+        self::assertSame(AdminProductPage::PAGE, Hilos::getPageActionRoutes()[$place]);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getActionAgentRoutes()[$place]);
+        self::assertArrayNotHasKey($place, Hilos::getAgentActionRoutes());
+        self::assertNotContains($place, AdminProductPage::READING_ACTIONS);
+
+        $reply = EcommerceShopSignalConstants::ADMIN_PRODUCT_WAREHOUSE_PLACE_DONE;
+        self::assertSame('admin_product_warehouse_place_done', $reply);
+        self::assertSame(
+            [SignalTypeConstants::AGENT_SIGNAL => [$reply => HandoverAnswerSignalData::class]],
+            AdminProductPage::SIGNALS,
+        );
+        self::assertSame(AdminProductPage::PAGE, Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][$reply]);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][$reply]);
+        self::assertSame(HandoverAnswerSignalData::class, Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][$reply]);
+
         self::assertArrayNotHasKey(AdminProductPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame(
             [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCT],
@@ -1841,6 +1870,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ECOMMERCE_SHOP,
                 EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISHED => AgentType::CATEGORIES_LIBRARY,
                 EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISHED => AgentType::PRODUCTS_LIBRARY,
+                EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE => AgentType::STOCK_LIBRARY,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::GUEST_CARTS_LIBRARY,
                 EcommerceShopSignalConstants::GUEST_CART_SEND => AgentType::GUEST_CARTS_LIBRARY,
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,

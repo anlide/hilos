@@ -62,6 +62,15 @@ final class EcommerceShopSignalConstants
     /** @var string Product update action name */
     public const string PRODUCT_UPDATE = 'product_update';
 
+    /** @var string Overview action to place a unique piece in a warehouse */
+    public const string PRODUCT_WAREHOUSE_PLACE = 'product_warehouse_place';
+
+    /** @var string Overview request to the stock library to place a unique piece */
+    public const string STOCK_PLACE_UNIQUE = 'stock_place_unique';
+
+    /** @var string Stock library answer to the Overview placement request */
+    public const string ADMIN_PRODUCT_WAREHOUSE_PLACE_DONE = 'admin_product_warehouse_place_done';
+
     /** @var string Product picture publish action name */
     public const string PRODUCT_PICTURE_PUBLISH = 'product_picture_publish';
 

@@ -36,8 +36,13 @@ import {
   PAGE_ADMIN_PRODUCTS,
 } from '../../../src/pages/keys.js'
 import { router as routes } from '../../../src/pages/routes.js'
+import { type AdminProduct as Product } from '../../../src/types/AdminProduct.js'
+import { ADMIN_PRODUCT_WAREHOUSES_LIST } from '../../../src/views/AdminProduct/adminProduct.js'
 import AdminProduct from '../../../src/views/AdminProduct/AdminProduct.js'
-import { PRODUCT_UPDATE } from '../../../src/views/AdminProduct/adminProductActions.js'
+import {
+  PRODUCT_UPDATE,
+  PRODUCT_WAREHOUSE_PLACE,
+} from '../../../src/views/AdminProduct/adminProductActions.js'
 import { PRODUCT_PICTURE_PUBLISH } from '../../../src/views/AdminProducts/adminProductsActions.js'
 import { ProductAddModal } from '../../../src/views/AdminProducts/ProductAddModal.js'
 
@@ -80,7 +85,7 @@ vi.mock('../../../src/bootstrap/connection.js', async () => {
 })
 
 const FIRST_VERSION = 'a'.repeat(64)
-const PRODUCT = {
+const PRODUCT: Product = {
   productId: 7,
   name: 'Blue vase',
   kind: 'unique',
@@ -97,6 +102,8 @@ const CATEGORIES = [
   { id: PRODUCT.categoryId, name: 'Vases', position: 1 },
   CHOSEN_CATEGORY,
 ]
+const CHOSEN_WAREHOUSE = { id: 5, name: 'Kyiv · Podil' }
+const OTHER_WAREHOUSE = { id: 8, name: 'Lviv · Sykhiv' }
 const SECOND_PRODUCT = { ...PRODUCT, productId: 8, name: 'Clay jug' }
 const RECONNECT_NOT_FOUND = {
   page: PAGE_ADMIN_PRODUCT,
@@ -119,7 +126,7 @@ function projectFrame(type: string, data: unknown): void {
   wire.emit('projectSignal', { type, data })
 }
 
-function cardFrame(product: typeof PRODUCT, page = PAGE_ADMIN_PRODUCT): void {
+function cardFrame(product: Product, page = PAGE_ADMIN_PRODUCT): void {
   projectFrame(
     SIGNAL_TYPE_PAGE_RESPONSE,
     pageResponseSchema.parse({
@@ -132,6 +139,29 @@ function cardFrame(product: typeof PRODUCT, page = PAGE_ADMIN_PRODUCT): void {
               itemKey: category.id,
               slots: { categories: category },
             })),
+          },
+        },
+      },
+    }),
+  )
+}
+
+function warehousesFrame(
+  items: (typeof CHOSEN_WAREHOUSE)[],
+  deleted: number[] = [],
+): void {
+  projectFrame(
+    SIGNAL_TYPE_PAGE_RESPONSE,
+    pageResponseSchema.parse({
+      page: PAGE_ADMIN_PRODUCT,
+      payload: {
+        lists: {
+          [ADMIN_PRODUCT_WAREHOUSES_LIST]: {
+            items: items.map((warehouse) => ({
+              itemKey: warehouse.id,
+              slots: { warehouses: warehouse },
+            })),
+            deleted,
           },
         },
       },
@@ -226,6 +256,11 @@ function chooseCategory(): void {
   field.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function chooseWarehouse(field: HTMLSelectElement): void {
+  field.value = String(CHOSEN_WAREHOUSE.id)
+  field.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
 function submit(): void {
   // The native submit event is also the form's entry point for implicit Enter.
   control('admin-product-edit').dispatchEvent(
@@ -235,6 +270,18 @@ function submit(): void {
 
 async function openEditor(): Promise<void> {
   await act(async () => control('admin-product-edit-open').click())
+}
+
+async function openWarehouseEditor(): Promise<void> {
+  await act(async () => control('admin-product-warehouse-open').click())
+}
+
+async function pressKey(key: string): Promise<void> {
+  await act(async () => {
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+    )
+  })
 }
 
 function sent(action: string) {
@@ -392,6 +439,131 @@ describe('the product editor through a real page subscription and outlet', () =>
       submit()
     })
     expect(sent(PRODUCT_UPDATE)).toHaveLength(0)
+  })
+
+  it('keeps the renamed Warehouse draft copyable after its choice and product disappear', async () => {
+    await mount()
+    await act(async () => {
+      cardFrame(PRODUCT)
+      warehousesFrame([CHOSEN_WAREHOUSE, OTHER_WAREHOUSE])
+    })
+    await openWarehouseEditor()
+    const field = input<HTMLSelectElement>('Warehouse')
+    const save = control<HTMLButtonElement>('admin-product-warehouse-submit')
+    await act(async () => chooseWarehouse(field))
+    expect(save.disabled).toBe(false)
+
+    const renamed = { ...CHOSEN_WAREHOUSE, name: 'Kyiv · Obolon' }
+    await act(async () => warehousesFrame([renamed]))
+    expect(field.selectedOptions[0]?.textContent).toBe(renamed.name)
+    await act(async () => warehousesFrame([], [CHOSEN_WAREHOUSE.id]))
+    expect(field.value).toBe(String(CHOSEN_WAREHOUSE.id))
+    expect(field.disabled).toBe(false)
+    expect(save.disabled).toBe(true)
+
+    field.focus()
+    await act(async () => missing('It was deleted just now.'))
+
+    const draft = input<HTMLInputElement>('Warehouse')
+    expect(draft).toBeInstanceOf(HTMLInputElement)
+    expect(draft.value).toBe(renamed.name)
+    expect(draft.readOnly).toBe(true)
+    expect(draft.disabled).toBe(false)
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    expect(save.textContent).toBe('Deleted')
+    expect(save.disabled).toBe(true)
+    await act(async () => {
+      save.click()
+      draft.form!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      )
+    })
+    expect(sent(PRODUCT_WAREHOUSE_PLACE)).toHaveLength(0)
+
+    await pressKey('Tab')
+    expect(document.activeElement).toBe(control('modal-close'))
+    await pressKey('Escape')
+    expect(document.activeElement).toBe(control('modal-confirm'))
+    await act(async () => control('modal-confirm-discard').click())
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('keeps the Warehouse id copyable if no name was available', async () => {
+    await mount()
+    await act(async () => {
+      cardFrame({
+        ...PRODUCT,
+        stock: { units: 1, warehouses: 1, warehouseId: CHOSEN_WAREHOUSE.id },
+      })
+      warehousesFrame([OTHER_WAREHOUSE])
+    })
+    await openWarehouseEditor()
+    await act(async () => missing('It was deleted just now.'))
+
+    const field = input<HTMLInputElement>('Warehouse')
+    expect(field).toBeInstanceOf(HTMLInputElement)
+    expect(field.readOnly).toBe(true)
+    expect(field.value).toBe(String(CHOSEN_WAREHOUSE.id))
+  })
+
+  it('moves focus before disabling Warehouse when the final choice disappears', async () => {
+    await mount()
+    await act(async () => {
+      cardFrame(PRODUCT)
+      warehousesFrame([CHOSEN_WAREHOUSE])
+    })
+    await openWarehouseEditor()
+    const field = input<HTMLSelectElement>('Warehouse')
+    expect(document.activeElement).toBe(field)
+    const disabledOnBlur = vi.fn(() => field.disabled)
+    field.addEventListener('blur', disabledOnBlur)
+
+    await act(async () => warehousesFrame([], [CHOSEN_WAREHOUSE.id]))
+
+    expect(field.disabled).toBe(true)
+    expect(disabledOnBlur).toHaveReturnedWith(false)
+    expect(document.activeElement?.textContent).toBe('Cancel')
+    await pressKey('Tab')
+    expect(document.activeElement).toBe(control('modal-close'))
+    await pressKey('Escape')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('moves focus before disabling Put when its target disappears', async () => {
+    await mount()
+    await act(async () => {
+      cardFrame(PRODUCT)
+      warehousesFrame([CHOSEN_WAREHOUSE, OTHER_WAREHOUSE])
+    })
+    await openWarehouseEditor()
+    const field = input<HTMLSelectElement>('Warehouse')
+    const save = control<HTMLButtonElement>('admin-product-warehouse-submit')
+    await act(async () => chooseWarehouse(field))
+    expect(save.disabled).toBe(false)
+    save.focus()
+    const disabledOnBlur = vi.fn(() => save.disabled)
+    save.addEventListener('blur', disabledOnBlur)
+
+    await act(async () => warehousesFrame([], [CHOSEN_WAREHOUSE.id]))
+
+    expect(save.disabled).toBe(true)
+    expect(disabledOnBlur).toHaveReturnedWith(false)
+    expect(document.activeElement).toBe(field)
+    await act(async () => {
+      save.click()
+      field.form!.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      )
+    })
+    expect(sent(PRODUCT_WAREHOUSE_PLACE)).toHaveLength(0)
+
+    await pressKey('Escape')
+    const confirm = control('modal-confirm')
+    expect(document.activeElement).toBe(confirm)
+    await act(async () => warehousesFrame([], [OTHER_WAREHOUSE.id]))
+    expect(document.activeElement).toBe(confirm)
+    await act(async () => control('modal-confirm-discard').click())
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 
   it('draws the normal 404 on a first visit and when changing product addresses', async () => {

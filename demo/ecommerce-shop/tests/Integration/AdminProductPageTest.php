@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
+use Demo\EcommerceShop\Agents\StockLibraryAgent;
+use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserList;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Constants\ProductKind;
+use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock as EntityProductWarehouseStock;
@@ -19,16 +23,27 @@ use Demo\EcommerceShop\Database\Object\Item\Warehouse as ObjectWarehouse;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminProductPage;
+use Demo\EcommerceShop\Pages\AdminWarehousesPage;
+use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
+use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
+use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
+use Demo\EcommerceShop\Tables\Warehouse\WarehouseTableRow;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\ActionForbiddenException;
+use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
@@ -38,13 +53,27 @@ use Hilos\Core\Page\PageErrorMessages;
 use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Page\SignalRouteConfig;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Files\HilosFiles;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Testing\IntegrationTest;
 use Hilos\Users\AccountStandingResolver;
@@ -56,6 +85,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
 {
     private const string VISITOR_KEY = 'admin-product-visitor';
     private const string ADMIN_KEY = 'admin-product-admin';
+    private const string WAREHOUSE_WINDOW_KEY = 'admin-product-warehouse-window';
 
     private int $categoryId;
     private string $categoryName;
@@ -99,7 +129,11 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         self::unattended(static function () use ($visitorId, $adminId): void {
             Hilos::$rt->connections->actions->register(self::VISITOR_KEY, $visitorId);
             Hilos::$rt->connections->actions->register(self::ADMIN_KEY, $adminId);
+            Hilos::$rt->connections->actions->register(self::WAREHOUSE_WINDOW_KEY, $adminId);
         });
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+            // Discard broadcasts from fixture setup.
+        }
     }
 
     /** An administrator is sent one answer with the whole card, both lists and the head of the product's page. */
@@ -339,6 +373,428 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         $lists = $responses[0]->payload->toArray()[PagePayload::lists];
         self::assertArrayHasKey(EcommerceShopBrowserList::ADMIN_PRODUCT_CATEGORIES, $lists);
         self::assertArrayHasKey(EcommerceShopBrowserList::ADMIN_PRODUCT_WAREHOUSES, $lists);
+    }
+
+    /** First placement writes one unit, answers the initiator after the handover and redraws the observer's card. */
+    public function testAnAdministratorPlacesAnUnplacedPieceAndTheObserverSeesIt(): void
+    {
+        $this->subscribe(self::VISITOR_KEY, $this->jug);
+        $page = self::dispatchPlacement(self::ADMIN_KEY, self::placement($this->jug, $this->kyiv, null), 'req-place');
+
+        self::assertSame([], self::storedStock($this->jug));
+        $facts = self::completePlacement($page);
+        self::assertPlacementSuccess('req-place');
+        self::assertCount(1, $facts);
+        self::assertInstanceOf(DbSyncCreatedSignalData::class, $facts[0]);
+        $fact = DbSyncCreatedSignalData::fromJson($facts[0]->toJson());
+
+        $stock = self::storedStock($this->jug);
+        self::assertCount(1, $stock);
+        self::assertSame($this->kyiv, (int)$stock[0][EntityProductWarehouseStock::warehouse_id]);
+        self::assertSame(1, (int)$stock[0][EntityProductWarehouseStock::units]);
+        self::assertSame((string)$stock[0][EntityProductWarehouseStock::id], $fact->idString);
+        self::assertSame(EcommerceShopDbContext::productWarehouseStocks, $fact->collectionKey);
+        self::assertSame(self::ADMIN_KEY, $fact->origin);
+        self::assertSame('req-place', $fact->originRequestId);
+        self::deliver(SourceChange::dbCreated($fact->collectionKey, $fact->idString, $fact->row, $fact->origin, $fact->originRequestId));
+
+        $response = self::takeBrowserPayload(SignalTypeConstants::PAGE_RESPONSE, self::VISITOR_KEY);
+        self::assertInstanceOf(PageResponseSignalData::class, $response);
+        self::assertSame(AdminProductPage::PAGE, $response->pageKey);
+        self::assertSame(self::stockField(1, 1, $this->kyiv), $this->cardOf($response)[AdminProductBrowserData::FIELD_STOCK]);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /** A move preserves the stock row and redraws the card and both open warehouse windows. */
+    public function testMovingAPiecePreservesItsRowAndRedrawsBothWarehouseWindows(): void
+    {
+        $this->subscribe(self::ADMIN_KEY, $this->vase);
+        self::openWarehouseWindow(self::VISITOR_KEY, $this->lviv, 2, 13);
+        self::openWarehouseWindow(self::WAREHOUSE_WINDOW_KEY, $this->odesa, 0, 0);
+        $original = self::storedStock($this->vase);
+        $page = self::dispatchPlacement(self::ADMIN_KEY, self::placement($this->vase, $this->odesa, $this->lviv), 'req-move');
+
+        $facts = self::completePlacement($page);
+        self::assertPlacementSuccess('req-move');
+        self::assertCount(1, $facts);
+        self::assertInstanceOf(DbSyncUpdatedSignalData::class, $facts[0]);
+        $fact = DbSyncUpdatedSignalData::fromJson($facts[0]->toJson());
+        self::assertSame((string)$original[0][EntityProductWarehouseStock::id], $fact->idString);
+        self::assertSame(EcommerceShopDbContext::productWarehouseStocks, $fact->collectionKey);
+        self::assertSame($this->odesa, $fact->row[EntityProductWarehouseStock::warehouse_id]);
+        self::assertSame($this->lviv, $fact->previous[EntityProductWarehouseStock::warehouse_id]);
+
+        $stock = self::storedStock($this->vase);
+        self::assertCount(1, $stock);
+        self::assertSame($original[0][EntityProductWarehouseStock::id], $stock[0][EntityProductWarehouseStock::id]);
+        self::assertSame($this->odesa, (int)$stock[0][EntityProductWarehouseStock::warehouse_id]);
+        self::assertSame(1, (int)$stock[0][EntityProductWarehouseStock::units]);
+        self::deliver(SourceChange::dbUpdated(
+            $fact->collectionKey,
+            $fact->idString,
+            $fact->row,
+            $fact->origin,
+            $fact->originRequestId,
+            previous: $fact->previous,
+        ));
+        $this->assertMoveDeliveries();
+    }
+
+    /** A retry after success is a no-op, and the same stale view cannot move the piece to a different warehouse. */
+    public function testRepeatingAMoveIsHarmlessButMovingFromAStaleWarehouseIsRefused(): void
+    {
+        $payload = self::placement($this->vase, $this->odesa, $this->lviv);
+        $page = self::dispatchPlacement(self::ADMIN_KEY, $payload, 'req-original-move');
+        self::assertCount(1, self::completePlacement($page));
+        self::assertPlacementSuccess('req-original-move');
+        $placed = self::storedStock($this->vase);
+        self::assertCount(1, $placed);
+        self::assertSame($this->odesa, (int)$placed[0][EntityProductWarehouseStock::warehouse_id]);
+
+        $page = self::dispatchPlacement(self::ADMIN_KEY, $payload, 'req-retry-move');
+        self::assertSame([], self::completePlacement($page));
+        self::assertPlacementSuccess('req-retry-move');
+        self::assertSame($placed, self::storedStock($this->vase));
+
+        $page = self::dispatchPlacement(self::ADMIN_KEY, self::placement($this->vase, $this->kyiv, $this->lviv), 'req-stale-move');
+        self::assertSame([], self::completePlacement($page));
+        self::assertSame(
+            'The piece changed warehouses elsewhere. Review the current warehouse and try again.',
+            self::placementError(self::ADMIN_KEY, 'req-stale-move')->reason,
+        );
+        self::assertSame($placed, self::storedStock($this->vase));
+    }
+
+    /** The owner refuses a missing warehouse or a non-piece, and an incomplete payload stays at the page boundary. */
+    public function testInvalidPlacementsAreRefusedWithoutStockChanges(): void
+    {
+        $unknownProduct = $this->jug + 1000;
+        foreach ([
+            [$this->vase, $this->odesa + 1000, $this->lviv, 'This warehouse no longer exists'],
+            [$this->bulbs, $this->odesa, null, 'A stock item is not moved: set its units in each warehouse'],
+            [$unknownProduct, $this->odesa, null, 'This product does not exist'],
+        ] as [$productId, $warehouseId, $expectedWarehouseId, $reason]) {
+            $before = self::storedStock($productId);
+            $page = self::dispatchPlacement(
+                self::ADMIN_KEY,
+                self::placement($productId, $warehouseId, $expectedWarehouseId),
+                'req-refused-placement',
+            );
+
+            self::assertSame([], self::completePlacement($page));
+            self::assertSame($reason, self::placementError(self::ADMIN_KEY, 'req-refused-placement')->reason);
+            self::assertSame($before, self::storedStock($productId));
+        }
+
+        self::dispatchPlacement(self::ADMIN_KEY, [
+            ObjectProductWarehouseStock::productId => $this->jug,
+            ObjectProductWarehouseStock::warehouseId => $this->kyiv,
+        ], 'req-incomplete-placement');
+        self::assertSame(
+            'Payload carries no integer or null under key expectedWarehouseId',
+            self::placementError(self::ADMIN_KEY, 'req-incomplete-placement')->reason,
+        );
+        self::assertSame([], self::storedStock($this->jug));
+
+        self::dispatchPlacement(self::ADMIN_KEY, self::placement($this->jug, $this->kyiv, null), 'req-malformed-ipc-placement');
+        $request = self::takeHandoverFrame(Hilos::$sr, EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE);
+        self::assertInstanceOf(AgentSignalData::class, $request->data);
+        $payload = $request->data->data->toArray();
+        unset($payload[ProductWarehousePlaceActionDTO::expectedWarehouseId]);
+        try {
+            Hilos::$sr->createAgentSignalPayloadDTO(
+                $request->signalName->getName(),
+                new AgentSignalData(new SignalData($payload), $request->data->receiptId),
+            );
+            self::fail('The stock request must carry the expected warehouse, even when it is null.');
+        } catch (InvalidAgentSignalPayloadException $refusal) {
+            self::assertSame('Payload carries no integer or null under key expectedWarehouseId', $refusal->getPrevious()?->getMessage());
+        }
+        self::assertSame([], self::storedStock($this->jug));
+    }
+
+    /** A viewer can read the card but cannot forward a placement, and the same action is forbidden with view mode off. */
+    public function testThePlacementGateRefusesBothTheViewerAndTheNonAdminOutsideViewMode(): void
+    {
+        $card = $this->cardOf($this->subscribe(self::VISITOR_KEY, $this->vase));
+        self::assertSame($this->vase, $card[AdminProductBrowserData::productId]);
+        self::assertSame(self::stockField(1, 1, $this->lviv), $card[AdminProductBrowserData::FIELD_STOCK]);
+        $before = self::storedStock($this->vase);
+        $payload = self::placement($this->vase, $this->kyiv, $this->lviv);
+
+        self::dispatchPlacement(self::VISITOR_KEY, $payload, 'req-viewer-placement');
+        self::assertSame(
+            ActionViewModeException::ERROR_CODE,
+            self::placementError(self::VISITOR_KEY, 'req-viewer-placement')->errorCode,
+        );
+        self::assertSame($before, self::storedStock($this->vase));
+
+        self::unattended(static function (): void {
+            Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+        });
+        self::dispatchPlacement(self::VISITOR_KEY, $payload, 'req-forbidden-placement');
+        self::assertSame(
+            ActionForbiddenException::ERROR_CODE,
+            self::placementError(self::VISITOR_KEY, 'req-forbidden-placement')->errorCode,
+        );
+        self::assertSame($before, self::storedStock($this->vase));
+    }
+
+    /**
+     * @param int $productId Piece to place
+     * @param int $warehouseId Requested destination
+     * @param ?int $expectedWarehouseId Last warehouse seen on the card
+     * @return array<string, int|null> Placement sent by the browser
+     */
+    private static function placement(int $productId, int $warehouseId, ?int $expectedWarehouseId): array
+    {
+        return [
+            ObjectProductWarehouseStock::productId => $productId,
+            ObjectProductWarehouseStock::warehouseId => $warehouseId,
+            ProductWarehousePlaceActionDTO::expectedWarehouseId => $expectedWarehouseId,
+        ];
+    }
+
+    /**
+     * @param string $acceptKey Connection making the request
+     * @param array<string, int|null> Payload sent by the browser
+     * @param string $requestId Correlation of the tracked action
+     * @return PageSignalRouter Products process to receive the writer's reply
+     */
+    private static function dispatchPlacement(string $acceptKey, array $payload, string $requestId): PageSignalRouter
+    {
+        $library = new ProductsLibraryAgent();
+        $page = new PageSignalRouter(
+            new HilosPageFactory($library, Hilos::class),
+            new ActionRouteConfig(Hilos::getPageActionRoutes()),
+            new SignalRouteConfig(Hilos::getPageSignalRoutes()),
+        );
+        $action = new WebSocketActionSignalDTO($acceptKey, EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE, $payload, $requestId);
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $library->getId(), acceptKey: $acceptKey),
+            static fn () => $page->dispatchAction(WebSocketActionSignalDTO::fromJson($action->toJson()), 'websocket'),
+        );
+
+        return $page;
+    }
+
+    /**
+     * Shuttles queued frames between the two handlers without starting a worker or committing the fixture.
+     * The observer on the stock router captures the ORM facts before the rollback root holds them.
+     *
+     * @param PageSignalRouter $page Products process that dispatched the action
+     * @return list<DbSyncSignalDataInterface> Facts produced by the stock handler
+     */
+    private static function completePlacement(PageSignalRouter $page): array
+    {
+        $router = Hilos::$sr;
+        $request = self::takeHandoverFrame($router, EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE);
+        self::assertInstanceOf(AgentSignalData::class, $request->data);
+        $data = $router->createAgentSignalPayloadDTO($request->signalName->getName(), $request->data);
+        $ask = $data->data;
+        self::assertInstanceOf(ProductWarehousePlaceSignalData::class, $ask);
+
+        $stockRouter = new class extends SignalRouter {
+            /** @var list<DbSyncSignalDataInterface> Facts scheduled by the stock ORM */
+            public array $facts = [];
+
+            /**
+             * @param string $signalName DB signal name
+             * @param DbSyncSignalDataInterface $signalData ORM announcement
+             * @param ?int $connectionIndex Connection holding the write
+             */
+            public function queueDbSyncSignal(
+                string $signalName,
+                DbSyncSignalDataInterface $signalData,
+                ?int $connectionIndex = null,
+            ): void {
+                $this->facts[] = $signalData;
+                parent::queueDbSyncSignal($signalName, $signalData, $connectionIndex);
+            }
+        };
+        $stock = new StockLibraryAgent();
+        Hilos::$sr = $stockRouter;
+        try {
+            ExecutionContext::run(
+                new ExecutionFrame(agentId: $stock->getId()),
+                static fn () => ExecutionContext::withOrigin(
+                    $ask->acceptKey,
+                    $ask->requestId,
+                    static fn () => $stock->onSignalAgent(
+                        $data,
+                        SignalSource::describe($request->signalSource),
+                        $request->signalName->getName(),
+                    ),
+                ),
+            );
+            $answer = self::takeHandoverFrame($stockRouter, EcommerceShopSignalConstants::ADMIN_PRODUCT_WAREHOUSE_PLACE_DONE);
+        } finally {
+            Hilos::$sr = $router;
+        }
+
+        self::assertInstanceOf(AgentSignalData::class, $answer->data);
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: ProductsLibraryAgent::AGENT_TYPE),
+            static fn () => $page->dispatchAgentSignal($answer->data, SignalSource::describe($answer->signalSource), $answer->signalName->getName()),
+        );
+
+        return $stockRouter->facts;
+    }
+
+    /**
+     * The receiver's registry selects the inner DTO. Leave the envelope intact and remove the
+     * inner class hint so a missing route cannot pass using the sender's PHP class name.
+     *
+     * @param SignalRouter $router Sender's queue
+     * @param string $name Expected handover signal
+     * @return SignalDTO Transported envelope
+     */
+    private static function takeHandoverFrame(SignalRouter $router, string $name): SignalDTO
+    {
+        $signal = $router->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertSame($name, $signal->signalName->getName());
+        self::assertSame(SignalTypeConstants::AGENT_SIGNAL, $signal->signalType->getType());
+        self::assertNull($router->getNextQueuedSignal(), 'Only the handover frame may leave this process.');
+        $wire = $signal->toArray();
+        unset($wire[SignalPayloadConstants::FIELD_DATA][SignalPayloadConstants::FIELD_DATA_TYPE]);
+
+        return SignalDTO::fromJson(json_encode($wire, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param string $name Expected signal name
+     * @param string $acceptKey Expected target connection
+     * @return SignalDataInterface Browser payload
+     */
+    private static function takeBrowserPayload(string $name, string $acceptKey): SignalDataInterface
+    {
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($signal);
+        self::assertSame($name, $signal->signalName->getName());
+        $frame = SignalDTO::fromJson($signal->toJson());
+        self::assertInstanceOf(WebSocketSignalData::class, $frame->data);
+        self::assertSame($acceptKey, $frame->data->targetAcceptKey);
+
+        return $frame->data->data;
+    }
+
+    /** @param string $requestId Correlation to echo to the acting administrator */
+    private static function assertPlacementSuccess(string $requestId): void
+    {
+        $reply = self::takeBrowserPayload(SignalConstants::ACTION_SUCCESS, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertSame([
+            SignalPayloadConstants::FIELD_ACTION => EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE,
+            SignalPayloadConstants::FIELD_REQUEST_ID => $requestId,
+        ], $reply->toArray());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    /**
+     * @param string $acceptKey Connection owed the refusal
+     * @param string $requestId Correlation to echo
+     * @return PageActionErrorSignalData Tracked refusal
+     */
+    private static function placementError(string $acceptKey, string $requestId): PageActionErrorSignalData
+    {
+        $error = self::takeBrowserPayload(SignalConstants::ACTION_ERROR, $acceptKey);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame($requestId, $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE, $error->action);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        return $error;
+    }
+
+    /**
+     * @param string $acceptKey Connection opening a warehouse window
+     * @param int $warehouseId Only warehouse the window shows
+     * @param int $products Expected initial product count
+     * @param int $units Expected initial unit count
+     */
+    private static function openWarehouseWindow(string $acceptKey, int $warehouseId, int $products, int $units): void
+    {
+        $windows = [EcommerceShopTableContext::warehouses => new TableWindowDescriptorDTO(
+            filter: [TableConstants::FILTER_KEY_SEARCH => self::warehouseName($warehouseId)],
+        )];
+        Hilos::$sr->subscribeToPage(
+            AdminWarehousesPage::PAGE,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, AdminWarehousesPage::PAGE, [], $windows),
+        );
+        Hilos::$sr->reportTableWindows($acceptKey, $windows);
+        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), static function () use ($acceptKey): void {
+            new AdminWarehousesPage(new WarehousesLibraryAgent())->onSubscribe($acceptKey, new PageRouteParams([]));
+        });
+
+        $response = self::takeBrowserPayload(SignalTypeConstants::PAGE_RESPONSE, $acceptKey);
+        self::assertInstanceOf(PageResponseSignalData::class, $response);
+        self::assertSame(AdminWarehousesPage::PAGE, $response->pageKey);
+        $rows = $response->payload->toArray()[PagePayload::windows][EcommerceShopTableContext::warehouses][TableWindowSignalData::rows];
+        self::assertCount(1, $rows);
+        self::assertWarehouseCounts($rows[0], $warehouseId, $products, $units);
+    }
+
+    /** The card and both table windows can be delivered in either order. */
+    private function assertMoveDeliveries(): void
+    {
+        $deliveries = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $frame = SignalDTO::fromJson($signal->toJson());
+            self::assertInstanceOf(WebSocketSignalData::class, $frame->data);
+            $acceptKey = $frame->data->targetAcceptKey;
+            self::assertArrayNotHasKey($acceptKey, $deliveries);
+            $deliveries[$acceptKey] = $frame;
+        }
+        self::assertCount(3, $deliveries);
+
+        self::assertArrayHasKey(self::ADMIN_KEY, $deliveries);
+        self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $deliveries[self::ADMIN_KEY]->signalName->getName());
+        $response = $deliveries[self::ADMIN_KEY]->data->data;
+        self::assertInstanceOf(PageResponseSignalData::class, $response);
+        self::assertSame(AdminProductPage::PAGE, $response->pageKey);
+        self::assertSame(self::stockField(1, 1, $this->odesa), $this->cardOf($response)[AdminProductBrowserData::FIELD_STOCK]);
+        foreach ([
+            [self::VISITOR_KEY, $this->lviv, 1, 12],
+            [self::WAREHOUSE_WINDOW_KEY, $this->odesa, 1, 1],
+        ] as [$acceptKey, $warehouseId, $products, $units]) {
+            self::assertArrayHasKey($acceptKey, $deliveries);
+            self::assertSame(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $deliveries[$acceptKey]->signalName->getName());
+            $delta = $deliveries[$acceptKey]->data->data;
+            self::assertInstanceOf(TableViewportDeltaDTO::class, $delta);
+            self::assertSame(AdminWarehousesPage::PAGE, $delta->page);
+            self::assertSame(EcommerceShopTableContext::warehouses, $delta->tableKey);
+            self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+            self::assertNotNull($delta->row);
+            self::assertWarehouseCounts($delta->row, $warehouseId, $products, $units);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row Row received in a window or delta
+     * @param int $warehouseId Warehouse the row names
+     * @param int $products Number of distinct products
+     * @param int $units Number of units
+     */
+    private static function assertWarehouseCounts(array $row, int $warehouseId, int $products, int $units): void
+    {
+        self::assertSame((string)$warehouseId, (string)$row[PagePayload::rowKey]);
+        $slot = $row[PagePayload::slots][WarehousesTable::ROW_SLOT];
+        self::assertSame($warehouseId, $slot[WarehouseTableRow::id]);
+        self::assertSame($products, $slot[WarehouseTableRow::productCount]);
+        self::assertSame($units, $slot[WarehouseTableRow::unitCount]);
+    }
+
+    /**
+     * @param int $productId Product whose persisted stock to read
+     * @return list<array<string, mixed>> Stock rows of the product
+     */
+    private static function storedStock(int $productId): array
+    {
+        return Database::sql(
+            'SELECT id, warehouse_id, units FROM product_warehouse_stock WHERE product_id = ? ORDER BY id',
+            [$productId],
+        )->rows();
     }
 
     /**

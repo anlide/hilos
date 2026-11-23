@@ -11,6 +11,8 @@ use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProdu
 use Demo\EcommerceShop\Database\View\Collection\ProductWarehouseStocks as DbCollectionProductWarehouseStocks;
 use Demo\EcommerceShop\Database\View\Item\ProductWarehouseStock;
 use Demo\EcommerceShop\Hilos;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
@@ -19,6 +21,8 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 
 /**
@@ -112,6 +116,10 @@ final class ProductWarehouseStocksActions extends DbActions
      * @param int $productId Id of the unique piece
      * @param int $warehouseId Id of the warehouse to keep it in
      * @throws ValidationException When the product does not exist or is a stock item, or the warehouse no longer exists
+     * @throws LogicException When the stock collection is not configured
+     * @throws InvalidArgumentException When the stock filter or row does not match the collection
+     * @throws ObjectGetIdStringNotImplementedException When a stock object cannot be keyed by id
+     * @throws CollectionNotManualException When the stock selection does not allow adding matched rows
      * @throws CreateNotAllowedException When this process may not add a row
      * @throws WriteNotAllowedException When this process may not change a row
      * @throws DatabaseException When the rows cannot be read, or the database refuses the write
@@ -120,12 +128,72 @@ final class ProductWarehouseStocksActions extends DbActions
      */
     public function place(int $productId, int $warehouseId): void
     {
+        $this->writePlacement($this->pieceForPlacement($productId, $warehouseId), $productId, $warehouseId);
+    }
+
+    /**
+     * Places a piece only from the expected warehouse. A piece already at the destination needs no write.
+     *
+     * @param int $productId Id of the unique piece
+     * @param ?int $expectedWarehouseId Id of the current warehouse, or null for an unplaced piece
+     * @param int $warehouseId Id of the destination warehouse
+     * @throws ValidationException When the piece or destination is unavailable or the expected warehouse is stale
+     * @throws LogicException When the stock collection is not configured
+     * @throws InvalidArgumentException When the stock filter or row does not match the collection
+     * @throws ObjectGetIdStringNotImplementedException When a stock object cannot be keyed by id
+     * @throws CollectionNotManualException When the stock selection does not allow adding matched rows
+     * @throws CreateNotAllowedException When this process may not add a row
+     * @throws WriteNotAllowedException When this process may not change a row
+     * @throws DatabaseException When the rows cannot be read or the database refuses the write
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws HilosException When the right, the database or the collection refuses the write
+     */
+    public function placeFrom(int $productId, ?int $expectedWarehouseId, int $warehouseId): void
+    {
+        $piece = $this->pieceForPlacement($productId, $warehouseId);
+        $currentWarehouseId = $piece?->warehouseId;
+        if ($currentWarehouseId !== $warehouseId && $currentWarehouseId !== $expectedWarehouseId) {
+            throw new ValidationException('The piece changed warehouses elsewhere. Review the current warehouse and try again.');
+        }
+
+        $this->writePlacement($piece, $productId, $warehouseId);
+    }
+
+    /**
+     * @param int $productId Id of the unique piece
+     * @param int $warehouseId Id of the destination warehouse
+     * @return ?ProductWarehouseStock The existing stock row, or null for an unplaced piece
+     * @throws ValidationException When the product is missing or is a stock item, or the destination does not exist
+     * @throws LogicException When the stock collection is not configured
+     * @throws InvalidArgumentException When the stock filter or row does not match the collection
+     * @throws DatabaseException When the stock cannot be read
+     * @throws ObjectGetIdStringNotImplementedException When a stock object cannot be keyed by id
+     * @throws CollectionNotManualException When the stock selection does not allow adding matched rows
+     * @throws HilosException When the product or warehouse cannot be read
+     */
+    private function pieceForPlacement(int $productId, int $warehouseId): ?ProductWarehouseStock
+    {
         if ($this->checkedProductKind($productId) !== ProductKind::UNIQUE) {
             throw new ValidationException('A stock item is not moved: set its units in each warehouse');
         }
         $this->checkWarehouseExists($warehouseId);
 
-        $piece = $this->collection->whereColumnIs(ObjectProductWarehouseStock::productId, $productId)->first();
+        return $this->collection->whereColumnIs(ObjectProductWarehouseStock::productId, $productId)->first();
+    }
+
+    /**
+     * @param ?ProductWarehouseStock $piece The existing stock row, if any
+     * @param int $productId Id of the unique piece
+     * @param int $warehouseId Id of the destination warehouse
+     * @throws ValidationException When the destination no longer exists in the database
+     * @throws CreateNotAllowedException When this process may not add a row
+     * @throws WriteNotAllowedException When this process may not change a row
+     * @throws DatabaseException When the database refuses the write
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws HilosException When the right, the database or the collection refuses the write
+     */
+    private function writePlacement(?ProductWarehouseStock $piece, int $productId, int $warehouseId): void
+    {
         if ($piece === null) {
             // A unique piece is one unit.
             $this->addStock($productId, $warehouseId, 1);

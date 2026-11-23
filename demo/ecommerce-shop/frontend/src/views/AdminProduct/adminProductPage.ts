@@ -25,6 +25,7 @@ import { PAGE_ADMIN_PRODUCT } from '../../pages/keys.js'
 import {
   ADMIN_PRODUCT_WAREHOUSES_LIST,
   warehouseNameOf,
+  warehouseOptions,
 } from './adminProduct.js'
 import { type ProductEditCard } from './adminProductEdit.js'
 
@@ -40,6 +41,8 @@ const fieldsOf: EntityFieldsResolver = (ref) =>
 export interface AdminProductSignals extends AdminProductCardSignals {
   /** The card's live Category choices in catalog order. */
   readonly categories: ReadonlySignal<ReturnType<typeof categoryOptions>>
+  /** The card's live Warehouse choices in list order. */
+  readonly warehouses: ReadonlySignal<ReturnType<typeof warehouseOptions>>
   /** The fresh card for edits, with deletion distinct from an unavailable card. */
   readonly editCard: ReadonlySignal<ProductEditCard>
   /** A replacement subscription still owes the card after a connection loss. */
@@ -70,6 +73,9 @@ export function createAdminProductSignals(
   )
   const categories = computedSignal(() =>
     categoryOptions(categoryItems.get(), fieldsOf),
+  )
+  const warehouses = computedSignal(() =>
+    warehouseOptions(warehouseItems.get(), fieldsOf),
   )
   const fresh = createSignal(connection.state === 'connected')
   const awaitingFreshCard = computedSignal(
@@ -115,6 +121,7 @@ export function createAdminProductSignals(
   return {
     product,
     categories,
+    warehouses,
     editCard,
     awaitingFreshCard,
     name,

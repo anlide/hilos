@@ -8,15 +8,22 @@ use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
+use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Files\CatalogPictureFile;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Money\Money;
 use Demo\EcommerceShop\Pages\DTO\AdminProductPageSubscribeParams;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -25,13 +32,16 @@ use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 use Throwable;
@@ -45,6 +55,8 @@ use Throwable;
  */
 final class AdminProductPage extends AbstractPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = PageConstants::ADMIN_PRODUCT;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -67,6 +79,13 @@ final class AdminProductPage extends AbstractPage
 
     public const array ACTIONS = [
         EcommerceShopSignalConstants::PRODUCT_UPDATE => ProductUpdateActionDTO::class,
+        EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE => ProductWarehousePlaceActionDTO::class,
+    ];
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            EcommerceShopSignalConstants::ADMIN_PRODUCT_WAREHOUSE_PLACE_DONE => HandoverAnswerSignalData::class,
+        ],
     ];
 
     public const array BROWSER = [
@@ -86,14 +105,16 @@ final class AdminProductPage extends AbstractPage
     }
 
     /**
-     * Routes catalog edits to the product update handler.
+     * Routes catalog edits and warehouse placement requests.
      *
      * @param string $acceptKey Acting connection
      * @param string $action Action name from the WebSocket envelope
      * @param ActionPayloadDTO $dto Parsed action payload
-     * @return ?ActionReplyDTO No business payload
+     * @return ?ActionReplyDTO No business payload, with placement acknowledged after the stock library answers
      * @throws AgentUnknownActionException When this page does not own the action
      * @throws InvalidActionPayloadException When the payload does not match the action name
+     * @throws InvalidArgumentException When the placement request cannot be queued
+     * @throws InvalidFormatException When the placement request has an invalid id
      * @throws ItemNotFoundForUpdateException When the product no longer exists
      * @throws ValidationException When the version, fields or picture are refused
      * @throws LogicException When the price parser cannot run or the save fails unexpectedly
@@ -110,8 +131,44 @@ final class AdminProductPage extends AbstractPage
 
                 return null;
 
+            case EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE:
+                if (!$dto instanceof ProductWarehousePlaceActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProductWarehousePlaceActionDTO::class, $dto);
+                }
+                $this->handleWarehousePlacement($acceptKey, $dto);
+
+                return null;
+
             default:
                 throw new AgentUnknownActionException(sprintf('Unknown action %s', $action));
+        }
+    }
+
+    /**
+     * Relays the stock library's outcome to the administrator who requested placement.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $sender Sender as described by {@see SignalSource::describe()}, unused
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When this page does not declare the signal
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal name
+     * @throws InvalidArgumentException When the acknowledgement cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case EcommerceShopSignalConstants::ADMIN_PRODUCT_WAREHOUSE_PLACE_DONE:
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
+                }
+
+                $this->answerHandover($answer);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
         }
     }
 
@@ -176,5 +233,30 @@ final class AdminProductPage extends AbstractPage
             throw new LogicException('The product could not be saved', previous: $failure);
         }
         $this->setActionSuccessMessage(sprintf('Product “%s” saved.', $product->name));
+    }
+
+    /**
+     * Defers the acknowledgement until the stock library has judged the request against its own rows.
+     *
+     * @param string $acceptKey Acting connection
+     * @param ProductWarehousePlaceActionDTO $dto Destination and the placement the administrator saw
+     * @throws InvalidArgumentException When the placement request cannot be queued
+     * @throws InvalidFormatException When the placement request has an invalid id
+     */
+    private function handleWarehousePlacement(string $acceptKey, ProductWarehousePlaceActionDTO $dto): void
+    {
+        $this->forward(
+            EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE,
+            new ProductWarehousePlaceSignalData(
+                productId: $dto->productId,
+                warehouseId: $dto->warehouseId,
+                expectedWarehouseId: $dto->expectedWarehouseId,
+                replySignal: EcommerceShopSignalConstants::ADMIN_PRODUCT_WAREHOUSE_PLACE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: $dto->getAction(),
+                successMessage: null,
+            ),
+        );
     }
 }

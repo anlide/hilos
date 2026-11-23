@@ -5,13 +5,25 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Agents;
 
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Hilos;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
+use Hilos\HilosException;
+use Hilos\WiringRefusal;
+use Throwable;
 
 /**
  * Monopolistic library of the shop's stock - the one writer of the units each warehouse keeps of each product.
@@ -45,6 +57,10 @@ final class StockLibraryAgent extends AbstractAgent
 
     public const string AGENT_TYPE = AgentType::STOCK_LIBRARY;
 
+    public const array AGENT_SIGNALS = [
+        EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE => ProductWarehousePlaceSignalData::class,
+    ];
+
     /** Stock actions arrive in frames; there is no periodic work. */
     protected const MAX_IDLE_SLEEP_SECONDS = 600;
 
@@ -69,5 +85,62 @@ final class StockLibraryAgent extends AbstractAgent
      */
     public function onStop(): void
     {
+    }
+
+    /**
+     * Routes placement requests to the stock writer in this process.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $sender Sender as described by {@see SignalSource::describe()}, unused
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When this agent does not declare the signal
+     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal name
+     * @throws InvalidArgumentException When the outcome cannot be queued
+     * @throws HilosException When the collection read guard refuses a placement read in this process
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE:
+                $placement = $data->data;
+                if (!$placement instanceof ProductWarehousePlaceSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProductWarehousePlaceSignalData::class, $placement);
+                }
+
+                $this->placeUnique($placement);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
+     * Answers the page after the placement has been written or refused.
+     *
+     * @param ProductWarehousePlaceSignalData $placement Requested placement and reply address
+     * @throws InvalidArgumentException When the outcome cannot be queued
+     * @throws HilosException When the collection read guard refuses a placement read in this process
+     */
+    private function placeUnique(ProductWarehousePlaceSignalData $placement): void
+    {
+        $refusal = null;
+        try {
+            Hilos::$db->productWarehouseStocks->actions->placeFrom(
+                $placement->productId,
+                $placement->expectedWarehouseId,
+                $placement->warehouseId,
+            );
+        } catch (WiringRefusal $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Warehouse placement failed for product #{$placement->productId}: {$failure->getMessage()}");
+            }
+        }
+
+        $this->sendToAgent($placement->replySignal, HandoverAnswerSignalData::to($placement, $refusal));
     }
 }

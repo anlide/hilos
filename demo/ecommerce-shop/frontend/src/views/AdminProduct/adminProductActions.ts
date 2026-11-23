@@ -24,3 +24,24 @@ export interface ProductUpdatePayload {
 export function sendProductUpdate(payload: ProductUpdatePayload): ActionHandle {
   return actions.dispatch(PRODUCT_UPDATE, { ...payload })
 }
+
+/** EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE. */
+export const PRODUCT_WAREHOUSE_PLACE = 'product_warehouse_place'
+
+/** ProductWarehousePlaceActionDTO, with null for a previously unplaced piece. */
+interface ProductWarehousePlacePayload {
+  readonly productId: number
+  readonly warehouseId: number
+  readonly expectedWarehouseId: number | null
+}
+
+/**
+ * Send the tracked placement or move of a unique piece.
+ *
+ * @param payload The target warehouse and the live warehouse accepted by the editor.
+ */
+export function sendProductWarehousePlace(
+  payload: ProductWarehousePlacePayload,
+): ActionHandle {
+  return actions.dispatch(PRODUCT_WAREHOUSE_PLACE, { ...payload })
+}

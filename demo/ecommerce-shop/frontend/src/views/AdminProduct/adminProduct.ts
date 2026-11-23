@@ -19,26 +19,44 @@ const WAREHOUSE_ID_FIELD = 'id'
 const WAREHOUSE_NAME_FIELD = 'name'
 
 /**
+ * Read the live Warehouse choices in list order, keeping numeric ids.
+ *
+ * @param items The page-scoped warehouses list.
+ * @param fieldsOf The resolver of a slot's reference to its fields.
+ */
+export function warehouseOptions(
+  items: readonly ListItem[],
+  fieldsOf: EntityFieldsResolver,
+): { value: number; label: string }[] {
+  const options: { value: number; label: string }[] = []
+  for (const item of items) {
+    const warehouse = slotFields(item.slots[WAREHOUSE_SLOT], fieldsOf)
+    const id = warehouse[WAREHOUSE_ID_FIELD]
+    if (typeof id !== 'number') continue
+    options.push({
+      value: id,
+      label: readString(warehouse, WAREHOUSE_NAME_FIELD),
+    })
+  }
+  return options
+}
+
+/**
  * Find the name of one warehouse in the live warehouses list.
  *
  * @param items The page-scoped warehouses list.
  * @param id The warehouse's number.
  * @param fieldsOf The resolver of a slot's reference to its fields.
- * @returns The warehouse's name, or null while the list or the scope does not
- * hold it.
  */
 export function warehouseNameOf(
   items: readonly ListItem[],
   id: number,
   fieldsOf: EntityFieldsResolver,
 ): string | null {
-  for (const item of items) {
-    const warehouse = slotFields(item.slots[WAREHOUSE_SLOT], fieldsOf)
-    if (warehouse[WAREHOUSE_ID_FIELD] === id) {
-      return readString(warehouse, WAREHOUSE_NAME_FIELD)
-    }
-  }
-  return null
+  return (
+    warehouseOptions(items, fieldsOf).find(({ value }) => value === id)
+      ?.label ?? null
+  )
 }
 
 /** The words of the stock line: the accent sits between the two plain runs. */

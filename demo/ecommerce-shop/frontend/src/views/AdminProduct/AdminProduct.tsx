@@ -1,6 +1,6 @@
 // The Overview body and editor for the product in the address, under the
 // shared product head.
-import { useContext, useLayoutEffect, useMemo } from 'react'
+import { useCallback, useContext, useLayoutEffect, useMemo } from 'react'
 import {
   computedSignal,
   hilosAdminAccess,
@@ -14,6 +14,8 @@ import { PAGE_ADMIN_PRODUCT } from '../../pages/keys.js'
 import { stockParts } from './adminProduct.js'
 import { createAdminProductEdit } from './adminProductEdit.js'
 import { createAdminProductSignals } from './adminProductPage.js'
+import { createAdminProductWarehouseEdit } from './adminProductWarehouseEdit.js'
+import { AdminProductWarehouseModal } from './AdminProductWarehouseModal.js'
 import { ProductEditModal } from './ProductEditModal.js'
 
 const writable = computedSignal(
@@ -25,10 +27,11 @@ export default function AdminProduct() {
   const router = useContext(HilosRouterContext)
   if (!router) throw new Error('AdminProduct requires a provided Hilos router.')
   const route = useSignal(router.currentRoute)
-  return <ProductCard key={route.params.productId} />
+  const { productId } = route.params
+  return <ProductCard key={productId} productId={Number(productId)} />
 }
 
-function ProductCard() {
+function ProductCard({ productId }: { productId: number }) {
   const router = useContext(HilosRouterContext)!
   const signals = useMemo(() => createAdminProductSignals(router), [router])
   const edit = useMemo(
@@ -41,20 +44,38 @@ function ProductCard() {
       }),
     [signals],
   )
+  const warehouseEdit = useMemo(
+    () =>
+      createAdminProductWarehouseEdit({
+        productId,
+        card: signals.editCard,
+        warehouses: signals.warehouses,
+        writable,
+      }),
+    [productId, signals],
+  )
+  const preserveModalDraftsOnDelete = useCallback(
+    () => edit.opened.get() || warehouseEdit.opened.get(),
+    [edit, warehouseEdit],
+  )
   useLayoutEffect(() => {
     const stopFreshness = signals.watchFreshness()
     edit.start()
+    warehouseEdit.start()
     return () => {
+      warehouseEdit.dispose()
       edit.dispose()
       stopFreshness()
     }
-  }, [edit, signals])
+  }, [edit, signals, warehouseEdit])
 
   const product = useSignal(signals.product)
   const categoryName = useSignal(signals.categoryName)
   const warehouseName = useSignal(signals.warehouseName)
   const canOpenEdit = useSignal(edit.canOpen)
   const editOpened = useSignal(edit.opened)
+  const canOpenWarehouse = useSignal(warehouseEdit.canOpen)
+  const warehouseOpened = useSignal(warehouseEdit.opened)
   const stock = product ? stockParts(product, warehouseName) : null
 
   return (
@@ -62,16 +83,37 @@ function ProductCard() {
       page={PAGE_ADMIN_PRODUCT}
       product={product}
       name={signals.name}
-      preserveModalDraftsOnDelete={edit.opened.get}
+      preserveModalDraftsOnDelete={preserveModalDraftsOnDelete}
       modals={
-        editOpened ? (
-          <ProductEditModal edit={edit} categories={signals.categories} />
-        ) : null
+        <>
+          {editOpened && (
+            <ProductEditModal edit={edit} categories={signals.categories} />
+          )}
+          {warehouseOpened && (
+            <AdminProductWarehouseModal
+              edit={warehouseEdit}
+              warehouses={signals.warehouses}
+            />
+          )}
+        </>
       }
     >
       {product && stock && (
         <>
           <div className="d-flex flex-wrap justify-content-end gap-2 mb-3">
+            {product.kind === 'unique' && (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-secondary"
+                disabled={!canOpenWarehouse}
+                data-id="admin-product-warehouse-open"
+                onClick={() => warehouseEdit.open()}
+              >
+                {product.stock.warehouseId === null
+                  ? 'Put in a warehouse'
+                  : 'Move to another warehouse'}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-sm btn-primary"
