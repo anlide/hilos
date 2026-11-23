@@ -607,6 +607,7 @@ export {
   clusterPlacementNode,
   requestClusterNodeStop,
   readClusterCarry,
+  readClusterNodeJournal,
   shiftClusterNodeClock,
   expectClusterLeaderUnchanged,
   expectClusterAnalyticsAgents,

@@ -346,9 +346,8 @@ $steps = array_merge($steps, [
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the
-    // whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside the
-    // other fleets and any e2e step, no group and no edge (the head of this file); takes its
-    // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
+    // whole demo on one MariaDB server with primary and derived journal (HIL-1453). The group
+    // serializes the two shop configurations because both reset the same compose project. The
     // demo's unit suite runs in ecommerce-shop-php. Seconds: snapshot duration in full run 2550
     // on the test box, 2026-11-16, n=1, rounded to 5 s (HIL-2043).
     [
@@ -357,9 +356,23 @@ $steps = array_merge($steps, [
         'cwd' => 'demo/ecommerce-shop',
         'stand' => 'ecommerce-shop-cluster',
         'deps' => ['ecommerce-shop-deps'],
-        'group' => null,
+        'group' => 'ecommerce-shop-cluster',
         'tags' => ['cluster', 'backend'],
         'seconds' => 455,
+        'downsStand' => true,
+    ],
+    // The ordinary e2e step finishes using the shared storefront build, dependencies
+    // and reports. The browser stand adds a second master and requires both stock phases.
+    [
+        'id' => 'ecommerce-shop-cluster-e2e',
+        'command' => 'composer run test:cluster:e2e',
+        'cwd' => 'demo/ecommerce-shop',
+        'stand' => 'ecommerce-shop-cluster-e2e',
+        'deps' => ['ecommerce-shop-e2e'],
+        'group' => 'ecommerce-shop-cluster',
+        'tags' => ['cluster', 'e2e'],
+        // Fresh two-phase harness run on the test box, 2026-11-23, rounded to 5 s.
+        'seconds' => 375,
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,

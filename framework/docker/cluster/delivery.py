@@ -163,7 +163,7 @@ class DeliveryController:
             nonlocal ready
             try:
                 ready = self.locate(FAULT_AGENT)
-            except (RuntimeError, AssertionError):
+            except (RuntimeError, AssertionError, control.JournalChanging):
                 return False
             return ready != self.process
 

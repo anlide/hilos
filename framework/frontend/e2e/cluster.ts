@@ -2,13 +2,14 @@ import {
   closeSync,
   fstatSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   statSync,
   writeFileSync,
 } from 'node:fs'
 import { isIP } from 'node:net'
-import { isAbsolute } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 
 import type { Browser, Expect, Page } from '@playwright/test'
 
@@ -288,19 +289,21 @@ export async function expectClusterLeaderUnchanged(
  * @param node Slave that holds the artifact under test.
  * @param reason Human-readable reason printed by the harness.
  * @param carry Data the after-loss phase needs from the live phase.
+ * @param agentId If supplied, verify the current owner and a fresh start after the kill.
  */
 export function requestClusterNodeStop(
   stand: ClusterBrowserStand,
   node: string,
   reason: string,
   carry: Record<string, unknown>,
+  agentId?: string,
 ): void {
   if (!stand.slaves.includes(node)) {
     throw new Error(`A cluster browser spec may stop a slave only: ${node}`)
   }
   writeFileSync(
     required('CLUSTER_FAULT_FILE'),
-    JSON.stringify({ stop: node, reason, carry }),
+    JSON.stringify({ stop: node, reason, carry, agentId }),
     'utf8',
   )
 }
@@ -322,11 +325,106 @@ const ANALYTICS_AGENTS = [
   ANALYTICS_JOURNAL,
 ] as const
 
+/** Enumerate staging before archive, following the carrier across publication. */
+function daemonJournalPaths(path: string): Map<string, string> {
+  const batches = new Map<string, string>()
+  for (const directory of ['staging', 'archive']) {
+    const root = join(dirname(path), directory)
+    let names: string[]
+    try {
+      names = readdirSync(root)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
+    for (const name of names) {
+      if (name.startsWith('.incoming-')) {
+        throw new Error(`Daemon journal batch in transit: ${name}`)
+      }
+      if (!/^\d{4}(?:-\d{2}){5}Z$/.test(name)) continue
+      const file = join(root, name, basename(path))
+      if (statSync(file, { throwIfNoEntry: false })?.isFile()) {
+        batches.set(name, file)
+      }
+    }
+  }
+  const ordered = new Map([...batches].sort(([a], [b]) => a.localeCompare(b)))
+  if (statSync(path, { throwIfNoEntry: false })) ordered.set('active', path)
+  return ordered
+}
+
 /**
- * Replay the current daemon life; a rotated or incomplete journal proves nothing.
- * Exported only from this module so unit tests can exercise real log files.
- *
- * @param path The node's complete daemon journal.
+ * Read a stable sequence of journal segments in append order.
+ * @param path The active daemon log path in this node's mount.
+ */
+function daemonJournalSegments(path: string): Buffer[] {
+  const files = daemonJournalPaths(path)
+  if (!files.size) throw new Error(`Missing daemon journal: ${path}`)
+  const segments = [...files].map(([name, file]) => {
+    const descriptor = openSync(file, 'r')
+    try {
+      const before = fstatSync(descriptor)
+      if (!before.isFile()) throw new Error(`Not a daemon log file: ${file}`)
+      const body = readFileSync(descriptor)
+      if (body.length < before.size) {
+        throw new Error(`Incomplete daemon journal: ${file}`)
+      }
+      return { name, before, body }
+    } finally {
+      closeSync(descriptor)
+    }
+  })
+  const latest = daemonJournalPaths(path)
+  if (files.size !== latest.size) {
+    throw new Error(`Daemon journal rotated while reading ${path}`)
+  }
+  for (const { name, before, body } of segments) {
+    const file = latest.get(name)
+    const after = file && statSync(file)
+    if (
+      !after ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      after.size < body.length ||
+      (name !== 'active' && after.size !== body.length)
+    ) {
+      throw new Error(
+        `Daemon journal replaced or truncated while reading ${path}`,
+      )
+    }
+  }
+  return segments.map(({ body }) => body)
+}
+
+/**
+ * Keep the available log bytes for an attachment, including a killed node's final line.
+ * @param path The active daemon log path in this node's mount.
+ */
+export function readClusterNodeJournal(path: string): Buffer {
+  return Buffer.concat(daemonJournalSegments(path))
+}
+
+/** Read complete records back to the latest boot, keeping each file's line boundaries. */
+function currentDaemonLines(path: string): string[] {
+  const later: string[][] = []
+  const boot = /^\[[^\]\r\n]+\] (?:\[INFO\] )?Daemon started with epoll$/
+  for (const segment of daemonJournalSegments(path).reverse()) {
+    const lines = segment.toString('utf8').split('\n')
+    if (lines.pop() !== '')
+      throw new Error(`Incomplete daemon journal: ${path}`)
+    for (let index = lines.length - 1; index >= 0; index--) {
+      if (boot.test(lines[index])) {
+        return lines.slice(index).concat(...later.reverse())
+      }
+    }
+    later.push(lines)
+  }
+  throw new Error(`No current daemon start in ${path}`)
+}
+
+/**
+ * Replay worker lifecycles in the node's current daemon.
+ * @param path The node's active daemon log path.
  * @param agentIds The agent ids whose active copies are needed.
  * @internal
  */
@@ -335,43 +433,11 @@ export function activeClusterAgents(
   agentIds: readonly string[],
 ): readonly string[] {
   const tracked = new Set(agentIds)
-  const descriptor = openSync(path, 'r')
-  let journal: string
-  try {
-    const before = fstatSync(descriptor)
-    if (!before.isFile()) throw new Error(`Not a daemon log file: ${path}`)
-    journal = readFileSync(descriptor, 'utf8')
-    const after = statSync(path)
-    if (
-      before.dev !== after.dev ||
-      before.ino !== after.ino ||
-      after.size < before.size
-    ) {
-      throw new Error(
-        `Daemon journal replaced or truncated while reading ${path}`,
-      )
-    }
-  } finally {
-    closeSync(descriptor)
-  }
-  if (!journal.endsWith('\n')) {
-    throw new Error(`Incomplete daemon journal: ${path}`)
-  }
-
-  let running = false
   let active: { agentId: string; worker: string }[] = []
-  for (const line of journal.split('\n')) {
-    if (line.endsWith('] Daemon started with epoll')) {
-      running = true
-      active = []
-      continue
-    }
+  for (const line of currentDaemonLines(path)) {
     if (/\] Daemon stopped(?: after a failure)?$/.test(line)) {
-      running = false
-      active = []
-      continue
+      throw new Error(`No current daemon start in ${path}`)
     }
-    if (!running) continue
 
     // A worker number can be reused, including after a death without agent stops.
     const worker = line.match(
@@ -399,8 +465,25 @@ export function activeClusterAgents(
       }
     }
   }
-  if (!running) throw new Error(`No current daemon start in ${path}`)
   return active.map((entry) => entry.agentId)
+}
+
+/** Return the read failure to the enclosing placement poll for its next observation. */
+function clusterAgentCopies(
+  stand: ClusterBrowserStand,
+  nodes: readonly string[],
+  agentIds: readonly string[],
+): { node: string; agentId: string }[] | string {
+  try {
+    return nodes.flatMap((node) =>
+      activeClusterAgents(stand.nodeLogs[node], agentIds).map((agentId) => ({
+        node,
+        agentId,
+      })),
+    )
+  } catch (error) {
+    return String(error)
+  }
 }
 
 /**
@@ -425,11 +508,8 @@ export async function expectClusterSingleAgents(
           'test:cluster:inspect',
           {},
         )) as unknown as ClusterInspection
-        const active = nodes.flatMap((node) =>
-          activeClusterAgents(stand.nodeLogs[node], agentIds).map(
-            (agentId) => ({ node, agentId }),
-          ),
-        )
+        const active = clusterAgentCopies(stand, nodes, agentIds)
+        if (!Array.isArray(active)) return active
         return agentIds.map((agentId) => {
           const placements = inspection.placements.filter(
             (placement) => placement.agentId === agentId,
@@ -484,11 +564,8 @@ export async function expectClusterAnalyticsAgents(
         const writerPlacements = inspection.placements.filter(
           (placement) => placement.agentId === ANALYTICS_WRITER,
         )
-        const active = nodes.flatMap((node) =>
-          activeClusterAgents(stand.nodeLogs[node], ANALYTICS_AGENTS).map(
-            (agentId) => ({ node, agentId }),
-          ),
-        )
+        const active = clusterAgentCopies(stand, nodes, ANALYTICS_AGENTS)
+        if (!Array.isArray(active)) return active
         const hosts = (agentId: string) =>
           active
             .filter((entry) => entry.agentId === agentId)

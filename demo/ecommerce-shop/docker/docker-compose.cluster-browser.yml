@@ -1,0 +1,16 @@
+# The browser suite uses the shop cluster's resources in its own run.
+name: hilos-ecommerce-shop-cluster${HILOS_STAND_SUFFIX:-}
+
+x-hilos-cluster:
+  cli: ecommerce-shop-cluster-cli
+  entry: ecommerce-shop-cluster-entry
+  scenarios: [3, 4]
+  e2e:
+    runner: ecommerce-shop-cluster-e2e-runner
+    required-loss-agent: stock_library
+
+include:
+  - path:
+      - ./cluster/local.yml
+      - ./cluster/tooling.yml
+      - ./cluster/browser.yml

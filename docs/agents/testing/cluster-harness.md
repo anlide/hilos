@@ -35,8 +35,9 @@ for it). Concert-tickets shares the same two, `data-export` and
 `files-published`, among its five nodes and entry, in the same way; its entry
 serves Angular's `frontend/dist` at `/usr/share/nginx/html`. Its first data node
 alone mounts the change-log initialization and provisioning scripts; the other
-two receive the databases and grant with their full copy. Ecommerce-shop has
-no entry, cluster browser suite or additional export volume.
+two receive the databases and grant with their full copy. Ecommerce-shop's
+browser configuration adds an nginx entry serving React's `frontend/dist`
+and routing WebSockets to either master. Its scenario configuration has only m1 as master.
 File-gallery-manager shares its named `data-export` volume among all five nodes
 and its entry; the entry serves React's `frontend/dist` at
 `/usr/share/nginx/html`. Its primary alone mounts the change-log initialization
@@ -238,6 +239,26 @@ has a step of its own in the full run, `<demo>-cluster`, which runs the demo's
 `composer run test:cluster:scenarios` — binance-btc-tracker's,
 ecommerce-shop's, online-testing's, roblox-game-server's,
 file-gallery-manager's and concert-tickets'.
+
+From `demo/ecommerce-shop`, run `composer run test:cluster:e2e` for the shop's
+cross-master inventory checks. It selects `docker/docker-compose.cluster-browser.yml`
+with `e2e --require-after-loss`. A one-shot seed prepares the database before
+the four nodes start. Live records the stock change and requests the loss of
+the owning slave. The stand declares `x-hilos-cluster.e2e.required-loss-agent: stock_library`.
+With `--require-after-loss` the host checks the requested agent against this
+declaration and the leader's placement before stopping the container. It then
+requires a worker start logged strictly after Docker's finish time on the
+slave that now hosts the agent. After-loss checks the surviving placement and another stock
+change against the other master's warehouse view. Acceptance requires both
+main phases and a proof from the current run.
+
+In the full graph, `ecommerce-shop-cluster-e2e` depends on `ecommerce-shop-e2e`
+for the finished frontend build, shared dependencies and reports. Both cluster
+configurations use the same Compose project and network, so the
+`ecommerce-shop-cluster` group runs one at a time. Each step's stand ID selects
+its own Compose file for the snapshot and teardown. After a direct browser run,
+use `../../framework/docker/cluster/run docker/docker-compose.cluster-browser.yml down --volumes`
+to remove the stand and clear its test database.
 
 A new scenario is written on the stand whose shape it needs. When two shapes
 would do, the reasons in [cluster-stands.md](cluster-stands.md) decide. A scenario that needs a shape none of the

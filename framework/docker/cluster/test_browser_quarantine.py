@@ -58,7 +58,8 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.stand = SimpleNamespace(
             demo_dir=self.root / "demo" / "carrier", project="stand",
             compose=self.root / "docker-compose.cluster.yml",
-            e2e=SimpleNamespace(capabilities=frozenset(("daemon", "delivery", "env-mismatch"))),
+            e2e=SimpleNamespace(capabilities=frozenset(("daemon", "delivery", "env-mismatch")),
+                                required_loss_agent="stock_library"),
             masters=["m1", "m2", "m3"], slaves=["s1", "s2"],
             entry=SimpleNamespace(container="entry"), database_sql_backends=())
         self.stand.members = {node: SimpleNamespace(container=node, ip="127.0.0.1", name=f"Node {node}")
@@ -73,6 +74,7 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.codes = {}
         self.statuses = {}
         self.write_fault = True
+        self.fault = {"stop": "s1", "reason": "the captured archive"}
         self.write_results = True
         self.leader, self.term = "m1", 4
         self.daemon_error = None
@@ -193,6 +195,11 @@ class BrowserQuarantineTest(unittest.TestCase):
             return self.codes.get("install", 0)
         self.assertEqual(("node", browser.PLAYWRIGHT_ENTRY), args[:2])
         phase = next((arg.split("=", 1)[1] for arg in args if arg.startswith("--hilos-phase=")), "diagnostic")
+        self.assertNotIn("--require-after-loss", args)
+        if "CLUSTER_AFTER_LOSS_PROOF_FILE" in env:
+            self.assertEqual(("main", "--project=after-loss"), (phase, args[-1]))
+            proof = self.host_path(env["CLUSTER_AFTER_LOSS_PROOF_FILE"])
+            self.assertEqual(self.host_path(env["HILOS_E2E_PLAN_FILE"]).parent, proof.parent)
         if phase == "plan":
             self.events.append(("plan",))
             self.assertFalse(any(arg.startswith("--repeat-each") for arg in args))
@@ -214,7 +221,7 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.assertEqual([], self.lines())
         if phase == "main" and project == "live" and self.write_fault:
             self.host_path(env["CLUSTER_FAULT_FILE"]).write_text(
-                json.dumps({"stop": "s1", "reason": "the captured archive"}), encoding="utf-8")
+                json.dumps(self.fault), encoding="utf-8")
         if phase == "quarantine":
             self.assertEqual("1", env["HILOS_E2E_DEFER_REPORT"])
             if self.write_results:
@@ -230,6 +237,7 @@ class BrowserQuarantineTest(unittest.TestCase):
                 for line in self.output.getvalue().splitlines() if line.startswith("hilos-quarantine: ")]
 
     def test_all_main_before_tail_restores_slave_refreshes_roles_and_daemon_is_last(self):
+        self.stand.e2e.required_loss_agent = None
         self.assertEqual(0, browser.run(self.stand, []))
         self.assertEqual([("main", "live"), ("main", "after-loss"),
                           ("quarantine", "live"), ("quarantine", "daemon")],
@@ -279,6 +287,270 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.assertEqual(7, browser.run(self.stand, []))
         self.assertEqual([("main", "live"), ("quarantine", "live"), ("quarantine", "daemon")],
                          [(phase, project) for phase, project, _, _ in self.calls])
+
+    def test_required_loss_refuses_either_missing_main_phase(self):
+        for missing in ("live", "after-loss"):
+            with self.subTest(missing=missing):
+                self.output.seek(0)
+                self.output.truncate()
+                self.plan = [planned("after-loss" if missing == "live" else "live"),
+                             planned(missing, "F-101")]
+                self.assertEqual(1, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertIn("both live and after-loss in the main plan", self.output.getvalue())
+                self.assertFalse(any(phase == "main" for phase, _, _, _ in self.calls))
+                self.kill.assert_not_called()
+
+    def test_required_loss_refuses_absent_or_invalid_fault(self):
+        self.plan = [planned("live"), planned("after-loss")]
+        self.write_fault = False
+        for fault in (None, {"stop": "m1", "reason": "a master"}, {"stop": "s1"}):
+            with self.subTest(fault=fault):
+                def publish(phase, project, env):
+                    if fault is not None:
+                        self.host_path(env["CLUSTER_FAULT_FILE"]).write_text(json.dumps(fault))
+                self.gateway_hook = publish
+                self.calls.clear()
+                self.assertEqual(1, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertEqual([("main", "live")], [call[:2] for call in self.calls])
+                self.kill.assert_not_called()
+
+    def placement_views(self, nodes, host):
+        views = self.views(nodes)
+        views[self.leader]["placements"] = [{"agentId": "stock_library", "nodeId": host, "state": "started"}]
+        return views
+
+    def test_required_agent_cannot_be_changed_or_omitted_in_main_or_quarantine(self):
+        self.plan = [planned("live"), planned("after-loss"), planned("after-loss", "F-101")]
+        for agent in (None, "other_library"):
+            with self.subTest(agent=agent):
+                self.output.seek(0)
+                self.output.truncate()
+                if agent:
+                    self.fault["agentId"] = agent
+                self.calls.clear()
+                self.assertEqual(1, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertIn("expected agentId 'stock_library'", self.output.getvalue())
+                self.assertIn("main did not stop", self.lines()[-1]["reason"])
+                self.assertEqual("notRun", self.lines()[-1]["status"])
+                self.assertEqual([("main", "live")], [call[:2] for call in self.calls])
+                self.kill.assert_not_called()
+
+    def arrange_agent_loss(self, owner="s1"):
+        self.plan = [planned("live"), planned("after-loss")]
+        self.fault["agentId"] = "stock_library"
+        self.boot = "2026-05-01T10:00:00Z"
+        self.stopped_state = f"container-id false {self.boot} 2026-05-01T10:01:00.123999999Z"
+        self.start_stamp = "2026-05-01T10:01:00.124Z"
+        survivor = self.stand.members["s2"]
+        journal = browser.control.node_log_path(survivor)
+        journal.parent.mkdir(parents=True)
+        self.journal = journal
+        self.after_start = lambda: None
+        self.before_kill = ("[2026-05-01T10:00:00.000Z] Daemon started with epoll\n"
+                            "[2026-05-01T10:02:00.000Z] Agent 'stock_library' started on worker #1\n"
+                            "[2026-05-01T10:02:00.001Z] Agent 'stock_library' stopped on worker #1\n")
+        journal.write_text(self.before_kill)
+        snapshot = browser.control.node_log_segments
+
+        def mark(node):
+            parts = snapshot(node)
+            self.events.append(("mark", node.container))
+            return parts
+
+        def inspect_owner(nodes):
+            views = self.placement_views(nodes, owner)
+            self.events.append(("owner", owner))
+            return views
+
+        def kill(stand, node, *, container_id):
+            self.assertEqual("container-id", container_id)
+            self.assertEqual(("owner", "s1"), self.events[-1])
+            self.assertIn(("mark", "s2"), self.events)
+            # The host is still in Docker kill when this line becomes readable.
+            with journal.open("a") as log:
+                log.write(f"[{self.start_stamp}] Agent 'stock_library' started on worker #2\n")
+            self.after_start()
+            return self.switch("kill")(stand, node)
+
+        def inspect_container(stand, node, *, include_finished=False):
+            state = self.stopped_state if include_finished else f"container-id true {self.boot}"
+            return SimpleNamespace(code=0, out=state)
+
+        def after_kill(predicate, timeout, desc, nodes):
+            views = self.placement_views(nodes, "s2")
+            if not predicate(views):
+                raise browser.scenarios.ScenarioTimeout(desc)
+            return views
+
+        self.kill.side_effect = kill
+        self.enterContext(patch.object(browser.control, "container_state", side_effect=inspect_container))
+        self.enterContext(patch.object(browser.scenarios, "inspect_all", side_effect=inspect_owner))
+        self.enterContext(patch.object(browser.control, "node_log_segments", side_effect=mark))
+        self.enterContext(patch.object(browser.scenarios, "wait_until", side_effect=after_kill))
+
+    def test_required_loss_refuses_a_changed_owner_before_kill(self):
+        self.arrange_agent_loss(owner="s2")
+        self.assertEqual(1, browser.run(self.stand, ["--require-after-loss"]))
+        self.assertIn("requested s1, started on ['s2']", self.output.getvalue())
+        self.kill.assert_not_called()
+        self.assertEqual([("main", "live")], [call[:2] for call in self.calls])
+
+    def test_required_loss_orders_the_worker_start_against_the_actual_stop(self):
+        self.arrange_agent_loss()
+
+        def proof(phase, project, env):
+            if project == "after-loss":
+                self.host_path(env["CLUSTER_AFTER_LOSS_PROOF_FILE"]).write_text('{"verified":true}')
+
+        self.gateway_hook = proof
+        for finish, start, expected in (("123999999", "122", 1), ("123999999", "123", 1),
+                                        ("123", "123", 1), ("123999999", "124", 0)):
+            with self.subTest(finish=finish, start=start):
+                self.stopped_state = f"container-id false {self.boot} 2026-05-01T10:01:00.{finish}Z"
+                self.start_stamp = f"2026-05-01T10:01:00.{start}Z"
+                self.journal.write_text(self.before_kill)
+                self.calls.clear()
+                self.assertEqual(expected, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertEqual(expected == 0, any(project == "after-loss" for _, project, _, _ in self.calls))
+
+    def test_docker_time_preserves_all_nine_fraction_digits(self):
+        whole = "2026-11-23T07:58:03"
+        base = browser._docker_time(whole + "Z")
+        for length in range(1, 10):
+            digits = "986883271"[:length]
+            self.assertEqual(base + int(digits.ljust(9, "0")), browser._docker_time(f"{whole}.{digits}Z"))
+        self.assertLess(browser._docker_time(whole + ".123000001Z"), browser._docker_time(whole + ".123000002Z"))
+        for invalid in ("2026-02-30T00:00:00Z", whole + ".Z", whole + "+00:00", whole + ".1234567890Z"):
+            with self.assertRaises(ValueError):
+                browser._docker_time(invalid)
+
+    def test_only_current_post_cut_copy_admits_after_loss_through_rotation(self):
+        self.arrange_agent_loss()
+        self.gateway_hook = lambda phase, project, env: (
+            self.host_path(env["CLUSTER_AFTER_LOSS_PROOF_FILE"]).write_text('{"verified":true}')
+            if project == "after-loss" else None)
+        start = "Agent 'stock_library' started on worker #2"
+        for location, events, success in (
+                ("staging", [], True), ("archive", [], True),
+                ("archive", ["Worker #2 died hosting 1 agent(s): stock_library"], False),
+                ("archive", ["Worker #2 started [type=agent]"], False),
+                ("archive", ["Agent 'stock_library' stopped on worker #2"], False),
+                ("staging", [start], False), ("archive", ["Agent 'stock_library' started on worker #3"], False),
+                ("archive", ["Daemon stopped"], False), ("archive", ["Daemon started with epoll"], False),
+                ("archive", ["Daemon started with epoll", start], True)):
+            with self.subTest(location=location, events=events):
+                self.journal.write_text(self.before_kill)
+                batch = self.journal.parent / location / "2026-05-01-10-01-01Z" / self.journal.name
+                batch.parent.mkdir(parents=True, exist_ok=True)
+
+                def rotate():
+                    self.journal.rename(batch)
+                    self.journal.write_text("".join(f"[{self.start_stamp}] {event}\n" for event in events))
+
+                self.after_start = rotate
+                self.calls.clear()
+                self.assertEqual(0 if success else 1, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertEqual(success, any(project == "after-loss" for _, project, _, _ in self.calls))
+                batch.unlink()
+
+    def test_interrupted_batch_before_a_new_daemon_keeps_the_post_cut_proof(self):
+        self.arrange_agent_loss()
+        self.gateway_hook = lambda phase, project, env: (
+            self.host_path(env["CLUSTER_AFTER_LOSS_PROOF_FILE"]).write_text('{"verified":true}')
+            if project == "after-loss" else None)
+        batch = self.journal.parent / "staging" / "2026-05-01-10-01-01Z" / self.journal.name
+        batch.parent.mkdir(parents=True)
+        boot = "[2026-05-01T10:01:00.125Z] Daemon started with epoll\n"
+        start = "[2026-05-01T10:01:00.126Z] Agent 'stock_library' started on worker #7\n"
+        for current, success in ((boot + start, True), (boot + start.rstrip(), False),
+                                 (start, False), (boot.rstrip(), False),
+                                 ("interrupted " + boot + start, False)):
+            with self.subTest(current=current):
+                self.journal.write_text(self.before_kill)
+
+                def rotate():
+                    with self.journal.open("a") as stream:
+                        stream.write(f"[{self.start_stamp}] interrupted record")
+                    self.journal.rename(batch)
+                    self.journal.write_text(current)
+
+                self.after_start = rotate
+                self.calls.clear()
+                self.assertEqual(0 if success else 1, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertEqual(success, any(project == "after-loss" for _, project, _, _ in self.calls))
+                batch.unlink()
+
+    def test_quarantine_waits_for_same_cut_after_the_main_worker_dies(self):
+        self.arrange_agent_loss()
+        self.plan.append(planned("after-loss", "F-101"))
+        def dead():
+            with self.journal.open("a") as stream:
+                stream.write(f"[{self.start_stamp}] Worker #2 died hosting 1 agent(s): stock_library\n")
+        self.after_start = dead
+        observations = []
+        def converge(predicate, timeout, desc, nodes):
+            views = self.placement_views(nodes, "s2")
+            if observations:
+                with self.journal.open("a") as stream:
+                    stream.write(f"[{self.start_stamp}] Agent 'stock_library' started on worker #7\n")
+            observations.append(predicate(views))
+            if not observations[-1]:
+                raise browser.scenarios.ScenarioTimeout(desc)
+            return views
+        self.enterContext(patch.object(browser.scenarios, "wait_until", side_effect=converge))
+        self.assertEqual(1, browser.run(self.stand, ["--require-after-loss"]))
+        self.assertEqual([False, True], observations)
+        self.assertEqual([("main", "live"), ("quarantine", "after-loss")], [call[:2] for call in self.calls])
+        self.kill.assert_called_once()
+
+    def test_required_loss_refuses_unconfirmed_docker_finish_including_in_quarantine(self):
+        self.arrange_agent_loss()
+        self.plan.append(planned("after-loss", "F-101"))
+        for stopped in (f"replacement false {self.boot} 2026-05-01T10:01:00Z",
+                        "container-id false 2026-05-01T09:59:00Z 2026-05-01T10:01:00Z",
+                        f"container-id true {self.boot} 2026-05-01T10:01:00Z",
+                        f"container-id false {self.boot}", f"container-id false {self.boot} unknown",
+                        f"container-id false {self.boot} 2026-05-01T10:01:00",
+                        f"container-id false {self.boot} 0001-01-01T00:00:00Z",
+                        f"container-id false {self.boot} 2026-05-01T09:59:00Z"):
+            with self.subTest(state=stopped):
+                self.stopped_state = stopped
+                self.output.seek(0)
+                self.output.truncate()
+                self.calls.clear()
+                self.kill.reset_mock()
+                self.assertEqual(1, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertEqual([("main", "live")], [call[:2] for call in self.calls])
+                self.assertEqual("notRun", self.lines()[-1]["status"])
+                self.kill.assert_called_once()
+
+    def test_required_loss_reads_only_this_runs_proof_after_native_success(self):
+        self.arrange_agent_loss()
+        self.plan.append(planned("live", "F-101"))
+        stale = browser._run_path(self.stand, "quarantine", "earlier", "after-loss-proof.json")
+        stale.parent.mkdir(parents=True)
+        stale.write_text('{"verified":true}')
+        for proof, native, expected in (
+            (None, 0, 1), ("{", 0, 1), ("true", 0, 1), ("{}", 0, 1),
+            ('{"verified":false}', 0, 1), ('{"verified":1}', 0, 1),
+            ('{"verified":"true"}', 0, 1), ('{"verified":true}', 17, 17),
+            ('{"verified":true}', 0, 0),
+        ):
+            with self.subTest(proof=proof, native=native):
+                def publish(phase, project, env):
+                    if (phase, project) == ("main", "after-loss") and proof is not None:
+                        self.host_path(env["CLUSTER_AFTER_LOSS_PROOF_FILE"]).write_text(proof)
+                self.gateway_hook = publish
+                self.calls.clear()
+                self.journal.write_text(self.before_kill)
+                self.codes[("main", "after-loss")] = native
+                self.output.seek(0)
+                self.output.truncate()
+                self.assertEqual(expected, browser.run(self.stand, ["--require-after-loss"]))
+                self.assertEqual([("main", "live"), ("main", "after-loss"), ("quarantine", "live")],
+                                 [call[:2] for call in self.calls])
+                self.assertEqual("passed", self.lines()[-1]["status"])
+                self.assertEqual([stale.parent], list(stale.parent.parent.iterdir()))
 
     def test_browser_environment_carries_the_composed_node_name_as_json(self):
         name = "Главный, узел=🌍"

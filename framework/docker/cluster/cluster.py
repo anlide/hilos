@@ -64,8 +64,9 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
   db-proxy             print the state of every server behind the stand's database proxy
   scenarios [n ...]    run the scenario matrix on a fresh stand: the stand's scenarios, or
                        the ones named, which must be the stand's; open saved freezes via CLI
-  e2e [--daemon] [Playwright args]  run the cluster browser suite on a fresh stand:
+  e2e [--daemon | --require-after-loss] [Playwright args]  run the browser suite on a fresh stand:
                        selected main phases, then quarantine after-loss/live, daemon last;
+                       --require-after-loss requires live, a slave stop and verified after-loss;
                        --daemon selects daemon only; pointed live does not add daemon;
                        clear old logs, preserve freeze stores and open through their owners
   unit                 run harness unit tests without loading or starting a stand

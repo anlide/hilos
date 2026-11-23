@@ -619,6 +619,15 @@ clears the lock through the new owner, preserving the reset-wait sentinel and
 advancing `updated_at` within the command's observed interval. Cleanup removes
 the owned fixture and restarts the original stand without deleting volumes.
 
+The browser acceptance run uses `docker/docker-compose.cluster-browser.yml`.
+It adds a second master so the author and observer can enter through different
+masters. Live checks the placements of the warehouse, category, product and
+stock libraries and observes changes to a warehouse address, a category name
+and stock across the two connections. The harness stops the slave holding
+`stock_library`. On the same seeded database, after-loss checks that both
+masters retain quorum, finds the library on the surviving slave, and verifies a
+second stock edit against the totals in the observer's open window.
+
 | Command | What it does |
 |---|---|
 | `composer run test:cluster:up` | build/recreate the default database, three nodes and CLI, retaining data and protected mode |
@@ -628,8 +637,26 @@ the owned fixture and restarts the original stand without deleting volumes.
 | `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 14 18` runs only the ones named |
+| `composer run test:cluster:e2e` | run live and after-loss together on a fresh browser stand and require the current run's after-loss confirmation |
 | `composer run test:cluster:down-volumes` | take the stand down and wipe its primary and journal databases |
 | `composer run test:cluster:down` | stop the stand, retaining database data and protected-mode stores |
+
+For a direct browser run, build the shop's `frontend/dist` with
+`composer run test:e2e-build` if needed, then run `composer run test:cluster:e2e`
+from this demo. Save the reports under `tests/e2e/playwright-report/cluster-*`
+and the node journals under `data/logs-cluster/` before the next run. After
+either outcome, remove the browser stand and its test data from this directory:
+
+```bash
+../../framework/docker/cluster/run docker/docker-compose.cluster-browser.yml down --volumes
+```
+
+The two configurations share an instance suffix, Compose project and network.
+Finish and tear down one before starting the other. In the full suite,
+`ecommerce-shop-cluster-e2e` waits for `ecommerce-shop-e2e` to finish writing
+the frontend build, dependencies and reports. Both cluster steps share the
+`ecommerce-shop-cluster` group and each collects evidence and tears down its
+own stand on success or failure.
 
 Scenario 43 stops both slaves after the ordinary fleet starts. The lone master
 declares no capacity, so one uniquely indexed ballast stays `unplaced` with
@@ -716,8 +743,18 @@ pinned by the harness, resolves `ports: !reset []` and per-node
 The CLI mounts tracked `tests/.env` read-only at `/app/tests/.env`,
 inside `/app/tests` tmpfs so Docker cannot create a missing mount target on the
 host bind. Test suites keep their own services; no host env file is copied or
-overwritten. This cluster stand has no entry, browser profile or extra export
-volume.
+overwritten. The scenario configuration runs the CLI and three nodes without a browser entry.
+
+The browser root also includes `docker/cluster/browser.yml`. On a fresh browser database, MariaDB marks
+fixture preparation pending in its data directory. The seed service runs
+`test:db:reset` and renames that marker to `ready` on success. All four nodes
+wait for the seed service. A restart retries an interrupted seed or keeps a
+completed fixture and its journal. An existing database without either marker
+is preserved and startup stops. The harness's `down --volumes` clears the
+database and its marker for a fresh run.
+The nginx entry serves the React build and routes each browser's WebSocket to
+the master selected by its `hilos_stand_master` cookie. The `e2e` profile
+provides Mailpit and the Playwright runner on the cluster network.
 
 From this demo directory, ordinary startup is one direct Compose command:
 
@@ -829,8 +866,11 @@ machine. Nothing here is a template for a real cluster — issue your own.
 
 | File | What it is | Used by |
 |---|---|---|
-| `ca.pem` | the stand authority's certificate, no key | `CLUSTER_TLS_CA_FILE` of the three nodes |
-| `m1.pem`, `s1.pem`, `s2.pem` | a node certificate (CN = node id) followed by its key | `CLUSTER_TLS_CERT_FILE` of that node |
+| `ca.pem` | the stand authority's certificate, no key | `CLUSTER_TLS_CA_FILE` of every cluster node |
+| `m1.pem`, `m2.pem`, `s1.pem`, `s2.pem` | a node certificate (CN = node id) followed by its key | `CLUSTER_TLS_CERT_FILE` of that node |
+
+Both configurations use the same authority. Only the browser configuration
+starts m2, so include its certificate when reissuing the fixtures.
 
 Reissuing means a new set in full: the old authority's key is gone, so no
 single file can be replaced alone. The commands run in the image of the
@@ -853,7 +893,7 @@ cli() {  # one framework CLI command in a throwaway container, no network needed
 mkdir -p /tmp/cluster-ca && t=demo/ecommerce-shop/docker/tls
 cli cluster:tls:ca > /tmp/cluster-ca/cluster-ca.pem
 cli cluster:tls:trust /ca/cluster-ca.pem > $t/ca.pem
-for n in m1 s1 s2; do cli cluster:tls:issue $n /ca/cluster-ca.pem > $t/$n.pem; done
+for n in m1 m2 s1 s2; do cli cluster:tls:issue $n /ca/cluster-ca.pem > $t/$n.pem; done
 rm -r /tmp/cluster-ca
 ```
 

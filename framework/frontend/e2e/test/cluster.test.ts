@@ -1,4 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,7 +15,13 @@ import {
   activeClusterAgents,
   readClusterBrowserStand,
   readClusterNodeNames,
+  readClusterNodeJournal,
 } from '../cluster.js'
+
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return { ...fs, openSync: vi.fn(fs.openSync) }
+})
 
 const nodeNames = {
   m1: 'Главный, узел=🌍',
@@ -189,6 +202,79 @@ describe('current cluster agent journal', () => {
     writeFileSync(path, lines.map((line) => `[test] ${line}\n`).join(''))
     return path
   }
+
+  it('follows starts across staging and archive and retains the bytes for attachment', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'stock' started on worker #1",
+    )
+    const batch = '2026-11-07-03-00-04Z'
+    const staged = join(directory, 'staging', batch)
+    mkdirSync(staged, { recursive: true })
+    renameSync(path, join(staged, 'daemon.log'))
+    expect(activeClusterAgents(path, ['stock'])).toEqual(['stock'])
+    journal("Agent 'stock' started on worker #2")
+    const snapshot = readClusterNodeJournal(path)
+    const archived = join(directory, 'archive', batch)
+    mkdirSync(join(directory, 'archive'))
+    renameSync(staged, archived)
+    expect(readClusterNodeJournal(path)).toEqual(snapshot)
+    expect(activeClusterAgents(path, ['stock'])).toEqual(['stock', 'stock'])
+    journal(
+      'Daemon stopped',
+      'Daemon started with epoll',
+      "Agent 'new' started on worker #3",
+    )
+    expect(activeClusterAgents(path, ['stock', 'new'])).toEqual(['new'])
+    rmSync(archived, { recursive: true })
+    expect(snapshot.toString()).toContain("Agent 'stock' started on worker #1")
+  })
+
+  it('confirms the same segment when the carrier moves it during the read', async () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'stock' started on worker #1",
+    )
+    const batch = '2026-11-07-03-00-04Z'
+    const staged = join(directory, 'staging', batch)
+    mkdirSync(staged, { recursive: true })
+    mkdirSync(join(directory, 'archive'))
+    renameSync(path, join(staged, 'daemon.log'))
+    const fs = await vi.importActual<typeof import('node:fs')>('node:fs')
+    vi.mocked(openSync).mockImplementationOnce((...args) => {
+      const descriptor = fs.openSync(...args)
+      renameSync(staged, join(directory, 'archive', batch))
+      return descriptor
+    })
+    expect(activeClusterAgents(path, ['stock'])).toEqual(['stock'])
+  })
+
+  it('replays a complete new boot after an interrupted batch and attaches both verbatim', () => {
+    const path = journal(
+      'Daemon started with epoll',
+      "Agent 'stock' started on worker #7",
+    )
+    const staged = join(directory, 'staging', '2026-11-07-03-00-04Z')
+    mkdirSync(staged, { recursive: true })
+    const interrupted = Buffer.from("[test] Agent 'old' started on worker #2")
+    writeFileSync(join(staged, 'daemon.log'), interrupted)
+    expect(readClusterNodeJournal(path)).toEqual(
+      Buffer.concat([
+        interrupted,
+        Buffer.from(
+          "[test] Daemon started with epoll\n[test] Agent 'stock' started on worker #7\n",
+        ),
+      ]),
+    )
+    expect(activeClusterAgents(path, ['old', 'stock'])).toEqual(['stock'])
+    journal(
+      'previous message [test] Daemon started with epoll',
+      "Agent 'stock' started on worker #7",
+    )
+    expect(() => activeClusterAgents(path, ['stock'])).toThrow(
+      'Incomplete daemon journal',
+    )
+  })
 
   it('starts a new daemon life without agents from the previous life', () => {
     const path = journal(

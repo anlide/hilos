@@ -785,9 +785,9 @@ def status(stand):
 
 # ------------------------------------------------------------------ fault switches
 
-def kill(stand, node_id):
+def kill(stand, node_id, *, container_id=None):
     node = stand.member(node_id)
-    return _said(_run(["docker", "kill", node.container]), f"cluster: killed {node.container}")
+    return _said(_run(["docker", "kill", container_id or node.container]), f"cluster: killed {node.container}")
 
 
 def start(stand, node_id):
@@ -814,9 +814,11 @@ def container_id(stand, node_id):
     return _run(["docker", "inspect", "-f", "{{.Id}}", node.container])
 
 
-def container_state(stand, node_id):
-    return _run(["docker", "inspect", "-f", "{{.Id}} {{.State.Running}} {{.State.StartedAt}}",
-                 stand.member(node_id).container])
+def container_state(stand, node_id, *, include_finished=False):
+    fields = "{{.Id}} {{.State.Running}} {{.State.StartedAt}}"
+    if include_finished:
+        fields += " {{.State.FinishedAt}}"
+    return _run(["docker", "inspect", "-f", fields, stand.member(node_id).container])
 
 
 def container_log(stand, node_id):
@@ -1517,7 +1519,7 @@ def node_log(node, offset=0, *, incarnation=False):
     if incarnation:
         if offset != 0:
             raise ValueError("an incarnation replay cannot use a single-file offset")
-        return _node_log_incarnation(node)
+        return node_log_segments(node).life.decode("utf-8", errors="replace")
     try:
         with open(node_log_path(node), "rb") as f:
             f.seek(offset)
@@ -1526,55 +1528,99 @@ def node_log(node, offset=0, *, incarnation=False):
         return ""
 
 
-def _node_log_incarnation(node):
-    """Read append order within UTC-named rotation batches, never sort individual log lines.
+class JournalChanging(ValueError):
+    """The node's daemon journal could not be confirmed at one rotation boundary."""
 
-    Open current first: if rotation moves that inode during the walk, do not replay it twice.
-    A complete archive batch wins over its staging copy; incoming copies are never visible.
-    Both directories belong to this node's mounted log root. Missing files may have moved
-    from staging to archive between enumeration and open, so try both locations.
+
+JournalSegment = namedtuple("JournalSegment", "batch identity content")
+JournalSnapshot = namedtuple("JournalSnapshot", "parts life_start life")
+DAEMON_BOOT = re.compile(rb"^\[[^\]\r\n]+\] (?:\[INFO\] )?Daemon started with epoll\n", re.MULTILINE)
+
+
+def _journal_snapshot(parts):
+    """Keep the raw cursor evidence and replay only complete segments back to the last boot."""
+    position = sum(len(part.content) for part in parts)
+    for index in range(len(parts) - 1, -1, -1):
+        content = parts[index].content
+        position -= len(content)
+        if content and not content.endswith(b"\n"):
+            raise JournalChanging("incomplete current daemon journal")
+        starts = list(DAEMON_BOOT.finditer(content))
+        if starts:
+            start = starts[-1].start()
+            life = content[start:] + b"".join(part.content for part in parts[index + 1:])
+            return JournalSnapshot(parts, position + start, life)
+    raise JournalChanging("no complete daemon start in journal")
+
+
+def _journal_paths(path):
+    """Follow the carrier in its publication order. A batch has one logical name."""
+    paths = {}
+    for root in (path.parent / "staging", path.parent / "archive"):
+        for batch in root.glob("*"):
+            if (batch.name.startswith(".incoming-") and
+                    (path.parent / "staging" / batch.name.removeprefix(".incoming-")).is_dir()):
+                raise JournalChanging(f"log batch in transit: {batch}")
+            if re.fullmatch(r"\d{4}(?:-\d{2}){5}Z", batch.name):
+                candidate = batch / path.name
+                if candidate.is_file():
+                    paths[batch.name] = candidate
+    ordered = sorted(paths.items())
+    if path.is_file():
+        ordered.append((None, path))
+    return ordered
+
+
+def node_log_segments(node):
+    """Snapshot segments in append order; confirm names, open-file identities and the current life.
+
+    The active file may grow during a read. A rename, copy or short current line
+    needs another observation. Re-list staging before archive on each attempt.
     """
     path = node_log_path(node)
-    seen = set()
-    parts = []
-
-    def read(candidate):
+    for _ in range(3):
         try:
-            with candidate.open("rb") as stream:
-                identity = (os.fstat(stream.fileno()).st_dev, os.fstat(stream.fileno()).st_ino)
-                if identity in seen:
-                    return None
-                seen.add(identity)
-                return stream.read().decode("utf-8", errors="replace")
-        except FileNotFoundError:
-            return None
+            parts = []
+            for batch, candidate in _journal_paths(path):
+                with candidate.open("rb") as stream:
+                    stat = os.fstat(stream.fileno())
+                    content = stream.read(stat.st_size)
+                if len(content) != stat.st_size:
+                    raise JournalChanging(f"incomplete daemon journal: {candidate}")
+                parts.append(JournalSegment(batch, (stat.st_dev, stat.st_ino), content))
+            latest = _journal_paths(path)
+            if [name for name, _ in latest] != [part.batch for part in parts]:
+                continue
+            for part, (_, candidate) in zip(parts, latest):
+                stat = candidate.stat()
+                if ((stat.st_dev, stat.st_ino) != part.identity or stat.st_size < len(part.content)
+                        or part.batch is not None and stat.st_size != len(part.content)):
+                    break
+            else:
+                return _journal_snapshot(parts)
+        except (FileNotFoundError, JournalChanging):
+            continue
+    raise JournalChanging(f"cannot confirm daemon journal segments: {path}")
 
-    def append(text):
-        if text is None:
-            return None
-        parts.insert(0, text)
-        starts = list(re.finditer(r"^.*\] Daemon started with epoll$", text, re.MULTILINE))
-        if starts:
-            parts[0] = text[starts[-1].start():]
-            return "\n".join(parts)
-        return None
 
-    current = append(read(path))
-    if current is not None:
-        return current
-    roots = [path.parent / "archive", path.parent / "staging"]
-    # LogRotationConstants uses fixed-width, descending-significance UTC components.
-    names = {batch.name for root in roots for batch in root.glob("*")
-             if re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}Z", batch.name)}
-    for name in sorted(names, reverse=True):
-        for root in roots:
-            text = read(root / name / path.name)
-            if text is not None:
-                result = append(text)
-                if result is not None:
-                    return result
-                break
-    return "\n".join(parts)
+def node_log_boundary(parts, mark):
+    """Locate the marked byte prefix even when the active file has become a batch."""
+    if len(parts) < len(mark):
+        raise JournalChanging("lost pre-fault daemon journal segment")
+    size = 0
+    for old, current in zip(mark, parts):
+        if old.batch is not None:
+            matches = old.batch == current.batch and old.content == current.content
+        else:
+            # Rotation renames this inode into staging; a cross-device carry
+            # publishes a copy of that same prefix in the next named batch.
+            matches = (current.identity == old.identity or
+                       current.batch is not None and current.identity[0] != old.identity[0])
+            matches = matches and current.content.startswith(old.content)
+        if not matches:
+            raise JournalChanging("cannot locate pre-fault daemon journal boundary")
+        size += len(old.content)
+    return size
 
 
 def node_log_size(node):

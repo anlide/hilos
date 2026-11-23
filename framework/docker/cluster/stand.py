@@ -158,6 +158,7 @@ class E2e:
     # Profile services to raise before Playwright; the runner is a one-shot container.
     services: tuple
     capabilities: frozenset = frozenset()
+    required_loss_agent: str | None = None
 
 
 @dataclass(frozen=True)
@@ -335,10 +336,13 @@ def _e2e(shown, project, block, services, entry):
         raise StandRefused(f"{shown}: e2e runner {runner} is not under profile e2e")
     if entry is None:
         raise StandRefused(f"{shown}: {BLOCK}.e2e needs {BLOCK}.entry - the browser's way onto the stand")
+    required_agent = block.get("required-loss-agent")
+    if "required-loss-agent" in block and (not isinstance(required_agent, str) or not required_agent.strip()):
+        raise StandRefused(f"{shown}: {BLOCK}.e2e.required-loss-agent must name an agent")
     profile_services = tuple(service for service, spec in services.items()
                              if service != runner and "e2e" in (spec.get("profiles") or []))
     return E2e(runner, services[runner].get("container_name") or f"{project}-{runner}-1",
-               profile_services, frozenset(capabilities))
+               profile_services, frozenset(capabilities), required_agent)
 
 
 def _entry(shown, block, services, network_keys):

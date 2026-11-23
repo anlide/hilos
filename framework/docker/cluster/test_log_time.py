@@ -9,6 +9,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+import browser
 import control
 import delivery
 import scenarios
@@ -132,6 +133,57 @@ class RotationLifeTest(unittest.TestCase):
             self.assertIs(captured, controller.locate("hilos_logs"))
         worker.assert_called_once_with(stand, "m2", 8)
 
+    def test_recover_polls_again_after_three_opens_lose_the_journal(self):
+        previous = control.WorkerProcess("m2", "container", 2, 20, 100)
+        replacement = control.WorkerProcess("m2", "container", 7, 70, 200)
+        other = self.write("m1/daemon.log", self.lines("Daemon started with epoll"))
+        members = {"m1": SimpleNamespace(log_file=other), "m2": self.node}
+        stand = SimpleNamespace(members=members, masters=list(members), node=members.__getitem__)
+        views = {node: {"leaderId": "m1", "term": 1} for node in members}
+        controller = delivery.DeliveryController(stand, self.root, "rotation", "m1", 1)
+        controller.killed = True
+        controller.process = previous
+        path = self.write("daemon.log", self.lines(
+            "Daemon started with epoll", "Agent 'hilos_logs' started on worker #2"))
+        controller.mark = control.node_log_mark(self.node)
+        with path.open("a") as stream:
+            stream.write(self.lines("Worker #2 died hosting 1 agent(s): hilos_logs",
+                                    "Agent 'hilos_logs' started on worker #7"))
+        actual_open = Path.open
+        attempts = []
+
+        def open_after_rotation(file, *args, **kwargs):
+            if file == path:
+                attempts.append(file)
+                if len(attempts) <= 3:
+                    raise FileNotFoundError(file)
+            return actual_open(file, *args, **kwargs)
+
+        request = dict(runId="rotation", sequence=1, action="recover", agentId=delivery.FAULT_AGENT,
+                       socketNode="m1")
+        with patch.object(scenarios, "STAND", stand), patch.object(scenarios, "inspect_all", return_value=views), \
+                patch.object(scenarios, "wait_converge", return_value=views), \
+                patch.object(controller, "process_state", return_value={"state": "S"}), \
+                patch.object(control, "worker_process", return_value=replacement) as worker, \
+                patch.object(scenarios.time, "sleep", side_effect=[None]) as poll, \
+                patch.object(Path, "open", open_after_rotation):
+            reply = controller.dispatch(request)
+        self.assertTrue(reply["ok"])
+        self.assertTrue(controller.restored)
+        self.assertEqual(replacement._asdict(), reply["worker"])
+        self.assertEqual([path] * 4, attempts)
+        poll.assert_called_once_with(scenarios.POLL_INTERVAL)
+        worker.assert_called_once_with(stand, "m2", 7)
+
+    def test_recover_times_out_when_the_current_journal_stays_incomplete(self):
+        self.write("daemon.log", self.lines("Daemon started with epoll") + "interrupted")
+        stand = SimpleNamespace(members={"m2": self.node})
+        controller = delivery.DeliveryController(stand, self.root, "rotation", "m1", 1)
+        with patch.object(controller, "stable_views"), patch.object(scenarios, "inspect_all", return_value={}), \
+                patch.object(scenarios.time, "time", side_effect=[0, 0, scenarios.CONVERGE_TIMEOUT]), \
+                patch.object(scenarios.time, "sleep"), self.assertRaises(scenarios.ScenarioTimeout):
+            controller.recovered()
+
     def test_stop_restart_and_reused_worker_index_forget_old_holders(self):
         self.write("archive/2026-11-07-02-00-00Z/daemon.log", self.lines(
             "Daemon started with epoll", "Agent 'old' started on worker #1"))
@@ -178,7 +230,48 @@ class RotationLifeTest(unittest.TestCase):
         self.write("archive/.incoming-2026-11-07-03-00-04Z/daemon.log", self.lines(
             "Daemon started with epoll", "Agent 'unfinished' started on worker #2"))
         self.write("daemon.log", self.lines("Agent 'hilos_logs' started on worker #8"))
-        self.assertEqual({}, self.workers())
+        with self.assertRaises(control.JournalChanging):
+            self.workers()
+
+    def test_carrier_renames_batch_between_directory_listings(self):
+        name = "2026-11-07-03-00-04Z"
+        source = self.write(f"staging/{name}/daemon.log", self.lines("Daemon started with epoll",
+                                                                    "Agent 'stock' started on worker #2"))
+        archive = self.root / "archive"
+        archive.mkdir()
+        self.write("daemon.log", self.lines("Later event"))
+        listing = Path.glob
+        def move_before_listing(root, pattern):
+            if root == archive and source.parent.exists():
+                source.parent.rename(archive / name)
+            return listing(root, pattern)
+        with patch.object(Path, "glob", move_before_listing):
+            self.assertEqual({"stock": 2}, self.workers())
+        self.assertTrue((archive / name).is_dir())
+
+    def test_cursor_follows_rotated_bytes_and_refuses_a_lost_segment(self):
+        boot = self.lines("Daemon started with epoll")
+        record = self.lines("Agent 'stock_library' started on worker #2")
+        path = self.write("daemon.log", boot + record)
+        mark = control.node_log_segments(self.node).parts
+        batch = self.root / "staging" / "2026-11-07-03-00-04Z"
+        batch.mkdir(parents=True)
+        path.rename(batch / path.name)
+        # The only start has a late clock reading but lies before the cursor.
+        self.assertIsNone(browser._live_start(self.node, mark, "stock_library"))
+        self.write("daemon.log", self.lines("Worker #2 started [type=agent]") + record)
+        self.assertIsNotNone(browser._live_start(self.node, mark, "stock_library"))
+        self.write("daemon.log", record.rstrip())
+        with self.assertRaises(control.JournalChanging):
+            browser._live_start(self.node, mark, "stock_library")
+        self.write("daemon.log", boot + record)
+        # The new life cannot substitute for the marked prefix, even on the same inode.
+        (batch / path.name).write_text(boot + record.replace("#2", "#3"))
+        with self.assertRaises(control.JournalChanging):
+            browser._live_start(self.node, mark, "stock_library")
+        (batch / path.name).unlink()
+        with self.assertRaises(control.JournalChanging):
+            browser._live_start(self.node, mark, "stock_library")
 
     def test_byte_offsets_and_inode_marks_keep_the_single_file_contract(self):
         self.write("archive/2026-11-07-03-00-04Z/daemon.log", self.lines("Daemon started with epoll"))

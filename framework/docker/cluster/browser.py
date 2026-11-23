@@ -1,11 +1,13 @@
 """Playwright phases for a cluster stand, with host-controlled node loss and recovery."""
 
+import calendar
 import json
 import re
 import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import PurePosixPath
 
 import control
@@ -52,10 +54,14 @@ class _PhaseResult:
 
 @dataclass
 class _LossState:
-    """Only this run's stopped slave; retain it even if convergence fails."""
+    """Keep the fault boundary across main and quarantine convergence attempts."""
 
+    required_agent: str | None = None
     stopped: str | None = None
     ready: bool = False
+    agent_id: str | None = None
+    restart_marks: dict[str, list[control.JournalSegment]] = field(default_factory=dict)
+    finished_at: int | None = None
 
 
 def _refuse_unfit_shape(stand):
@@ -74,6 +80,8 @@ def daemon_phase_selected(stand, extra_args):
     carrier = "daemon" in stand.e2e.capabilities
     if "--daemon" in extra_args and not carrier:
         raise StandRefused(f"{stand.compose}: x-hilos-cluster.e2e does not declare daemon")
+    if "--daemon" in extra_args and "--require-after-loss" in extra_args:
+        raise StandRefused("--require-after-loss needs live and after-loss; --daemon selects daemon only")
     return carrier and (not extra_args or "--daemon" in extra_args)
 
 
@@ -98,6 +106,7 @@ def _environment(stand, leader, follower, phase, stopped=None):
     }
     if stopped is not None:
         env["CLUSTER_STOPPED"] = stopped
+        env["CLUSTER_FAILOVER_TIMEOUT_MS"] = str(round(scenarios.FAILOVER_TIMEOUT * 1000))
     return env
 
 
@@ -490,6 +499,86 @@ def _roles(stand, phase, stopped=None):
     return _environment(stand, leader, follower, phase, stopped), leader, views[leader]["term"]
 
 
+def _started_hosts(views, agent_id):
+    return [row.get("nodeId") for row in scenarios.leader_placements(views)
+            if row.get("agentId") == agent_id and row.get("state") == "started"]
+
+
+def _docker_time(stamp):
+    """Read Docker UTC RFC3339Nano as integer nanoseconds, including on Python 3.10."""
+    match = re.fullmatch(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\.([0-9]{1,9}))?Z", stamp)
+    if not match:
+        raise ValueError(f"invalid Docker UTC timestamp: {stamp!r}")
+    moment = datetime.fromisoformat(match[1])
+    if moment.year == 1:
+        raise ValueError(f"unset Docker UTC timestamp: {stamp!r}")
+    fraction = (match[2] or "").ljust(9, "0")
+    return calendar.timegm(moment.timetuple()) * 1_000_000_000 + int(fraction)
+
+
+def _live_start(node, mark, agent_id):
+    """Find the sole current worker copy and retain its position relative to the fault cursor."""
+    journal = control.node_log_segments(node)
+    boundary = control.node_log_boundary(journal.parts, mark)
+    active = []
+    position = journal.life_start
+    agent = re.compile(rf"\] Agent '{re.escape(agent_id)}' (started|stopped) on worker #(\d+)$")
+    for record in journal.life.splitlines(keepends=True):
+        fresh = position >= boundary
+        position += len(record)
+        line = record.decode("utf-8", errors="replace").rstrip("\n")
+        if re.search(r"\] Daemon stopped(?: after a failure)?$", line):
+            return None
+        worker = re.search(r"\] Worker #(\d+) (?:died hosting |started \[type=)", line)
+        event = agent.search(line)
+        if worker:
+            active = [copy for copy in active if copy[0] != worker[1]]
+        elif event and event[1] == "stopped":
+            active = [copy for copy in active if copy[0] != event[2]]
+        elif event:
+            stamp = line.split("]", 1)[0].removeprefix("[")
+            active.append((event[2], scenarios.log_time(stamp) if fresh else None))
+        elif f"] Agent '{agent_id}' " in line and " on worker #" in line:
+            raise ValueError("incomplete agent lifecycle record")
+    return active[0][1] if len(active) == 1 else None
+
+
+def _stop_agent_owner(stand, target, agent_id, loss):
+    """Capture the survivor logs, check the owner, and identify the finish of that same container run."""
+    def capture(_views):
+        try:
+            loss.restart_marks = {node: control.node_log_segments(stand.members[node]).parts
+                                  for node in stand.slaves if node != target}
+            return True
+        except control.JournalChanging:
+            return False
+
+    if not capture(None):
+        scenarios.wait_until(capture, scenarios.FAILOVER_TIMEOUT, "stable survivor journals before kill", nodes=stand.masters)
+    state = control.container_state(stand, target)
+    running = state.out.split()
+    if state.code or len(running) != 3 or running[1] != "true":
+        raise ValueError(f"cannot identify running container on {target}")
+    container, _, started = running
+    started_at = _docker_time(started)
+    hosts = _started_hosts(scenarios.inspect_all(stand.masters), agent_id)
+    if hosts != [target]:
+        raise ValueError(f"stale fault for {agent_id}: requested {target}, started on {hosts}")
+    print(f"cluster e2e: leader confirms {agent_id} started on {target}")
+    loss.agent_id = agent_id
+    loss.stopped = target
+    _switch(control.kill(stand, target, container_id=container))
+    state = control.container_state(stand, target, include_finished=True)
+    stopped = state.out.split()
+    if state.code or len(stopped) != 4 or stopped[:3] != [container, "false", started]:
+        raise ValueError(f"cannot confirm the stopped container incarnation on {target}")
+    finished_at = _docker_time(stopped[3])
+    if finished_at <= started_at:
+        raise ValueError(f"invalid Docker finish time on {target}: {stopped[3]}")
+    loss.finished_at = finished_at
+    print(f"cluster e2e: {target} container {container} finished at {stopped[3]}")
+
+
 def _prepare_loss(stand, fault_file, loss):
     """Keep the original request and stopped node until every after-loss set has finished."""
     if loss.stopped is None:
@@ -497,21 +586,55 @@ def _prepare_loss(stand, fault_file, loss):
         if (not isinstance(fault, dict) or fault.get("stop") not in stand.slaves
                 or not isinstance(fault.get("reason"), str)):
             raise ValueError("invalid after-loss fault request: expected a slave and reason")
-        loss.stopped = fault["stop"]
-        print(f"== stopping {loss.stopped}: {fault['reason']} ==")
-        _switch(control.kill(stand, loss.stopped))
+        target = fault["stop"]
+        if loss.required_agent is not None and fault.get("agentId") != loss.required_agent:
+            raise ValueError(f"invalid after-loss fault request: expected agentId {loss.required_agent!r}")
+        print(f"== stopping {target}: {fault['reason']} ==")
+        if "agentId" in fault:
+            agent_id = fault["agentId"]
+            if not isinstance(agent_id, str) or not agent_id:
+                raise ValueError("invalid after-loss fault request: expected a nonempty agentId")
+            _stop_agent_owner(stand, target, agent_id, loss)
+        else:
+            loss.stopped = target
+            _switch(control.kill(stand, target))
+    if loss.agent_id and loss.finished_at is None:
+        raise ValueError(f"unconfirmed container stop on {loss.stopped}")
     survivors = [node for node in stand.members if node != loss.stopped]
-    scenarios.wait_until(
-        lambda current: len(scenarios.leaders(current)) == 1
-        and all(row.get("nodeId") != loss.stopped or row.get("state") not in ("placing", "started")
-                for row in scenarios.leader_placements(current)),
-        scenarios.FAILOVER_TIMEOUT, f"no hosted placement remains on {loss.stopped}", nodes=survivors)
+
+    def recovered(current):
+        if len(scenarios.leaders(current)) != 1 or any(
+                row.get("nodeId") == loss.stopped and row.get("state") in ("placing", "started")
+                for row in scenarios.leader_placements(current)):
+            return False
+        if loss.agent_id is None:
+            return True
+        hosts = _started_hosts(current, loss.agent_id)
+        if len(hosts) != 1 or hosts[0] not in loss.restart_marks:
+            return False
+        try:
+            stamp = _live_start(stand.members[hosts[0]], loss.restart_marks[hosts[0]], loss.agent_id)
+        except ValueError:
+            return False
+        if stamp is not None:
+            nanos = calendar.timegm(stamp.utctimetuple()) * 1_000_000_000 + stamp.microsecond * 1000
+            if nanos > loss.finished_at:
+                print(f"cluster e2e: post-kill start of {loss.agent_id} on {hosts[0]} at {stamp.isoformat()}")
+                return True
+        return False
+
+    condition = f"no hosted placement remains on {loss.stopped}"
+    if loss.agent_id:
+        condition += f" and {loss.agent_id} started on a surviving slave after the kill"
+    scenarios.wait_until(recovered, scenarios.FAILOVER_TIMEOUT, condition, nodes=survivors)
     loss.ready = True
 
 
-def _main(stand, tests, extra_args, run_env, fault_file, loss, hilos_phase):
+def _main(stand, tests, extra_args, run_env, fault_file, loss, hilos_phase, proof_file=None):
     """Finish the selected main dependency chain before the caller starts any quarantine."""
     projects = {test["project"] for test in tests}
+    if proof_file is not None and (hilos_phase != "main" or not {"live", "after-loss"} <= projects):
+        raise ValueError("--require-after-loss needs both live and after-loss in the main plan")
     if "daemon" in projects:
         result = _daemon_phase(stand, extra_args, hilos_phase, run_env)
         if result.code:
@@ -527,10 +650,19 @@ def _main(stand, tests, extra_args, run_env, fault_file, loss, hilos_phase):
         return 0
     if not fault_file.exists():
         print("cluster e2e: the suite asked no node to stop; after-loss not run")
-        return 0
+        return int(proof_file is not None)
     _prepare_loss(stand, fault_file, loss)
     env, _, _ = _roles(stand, "after-loss", loss.stopped)
-    return _phase(stand, env, "after-loss", extra_args, hilos_phase, run_env)
+    if proof_file is not None:
+        env["CLUSTER_AFTER_LOSS_PROOF_FILE"] = _child_path(stand, proof_file)
+    code = _phase(stand, env, "after-loss", extra_args, hilos_phase, run_env)
+    if code or proof_file is None:
+        return code
+    proof = json.loads(proof_file.read_text(encoding="utf-8"))
+    if not isinstance(proof, dict) or proof.get("verified") is not True:
+        raise ValueError("after-loss proof must confirm verified=true")
+    print("cluster e2e: after-loss verification confirmed")
+    return 0
 
 
 def _quarantine_tail(stand, tests, extra_args, directory, run_env, fault_file, loss):
@@ -546,6 +678,8 @@ def _quarantine_tail(stand, tests, extra_args, directory, run_env, fault_file, l
         result = _PhaseResult()
         try:
             if project == "after-loss":
+                if loss.required_agent and loss.stopped is None:
+                    raise ValueError("main did not stop the required agent owner")
                 if not loss.ready:
                     _prepare_loss(stand, fault_file, loss)
                 env, _, _ = _roles(stand, project, loss.stopped)
@@ -555,7 +689,7 @@ def _quarantine_tail(stand, tests, extra_args, directory, run_env, fault_file, l
                 if loss.stopped is not None:
                     _switch(control.start(stand, loss.stopped))
                     scenarios.wait_converge(stand.members)
-                    loss.stopped, loss.ready = None, False
+                    loss = _LossState()
                 control.ensure_open_for_tests(stand, scenarios.CONVERGE_TIMEOUT)
                 env, leader, term = _roles(stand, project)
                 if project == "daemon":
@@ -571,6 +705,7 @@ def _quarantine_tail(stand, tests, extra_args, directory, run_env, fault_file, l
 
 def run(stand, extra_args):
     """Plan once, finish every selected main phase, then quarantine without changing main rc."""
+    require_after_loss = "--require-after-loss" in extra_args
     run_daemon = daemon_phase_selected(stand, extra_args)
     scenarios.bind(stand)
     daemon_only = "--daemon" in extra_args
@@ -578,7 +713,7 @@ def run(stand, extra_args):
         print(f"cluster e2e: phase daemon SKIP ({FLAKY_SKIP['daemon']})")
         print("=== summary ===\n  browser suite skipped: phase daemon")
         return 0
-    extra_args = [arg for arg in extra_args if arg != "--daemon"]
+    extra_args = [arg for arg in extra_args if arg not in ("--daemon", "--require-after-loss")]
     diagnostic = any(arg == "--repeat-each" or arg.startswith("--repeat-each=") for arg in extra_args)
     directory = _run_path(stand, "quarantine", uuid.uuid4().hex)
     directory_created = False
@@ -631,7 +766,9 @@ def run(stand, extra_args):
         main = tests if diagnostic else [test for test in tests if test["flake"] is None]
         fault_file = _run_path(stand, "fault.json")
         fault_file.unlink(missing_ok=True)
-        loss = _LossState()
+        if require_after_loss and not stand.e2e.required_loss_agent:
+            raise ValueError("--require-after-loss needs x-hilos-cluster.e2e.required-loss-agent")
+        loss = _LossState(required_agent=stand.e2e.required_loss_agent if require_after_loss else None)
         if len(stand.database_sql_backends) > 1:
             try:
                 waits = galera_waits.GaleraWaits(stand, stand.demo_dir / "data" / "logs-cluster" / "galera")
@@ -642,7 +779,8 @@ def run(stand, extra_args):
                 galera_waits.warn(error)
         try:
             main_rc = _main(stand, main, extra_args, run_env, fault_file, loss,
-                            "diagnostic" if diagnostic else "main")
+                            "diagnostic" if diagnostic else "main",
+                            directory / "after-loss-proof.json" if require_after_loss else None)
         except Exception as error:
             main_rc = 1
             print(f"cluster e2e: main failed: {error}")
@@ -664,7 +802,8 @@ def run(stand, extra_args):
         if directory_created:
             try:
                 # Address only this UUID's own protocol files, never another run or the parent.
-                for name in ("plan.json", "plan.json.tmp", "after-loss.json", "live.json", "daemon.json"):
+                for name in ("plan.json", "plan.json.tmp", "after-loss.json", "live.json", "daemon.json",
+                             "after-loss-proof.json"):
                     (directory / name).unlink(missing_ok=True)
                 directory.rmdir()
             except OSError as error:
