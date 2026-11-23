@@ -6785,10 +6785,16 @@ abstract class BrowserContext
         $slot = $placement === TableRowPlacement::Inside
             ? $this->viewportRowIndex($table, $viewport, $mutation, $query)
             : null;
-        $shownAt = array_search($rowKey, array_map(strval(...), array_keys($viewport->rowAnchors())), true);
-        $viewport->recordRow($rowKey, $wireRow, $table->anchorForRow($mutation->row, $query));
+        $shownAt = array_search($rowKey, $viewport->rowIds(), true);
+        $staysInSlot = $slot !== null && $slot === $shownAt;
+        $viewport->recordRow(
+            $rowKey,
+            $wireRow,
+            $table->anchorForRow($mutation->row, $query),
+            position: $staysInSlot ? null : $slot,
+        );
 
-        if ($slot !== null && $slot === $shownAt) {
+        if ($staysInSlot) {
             return $drawnAsBefore ? null : TableViewportDeltaDTO::rowUpdated(
                 $page,
                 $browserKey,

@@ -184,14 +184,14 @@ describe('TableViewportController selection', () => {
 
   it('leaves a mark alone while a change waits behind the gate', () => {
     const { controller, open, markedKeys } = makeController()
-    open(['a', 'b'])
+    open(['a', 'b', 'c'])
     controller.selectWindow(true)
 
     controller.ingestDelta({
       kind: 'row_moved',
       rowKey: 'a',
       row: row('a'),
-      position: 1,
+      position: 2,
     })
     controller.ingestDelta({
       kind: 'row_removed',
@@ -200,8 +200,8 @@ describe('TableViewportController selection', () => {
     })
 
     expect(controller.pendingCount.get()).toBe(2)
-    expect(controller.selection.count.get()).toBe(2)
-    expect(markedKeys()).toEqual(['a', 'b'])
+    expect(controller.selection.count.get()).toBe(3)
+    expect(markedKeys()).toEqual(['a', 'b', 'c'])
     expect(controller.rows.get().every((shown) => shown.selected)).toBe(true)
   })
 

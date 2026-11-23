@@ -1087,6 +1087,7 @@ test.describe('declared Tiles view with synthetic ingress', () => {
       await shownByTestId(page, 'hilos-table-select-a').check()
       await page.getByTestId('geometry-pending').selectOption('move')
       await page.getByTestId('geometry-detail').selectOption('expanded')
+      await number(page, 1)
       await press(page, 'geometry-configure')
       await press(page, 'geometry-work')
       await expect(state).toContainText('a:move')

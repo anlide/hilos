@@ -4682,39 +4682,44 @@ describe('HilosViewportTable wired geometry', () => {
       [
         { rowKey: 'a', slots: { name: 'Alice' } },
         { rowKey: 'b', slots: { name: 'Bob' } },
+        { rowKey: 'c', slots: { name: 'Carol' } },
       ],
-      2,
-      true,
-      null,
-      null,
-      2,
-    )
-    f.fixture.detectChanges()
-    const edge = query(f.fixture, 'tr[data-id="hilos-table-row-b"]')!
-    f.controller.ingestDelta({
-      kind: 'row_removed',
-      rowKey: 'b',
-      reason: 'deleted',
-    })
-    f.controller.ingestOwnCreate(
-      { rowKey: 'c', slots: { name: 'Created' } },
-      0,
       3,
       true,
       null,
       null,
-      'request-c',
+      3,
+    )
+    f.fixture.detectChanges()
+    const edge = query(f.fixture, 'tr[data-id="hilos-table-row-b"]')!
+    const registration = f.register.mock.results[0]!.value as ReturnType<
+      TableViewportController<Row>['geometry']['register']
+    >
+    expect(registration.record('b', 'wide')).not.toBeNull()
+    f.controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Bob' } },
+      position: 2,
+    })
+    f.controller.ingestOwnCreate(
+      { rowKey: 'd', slots: { name: 'Created' } },
+      0,
+      4,
+      true,
+      null,
+      null,
+      'request-d',
     )
     f.fixture.detectChanges()
     expect(edge.isConnected).toBe(false)
     expect(query(f.fixture, '[data-id="hilos-table-row-b"]')).toBeNull()
-    expect(
-      (
-        f.register.mock.results[0]!.value as ReturnType<
-          TableViewportController<Row>['geometry']['register']
-        >
-      ).record('b', 'wide'),
-    ).toBeNull()
+    expect(registration.record('b', 'wide')).toBeNull()
+    expect(f.controller.rows.get().map(({ rowKey }) => rowKey)).toEqual([
+      'd',
+      'a',
+      'c',
+    ])
     const row = query(f.fixture, 'tr[data-id="hilos-table-row-a"]')!
     f.controller.ingestDelta({
       kind: 'row_moved',
@@ -4722,8 +4727,17 @@ describe('HilosViewportTable wired geometry', () => {
       row: { rowKey: 'a', slots: { name: 'Moved' } },
       position: 0,
     })
+    expect(f.controller.rows.get()[1]).toMatchObject({
+      rowKey: 'a',
+      pending: 'move',
+    })
     f.controller.apply()
     f.fixture.detectChanges()
+    expect(f.controller.rows.get().map(({ rowKey }) => rowKey)).toEqual([
+      'a',
+      'd',
+      'c',
+    ])
     expect(query(f.fixture, 'tr[data-id="hilos-table-row-a"]')).toBe(row)
     expect(row.querySelector('.named')?.textContent).toBe('Moved')
     expect(row.querySelector('.hilos-table-record-space')).toBeNull()

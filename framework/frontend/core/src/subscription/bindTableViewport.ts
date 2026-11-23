@@ -31,7 +31,10 @@ import {
 } from '../table/TableViewportController.js'
 import { type HilosTableProgressFrame } from '../table/tableProgress.js'
 import { hilosTableRemovalReason } from '../table/tablePlaceholder.js'
-import { type TablePresentationChange } from '../table/tableViewportGeometry.js'
+import {
+  HOLD_ROW_PROJECTION,
+  type TablePresentationChange,
+} from '../table/tableViewportGeometry.js'
 
 /** A table's address on the wire: the page it belongs to and its table key. */
 export interface TableViewportAddress {
@@ -423,7 +426,9 @@ function toSortOrder(
 /** Check the delta's required fields before entering a presentation boundary. */
 function viewportDeltaChange(
   data: TableViewportDeltaSignalData,
-): TablePresentationChange | null {
+):
+  | (TablePresentationChange & { readonly [HOLD_ROW_PROJECTION]?: string })
+  | null {
   switch (data.kind) {
     case 'row_updated':
     case 'row_moved':
@@ -438,9 +443,18 @@ function viewportDeltaChange(
       return null
   }
 
-  return data.rowKey === undefined
-    ? null
-    : { kind: 'rows', rowKeys: [String(data.rowKey)] }
+  if (data.rowKey === undefined) {
+    return null
+  }
+  const rowKey = String(data.rowKey)
+  const holdsProjection =
+    data.own !== true &&
+    (data.kind === 'row_moved' ||
+      (data.kind === 'row_removed' && data.row !== undefined))
+
+  return holdsProjection
+    ? { kind: 'rows', rowKeys: [rowKey], [HOLD_ROW_PROJECTION]: rowKey }
+    : { kind: 'rows', rowKeys: [rowKey] }
 }
 
 /** Reduce a raw addressed delta to the controller's normalized delta, or null when malformed. */

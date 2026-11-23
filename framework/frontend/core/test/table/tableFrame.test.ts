@@ -259,12 +259,13 @@ describe('TableViewportController frame declaration', () => {
       },
     })
     const row = { rowKey: 'a', slots: {} }
+    const rows = [row, { rowKey: 'b', slots: {} }]
     controller.ingestSubscriptionWindow(
-      [row],
+      rows,
       30,
       true,
       { id: 1 },
-      { id: 1 },
+      { id: 2 },
       10,
       undefined,
       {},
@@ -274,7 +275,7 @@ describe('TableViewportController frame declaration', () => {
     controller.setFilter('kind', 'full')
     controller.setOrder([{ field: 'name', direction: 'desc' }])
     controller.nextPage()
-    controller.ingestWindow([row], 30, true, { id: 1 }, { id: 1 }, 10)
+    controller.ingestWindow(rows, 30, true, { id: 1 }, { id: 2 }, 10)
     controller.selectRow('a', true)
     controller.expandRow('a', true)
     controller.focusRow('a')

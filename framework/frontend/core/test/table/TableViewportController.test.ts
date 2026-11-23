@@ -83,7 +83,7 @@ describe('TableViewportController', () => {
     controller.ingestDelta({
       kind: 'row_moved',
       rowKey: 'a',
-      row: { rowKey: 'a', slots: {} },
+      row: { rowKey: 'a', slots: { name: 'first change' } },
       position: 1,
     })
     const occurrence = controller.rows.get()[0]?.occurrence
@@ -97,6 +97,10 @@ describe('TableViewportController', () => {
     expect(controller.focusedRow.get()?.rowKey).toBe('a')
     expect(controller.frame.body.get()).toBe('loading')
     expect(controller.frame.refusal.get()).toBeNull()
+    const windows: Array<[string | undefined, number]> = []
+    const stopRows = subscribeSignal(controller.rows, (rows) =>
+      windows.push([rows[0]?.rowKey, controller.pendingCount.get()]),
+    )
     controller.ingestWindow(
       [{ rowKey: 'untracked', slots: {} }],
       1,
@@ -105,7 +109,18 @@ describe('TableViewportController', () => {
       null,
       10,
     )
+    expect(windows.find(([key]) => key === 'untracked')).toEqual([
+      'untracked',
+      0,
+    ])
     expect(controller.rows.get()[0]?.rowKey).toBe('untracked')
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'untracked',
+      row: { rowKey: 'untracked', slots: { name: 'late change' } },
+      position: 0,
+    })
+    windows.length = 0
     expect(controller.lastAppliedWindowRequestId.get()).toBeNull()
     expect(controller.frame.body.get()).toBe('loading')
     const completed: string[] = []
@@ -132,6 +147,11 @@ describe('TableViewportController', () => {
       latest,
     )
     expect(completed).toEqual([latest])
+    expect(windows.find(([key]) => key === 'accepted')).toEqual(['accepted', 0])
+    for (const [key, count] of windows) {
+      expect(count).toBe(key === 'untracked' ? 1 : 0)
+    }
+    stopRows()
     controller.ingestWindow([], 0, true, null, null, 10, 0, latest)
     expect(controller.rows.get()[0]?.rowKey).toBe('accepted')
     stop()
@@ -275,9 +295,10 @@ describe('TableViewportController', () => {
           (delta) => controller.ingestDelta(delta),
         )
         expect(controller.pendingCount.get()).toBe(0)
-        expect(controller.rows.get().map((row) => row.rowKey)).toEqual(
-          own ? ['r', 'other'] : ['other', 'r'],
-        )
+        expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+          'r',
+          'other',
+        ])
       } finally {
         probe.restore()
       }
@@ -2268,39 +2289,143 @@ describe('TableViewportController', () => {
     expect(controller.rows.get()[0]?.highlighted).toBe(true)
   })
 
-  it('a value landing resolves what was waiting on the same row', () => {
-    const { controller, open } = makeController()
-    open(
-      [
-        { rowKey: 'a', slots: { name: 'old' } },
-        { rowKey: 'b', slots: {} },
-      ],
-      2,
-      true,
-      null,
-      null,
-    )
-    controller.ingestDelta({
+  it('applies edits immediately for the author and keeps the observer move until Apply', () => {
+    const author = makeController()
+    const observer = makeController()
+    const opening = [
+      { rowKey: 'a', slots: { name: 'Alpha' } },
+      { rowKey: 'b', slots: { name: 'Beta' } },
+      { rowKey: 'c', slots: { name: 'Gamma' } },
+    ]
+    author.open(opening, 3)
+    observer.open(opening, 3)
+    const names = (controller: TableViewportController<TableRow>) =>
+      controller.rows.get().map((view) => view.row?.slots['name'])
+    const move = {
       kind: 'row_moved',
-      rowKey: 'a',
-      row: { rowKey: 'a', slots: { name: 'moving' } },
-      position: 1,
-    })
-    controller.ingestDelta({
-      kind: 'row_updated',
-      rowKey: 'a',
-      row: { rowKey: 'a', slots: { name: 'newest' } },
-    })
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Zulu' } },
+      position: 2,
+    } as const
+    author.controller.ingestDelta({ ...move, own: true })
+    observer.controller.ingestDelta(move)
+    expect(names(author.controller)).toEqual(['Alpha', 'Gamma', 'Zulu'])
+    expect(author.controller.pendingCount.get()).toBe(0)
+    expect(names(observer.controller)).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(observer.controller.rows.get()[1]?.pending).toBe('move')
+    expect(observer.controller.pendingCount.get()).toBe(1)
 
-    // The value is the later word about the row, and the slot the queued move named
-    // was computed for a row that no longer exists.
-    expect(controller.pendingCount.get()).toBe(0)
-    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
-    expect(controller.rows.get()[0]?.row).toEqual({
-      rowKey: 'a',
-      slots: { name: 'newest' },
+    const update = {
+      kind: 'row_updated',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Yankee' } },
+    } as const
+    author.controller.ingestDelta({ ...update, own: true })
+    observer.controller.ingestDelta(update)
+    expect(names(author.controller)).toEqual(['Alpha', 'Gamma', 'Yankee'])
+    expect(author.controller.pendingCount.get()).toBe(0)
+    expect(names(observer.controller)).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(observer.controller.rows.get()[1]?.pending).toBe('move')
+    expect(observer.controller.pendingCount.get()).toBe(1)
+
+    observer.controller.apply()
+    expect(names(observer.controller)).toEqual(['Alpha', 'Gamma', 'Yankee'])
+    expect(observer.controller.rows.get()[2]?.pending).toBeNull()
+    expect(observer.controller.pendingCount.get()).toBe(0)
+
+    observer.controller.ingestDelta({
+      ...update,
+      row: { rowKey: 'b', slots: { name: 'Zebra' } },
     })
+    expect(names(observer.controller)).toEqual(['Alpha', 'Gamma', 'Zebra'])
+    expect(observer.controller.pendingCount.get()).toBe(0)
   })
+
+  it.each([
+    {
+      scenario: 'an in-place follow-up edit',
+      edits: [
+        {
+          kind: 'row_moved',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Zulu' } },
+          position: 2,
+        },
+        {
+          kind: 'row_updated',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Zebra' } },
+        },
+        {
+          kind: 'row_moved',
+          rowKey: 'b',
+          row: { rowKey: 'b', slots: { name: 'Yankee' } },
+          position: 1,
+        },
+      ],
+      expected: ['Gamma', 'Yankee', 'Zebra'],
+    },
+    {
+      scenario: 'a row moving twice around another move',
+      edits: [
+        {
+          kind: 'row_moved',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Zulu' } },
+          position: 2,
+        },
+        {
+          kind: 'row_moved',
+          rowKey: 'b',
+          row: { rowKey: 'b', slots: { name: 'Yankee' } },
+          position: 1,
+        },
+        {
+          kind: 'row_moved',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Aachen' } },
+          position: 0,
+        },
+      ],
+      expected: ['Aachen', 'Gamma', 'Yankee'],
+    },
+  ] as const)(
+    'matches the author after one Apply with $scenario',
+    ({ edits, expected }) => {
+      const author = makeController()
+      const observer = makeController()
+      const opening = [
+        { rowKey: 'a', slots: { name: 'Alpha' } },
+        { rowKey: 'b', slots: { name: 'Beta' } },
+        { rowKey: 'c', slots: { name: 'Gamma' } },
+      ]
+      author.open(opening, 3)
+      observer.open(opening, 3)
+      for (const edit of edits) {
+        author.controller.ingestDelta({ ...edit, own: true })
+        observer.controller.ingestDelta(edit)
+        expect(observer.controller.rows.get().map((view) => view.row)).toEqual(
+          opening,
+        )
+      }
+
+      expect(
+        author.controller.rows.get().map((view) => view.row?.slots['name']),
+      ).toEqual(expected)
+      expect(author.controller.pendingCount.get()).toBe(0)
+      expect(
+        observer.controller.rows.get().map((view) => view.pending),
+      ).toEqual(['move', 'move', null])
+      expect(observer.controller.pendingCount.get()).toBe(2)
+
+      observer.controller.apply()
+
+      expect(observer.controller.rows.get().map((view) => view.row)).toEqual(
+        author.controller.rows.get().map((view) => view.row),
+      )
+      expect(observer.controller.pendingCount.get()).toBe(0)
+    },
+  )
 
   it('holds a move until Apply, then puts the row in the slot the server named', () => {
     const { controller, open } = makeController()
@@ -2371,7 +2496,456 @@ describe('TableViewportController', () => {
       rowKey: 'a',
       slots: { name: 'new' },
     })
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'moved' } },
+      position: 1,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'no destination' } },
+    })
+    controller.apply()
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
+    expect(controller.rows.get()[0]?.row).toEqual({
+      rowKey: 'a',
+      slots: { name: 'no destination' },
+    })
+
+    const appended = { rowKey: 'c', slots: {} }
+    controller.ingestAppend(appended, 3, true, null, null)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: appended,
+      position: 1,
+    })
+    controller.apply()
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'a',
+      'b',
+      'c',
+    ])
   })
+
+  it.each([false, true])(
+    'keeps the fallback order when a departure is applied (own: %s)',
+    (own) => {
+      const { controller, open } = makeController()
+      open(
+        ['a', 'b', 'c', 'd'].map((rowKey) => ({ rowKey, slots: {} })),
+        4,
+      )
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'move' } },
+        position: 3,
+      })
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'fallback' } },
+      })
+      controller.apply()
+      expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+        'a',
+        'b',
+        'c',
+        'd',
+      ])
+      expect(controller.rows.get()[0]?.row?.slots['name']).toBe('fallback')
+
+      if (own) {
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'b',
+          row: { rowKey: 'b', slots: { name: 'waiting' } },
+        })
+      }
+      const published: number[] = []
+      const stop = subscribeSignal(controller.rows, (rows) => {
+        if (rows[1]?.placeholder) published.push(controller.pendingCount.get())
+      })
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'b',
+        reason: 'deleted',
+        own,
+      })
+      if (!own) controller.apply()
+      stop()
+      expect(published[0]).toBe(0)
+      expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+        'a',
+        'b',
+        'c',
+        'd',
+      ])
+      expect(controller.rows.get()[1]).toMatchObject({
+        row: null,
+        placeholder: true,
+      })
+      const placeholder = controller.rows.get()[1]
+      expect(controller.pendingCount.get()).toBe(0)
+
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'd',
+        row: { rowKey: 'd', slots: { name: 'positioned' } },
+        position: 0,
+      })
+      controller.apply()
+      expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+        'd',
+        'b',
+        'a',
+        'c',
+      ])
+      expect(controller.rows.get()[1]).toEqual(placeholder)
+      expect(controller.rows.get()[0]?.row?.slots['name']).toBe('positioned')
+      expect(controller.rows.get()[2]?.row?.slots['name']).toBe('fallback')
+      expect(controller.pendingCount.get()).toBe(0)
+    },
+  )
+
+  it.each(['apply', 'own move'] as const)(
+    'places an own move after known neighbors after a fallback settles by %s',
+    (settle) => {
+      const { controller, open } = makeController()
+      const rows = ['a', 'b', 'c', 'd'].map((rowKey) => ({ rowKey, slots: {} }))
+      open(rows, 4)
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'first A' } },
+        position: 3,
+      })
+      const fallback = { rowKey: 'a', slots: { name: 'latest A' } }
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: fallback,
+        own: settle === 'own move',
+      })
+      if (settle === 'apply') controller.apply()
+      const keys = () => controller.rows.get().map((view) => view.rowKey)
+      expect(keys()).toEqual(['a', 'b', 'c', 'd'])
+      expect(controller.pendingCount.get()).toBe(0)
+
+      const ownMove = (row: TableRow, position: number) =>
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: row.rowKey,
+          row,
+          position,
+          own: true,
+        })
+      ownMove(rows[1], 2)
+
+      expect(keys()).toEqual(['a', 'c', 'b', 'd'])
+      expect(controller.rows.get()[0]?.row).toEqual(fallback)
+
+      ownMove(fallback, 3)
+      expect(keys()).toEqual(['c', 'b', 'd', 'a'])
+      ownMove(rows[3], 2)
+      expect(keys()).toEqual(['c', 'b', 'd', 'a'])
+
+      controller.ingestDelta({ kind: 'row_moved', rowKey: 'a', row: fallback })
+      controller.apply()
+      open([fallback, rows[2], rows[1], rows[3]], 4)
+      ownMove(rows[2], 0)
+      expect(keys()).toEqual(['c', 'a', 'b', 'd'])
+    },
+  )
+
+  it('applies positioned moves around unpositioned rows and departures', () => {
+    const { controller, open } = makeController()
+    open(
+      ['a', 'b', 'c', 'd', 'e'].map((rowKey) => ({ rowKey, slots: {} })),
+      5,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'first A' } },
+      position: 4,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'latest A' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'latest B' } },
+      position: 2,
+    })
+    const occurrence = controller.rows.get()[3]?.occurrence
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'd',
+      reason: 'deleted',
+    })
+
+    const published: Array<{ count: number; marked: string[] }> = []
+    const stop = subscribeSignal(controller.rows, (rows) => {
+      if (rows.some((row) => row.placeholder)) {
+        published.push({
+          count: controller.pendingCount.get(),
+          marked: rows
+            .filter((row) => row.pending !== null)
+            .map((row) => row.rowKey),
+        })
+      }
+    })
+    controller.apply()
+    stop()
+    expect(published[0]).toBeDefined()
+    for (const { count, marked } of published) {
+      expect(count).toBe(marked.length)
+      expect(marked).not.toContain('d')
+    }
+
+    const rows = controller.rows.get()
+    expect(rows.map((row) => row.rowKey)).toEqual(['a', 'c', 'd', 'b', 'e'])
+    expect(rows[0]?.row?.slots['name']).toBe('latest A')
+    expect(rows[3]?.row?.slots['name']).toBe('latest B')
+    expect(rows[2]).toMatchObject({ occurrence, row: null, placeholder: true })
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it.each([
+    { first: true, position: 1, staleSources: [], pending: null },
+    { first: false, position: 1, staleSources: [], pending: 'move' },
+    { first: true, position: 0, staleSources: [], pending: 'move' },
+    { first: true, position: 1, staleSources: ['presence'], pending: 'move' },
+  ])(
+    'clears only a full return to the displayed row and order ($first, $position, $staleSources)',
+    ({ first, position, staleSources, pending }) => {
+      const { controller, open } = makeController()
+      open(
+        [
+          { rowKey: 'a', slots: { name: 'Alpha' } },
+          { rowKey: 'b', slots: { name: 'Beta', first: true } },
+          { rowKey: 'c', slots: { name: 'Gamma' } },
+          { rowKey: 'd', slots: { name: 'Delta' } },
+        ],
+        4,
+      )
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'b',
+        row: { rowKey: 'b', slots: { name: 'Zulu', first: false } },
+        position: 3,
+      })
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'd',
+        reason: 'deleted',
+      })
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'b',
+        row: {
+          rowKey: 'b',
+          slots: { name: 'Beta', first },
+          ...(staleSources.length > 0 ? { staleSources } : {}),
+        },
+        position,
+      })
+
+      expect(controller.rows.get()[1]).toMatchObject({
+        row: { slots: { name: 'Beta', first: true } },
+        pending,
+      })
+      expect(controller.rows.get()[3]?.pending).toBe('remove')
+      expect(controller.pendingCount.get()).toBe(pending === null ? 1 : 2)
+      controller.apply()
+      const rows = controller.rows.get()
+      expect(rows.map((row) => row.rowKey)).toEqual(
+        position === 0 ? ['b', 'a', 'c', 'd'] : ['a', 'b', 'c', 'd'],
+      )
+      expect(rows[position]?.row?.slots['first']).toBe(first)
+      expect(rows[position]?.staleSources).toEqual(staleSources)
+      expect(rows[3]?.placeholder).toBe(true)
+    },
+  )
+
+  it('keeps a returned move pending when the same rank now has different neighbors', () => {
+    const { controller, open } = makeController()
+    const rows = ['a', 'b', 'c'].map((rowKey) => ({ rowKey, slots: {} }))
+    const [, b, c] = rows
+    open(rows, 3)
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Zulu' } },
+      position: 2,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: c,
+      position: 0,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: b,
+      position: 1,
+    })
+
+    expect(controller.rows.get().map((row) => row.pending)).toEqual([
+      null,
+      'move',
+      'move',
+    ])
+    controller.apply()
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'c',
+      'b',
+      'a',
+    ])
+  })
+
+  it.each([
+    ['return', 'rows'],
+    ['return', 'count'],
+    ['remove', 'rows'],
+    ['remove', 'count'],
+  ] as const)(
+    'clears an empty move when another row completes the order by %s (first subscriber: %s)',
+    (completion, firstSubscriber) => {
+      const { controller, open } = makeController()
+      const a = { rowKey: 'a', slots: { name: 'Alpha' } }
+      const b = { rowKey: 'b', slots: { name: 'Beta', first: true } }
+      const c = { rowKey: 'c', slots: { name: 'Gamma' } }
+      open([a, b, c], 3)
+      const occurrence = controller.rows.get()[2]?.occurrence
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'b',
+        row: { rowKey: 'b', slots: { name: 'Zulu', first: false } },
+        position: 2,
+      })
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'c',
+        row: { rowKey: 'c', slots: { name: 'Aachen' } },
+        position: 0,
+      })
+      controller.ingestDelta({ kind: 'row_updated', rowKey: 'b', row: b })
+      const visible = () =>
+        controller.rows.get().map((view) => [view.row, view.pending])
+      expect(visible()).toEqual([
+        [a, null],
+        [b, 'move'],
+        [c, 'move'],
+      ])
+
+      const read = () => {
+        const rows = controller.rows.get()
+        return {
+          pending: rows.flatMap((view) =>
+            view.pending === null
+              ? []
+              : [[view.rowKey, view.pending, view.removal]],
+          ),
+          departed: rows.find((view) => view.placeholder)?.occurrence ?? null,
+          count: controller.pendingCount.get(),
+          live: controller.live.get().top,
+        }
+      }
+      const published: ReturnType<typeof read>[] = []
+      const record = () => published.push(read())
+      const signals =
+        firstSubscriber === 'rows'
+          ? ([controller.rows, controller.pendingCount] as const)
+          : ([controller.pendingCount, controller.rows] as const)
+      const unsubscribe = signals.map((signal) =>
+        subscribeSignal<unknown>(signal, record),
+      )
+      if (completion === 'return') {
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'c',
+          row: c,
+          position: 2,
+        })
+        expect(visible()).toEqual([
+          [a, null],
+          [b, null],
+          [c, null],
+        ])
+        expect(controller.pendingCount.get()).toBe(0)
+        expect(published.length).toBeGreaterThan(0)
+        for (const snapshot of published) {
+          expect(snapshot).toEqual({
+            pending: [],
+            departed: null,
+            count: 0,
+            live: null,
+          })
+        }
+      } else {
+        controller.ingestDelta({
+          kind: 'row_removed',
+          rowKey: 'c',
+          reason: 'deleted',
+        })
+        expect(visible()).toEqual([
+          [a, null],
+          [b, null],
+          [c, 'remove'],
+        ])
+        expect(controller.pendingCount.get()).toBe(1)
+        const leaving = {
+          pending: [['c', 'remove', 'deleted']],
+          departed: null,
+          count: 1,
+          live: 'pending',
+        }
+        expect(published.length).toBeGreaterThan(0)
+        for (const snapshot of published) expect(snapshot).toEqual(leaving)
+        published.length = 0
+        controller.apply()
+        const firstDeparted = published.findIndex(
+          ({ departed }) => departed !== null,
+        )
+        expect(firstDeparted).toBeGreaterThanOrEqual(0)
+        for (const snapshot of published.slice(0, firstDeparted)) {
+          expect(snapshot).toEqual(leaving)
+        }
+        for (const snapshot of published.slice(firstDeparted)) {
+          expect(snapshot).toEqual({
+            pending: [],
+            departed: occurrence,
+            count: 0,
+            live: null,
+          })
+        }
+        expect(visible()).toEqual([
+          [a, null],
+          [b, null],
+          [null, null],
+        ])
+        expect(controller.rows.get()[2]).toMatchObject({
+          occurrence,
+          placeholder: true,
+          removal: 'deleted',
+        })
+        expect(controller.pendingCount.get()).toBe(0)
+      }
+      for (const stop of unsubscribe) stop()
+    },
+  )
 
   it('applies a row that moved out of the window as a placeholder', () => {
     const { controller, open } = makeController()
@@ -2949,6 +3523,172 @@ describe('TableViewportController', () => {
     expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['a', 'b'])
   })
 
+  it('evicts the delivered tail on own create, keeping its other live neighbors', () => {
+    const { controller, open } = makeController(3)
+    open(
+      ['a', 'b', 'c'].map((rowKey) => ({ rowKey, slots: {} })),
+      3,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Zulu' } },
+      position: 2,
+    })
+    controller.ingestOwnCreate(
+      { rowKey: 'x', slots: {} },
+      0,
+      4,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Updated C' } },
+    })
+
+    const rows = controller.rows.get()
+    expect(rows.map((row) => row.rowKey)).toEqual(['x', 'b', 'c'])
+    expect(rows[2]?.row?.slots['name']).toBe('Updated C')
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it.each([false, true])(
+    'evicts the delivered top of a Back window (new request pending: %s)',
+    (requestPending) => {
+      const { controller, open } = makeController(3)
+      const rows = (keys: string[]) =>
+        keys.map((rowKey) => ({ rowKey, slots: {} }))
+      open(rows(['a', 'b', 'c']), 12)
+      controller.setPage(2)
+      controller.ingestWindow(
+        rows(['g', 'h', 'i']),
+        12,
+        true,
+        { id: 7 },
+        { id: 9 },
+        3,
+        6,
+      )
+      controller.prevPage()
+      controller.ingestWindow(
+        rows(['d', 'e', 'f']),
+        12,
+        true,
+        { id: 4 },
+        { id: 6 },
+        3,
+        3,
+      )
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'e',
+        row: { rowKey: 'e', slots: { name: 'Aardvark' } },
+        position: 0,
+      })
+      if (requestPending) controller.nextPage()
+      controller.ingestOwnCreate(
+        { rowKey: 'x', slots: {} },
+        1,
+        13,
+        true,
+        { id: 4 },
+        { id: 6 },
+      )
+
+      expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+        'd',
+        'x',
+        'f',
+      ])
+      expect(controller.pendingCount.get()).toBe(0)
+    },
+  )
+
+  it('uses the delivered capacity for own create while a departure still waits', () => {
+    const { controller, open } = makeController(3)
+    open(
+      ['a', 'b', 'c'].map((rowKey) => ({ rowKey, slots: {} })),
+      3,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+    controller.ingestOwnCreate(
+      { rowKey: 'x', slots: {} },
+      1,
+      3,
+      true,
+      null,
+      null,
+    )
+
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+      'a',
+      'b',
+      'x',
+      'c',
+    ])
+    expect(controller.rows.get()[1]?.pending).toBe('remove')
+    controller.apply()
+    expect(controller.rows.get()[1]).toMatchObject({
+      row: null,
+      placeholder: true,
+    })
+  })
+
+  it('reads a late delta on its delivered basis until the tracked refusal arrives', () => {
+    const { controller, open, sent } = makeController()
+    open(
+      ['a', 'b', 'c', 'd'].map((rowKey) => ({ rowKey, slots: {} })),
+      4,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Zulu' } },
+      position: 3,
+    })
+    controller.setSearch('older')
+    const older = sent.at(-1)?.requestId
+    controller.setSearch('latest')
+    const latest = sent.at(-1)?.requestId
+    expect(older).toEqual(expect.any(String))
+    expect(latest).toEqual(expect.any(String))
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Yankee' } },
+      position: 2,
+    })
+    controller.ingestRefusal('internal_error', older)
+    expect(controller.pendingCount.get()).toBe(1)
+    expect(controller.frame.refusal.get()).toBeNull()
+    controller.apply()
+    const rows = controller.rows.get()
+    expect(rows.findIndex((row) => row.rowKey === 'b')).toBeGreaterThan(
+      rows.findIndex((row) => row.rowKey === 'd'),
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'd',
+      row: { rowKey: 'd', slots: { name: 'Late' } },
+    })
+    const published: Array<[number, number]> = []
+    const stop = subscribeSignal(controller.rows, (rows) =>
+      published.push([rows.length, controller.pendingCount.get()]),
+    )
+    controller.ingestRefusal('internal_error', latest)
+    stop()
+    expect(published.find(([size]) => size === 0)).toEqual([0, 0])
+    expect(controller.frame.refusal.get()).not.toBeNull()
+    expect(controller.rows.get()).toEqual([])
+  })
+
   it('an own create clears the tombstone a reused row key left in the window', () => {
     const { controller, open } = makeController()
     open(
@@ -3074,6 +3814,1859 @@ describe('TableViewportController', () => {
       rowKey: 'a',
       slots: { name: 'mine' },
     })
+  })
+
+  it('takes the queued slot zero when the author updates a pending move', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { name: 'Alpha' } },
+        { rowKey: 'b', slots: { name: 'Beta' } },
+      ],
+      2,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Able' } },
+      position: 0,
+    })
+    expect(controller.rows.get()[1]?.pending).toBe('move')
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Aaron' } },
+      own: true,
+    })
+
+    expect(controller.rows.get().map((view) => view.rowKey)).toEqual(['b', 'a'])
+    expect(controller.rows.get()[0]?.row?.slots['name']).toBe('Aaron')
+    expect(controller.rows.get()[0]?.pending).toBeNull()
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('places an own update at its queued rank using the neighbor that returned', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { name: 'Alpha' } },
+        { rowKey: 'b', slots: { name: 'Beta' } },
+        { rowKey: 'c', slots: { name: 'Gamma' } },
+        { rowKey: 'd', slots: { name: 'Omega' } },
+      ],
+      4,
+    )
+    for (const [rowKey, name, position] of [
+      ['b', 'Zulu', 3],
+      ['b', 'Bravo', 1],
+      ['a', 'Yankee', 3],
+      ['c', 'Baker', 0],
+    ] as const) {
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey,
+        row: { rowKey, slots: { name } },
+        position,
+      })
+    }
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Babel' } },
+      own: true,
+    })
+    expect(
+      controller.rows
+        .get()
+        .map((view) => [view.row?.slots['name'], view.pending]),
+    ).toEqual([
+      ['Alpha', 'move'],
+      ['Babel', null],
+      ['Beta', 'move'],
+      ['Omega', null],
+    ])
+    controller.apply()
+    expect(
+      controller.rows.get().map((view) => view.row?.slots['name']),
+    ).toEqual(['Babel', 'Bravo', 'Omega', 'Yankee'])
+  })
+
+  it.each(['move', 'create'] as const)(
+    'places a late own %s before the conflicting neighbors of an outgoing window',
+    (action) => {
+      const { controller, open } = makeController(5)
+      open(
+        [
+          { rowKey: 'a', slots: { name: 'Alpha' } },
+          { rowKey: 'b', slots: { name: 'Beta' } },
+          { rowKey: 'c', slots: { name: 'Gamma' } },
+          { rowKey: 'd', slots: { name: 'Omega' } },
+        ],
+        4,
+      )
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'Yankee' } },
+        position: 3,
+      })
+      expect(controller.pendingCount.get()).toBe(1)
+      controller.setSearch('another window')
+      expect(controller.pendingCount.get()).toBe(0)
+
+      if (action === 'move') {
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'c',
+          row: { rowKey: 'c', slots: { name: 'Baker' } },
+          position: 0,
+          own: true,
+        })
+      } else {
+        controller.ingestOwnCreate(
+          { rowKey: 'x', slots: { name: 'Baker' } },
+          0,
+          5,
+          true,
+          { name: 'Baker' },
+          { name: 'Yankee' },
+        )
+      }
+
+      const rows = controller.rows.get()
+      expect(
+        rows.map((view) => [view.rowKey, view.row?.slots['name']]),
+      ).toEqual([
+        [action === 'move' ? 'c' : 'x', 'Baker'],
+        ['a', 'Alpha'],
+        ['b', 'Beta'],
+        ...(action === 'create' ? [['c', 'Gamma']] : []),
+        ['d', 'Omega'],
+      ])
+      expect(controller.pendingCount.get()).toBe(0)
+    },
+  )
+
+  it('keeps a late own move in place when an unpositioned row can change the side of the block', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'e', slots: { name: 'Aardvark' } },
+        { rowKey: 'a', slots: { name: 'Alpha' } },
+        { rowKey: 'b', slots: { name: 'Beta' } },
+        { rowKey: 'c', slots: { name: 'Gamma' } },
+        { rowKey: 'd', slots: { name: 'Omega' } },
+        { rowKey: 'g', slots: { name: 'Zebra' } },
+      ],
+      6,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Yankee' } },
+      position: 4,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'g',
+      row: { rowKey: 'g', slots: {} },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'e',
+      row: { rowKey: 'e', slots: { name: 'Zulu' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'g',
+      reason: 'deleted',
+      own: true,
+    })
+    const placeholder = controller.rows.get().at(-1)
+    expect(placeholder).toMatchObject({ rowKey: 'g', placeholder: true })
+    expect(controller.pendingCount.get()).toBe(2)
+    controller.setSearch('another window')
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Bravo' } },
+      position: 1,
+      own: true,
+    })
+
+    const rows = controller.rows.get()
+    expect(rows.at(-1)).toEqual(placeholder)
+    expect(rows.map((view) => [view.rowKey, view.row?.slots['name']])).toEqual([
+      ['e', 'Aardvark'],
+      ['a', 'Alpha'],
+      ['b', 'Beta'],
+      ['c', 'Bravo'],
+      ['d', 'Omega'],
+      ['g', undefined],
+    ])
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('publishes a late own edit in its current slot when a departed neighbor left the order uncertain', () => {
+    const { controller, open, sent } = makeController(10, [
+      { field: 'name', direction: 'asc' },
+    ])
+    open(
+      [
+        { rowKey: 'e', slots: { name: 'Aardvark' } },
+        { rowKey: 's', slots: { name: 'Able' } },
+        { rowKey: 'p', slots: { name: 'Acorn' } },
+        { rowKey: 'a', slots: { name: 'Alpha' } },
+        { rowKey: 'b', slots: { name: 'Beta' } },
+        { rowKey: 'c', slots: { name: 'Gamma' } },
+        { rowKey: 'd', slots: { name: 'Omega' } },
+        { rowKey: 't', slots: { name: 'Zulu' } },
+        { rowKey: 'g', slots: { name: 'Zzz' } },
+      ],
+      9,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Yankee' } },
+      position: 6,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'p',
+      row: { rowKey: 'p', slots: { name: 'Yonder' } },
+      position: 6,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'g',
+      row: { rowKey: 'g', slots: {} },
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'e',
+      row: { rowKey: 'e', slots: { name: 'Zzzz' } },
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'g',
+      reason: 'deleted',
+      own: true,
+    })
+    const placeholder = controller.rows.get().at(-1)
+    expect(placeholder).toMatchObject({
+      rowKey: 'g',
+      row: null,
+      placeholder: true,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'p',
+      row: { rowKey: 'p', slots: { name: 'Bongo' } },
+      position: 2,
+    })
+    controller.setSearch('another window')
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'e',
+      reason: 'deleted',
+    })
+
+    const published: Array<{
+      rows: ReturnType<typeof controller.rows.get>
+      pending: number
+    }> = []
+    const stop = subscribeSignal(controller.rows, (rows) =>
+      published.push({ rows, pending: controller.pendingCount.get() }),
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Birch' } },
+      position: 2,
+      own: true,
+    })
+    stop()
+
+    const first = published[0]
+    expect(
+      first?.rows.map((view) => [
+        view.rowKey,
+        view.row?.slots['name'],
+        view.pending,
+      ]),
+    ).toEqual([
+      ['e', 'Aardvark', 'remove'],
+      ['s', 'Able', null],
+      ['p', 'Acorn', null],
+      ['a', 'Alpha', null],
+      ['b', 'Beta', null],
+      ['c', 'Birch', null],
+      ['d', 'Omega', null],
+      ['t', 'Zulu', null],
+      ['g', undefined, null],
+    ])
+    expect(first?.rows.at(-1)).toEqual(placeholder)
+    expect(first?.pending).toBe(1)
+
+    const beforeApply = controller.rows.get()
+    controller.apply()
+    expect(controller.rows.get()[0]).toMatchObject({
+      rowKey: 'e',
+      row: null,
+      placeholder: true,
+    })
+    expect(controller.rows.get().slice(1)).toEqual(beforeApply.slice(1))
+    expect(controller.pendingCount.get()).toBe(0)
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'p',
+      row: { rowKey: 'p', slots: { name: 'Bikini' } },
+      position: 2,
+      own: true,
+    })
+    expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+      'e',
+      's',
+      'p',
+      'a',
+      'b',
+      'c',
+      'd',
+      't',
+      'g',
+    ])
+    expect(controller.rows.get()[2]?.row?.slots['name']).toBe('Bikini')
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Aback' } },
+      position: 0,
+      own: true,
+    })
+    expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+      'e',
+      'c',
+      's',
+      'p',
+      'a',
+      'b',
+      'd',
+      't',
+      'g',
+    ])
+    expect(controller.rows.get()[1]?.row?.slots['name']).toBe('Aback')
+
+    const acceptedRows = [
+      { rowKey: 'c', slots: { name: 'Aback' } },
+      { rowKey: 's', slots: { name: 'Able' } },
+      { rowKey: 'b', slots: { name: 'Beta' } },
+      { rowKey: 'p', slots: { name: 'Bikini' } },
+      { rowKey: 'd', slots: { name: 'Omega' } },
+      { rowKey: 'a', slots: { name: 'Yankee' } },
+      { rowKey: 't', slots: { name: 'Zulu' } },
+    ]
+    const requestId = sent.at(-1)?.requestId
+    expect(requestId).toEqual(expect.any(String))
+    controller.ingestWindow(
+      acceptedRows,
+      7,
+      true,
+      null,
+      null,
+      10,
+      null,
+      requestId,
+    )
+    expect(controller.rows.get().map((view) => view.row)).toEqual(acceptedRows)
+
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Bichon' } },
+      position: 2,
+      own: true,
+    })
+    expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+      's',
+      'b',
+      'c',
+      'p',
+      'd',
+      'a',
+      't',
+    ])
+  })
+
+  describe('proof of the delivered order', () => {
+    const nameOrder: TableSortOrder = [{ field: 'name', direction: 'asc' }]
+    const named = (rowKey: string, name: string) => ({
+      rowKey,
+      slots: { name },
+    })
+    const moved = (
+      rowKey: string,
+      name: string,
+      position?: number,
+      own = false,
+    ) => ({
+      kind: 'row_moved' as const,
+      rowKey,
+      row: named(rowKey, name),
+      ...(position === undefined ? {} : { position }),
+      own,
+    })
+    const removed = (rowKey: string, own = false) => ({
+      kind: 'row_removed' as const,
+      rowKey,
+      reason: 'deleted' as const,
+      own,
+    })
+    const withoutSortValue = {
+      kind: 'row_moved' as const,
+      rowKey: 'g',
+      row: { rowKey: 'g', slots: {} },
+    }
+
+    function firstPublication(
+      controller: TableViewportController<TableRow>,
+      deliver: () => void,
+    ) {
+      const read = (rows: ReturnType<typeof controller.rows.get>) => ({
+        views: rows.map((view) => [
+          view.rowKey,
+          view.row?.slots['name'] ?? null,
+          view.pending,
+        ]),
+        pending: controller.pendingCount.get(),
+        placeholders: rows.filter((view) => view.placeholder),
+      })
+      const before = controller.rows.get()
+      let first: ReturnType<typeof read> | undefined
+      let unchanged: ReturnType<typeof read> | undefined
+      const stop = subscribeSignal(controller.rows, (rows) => {
+        // Selection and highlighting can notify without changing the window.
+        if (
+          rows.length !== before.length ||
+          rows.some((view, index) => {
+            const previous = before[index]
+            return (
+              view.rowKey !== previous.rowKey ||
+              view.row !== previous.row ||
+              view.pending !== previous.pending
+            )
+          })
+        ) {
+          first ??= read(rows)
+        } else {
+          unchanged ??= read(rows)
+        }
+      })
+      try {
+        deliver()
+      } finally {
+        stop()
+      }
+
+      return first ?? unchanged
+    }
+
+    function withUnpositionedNeighbor(pBeforeB = false) {
+      const { controller, open } = makeController(10, nameOrder)
+      const b = named('b', 'Beta')
+      const p = named('p', pBeforeB ? 'P' : 'Daisy')
+      const rows = [
+        named('e', 'Aardvark'),
+        named('s', 'Able'),
+        ...(pBeforeB ? [p, b] : [b, p]),
+        named('c', 'Gamma'),
+        named('t', 'Zulu'),
+        named('g', 'Zzz'),
+      ]
+      open(rows, rows.length)
+      controller.ingestDelta(moved('p', 'Yonder', 4))
+      controller.ingestDelta(withoutSortValue)
+      controller.ingestDelta(moved('e', 'Zzzz'))
+      controller.ingestDelta(removed('g', true))
+
+      return controller
+    }
+
+    function withOutgoingMoves(search: boolean) {
+      const { controller, open } = makeController(10, nameOrder, true)
+      const rows = [
+        named('e', 'Aardvark'),
+        named('s', 'Able'),
+        named('p', 'Acorn'),
+        named('a', 'Alpha'),
+        named('b', 'Beta'),
+        named('c', 'Gamma'),
+        named('d', 'Omega'),
+        named('t', 'Zulu'),
+        named('g', 'Zzz'),
+      ]
+      open(rows, rows.length)
+      controller.ingestDelta(moved('a', 'Yankee', 6))
+      controller.ingestDelta(moved('p', 'Yonder', 6))
+      controller.ingestDelta(withoutSortValue)
+      controller.ingestDelta(moved('e', 'Zzzz'))
+      controller.ingestDelta(removed('g', true))
+      controller.ingestDelta(moved('p', 'Bongo', 2))
+      if (search) controller.setSearch('another window')
+      controller.ingestDelta(removed('e'))
+
+      return controller
+    }
+
+    it.each(['move', 'update'] as const)(
+      'preserves the own slot when the first ranked %s leaves its side of Beta uncertain',
+      (echo) => {
+        const controller = withUnpositionedNeighbor()
+        const placeholder = controller.rows.get().at(-1)
+        if (echo === 'update') controller.ingestDelta(moved('p', 'Bongo', 2))
+
+        const first = firstPublication(controller, () => {
+          controller.ingestDelta(
+            echo === 'move'
+              ? moved('p', 'Bongo', 2, true)
+              : {
+                  kind: 'row_updated',
+                  rowKey: 'p',
+                  row: { rowKey: 'p', slots: { name: 'Bongo', edited: true } },
+                  own: true,
+                },
+          )
+        })
+
+        expect(first).toEqual({
+          views: [
+            ['e', 'Aardvark', 'move'],
+            ['s', 'Able', null],
+            ['b', 'Beta', null],
+            ['p', 'Bongo', null],
+            ['c', 'Gamma', null],
+            ['t', 'Zulu', null],
+            ['g', null, null],
+          ],
+          pending: 1,
+          placeholders: [placeholder],
+        })
+      },
+    )
+
+    it('moves Baker only as far as the proven edge of a closed interval', () => {
+      const { controller, open } = makeController(10, nameOrder)
+      open(
+        [
+          named('e', 'Aardvark'),
+          named('p', 'Abe'),
+          named('s', 'Able'),
+          named('b', 'Beta'),
+          named('c', 'Gamma'),
+          named('t', 'Zulu'),
+          named('g', 'Zzz'),
+        ],
+        7,
+      )
+      controller.ingestDelta(moved('p', 'Yonder', 4))
+      controller.ingestDelta(withoutSortValue)
+      controller.ingestDelta(moved('e', 'Aardwolf'))
+      controller.ingestDelta(removed('g', true))
+      const placeholder = controller.rows.get().at(-1)
+
+      const first = firstPublication(controller, () => {
+        controller.ingestDelta(moved('p', 'Baker', 2, true))
+      })
+      expect(first).toEqual({
+        views: [
+          ['e', 'Aardvark', 'move'],
+          ['s', 'Able', null],
+          ['p', 'Baker', null],
+          ['b', 'Beta', null],
+          ['c', 'Gamma', null],
+          ['t', 'Zulu', null],
+          ['g', null, null],
+        ],
+        pending: 1,
+        placeholders: [placeholder],
+      })
+    })
+
+    it('keeps the shown side of Beta on an own update after reselecting for an add', () => {
+      const controller = withUnpositionedNeighbor()
+      controller.ingestDelta(moved('p', 'Bongo', 2))
+      controller.ingestDelta(removed('e', true))
+      const placeholders = controller.rows
+        .get()
+        .filter((view) => view.placeholder)
+
+      const created = firstPublication(controller, () => {
+        controller.ingestOwnCreate(
+          named('x', 'Aaa'),
+          0,
+          6,
+          true,
+          { name: 'Aaa' },
+          { name: 'Zulu' },
+        )
+      })
+      expect(created).toEqual({
+        views: [
+          ['e', null, null],
+          ['x', 'Aaa', null],
+          ['s', 'Able', null],
+          ['b', 'Beta', null],
+          ['p', 'Daisy', 'move'],
+          ['c', 'Gamma', null],
+          ['t', 'Zulu', null],
+          ['g', null, null],
+        ],
+        pending: 1,
+        placeholders,
+      })
+
+      const updated = firstPublication(controller, () => {
+        controller.ingestDelta({
+          kind: 'row_updated',
+          rowKey: 'p',
+          row: named('p', 'Bork'),
+          own: true,
+        })
+      })
+      expect(updated).toEqual({
+        views: [
+          ['e', null, null],
+          ['x', 'Aaa', null],
+          ['s', 'Able', null],
+          ['b', 'Beta', null],
+          ['p', 'Bork', null],
+          ['c', 'Gamma', null],
+          ['t', 'Zulu', null],
+          ['g', null, null],
+        ],
+        pending: 0,
+        placeholders,
+      })
+    })
+
+    const updated = (rowKey: string, name: string) => ({
+      kind: 'row_updated' as const,
+      rowKey,
+      row: named(rowKey, name),
+    })
+
+    it.each([false, true])(
+      'recovers the refused sorted window before any Reset reply (Reset in flight: %s)',
+      (resetInFlight) => {
+        const { controller, open, sent } = makeController()
+        const rows = [
+          named('e', 'Aardvark'),
+          named('s', 'Able'),
+          named('b', 'Beta'),
+          named('c', 'Gamma'),
+          named('t', 'Zulu'),
+          named('g', 'Zzz'),
+        ]
+        open(rows, rows.length)
+        controller.setOrder(nameOrder)
+        const refused = sent.at(-1)?.requestId
+        expect(refused).toEqual(expect.any(String))
+        controller.ingestRefusal('internal_error', refused)
+        expect(controller.rows.get()).toEqual([])
+        expect(controller.lastAppliedWindowRequestId.get()).toBe(refused)
+        expect(controller.acceptsWindowResponse(refused)).toBe(false)
+        if (resetInFlight) controller.resetOrder()
+        const reset = resetInFlight ? sent.at(-1)?.requestId : undefined
+
+        controller.ingestWindow(rows, rows.length, true, null, null, 10)
+        expect(controller.frame.refusal.get()).toBeNull()
+        if (resetInFlight) {
+          expect(reset).toEqual(expect.any(String))
+          expect(controller.acceptsWindowResponse(reset)).toBe(true)
+          controller.ingestRefusal('internal_error', refused)
+          controller.ingestWindow([], 0, true, null, null, 10, null, refused)
+          expect(controller.rows.get().map((view) => view.rowKey)).toEqual(
+            rows.map((row) => row.rowKey),
+          )
+          expect(controller.frame.refusal.get()).toBeNull()
+        }
+        expect(controller.lastAppliedWindowRequestId.get()).toBe(refused)
+        controller.ingestDelta(withoutSortValue)
+        controller.ingestDelta(moved('e', 'Zzzz'))
+        controller.ingestDelta(removed('g', true))
+        const placeholder = controller.rows.get().at(-1)
+        controller.ingestDelta(updated('e', 'Aardwolf'))
+
+        const first = firstPublication(controller, () => {
+          controller.ingestDelta(moved('c', 'Aaa', 0, true))
+        })
+        expect(first).toEqual({
+          views: [
+            ['c', 'Aaa', null],
+            ['e', 'Aardwolf', null],
+            ['s', 'Able', null],
+            ['b', 'Beta', null],
+            ['t', 'Zulu', null],
+            ['g', null, null],
+          ],
+          pending: 0,
+          placeholders: [placeholder],
+        })
+        if (resetInFlight) {
+          expect(controller.lastAppliedWindowRequestId.get()).toBe(refused)
+          controller.ingestWindow(
+            rows,
+            rows.length,
+            true,
+            null,
+            null,
+            10,
+            null,
+            reset,
+          )
+          expect(controller.lastAppliedWindowRequestId.get()).toBe(reset)
+          expect(controller.acceptsWindowResponse(reset)).toBe(false)
+          expect(controller.rows.get().map((view) => view.rowKey)).toEqual(
+            rows.map((row) => row.rowKey),
+          )
+        }
+      },
+    )
+
+    it.each(['Add', 'move'] as const)(
+      'confirms an independent index established by an exact %s after a reselect',
+      (source) => {
+        const controller = withUnpositionedNeighbor()
+        controller.ingestDelta(moved('p', 'Bongo', 2))
+        controller.ingestDelta(removed('e', true))
+        controller.ingestOwnCreate(named('x', 'Aaa'), 0, 6, true, null, null)
+        const key = source === 'Add' ? 'x' : 'p'
+        if (source === 'move') {
+          controller.ingestDelta(moved('p', 'Aab', 1, true))
+          controller.ingestDelta(removed('x', true))
+        }
+        controller.ingestDelta({
+          ...withoutSortValue,
+          rowKey: 't',
+          row: { rowKey: 't', slots: {} },
+        })
+        controller.ingestDelta(moved(key, 'Zzz', undefined, true))
+        controller.ingestDelta(removed('t', true))
+        const placeholders = controller.rows
+          .get()
+          .filter((view) => view.placeholder)
+        controller.ingestDelta(updated(key, 'Aab'))
+
+        expect(
+          firstPublication(controller, () => {
+            controller.ingestDelta(moved('s', 'Aaa', 0, true))
+          }),
+        ).toEqual({
+          views: [
+            ['e', null, null],
+            ...(source === 'move' ? [['x', null, null]] : []),
+            ['s', 'Aaa', null],
+            [key, 'Aab', null],
+            ['b', 'Beta', null],
+            ...(source === 'Add' ? [['p', 'Daisy', 'move']] : []),
+            ['c', 'Gamma', null],
+            ['t', null, null],
+            ['g', null, null],
+          ],
+          pending: source === 'Add' ? 1 : 0,
+          placeholders,
+        })
+      },
+    )
+
+    it('keeps the own slot when the same Add can conceal either order of the old rows', () => {
+      const { controller, open } = makeController(10, [
+        { field: 'priority', direction: 'asc' },
+      ])
+      open(
+        [
+          named('b', 'Beta'),
+          named('p', 'Daisy'),
+          named('c', 'Gamma'),
+          named('t', 'Zulu'),
+        ],
+        4,
+      )
+      // Both server lists (X/B/P/C/T and X/P/B/C/T) produce this same stream.
+      controller.ingestOwnCreate(
+        named('x', 'Aaa'),
+        0,
+        5,
+        true,
+        { priority: 10 },
+        { priority: 60 },
+      )
+      expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+        'x',
+        'b',
+        'p',
+        'c',
+        't',
+      ])
+      controller.ingestDelta({
+        ...withoutSortValue,
+        rowKey: 't',
+        row: { rowKey: 't', slots: {} },
+      })
+      controller.ingestDelta(moved('p', 'Zzz', undefined, true))
+      controller.ingestDelta(removed('t', true))
+      const placeholder = controller.rows.get().at(-1)
+      controller.ingestDelta(updated('p', 'Aab'))
+
+      expect(
+        firstPublication(controller, () => {
+          controller.ingestDelta(moved('c', 'Aac', 2, true))
+        }),
+      ).toEqual({
+        views: [
+          ['x', 'Aaa', null],
+          ['b', 'Beta', null],
+          ['p', 'Aab', null],
+          ['c', 'Aac', null],
+          ['t', null, null],
+        ],
+        pending: 0,
+        placeholders: [placeholder],
+      })
+    })
+
+    it.each([
+      { order: 'unsorted', outstanding: false },
+      { order: 'sorted', outstanding: false },
+      { order: 'unsorted', outstanding: true },
+    ] as const)(
+      'accepts a no-id refusal and recovery ($order, tracked request pending: $outstanding)',
+      ({ order, outstanding }) => {
+        const { controller, open, sent } = makeController(10, nameOrder)
+        if (outstanding) {
+          open([named('before', 'Before the refusal')], 1)
+          controller.setSearch('new query')
+          expect(sent.at(-1)?.requestId).toEqual(expect.any(String))
+        }
+        const pending = sent.at(-1)?.requestId
+        controller.ingestRefusal('internal_error')
+        expect(controller.frame.refusal.get()).not.toBeNull()
+        expect(controller.rows.get()).toEqual([])
+        controller.ingestWindow([], 0, true, null, null, 10)
+        expect(controller.rows.get()).toEqual([])
+        expect(controller.frame.refusal.get()).toBeNull()
+        expect(controller.lastAppliedWindowRequestId.get()).toBeNull()
+
+        const rows = [
+          named('e', 'Aardvark'),
+          named('c', 'Gamma'),
+          named('g', 'Zzz'),
+        ]
+        controller.ingestWindow(
+          rows,
+          rows.length,
+          true,
+          { name: 'Aardvark' },
+          { name: 'Zzz' },
+          10,
+        )
+        if (order === 'sorted') {
+          controller.ingestDelta(withoutSortValue)
+          controller.ingestDelta(moved('e', 'Zzzz'))
+        }
+        controller.ingestDelta(removed('g', true))
+        const placeholder = controller.rows.get().at(-1)
+        const first = firstPublication(controller, () => {
+          controller.ingestDelta(updated('e', 'Aardwolf'))
+        })
+        expect(first).toEqual({
+          views: [
+            ['e', 'Aardwolf', null],
+            ['c', 'Gamma', null],
+            ['g', null, null],
+          ],
+          pending: 0,
+          placeholders: [placeholder],
+        })
+        if (order === 'sorted') {
+          expect(
+            firstPublication(controller, () => {
+              controller.ingestDelta(moved('c', 'Aaa', 0, true))
+            })?.views,
+          ).toEqual([
+            ['c', 'Aaa', null],
+            ['e', 'Aardwolf', null],
+            ['g', null, null],
+          ])
+        }
+        expect(controller.lastAppliedWindowRequestId.get()).toBeNull()
+        if (outstanding)
+          expect(controller.acceptsWindowResponse(pending)).toBe(true)
+      },
+    )
+
+    it.each([
+      { exact: false, extraction: 'departure', action: 'Search' },
+      { exact: false, extraction: 'move', action: 'Apply' },
+      { exact: true, extraction: 'departure', action: 'Search' },
+      { exact: true, extraction: 'move', action: 'Apply' },
+    ] as const)(
+      'keeps a neighbor index only when the old side of a $extraction is known (snapshot: $exact, $action)',
+      ({ exact, extraction, action }) => {
+        const { controller, open } = makeController(10, nameOrder)
+        const rows = [
+          named('u', 'Able'),
+          named('k', 'Beta'),
+          named('v', 'Daisy'),
+          named('c', 'Gamma'),
+          named('t', 'Zulu'),
+        ]
+        open(rows, rows.length)
+        const added = named('x', 'Aaa')
+        controller.ingestOwnCreate(added, 0, 6, true, null, null)
+        // After the reselect U and V can trade sides of K in the server's
+        // stored list. K's move establishes K=2 in either history.
+        controller.ingestDelta(moved('k', 'Birch', 2, true))
+        if (exact) {
+          const [u, , v, c, t] = rows
+          open([added, u, named('k', 'Birch'), v, c, t], 6)
+        }
+        if (extraction === 'departure') {
+          controller.ingestDelta(removed('u', true))
+        } else {
+          controller.ingestDelta(moved('u', 'Zzzz', 5, true))
+        }
+        controller.ingestDelta({
+          ...withoutSortValue,
+          rowKey: 't',
+          row: { rowKey: 't', slots: {} },
+        })
+        controller.ingestDelta(moved('k', 'Zzz', undefined, true))
+        controller.ingestDelta(removed('t', true))
+        if (action === 'Search') controller.setSearch('another window')
+        else {
+          controller.ingestDelta(removed('v'))
+          controller.apply()
+        }
+        const placeholders = controller.rows
+          .get()
+          .filter((view) => view.placeholder)
+        controller.ingestDelta(updated('k', 'Abacus'))
+
+        const first = firstPublication(controller, () => {
+          controller.ingestDelta(moved('c', 'Aback', 1, true))
+        })
+        expect(
+          first?.views.filter(([key]) => key === 'k' || key === 'c'),
+        ).toEqual(
+          exact
+            ? [
+                ['c', 'Aback', null],
+                ['k', 'Abacus', null],
+              ]
+            : [
+                ['k', 'Abacus', null],
+                ['c', 'Aback', null],
+              ],
+        )
+        expect(first?.pending).toBe(0)
+        expect(first?.placeholders).toEqual(placeholders)
+      },
+    )
+
+    it.each([
+      {
+        source: 'snapshot',
+        beforeExact: true,
+        appendExact: true,
+        appendTotal: 1,
+        proven: true,
+      },
+      {
+        source: 'exact zero',
+        beforeExact: true,
+        appendExact: true,
+        appendTotal: 1,
+        proven: true,
+      },
+      {
+        source: 'exact zero with a pending departure',
+        beforeExact: true,
+        appendExact: true,
+        appendTotal: 1,
+        proven: true,
+      },
+      {
+        source: 'zero count with a delivered key',
+        beforeExact: true,
+        appendExact: true,
+        appendTotal: 1,
+        proven: false,
+      },
+      {
+        source: 'inexact zero',
+        beforeExact: false,
+        appendExact: true,
+        appendTotal: 1,
+        proven: false,
+      },
+      {
+        source: 'inexact append and exact count',
+        beforeExact: true,
+        appendExact: false,
+        appendTotal: 1,
+        proven: false,
+      },
+      {
+        source: 'append with more undelivered keys',
+        beforeExact: true,
+        appendExact: true,
+        appendTotal: 2,
+        proven: false,
+      },
+    ])(
+      'confirms the only old index left by Add and a tail departure (source: $source)',
+      ({ source, beforeExact, appendExact, appendTotal, proven }) => {
+        const { controller, open } = makeController(10, nameOrder)
+        const p = named('p', 'Aardvark')
+        const pAnchor = { name: 'Aardvark' }
+        const lateDeparture = source === 'zero count with a delivered key'
+        const pendingDeparture =
+          source === 'exact zero with a pending departure' || lateDeparture
+        let rPlaceholder:
+          ReturnType<typeof controller.rows.get>[number] | undefined
+        let sOccurrence: number | undefined
+        if (source === 'snapshot') {
+          open([p], 1, true, pAnchor, pAnchor)
+        } else {
+          const rAnchor = { name: 'Aaron' }
+          open([named('r', 'Aaron')], 1, true, rAnchor, rAnchor)
+          if (pendingDeparture) {
+            const sAnchor = { name: 'Able' }
+            controller.ingestOwnCreate(
+              named('s', 'Able'),
+              1,
+              2,
+              false,
+              rAnchor,
+              sAnchor,
+            )
+            sOccurrence = controller.rows.get()[1]?.occurrence
+            if (!lateDeparture) controller.ingestDelta(removed('s'))
+          }
+          const rOccurrence = controller.rows.get()[0]?.occurrence
+          controller.ingestCount(0, beforeExact)
+          controller.ingestDelta(removed('r', true))
+          rPlaceholder = controller.rows.get()[0]
+          expect(rPlaceholder).toMatchObject({
+            placeholder: true,
+            occurrence: rOccurrence,
+          })
+          controller.ingestAppend(p, appendTotal, appendExact, pAnchor, pAnchor)
+          if (lateDeparture) controller.ingestDelta(removed('s'))
+          if (!appendExact || appendTotal !== 1) controller.ingestCount(1, true)
+        }
+        controller.ingestOwnCreate(
+          named('x', 'Gamma'),
+          1,
+          2,
+          true,
+          { name: 'Aardvark' },
+          { name: 'Gamma' },
+        )
+        controller.ingestAppend(
+          named('g', 'Zzz'),
+          3,
+          true,
+          { name: 'Aardvark' },
+          { name: 'Zzz' },
+        )
+        controller.ingestDelta(withoutSortValue)
+        controller.ingestDelta(moved('p', 'Zzzz', undefined, true))
+        const occurrence = controller.rows.get().at(-1)?.occurrence
+        controller.ingestDelta(removed('g', true))
+        const gPlaceholder = controller.rows.get().at(-1)
+        expect(gPlaceholder).toMatchObject({ placeholder: true, occurrence })
+        controller.ingestDelta(updated('p', 'Aardwolf'))
+
+        expect(
+          firstPublication(controller, () => {
+            controller.ingestDelta(moved('x', 'Aaa', 0, true))
+          }),
+        ).toEqual({
+          views: [
+            ...(rPlaceholder ? [['r', null, null]] : []),
+            ...(pendingDeparture ? [['s', 'Able', 'remove']] : []),
+            ...(proven
+              ? [
+                  ['x', 'Aaa', null],
+                  ['p', 'Aardwolf', null],
+                ]
+              : [
+                  ['p', 'Aardwolf', null],
+                  ['x', 'Aaa', null],
+                ]),
+            ['g', null, null],
+          ],
+          pending: pendingDeparture ? 1 : 0,
+          placeholders: rPlaceholder
+            ? [rPlaceholder, gPlaceholder]
+            : [gPlaceholder],
+        })
+        if (pendingDeparture) {
+          controller.apply()
+          expect(controller.pendingCount.get()).toBe(0)
+          expect(controller.rows.get()[1]).toMatchObject({
+            rowKey: 's',
+            placeholder: true,
+            occurrence: sOccurrence,
+          })
+          expect(controller.rows.get().map((row) => row.rowKey)).toEqual([
+            'r',
+            's',
+            ...(proven ? ['x', 'p'] : ['p', 'x']),
+            'g',
+          ])
+        }
+      },
+    )
+
+    it.each([false, true])(
+      'proves the appended occurrence at the tail after a reselect (reused key: %s)',
+      (reuse) => {
+        const { controller, open } = makeController(10, nameOrder)
+        const rows = [
+          named('b', 'Beta'),
+          named('c', 'Gamma'),
+          named('t', 'Zulu'),
+        ]
+        const append = named('a', 'Zzz')
+        open(reuse ? [...rows, append] : rows, reuse ? 4 : 3)
+        if (reuse) controller.ingestDelta(removed('a', true))
+        const prior = controller.rows.get().find((view) => view.rowKey === 'a')
+        controller.ingestOwnCreate(named('x', 'Able'), 0, 4, true, null, null)
+        controller.ingestAppend(append, 5, true, null, null)
+        const next = controller.rows.get().filter((view) => view.rowKey === 'a')
+        expect(next).toHaveLength(1)
+        expect(next[0]?.occurrence).not.toBe(prior?.occurrence)
+        controller.ingestDelta({
+          ...withoutSortValue,
+          rowKey: 't',
+          row: { rowKey: 't', slots: {} },
+        })
+        controller.ingestDelta(moved('a', 'Zzzz', undefined, true))
+        controller.ingestDelta(removed('t', true))
+        const placeholder = controller.rows
+          .get()
+          .find((view) => view.rowKey === 't')
+        controller.ingestDelta(updated('a', 'Zzz'))
+
+        expect(
+          firstPublication(controller, () => {
+            controller.ingestDelta(moved('c', 'Zzzz', 3, true))
+          }),
+        ).toEqual({
+          views: [
+            ['x', 'Able', null],
+            ['b', 'Beta', null],
+            ['t', null, null],
+            ['a', 'Zzz', null],
+            ['c', 'Zzzz', null],
+          ],
+          pending: 0,
+          placeholders: [placeholder],
+        })
+      },
+    )
+
+    it.each([
+      'steady',
+      'search',
+      'reset order',
+      'catch-up',
+      'empty catch-up',
+      'subscription reply',
+      'reset reply',
+    ] as const)(
+      'uses the accepted sort to decide whether a value update confirms the first server slot (%s)',
+      (request) => {
+        const { controller, open, sent } = makeController()
+        const rows = [
+          named('e', 'Aardvark'),
+          named('s', 'Able'),
+          named('b', 'Beta'),
+          named('c', 'Gamma'),
+          named('t', 'Zulu'),
+          named('g', 'Zzz'),
+        ]
+        open(rows, rows.length)
+        controller.setOrder(nameOrder)
+        controller.ingestWindow(
+          rows,
+          rows.length,
+          true,
+          null,
+          null,
+          10,
+          null,
+          sent.at(-1)?.requestId,
+        )
+        if (request === 'empty catch-up') {
+          for (const row of rows)
+            controller.ingestDelta(removed(row.rowKey, true))
+          controller.ingestCount(0, true)
+        }
+        if (
+          request === 'catch-up' ||
+          request === 'empty catch-up' ||
+          request === 'subscription reply' ||
+          request === 'reset reply'
+        ) {
+          controller.ingestFrozen(1)
+          controller.resetOrder()
+          const reset = sent.at(-1)?.requestId
+          expect(reset).toEqual(expect.any(String))
+          expect(controller.order.get()).toBeUndefined()
+          controller.ingestWindow(rows, rows.length, true, null, null, 10)
+          expect(controller.acceptsWindowResponse(reset)).toBe(true)
+          expect(controller.lastAppliedWindowRequestId.get()).not.toBe(reset)
+          if (request === 'subscription reply' || request === 'reset reply') {
+            controller.ingestSubscriptionWindow(
+              rows,
+              rows.length,
+              true,
+              null,
+              null,
+              10,
+              request === 'subscription reply' ? undefined : nameOrder,
+              {},
+              [],
+            )
+            expect(controller.acceptsWindowResponse(reset)).toBe(true)
+          }
+          if (request === 'reset reply') {
+            controller.ingestWindow(
+              rows,
+              rows.length,
+              true,
+              null,
+              null,
+              10,
+              null,
+              reset,
+            )
+            expect(controller.lastAppliedWindowRequestId.get()).toBe(reset)
+            expect(controller.acceptsWindowResponse(reset)).toBe(false)
+          }
+        }
+        controller.ingestDelta(withoutSortValue)
+        controller.ingestDelta(moved('e', 'Zzzz'))
+        controller.ingestDelta(removed('g', true))
+        const placeholder = controller.rows.get().at(-1)
+        if (request === 'search') controller.setSearch('another window')
+        if (request === 'reset order') {
+          controller.resetOrder()
+          expect(controller.order.get()).toBeUndefined()
+        }
+        controller.ingestDelta({
+          kind: 'row_updated',
+          rowKey: 'e',
+          row: named('e', 'Aardwolf'),
+        })
+
+        const first = firstPublication(controller, () => {
+          controller.ingestDelta(moved('c', 'Aaa', 0, true))
+        })
+        expect(first).toEqual({
+          views: [
+            ...(request === 'reset reply' || request === 'subscription reply'
+              ? [
+                  ['e', 'Aardwolf', null],
+                  ['c', 'Aaa', null],
+                ]
+              : [
+                  ['c', 'Aaa', null],
+                  ['e', 'Aardwolf', null],
+                ]),
+            ['s', 'Able', null],
+            ['b', 'Beta', null],
+            ['t', 'Zulu', null],
+            ['g', null, null],
+          ],
+          pending: 0,
+          placeholders: [placeholder],
+        })
+      },
+    )
+
+    it.each(['move', 'update', 'create'] as const)(
+      'uses the proven rank of Birch for the next own %s',
+      (echo) => {
+        const controller = withOutgoingMoves(true)
+        const placeholder = controller.rows.get().at(-1)
+        controller.ingestDelta(moved('c', 'Birch', 2, true))
+        if (echo === 'update') controller.ingestDelta(moved('d', 'Bingo', 2))
+        const first = firstPublication(controller, () => {
+          if (echo === 'create') {
+            controller.ingestOwnCreate(
+              named('x', 'Bingo'),
+              2,
+              8,
+              true,
+              { name: 'Able' },
+              { name: 'Zulu' },
+            )
+          } else {
+            controller.ingestDelta(
+              echo === 'move'
+                ? moved('d', 'Bingo', 2, true)
+                : {
+                    kind: 'row_updated',
+                    rowKey: 'd',
+                    row: {
+                      rowKey: 'd',
+                      slots: { name: 'Bingo', edited: true },
+                    },
+                    own: true,
+                  },
+            )
+          }
+        })
+        expect(first).toEqual({
+          views: [
+            ['e', 'Aardvark', 'remove'],
+            ['s', 'Able', null],
+            ['p', 'Acorn', null],
+            ['a', 'Alpha', null],
+            ['b', 'Beta', null],
+            [echo === 'create' ? 'x' : 'd', 'Bingo', null],
+            ['c', 'Birch', null],
+            ...(echo === 'create' ? [['d', 'Omega', null]] : []),
+            ['t', 'Zulu', null],
+            ['g', null, null],
+          ],
+          pending: 1,
+          placeholders: [placeholder],
+        })
+      },
+    )
+
+    it.each([false, true])(
+      'uses the proven side of Omega for the first Yale publication (Search: %s)',
+      (search) => {
+        const controller = withOutgoingMoves(search)
+        const placeholder = controller.rows.get().at(-1)
+        const otherMove = search ? null : 'move'
+        const first = firstPublication(controller, () => {
+          controller.ingestDelta(moved('c', 'Yale', 4, true))
+        })
+        expect(first).toEqual({
+          views: [
+            ['e', 'Aardvark', 'remove'],
+            ['s', 'Able', null],
+            ['p', 'Acorn', otherMove],
+            ['a', 'Alpha', otherMove],
+            ['b', 'Beta', null],
+            ['d', 'Omega', null],
+            ['c', 'Yale', null],
+            ['t', 'Zulu', null],
+            ['g', null, null],
+          ],
+          pending: search ? 1 : 3,
+          placeholders: [placeholder],
+        })
+      },
+    )
+
+    it.each(['apply', 'applyAndResolve', 'focusRow'] as const)(
+      'applies the latest positioned bodies and a removal without crossing Beta with Birch via %s',
+      (apply) => {
+        const controller = withOutgoingMoves(false)
+        const placeholder = controller.rows.get().at(-1)
+        const e = controller.rows.get()[0]?.occurrence
+        const latest = named('a', 'York')
+        controller.ingestDelta(moved('c', 'Birch', 2, true))
+        controller.ingestDelta({
+          kind: 'row_updated',
+          rowKey: 'a',
+          row: latest,
+        })
+        expect(controller.pendingCount.get()).toBe(3)
+        const first = firstPublication(controller, () => {
+          if (apply === 'apply') controller.apply()
+          else expect(controller[apply]('a')).toEqual(latest)
+        })
+
+        expect(first?.views).toEqual([
+          ['e', null, null],
+          ['s', 'Able', null],
+          ['p', 'Bongo', null],
+          ['b', 'Beta', null],
+          ['c', 'Birch', null],
+          ['d', 'Omega', null],
+          ['a', 'York', null],
+          ['t', 'Zulu', null],
+          ['g', null, null],
+        ])
+        expect(first?.placeholders).toEqual([
+          expect.objectContaining({ rowKey: 'e', row: null, occurrence: e }),
+          placeholder,
+        ])
+        expect(first?.pending).toBe(0)
+      },
+    )
+
+    it('applies a zero rank ahead of a previously unpositioned row', () => {
+      const { controller, open } = makeController(10, nameOrder)
+      open([named('e', 'Aardvark'), named('c', 'Gamma'), named('g', 'Zzz')], 3)
+      controller.ingestDelta(withoutSortValue)
+      controller.ingestDelta(moved('e', 'Zulu', undefined, true))
+      controller.ingestDelta(removed('g', true))
+      const placeholder = controller.rows.get().at(-1)
+      const waiting = firstPublication(controller, () => {
+        controller.ingestDelta(moved('c', 'Beta', 0))
+      })
+      expect(waiting).toEqual({
+        views: [
+          ['e', 'Zulu', null],
+          ['c', 'Gamma', 'move'],
+          ['g', null, null],
+        ],
+        pending: 1,
+        placeholders: [placeholder],
+      })
+
+      const applied = firstPublication(controller, () => controller.apply())
+      expect(applied).toEqual({
+        views: [
+          ['c', 'Beta', null],
+          ['e', 'Zulu', null],
+          ['g', null, null],
+        ],
+        pending: 0,
+        placeholders: [placeholder],
+      })
+    })
+
+    it.each(['echo', 'apply'] as const)(
+      'keeps an unpositioned row in its slot on later Apply after accepting its body by %s',
+      (accept) => {
+        const { controller, open } = makeController(10, nameOrder)
+        open(
+          [
+            named('s', 'Able'),
+            named('e', 'Acorn'),
+            named('b', 'Beta'),
+            named('c', 'Gamma'),
+            named('t', 'Zulu'),
+            named('g', 'Zzz'),
+          ],
+          6,
+        )
+        controller.ingestDelta(withoutSortValue)
+        controller.ingestDelta(moved('e', 'Abe', undefined, accept === 'echo'))
+        controller.ingestDelta(removed('g', true))
+        if (accept === 'apply') controller.apply()
+        const placeholder = controller.rows.get().at(-1)
+        controller.ingestDelta(moved('c', 'Abg', 1))
+        expect(controller.rows.get()[3]).toMatchObject({
+          row: named('c', 'Gamma'),
+          pending: 'move',
+        })
+        const first = firstPublication(controller, () => controller.apply())
+
+        expect(first).toEqual({
+          views: [
+            ['s', 'Able', null],
+            ['e', 'Abe', null],
+            ['c', 'Abg', null],
+            ['b', 'Beta', null],
+            ['t', 'Zulu', null],
+            ['g', null, null],
+          ],
+          pending: 0,
+          placeholders: [placeholder],
+        })
+      },
+    )
+
+    it('keeps the proven sides through repeated neighboring moves after Apply clears the queue', () => {
+      const { controller, open } = makeController(10, nameOrder)
+      const rows = [
+        named('e', 'Aardvark'),
+        named('s', 'Able'),
+        named('b', 'Beta'),
+        named('p', 'Daisy'),
+        named('c', 'Gamma'),
+        named('t', 'Zulu'),
+        named('g', 'Zzz'),
+      ]
+      open(rows, rows.length)
+      controller.ingestDelta(withoutSortValue)
+      controller.ingestDelta(moved('e', 'Delta', undefined, true))
+      controller.ingestDelta(moved('g', 'Zzzz', 6, true))
+      controller.ingestDelta(moved('p', 'Azalea', 1))
+      controller.apply()
+      expect(controller.pendingCount.get()).toBe(0)
+
+      for (const [name, rank] of [
+        ['Echo', 3],
+        ['Azalea', 1],
+      ] as const) {
+        controller.ingestDelta(moved('p', name, rank))
+        const first = firstPublication(controller, () => controller.apply())
+        expect(first).toEqual({
+          views: [
+            ['e', 'Delta', null],
+            ['s', 'Able', null],
+            ...(rank === 1
+              ? [
+                  ['p', 'Azalea', null],
+                  ['b', 'Beta', null],
+                ]
+              : [
+                  ['b', 'Beta', null],
+                  ['p', 'Echo', null],
+                ]),
+            ['c', 'Gamma', null],
+            ['t', 'Zulu', null],
+            ['g', 'Zzzz', null],
+          ],
+          pending: 0,
+          placeholders: [],
+        })
+      }
+    })
+
+    it('keeps an equal-body move when its side of Beta is unresolved', () => {
+      const controller = withUnpositionedNeighbor(true)
+      const placeholder = controller.rows.get().at(-1)
+      const first = firstPublication(controller, () => {
+        controller.ingestDelta(moved('p', 'P', 2))
+      })
+
+      expect(first).toEqual({
+        views: [
+          ['e', 'Aardvark', 'move'],
+          ['s', 'Able', null],
+          ['p', 'P', 'move'],
+          ['b', 'Beta', null],
+          ['c', 'Gamma', null],
+          ['t', 'Zulu', null],
+          ['g', null, null],
+        ],
+        pending: 2,
+        placeholders: [placeholder],
+      })
+    })
+
+    it('clears a proven tail return while another pair remains unresolved', () => {
+      const controller = withUnpositionedNeighbor()
+      const placeholder = controller.rows.get().at(-1)
+      controller.ingestDelta(moved('p', 'Bongo', 2))
+      controller.setSearch('another window')
+      controller.ingestDelta(removed('e'))
+      controller.ingestDelta(moved('t', 'Abe', 0))
+      expect(controller.pendingCount.get()).toBe(2)
+      const first = firstPublication(controller, () => {
+        controller.ingestDelta(moved('t', 'Zulu', 4))
+      })
+
+      expect(first).toEqual({
+        views: [
+          ['e', 'Aardvark', 'remove'],
+          ['s', 'Able', null],
+          ['b', 'Beta', null],
+          ['p', 'Daisy', null],
+          ['c', 'Gamma', null],
+          ['t', 'Zulu', null],
+          ['g', null, null],
+        ],
+        pending: 1,
+        placeholders: [placeholder],
+      })
+    })
+  })
+
+  it.each(['move', 'create'] as const)(
+    'places a late own %s before a conflicting block between two accepted neighbors',
+    (action) => {
+      const { controller, open } = makeController(7)
+      open(
+        [
+          { rowKey: 's', slots: { name: 'Aardvark' } },
+          { rowKey: 'a', slots: { name: 'Alpha' } },
+          { rowKey: 'b', slots: { name: 'Beta' } },
+          { rowKey: 'c', slots: { name: 'Gamma' } },
+          { rowKey: 'd', slots: { name: 'Omega' } },
+          { rowKey: 't', slots: { name: 'Zulu' } },
+        ],
+        6,
+      )
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'Yankee' } },
+        position: 4,
+      })
+      expect(controller.pendingCount.get()).toBe(1)
+      controller.setSearch('another window')
+
+      if (action === 'move') {
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'c',
+          row: { rowKey: 'c', slots: { name: 'Baker' } },
+          position: 1,
+          own: true,
+        })
+      } else {
+        controller.ingestOwnCreate(
+          { rowKey: 'x', slots: { name: 'Baker' } },
+          1,
+          7,
+          true,
+          { name: 'Aardvark' },
+          { name: 'Zulu' },
+        )
+      }
+
+      expect(
+        controller.rows
+          .get()
+          .map((view) => [view.rowKey, view.row?.slots['name']]),
+      ).toEqual([
+        ['s', 'Aardvark'],
+        [action === 'move' ? 'c' : 'x', 'Baker'],
+        ['a', 'Alpha'],
+        ['b', 'Beta'],
+        ...(action === 'create' ? [['c', 'Gamma']] : []),
+        ['d', 'Omega'],
+        ['t', 'Zulu'],
+      ])
+      expect(controller.pendingCount.get()).toBe(0)
+    },
+  )
+
+  it('places a late own move after the conflicting neighbors of an outgoing window', () => {
+    const { controller, open } = makeController()
+    open(
+      ['a', 'b', 'e', 'c', 'd', 'f'].map((rowKey) => ({ rowKey, slots: {} })),
+      6,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Yankee' } },
+      position: 4,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'e',
+      row: { rowKey: 'e', slots: { name: 'Unknown position' } },
+    })
+    controller.setSearch('another window')
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Zulu' } },
+      position: 4,
+      own: true,
+    })
+
+    expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+      'a',
+      'b',
+      'e',
+      'd',
+      'c',
+      'f',
+    ])
+    expect(controller.pendingCount.get()).toBe(0)
+  })
+
+  it('keeps the fallback for a late own move inside a conflicting block', () => {
+    const { controller, open } = makeController()
+    open(
+      ['a', 'b', 'c', 'd'].map((rowKey) => ({ rowKey, slots: {} })),
+      4,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'a',
+      row: { rowKey: 'a', slots: { name: 'Yankee' } },
+      position: 3,
+    })
+    controller.setSearch('another window')
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Lima' } },
+      position: 1,
+      own: true,
+    })
+
+    expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+      'a',
+      'b',
+      'd',
+      'c',
+    ])
+  })
+
+  it.each([false, true])(
+    'skips incompatible neighbors in one interval (request cleared the queue: %s)',
+    (requested) => {
+      const { controller, open } = makeController()
+      open(
+        [
+          { rowKey: 'a', slots: { name: 'Alpha' } },
+          { rowKey: 'b', slots: { name: 'Beta' } },
+          { rowKey: 'c', slots: { name: 'Gamma' } },
+          { rowKey: 'd', slots: { name: 'Lima' } },
+          { rowKey: 'e', slots: { name: 'Omega' } },
+        ],
+        5,
+      )
+      for (const [rowKey, name, position] of [
+        ['b', 'Holly', 2],
+        ['c', 'Zulu', 4],
+        ['c', 'Baker', 1],
+      ] as const) {
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey,
+          row: { rowKey, slots: { name } },
+          position,
+        })
+      }
+      if (requested) controller.setSearch('another window')
+      expect(controller.pendingCount.get()).toBe(requested ? 0 : 2)
+
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'e',
+        row: { rowKey: 'e', slots: { name: 'Able' } },
+        position: 1,
+        own: true,
+      })
+      expect(controller.rows.get().map((view) => view.rowKey)).toEqual([
+        'a',
+        'b',
+        'c',
+        'e',
+        'd',
+      ])
+      expect(controller.pendingCount.get()).toBe(requested ? 0 : 2)
+    },
+  )
+
+  it.each([false, true])(
+    'places an own move relative to accepted neighbors (unpositioned neighbor: %s)',
+    (unpositioned) => {
+      const { controller, open } = makeController()
+      open(
+        [
+          { rowKey: 'a', slots: { name: 'Alpha' } },
+          { rowKey: 'b', slots: { name: 'Beta' } },
+          { rowKey: 'c', slots: { name: 'Gamma' } },
+        ],
+        3,
+      )
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'a',
+        row: { rowKey: 'a', slots: { name: 'Zulu' } },
+        position: 2,
+      })
+      if (unpositioned) {
+        controller.ingestDelta({
+          kind: 'row_moved',
+          rowKey: 'a',
+          row: { rowKey: 'a', slots: { name: 'Zebra' } },
+        })
+      }
+      controller.ingestDelta({
+        kind: 'row_moved',
+        rowKey: 'b',
+        row: { rowKey: 'b', slots: { name: 'Yankee' } },
+        position: 1,
+        own: true,
+      })
+
+      expect(
+        controller.rows.get().map((view) => view.row?.slots['name']),
+      ).toEqual(
+        unpositioned
+          ? ['Alpha', 'Yankee', 'Gamma']
+          : ['Alpha', 'Gamma', 'Yankee'],
+      )
+      expect(controller.rows.get().map((view) => view.pending)).toEqual([
+        'move',
+        null,
+        null,
+      ])
+      controller.apply()
+      expect(
+        controller.rows.get().map((view) => view.row?.slots['name']),
+      ).toEqual(
+        unpositioned
+          ? ['Zebra', 'Yankee', 'Gamma']
+          : ['Gamma', 'Yankee', 'Zulu'],
+      )
+    },
+  )
+
+  it('takes the current delivered slot after another move shifts a pending row', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: { name: 'Alpha' } },
+        { rowKey: 'b', slots: { name: 'Beta' } },
+        { rowKey: 'c', slots: { name: 'Gamma' } },
+      ],
+      3,
+    )
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Aardvark' } },
+      position: 0,
+    })
+    controller.ingestDelta({
+      kind: 'row_moved',
+      rowKey: 'c',
+      row: { rowKey: 'c', slots: { name: 'Aachen' } },
+      position: 0,
+    })
+    expect(controller.pendingCount.get()).toBe(2)
+
+    controller.ingestDelta({
+      kind: 'row_updated',
+      rowKey: 'b',
+      row: { rowKey: 'b', slots: { name: 'Aalto' } },
+      own: true,
+    })
+
+    expect(
+      controller.rows.get().map((view) => view.row?.slots['name']),
+    ).toEqual(['Aalto', 'Alpha', 'Gamma'])
+    expect(controller.rows.get().map((view) => view.pending)).toEqual([
+      null,
+      null,
+      'move',
+    ])
+    expect(controller.pendingCount.get()).toBe(1)
+
+    controller.apply()
+
+    expect(
+      controller.rows.get().map((view) => view.row?.slots['name']),
+    ).toEqual(['Aachen', 'Aalto', 'Alpha'])
+    expect(controller.pendingCount.get()).toBe(0)
   })
 
   it('applies a server-tagged own removal at once as a placeholder', () => {
@@ -4246,12 +6839,14 @@ describe('TableViewportController window place', () => {
   /** Page size every window below is served at, which is what makes 21 rows three pages. */
   const PAGE_SIZE = 10
 
-  /** Rows of the tail window after Show: rows 12 through 21 of the set. */
-  const tail = (): readonly TableRow[] =>
-    Array.from({ length: PAGE_SIZE }, (_, index) => ({
-      rowKey: `row-${index + 12}`,
+  const rowsFrom = (first: number, length: number): readonly TableRow[] =>
+    Array.from({ length }, (_, index) => ({
+      rowKey: `row-${index + first}`,
       slots: {},
     }))
+
+  /** Rows of the tail window after Show: rows 12 through 21 of the set. */
+  const tail = (): readonly TableRow[] => rowsFrom(12, PAGE_SIZE)
 
   function makePlaced(
     order: TableSortOrder = [{ field: 'id', direction: 'asc' }],
@@ -4307,6 +6902,293 @@ describe('TableViewportController window place', () => {
     expect(controller.frame.footer.get().hasNextPage).toBe(false)
     expect(controller.frame.footer.get().hasNextPage).toBe(false)
   })
+
+  it('publishes one fallback footer for an untracked tail while two searches are in flight', () => {
+    const { controller, open, sent } = makePlaced()
+    const firstPage = rowsFrom(1, PAGE_SIZE)
+    const lastPage = rowsFrom(11, 6)
+    open(firstPage, 16, 0, { id: 1 }, { id: 10 })
+    controller.nextPage()
+    const next = sent.at(-1)?.requestId
+    expect(next).toEqual(expect.any(String))
+    controller.ingestWindow(
+      lastPage,
+      16,
+      true,
+      { id: 11 },
+      { id: 16 },
+      10,
+      10,
+      next,
+    )
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
+
+    controller.ingestFrozen(1)
+    controller.setSearch('first')
+    const old = sent.at(-1)?.requestId
+    controller.setSearch('latest')
+    const latest = sent.at(-1)?.requestId
+    expect(old).toEqual(expect.any(String))
+    expect(latest).toEqual(expect.any(String))
+    expect(latest).not.toBe(old)
+    const footers: Array<ReturnType<typeof controller.frame.footer.get>> = []
+    const stop = subscribeSignal(controller.frame.footer, (footer) => {
+      footers.push(footer)
+    })
+    // An ASC catch-up and an unsorted untracked reply can deliver this same
+    // frame. The latest Search still owns its request id in both cases.
+    controller.ingestWindow(lastPage, 13, true, { id: 11 }, { id: 16 }, 10, 7)
+    stop()
+    expect(controller.frozenSince.get()).toBeNull()
+    expect(controller.lastAppliedWindowRequestId.get()).toBe(next)
+    expect(controller.acceptsWindowResponse(latest)).toBe(true)
+    expect(footers).toHaveLength(1)
+    expect(footers[0]).toMatchObject({
+      firstRow: 8,
+      lastRow: 13,
+      totalCount: 13,
+      totalExact: true,
+      hasPreviousPage: true,
+      hasNextPage: true,
+    })
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(
+      lastPage.map((row) => row.rowKey),
+    )
+    controller.ingestWindow([], 0, true, null, null, 10, 0, old)
+    controller.ingestRefusal('internal_error', old)
+    expect(controller.frame.footer.get()).toEqual(footers[0])
+    controller.ingestWindow(
+      firstPage,
+      16,
+      true,
+      { id: 1 },
+      { id: 10 },
+      10,
+      0,
+      latest,
+    )
+    expect(controller.lastAppliedWindowRequestId.get()).toBe(latest)
+    expect(controller.acceptsWindowResponse(latest)).toBe(false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
+  })
+
+  it.each(['freeze', 'matching refusal'] as const)(
+    'uses the same untracked tail fallback after a %s with one outstanding Search',
+    (recovery) => {
+      const { controller, open, sent } = makePlaced()
+      const lastPage = rowsFrom(11, 6)
+      open(lastPage, 16, 10, { id: 11 }, { id: 16 })
+      if (recovery === 'freeze') {
+        controller.ingestFrozen(1)
+      } else {
+        controller.setSearch('refused')
+        const refused = sent.at(-1)?.requestId
+        expect(refused).toEqual(expect.any(String))
+        controller.ingestRefusal('internal_error', refused)
+        expect(controller.lastAppliedWindowRequestId.get()).toBe(refused)
+      }
+      controller.setSearch('latest')
+      const latest = sent.at(-1)?.requestId
+      expect(latest).toEqual(expect.any(String))
+
+      controller.ingestWindow(lastPage, 13, true, { id: 11 }, { id: 16 }, 10, 7)
+
+      expect(controller.frame.footer.get()).toMatchObject({
+        firstRow: 8,
+        lastRow: 13,
+        totalCount: 13,
+        totalExact: true,
+        hasPreviousPage: true,
+        hasNextPage: true,
+      })
+      expect(controller.acceptsWindowResponse(latest)).toBe(true)
+    },
+  )
+
+  it('confirms the exact tail edge from a declared sort and from live counts', () => {
+    const { controller, open, sent } = makePlaced()
+    const lastPage = rowsFrom(11, 6)
+    open(rowsFrom(1, 10), 16, 0, { id: 1 }, { id: 10 })
+    controller.ingestFrozen(1)
+    controller.setSearch('first')
+    controller.setSearch('latest')
+    const latest = sent.at(-1)?.requestId
+    expect(latest).toEqual(expect.any(String))
+    const footers: Array<ReturnType<typeof controller.frame.footer.get>> = []
+    const stop = subscribeSignal(controller.frame.footer, (footer) => {
+      footers.push(footer)
+    })
+
+    controller.ingestSubscriptionWindow(
+      lastPage,
+      13,
+      true,
+      { id: 11 },
+      { id: 16 },
+      PAGE_SIZE,
+      [{ field: 'id', direction: 'asc' }],
+      controller.filter.get(),
+      [],
+      7,
+    )
+
+    stop()
+    expect(footers).toHaveLength(1)
+    expect(footers[0]).toMatchObject({
+      firstRow: 8,
+      lastRow: 13,
+      totalCount: 13,
+      totalExact: true,
+      hasPreviousPage: true,
+      hasNextPage: false,
+    })
+    expect(controller.acceptsWindowResponse(latest)).toBe(true)
+
+    controller.ingestCount(13, true, true)
+    expect(controller.frame.footer.get().hasNextPage).toBe(true)
+    controller.ingestCount(13, true, false)
+    expect(controller.frame.footer.get().hasNextPage).toBe(false)
+    controller.ingestCount(13, true, true)
+    controller.ingestCount(13, false)
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 8,
+      lastRow: 13,
+      totalCount: 13,
+      totalExact: false,
+      hasNextPage: false,
+    })
+  })
+
+  it('confirms the Next word for an explicitly sorted short Back window', () => {
+    const { controller, open, sent } = makePlaced()
+    open(rowsFrom(11, 6), 16, 10, { id: 11 }, { id: 16 })
+    controller.prevPage()
+    const back = sent.at(-1)?.requestId
+    expect(back).toEqual(expect.any(String))
+    expect(sent.at(-1)).toMatchObject({
+      anchor: { id: 11 },
+      anchorDirection: 'before',
+    })
+    controller.ingestWindow(
+      rowsFrom(1, 10),
+      16,
+      true,
+      { id: 1 },
+      { id: 10 },
+      10,
+      0,
+      back,
+    )
+    open(rowsFrom(5, 6), 9, 0, { id: 5 }, { id: 10 })
+
+    expect(controller.frame.footer.get()).toMatchObject({
+      firstRow: 1,
+      lastRow: 6,
+      totalCount: 9,
+      pageCount: 1,
+      hasNextPage: true,
+    })
+  })
+
+  it.each([
+    {
+      snapshot: 'empty',
+      shown: 0,
+      total: 13,
+      exact: true,
+      limit: 10,
+      before: 7,
+      next: true,
+    },
+    {
+      snapshot: 'unbounded',
+      shown: 13,
+      total: 13,
+      exact: true,
+      limit: 0,
+      before: 0,
+      next: true,
+    },
+    {
+      snapshot: 'inexact',
+      shown: 6,
+      total: 13,
+      exact: false,
+      limit: 10,
+      before: 0,
+      next: false,
+    },
+    {
+      snapshot: 'without a place',
+      shown: 6,
+      total: 13,
+      exact: true,
+      limit: 10,
+      before: null,
+      next: true,
+    },
+  ])(
+    'uses the fallback for a recovered snapshot that is $snapshot',
+    ({ shown, total, exact, limit, before, next }) => {
+      const { controller, open } = makePlaced()
+      open(rowsFrom(1, 10), 16, 0, { id: 1 }, { id: 10 })
+      controller.ingestFrozen(1)
+      controller.setSearch('first')
+      controller.setSearch('latest')
+
+      controller.ingestWindow(
+        rowsFrom(1, shown),
+        total,
+        exact,
+        shown === 0 ? null : { id: 1 },
+        shown === 0 ? null : { id: shown },
+        limit,
+        before,
+      )
+
+      expect(controller.frame.footer.get().hasNextPage).toBe(next)
+    },
+  )
+
+  it.each(['unsorted', 'requested', 'superseded unsorted'] as const)(
+    'uses the fallback for a catch-up whose order is %s',
+    (order) => {
+      const { controller, open, sent } = makePlaced(
+        order === 'superseded unsorted'
+          ? [{ field: 'id', direction: 'asc' }]
+          : [],
+      )
+      open(rowsFrom(11, 6), 16, 10, { id: 11 }, { id: 16 })
+      if (order === 'requested') {
+        controller.setOrder([{ field: 'id', direction: 'asc' }])
+        controller.ingestRefusal('internal_error')
+      } else {
+        controller.ingestFrozen(1)
+      }
+      if (order === 'superseded unsorted') controller.setOrder([])
+      controller.setSearch('first')
+      controller.setSearch('latest')
+      const requestId = sent.at(-1)?.requestId
+      expect(requestId).toEqual(expect.any(String))
+
+      controller.ingestWindow(
+        rowsFrom(11, 6),
+        13,
+        true,
+        { id: 11 },
+        { id: 16 },
+        10,
+        7,
+      )
+
+      expect(controller.frame.footer.get()).toMatchObject({
+        firstRow: 8,
+        lastRow: 13,
+        hasNextPage: true,
+      })
+      expect(controller.acceptsWindowResponse(requestId)).toBe(true)
+    },
+  )
 
   it('keeps Next off when rows are announced above or inside a tail window', () => {
     const { controller, open } = makePlaced()

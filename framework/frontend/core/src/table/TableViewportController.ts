@@ -3,11 +3,11 @@
 // change the viewport descriptor and are sent to the server, which replies a
 // table_window snapshot the controller displays.
 //
-// Changes to the SHOWN rows arrive as table_viewport_delta, and what the gate holds
-// is POSITION and MEMBERSHIP, not the fields of a record: a value that left the row
-// where it stood (row_updated) lands at once and the row is highlighted for two
-// seconds, while a move (row_moved) and a removal (row_removed) accumulate as
-// PENDING so the table never rearranges under the user's hands. The user resolves
+// Changes to the SHOWN rows arrive as table_viewport_delta. A value that leaves a
+// row in its shown slot lands at once and highlights the row. A move holds the
+// shown slot and values until Apply, even when another edit leaves the row in the
+// same delivered destination. Removals also wait for Apply, so the table never
+// rearranges under the user's hands. The user resolves
 // those with apply() — a moved row takes the slot the server named and a removed one
 // becomes a placeholder in its slot, carrying why it left (the layout never collapses,
 // no row is pulled from the next page). Departed slots remain even when the set is empty.
@@ -102,6 +102,7 @@ import {
   type HilosTableViews,
 } from './tableView.js'
 import {
+  HOLD_ROW_PROJECTION,
   TableViewportGeometry,
   type TableGeometryRecord,
   type TablePresentationChange,
@@ -607,6 +608,37 @@ function textColumnLayout(columns: readonly HilosTableColumn[]): string {
   )
 }
 
+/** Normalized slots with a reference can change even while their row body stays put. */
+function isEntityRef(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'type' in value &&
+    typeof value.type === 'string' &&
+    'id' in value &&
+    value.id != null
+  )
+}
+
+interface HeldRowProjection<R> {
+  readonly occurrence: number
+  readonly value: R
+}
+
+type WindowPending<R> = {
+  readonly projection?: HeldRowProjection<R>
+} & (
+  | { readonly kind: 'move' }
+  | { readonly kind: 'remove'; readonly reason: TableRemovalReason }
+)
+
+/** A requested sort may be stripped by the viewer's field scope. */
+type DeliveredSort = boolean | 'requested' | null
+
+type DeliveredSide = 'before' | 'after' | 'unknown'
+
+type DeliveredRank = { readonly first: number; readonly last: number }
+
 /** A departed slot has no raw row, resolved value or reference to its slots. */
 type WindowEntry =
   | {
@@ -696,6 +728,11 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   private readonly hasRowsAfterSignal = createSignal<boolean | null>(null)
 
+  /** Keep the displayed footer while a snapshot replaces its rows and paging metadata. */
+  private readonly heldFooterSignal = createSignal<HilosTableFooter | null>(
+    null,
+  )
+
   /** An own create pushed a row above the window; its delivered place stays, but Back must find that row. */
   private readonly pushedAboveSignal = createSignal(false)
 
@@ -708,13 +745,24 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Page a jump asks for, or null while the window is paged by anchor. */
   private pageIndex: number | null = null
 
+  /** Whether the accepted window reads back from its anchor and evicts at the top. */
+  private windowEvictsTop = false
+
   /** Place the first row held by the window sits at, or null while it is empty. */
   private firstAnchor: TableAnchor | null = null
 
   /** Place the last row held by the window sits at, or null while it is empty. */
   private lastAnchor: TableAnchor | null = null
 
-  private readonly windowSignal = createSignal<readonly WindowEntry[]>([])
+  /** Membership and the queue shown on those occurrences share one publication. */
+  private readonly presentationSignal = createSignal<{
+    readonly rows: readonly WindowEntry[]
+    readonly pending: ReadonlyMap<string, WindowPending<R>>
+  }>({ rows: [], pending: new Map() })
+
+  private readonly windowSignal = computedSignal(
+    () => this.presentationSignal.get().rows,
+  )
 
   private readonly totalCountSignal = createSignal(0)
 
@@ -734,7 +782,11 @@ export class TableViewportController<R> implements TableWindowSink {
 
   private windowRequestSequence = 0
 
-  private latestWindowRequestId: string | null = null
+  private latestWindowRequest: {
+    id: string
+    sort: TableSortOrder | undefined
+    received: boolean
+  } | null = null
 
   private windowRequestPending = false
 
@@ -786,8 +838,6 @@ export class TableViewportController<R> implements TableWindowSink {
    * second kind of selection, entered by its own button and never by paging.
    */
   private readonly allByFilterSignal = createSignal(false)
-
-  private readonly pendingCountSignal = createSignal(0)
 
   /** Counts of the rows announced to this window, by place; rebuilt from the two sets below. */
   private readonly announcedSignal = createSignal<TableViewportAnnounced>({
@@ -850,19 +900,69 @@ export class TableViewportController<R> implements TableWindowSink {
   /** Opening identity; initialization may differ from the reset baseline. */
   private openingFilter: Readonly<Record<string, unknown>>
 
+  /** The projection held for the current entry while the binder normalizes a delta. */
+  private readonly preparedProjectionSignal = createSignal<
+    | {
+        readonly entry: WindowEntry
+        readonly projection: HeldRowProjection<R>
+      }
+    | undefined
+  >(undefined)
+
   /**
-   * Pending moves by row key — the new row and the slot it lands in, applied on apply().
+   * Pending moves by row key — the latest delivered body and the projection
+   * still shown in the old slot.
    *
-   * A move with no slot carries the row alone: the server could name no place, so apply()
-   * puts the values where the row already stands rather than at an index nobody computed.
+   * A named position contributes to {@link deliveredOrder} as it arrives. A move
+   * without a position updates the body without assigning a slot.
    */
   private readonly pendingMoves = new Map<
     string,
-    { readonly row: TableRow; readonly position?: number }
+    {
+      readonly row: TableRow
+      readonly positioned: boolean
+      readonly projection?: HeldRowProjection<R>
+    }
   >()
 
-  /** Pending removals by row key (value is the reason) — become placeholders on apply(). */
-  private readonly pendingRemoved = new Map<string, TableRemovalReason>()
+  /** Pending departures keep any already held projection until Apply. */
+  private readonly pendingRemoved = new Map<
+    string,
+    {
+      readonly reason: TableRemovalReason
+      readonly projection?: HeldRowProjection<R>
+    }
+  >()
+
+  /** Live keys in the working sequence used to place deliveries. */
+  private deliveredOrder: readonly string[] | null = null
+
+  /** Sort evidence for the descriptor that supplied the accepted rows. */
+  private deliveredSorted: DeliveredSort = null
+
+  /** Sort evidence for the descriptor owed whole. Undefined follows the accepted rows. */
+  private catchUpSorted: DeliveredSort | undefined
+
+  /** Proven server indexes of current occurrences, independent of their computed ranks. */
+  private readonly recordedPositions = new Map<string, number>()
+
+  /** Whether the delivered keys enumerate the recorded window after any reselect. */
+  private recordedMembershipKnown = false
+
+  /** Rows whose last move supplied no usable position in this window. */
+  private readonly unpositionedRows = new Set<string>()
+
+  /** Sides the wire sequence alone cannot describe, indexed in both directions. */
+  private readonly deliveredSides = new Map<
+    string,
+    Map<string, DeliveredSide>
+  >()
+
+  /** Rank bounds retained once the wire sequence and proven order can differ. */
+  private deliveredRanks = new Map<string, DeliveredRank>()
+
+  /** Positioned moves whose bodies a request discarded while retaining the shown slots. */
+  private readonly discardedMoves = new Set<string>()
 
   /**
    * The key of the row an open dialog holds in focus, or null while none does.
@@ -892,16 +992,6 @@ export class TableViewportController<R> implements TableWindowSink {
   private readonly announcedAbove = new Set<string>()
 
   private readonly announcedInside = new Set<string>()
-
-  /** Per-row pending kind ('move' | 'remove') driving the row marking; rebuilt on every pending change. */
-  private readonly pendingKindSignal = createSignal<
-    ReadonlyMap<string, 'move' | 'remove'>
-  >(new Map())
-
-  /** Per-row reason for a removal still waiting behind Apply. */
-  private readonly pendingRemovalSignal = createSignal<
-    ReadonlyMap<string, TableRemovalReason>
-  >(new Map())
 
   /** Row keys marked as just changed; the views paint them and the timers below clear them. */
   private readonly highlightedKeysSignal = createSignal<ReadonlySet<string>>(
@@ -1048,12 +1138,42 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   private readonly offeredOrders: ReadonlySignal<readonly HilosTableSortOrder[]>
 
-  /** Capture affected mounts before any synchronous subscriber can see the update. */
+  /** Capture affected mounts and a waiting row's visible fields before publication. */
   withPresentationUpdate<T>(
     change: TablePresentationChange,
     update: () => T,
   ): T {
-    return this.geometryOwner.withPresentationUpdate(change, update)
+    if (
+      !(HOLD_ROW_PROJECTION in change) ||
+      typeof change[HOLD_ROW_PROJECTION] !== 'string'
+    ) {
+      return this.geometryOwner.withPresentationUpdate(change, update)
+    }
+    const rowKey = change[HOLD_ROW_PROJECTION]
+
+    return this.geometryOwner.withPresentationUpdate(change, () => {
+      const entry = this.liveWindowEntry(rowKey)
+      if (
+        entry === undefined ||
+        this.heldRowProjection(entry) !== undefined ||
+        !Object.values(entry.row.slots).flat().some(isEntityRef)
+      ) {
+        return update()
+      }
+      const previous = this.preparedProjectionSignal.get()
+      this.preparedProjectionSignal.set({
+        entry,
+        projection: {
+          occurrence: entry.occurrence,
+          value: this.options.resolve(entry.row),
+        },
+      })
+      try {
+        return update()
+      } finally {
+        this.preparedProjectionSignal.set(previous)
+      }
+    })
   }
 
   /** Release local numeric registrations and row payloads on controller replacement. */
@@ -1066,8 +1186,8 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearWindowPending()
     this.clearHighlights()
     this.geometryOwner.dispose()
-    this.windowSignal.set([])
     this.clearPending()
+    this.publishWindow([])
     this.releaseFocus()
     this.rowProgressSignal.set(new Map())
   }
@@ -1084,20 +1204,16 @@ export class TableViewportController<R> implements TableWindowSink {
       return typeof value === 'string' ? value : ''
     })
     this.rows = computedSignal(() => {
-      const pendingKinds = this.pendingKindSignal.get()
-      const pendingRemovals = this.pendingRemovalSignal.get()
+      const { rows, pending } = this.presentationSignal.get()
       const highlighted = this.highlightedKeysSignal.get()
       const selectedKeys = this.selectedKeysSignal.get()
       const expandedKeys = this.expandedKeysSignal.get()
       const allByFilter = this.allByFilterSignal.get()
 
-      return this.windowSignal.get().map((raw) => {
+      return rows.map((raw) => {
         const placeholder = raw.kind === 'departed'
-        const placeholderRemoval = placeholder ? raw.reason : null
-        const pending = placeholder
-          ? null
-          : (pendingKinds.get(raw.rowKey) ?? null)
-        const row = raw.kind === 'live' ? options.resolve(raw.row) : null
+        const change = pending.get(raw.rowKey)
+        const row = placeholder ? null : this.resolveVisibleRow(raw)
         const expandable = row !== null && (options.expandable?.(row) ?? true)
         const refused = row !== null && (options.refused?.(row) ?? false)
         const rowMessage =
@@ -1110,12 +1226,12 @@ export class TableViewportController<R> implements TableWindowSink {
           occurrence: raw.occurrence,
           row,
           placeholder,
-          pending,
-          removal:
-            placeholderRemoval ??
-            (pending === 'remove'
-              ? (pendingRemovals.get(raw.rowKey) ?? null)
-              : null),
+          pending: change?.kind ?? null,
+          removal: placeholder
+            ? raw.reason
+            : change?.kind === 'remove'
+              ? change.reason
+              : null,
           highlighted: !placeholder && highlighted.has(raw.rowKey),
           selected:
             !placeholder && (allByFilter || selectedKeys.has(raw.rowKey)),
@@ -1179,7 +1295,9 @@ export class TableViewportController<R> implements TableWindowSink {
 
       return pageCount === null || pageCount > 1
     })
-    this.pendingCount = this.pendingCountSignal
+    this.pendingCount = computedSignal(
+      () => this.presentationSignal.get().pending.size,
+    )
     this.announced = this.announcedSignal
     this.loaded = this.loadedSignal
     const declaration = options.frame
@@ -1455,6 +1573,9 @@ export class TableViewportController<R> implements TableWindowSink {
         hilosTableOrderLabel(this.orderSignal.get(), columns.get()),
       ),
       footer: computedSignal<HilosTableFooter>(() => {
+        const heldFooter = this.heldFooterSignal.get()
+        if (heldFooter !== null) return heldFooter
+
         const shown =
           this.totalCountSignal.get() === 0 ? 0 : this.liveRowKeys().length
         const page = this.pageNumber.get()
@@ -1705,14 +1826,16 @@ export class TableViewportController<R> implements TableWindowSink {
     return (
       !this.disposed &&
       (requestId === undefined ||
-        (this.windowRequestPending && requestId === this.latestWindowRequestId))
+        (this.windowRequestPending &&
+          requestId === this.latestWindowRequest?.id))
     )
   }
 
   /** Cancel waiting without replaying an ask; the subscription delivers the desired window. */
   resetWindowRequests(): void {
     this.windowRequestEpoch += 1
-    this.latestWindowRequestId = null
+    this.catchUpSorted = null
+    this.latestWindowRequest = null
     this.windowRequestPending = false
     this.lastAppliedWindowRequestIdSignal.set(null)
     this.clearWindowPending()
@@ -2074,13 +2197,18 @@ export class TableViewportController<R> implements TableWindowSink {
     if (!this.acceptsWindowResponse(requestId)) {
       return
     }
+    // A tracked read refusal is for the descriptor the server installed.
+    const sorted = this.receiveRequestSort(requestId)
     this.withPresentationUpdate({ kind: 'refusal' }, () => {
+      this.catchUpSorted = sorted
+      this.deliveredSorted = null
       this.geometryOwner.replaceWindow([])
       this.textWindowActive = false
       this.textExpansionOwner.clear()
       this.refusalSignal.set(errorCode)
       this.frozenSinceSignal.set(null)
-      this.windowSignal.set([])
+      this.clearPending()
+      this.publishWindow([])
       this.totalCountSignal.set(0)
       this.totalExactSignal.set(true)
       this.firstAnchor = null
@@ -2090,7 +2218,6 @@ export class TableViewportController<R> implements TableWindowSink {
       this.pushedAboveSignal.set(false)
       this.loadedSignal.set(true)
       this.clearHighlights()
-      this.clearPending()
       this.clearAnnounced()
       this.selectedKeysSignal.set(new Set())
       this.expandedKeysSignal.set(new Set())
@@ -2145,6 +2272,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * @param limit How many rows the window carries — the size the backend served it at.
    * @param rowsBefore Rows of the set standing before the window, or null when it reports none.
    * @param requestId Request this window answers, absent for an unsolicited snapshot.
+   * @param subscriptionSorted Whether a page subscription snapshot ran a sort.
    */
   ingestWindow(
     rows: readonly TableRow[],
@@ -2155,37 +2283,68 @@ export class TableViewportController<R> implements TableWindowSink {
     limit: number,
     rowsBefore: number | null = null,
     requestId?: string,
+    subscriptionSorted?: boolean,
   ): void {
     if (!this.acceptsWindowResponse(requestId)) {
       return
     }
+    const requestSort = this.receiveRequestSort(requestId)
+    let sorted = subscriptionSorted ?? requestSort
+    const catchingUp =
+      subscriptionSorted === undefined &&
+      requestId === undefined &&
+      (this.frozenSinceSignal.get() !== null ||
+        this.refusalSignal.get() !== null)
+    if (catchingUp) {
+      sorted =
+        this.catchUpSorted === undefined
+          ? this.deliveredSorted
+          : this.catchUpSorted
+    }
+    // A standalone window without an id can answer any untracked descriptor.
+    const orderedEdge = subscriptionSorted ?? requestSort === 'requested'
     this.withPresentationUpdate({ kind: 'window' }, () => {
+      this.deliveredSorted = sorted
+      this.catchUpSorted = undefined
       this.refusalSignal.set(null)
       this.frozenSinceSignal.set(null)
       this.clearHighlights()
       this.clearPending()
+      this.recordedMembershipKnown = true
+      this.windowEvictsTop =
+        this.pageIndex === null && this.anchorDirection === 'before'
+      for (const [index, row] of rows.entries()) {
+        this.recordedPositions.set(row.rowKey, index)
+      }
       this.geometryOwner.replaceWindow(rows.map((row) => row.rowKey))
       this.textExpansionOwner.clear()
       this.textWindowActive = true
-      this.windowSignal.set(rows.map((row) => this.liveEntry(row)))
-      this.totalCountSignal.set(Math.max(0, totalCount))
-      this.totalExactSignal.set(totalExact)
-      this.firstAnchor = firstAnchor
-      this.lastAnchor = lastAnchor
-      this.rowsBeforeSignal.set(
-        rowsBefore === null ? null : Math.max(0, rowsBefore),
-      )
-      this.hasRowsAfterSignal.set(
-        totalExact &&
-          rowsBefore !== null &&
-          rows.length > 0 &&
-          limit > 0 &&
-          (this.orderSignal.get()?.length ?? 0) > 0
-          ? rowsBefore + rows.length < totalCount
-          : null,
-      )
-      this.pushedAboveSignal.set(false)
-      this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
+      const heldFooter = this.heldFooterSignal.get()
+      if (heldFooter === null)
+        this.heldFooterSignal.set(this.frame.footer.get())
+      try {
+        this.publishWindow(rows.map((row) => this.liveEntry(row)))
+        this.totalCountSignal.set(Math.max(0, totalCount))
+        this.totalExactSignal.set(totalExact)
+        this.firstAnchor = firstAnchor
+        this.lastAnchor = lastAnchor
+        this.rowsBeforeSignal.set(
+          rowsBefore === null ? null : Math.max(0, rowsBefore),
+        )
+        this.hasRowsAfterSignal.set(
+          totalExact &&
+            rowsBefore !== null &&
+            rows.length > 0 &&
+            limit > 0 &&
+            orderedEdge
+            ? rowsBefore + rows.length < totalCount
+            : null,
+        )
+        this.pushedAboveSignal.set(false)
+        this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
+      } finally {
+        if (heldFooter === null) this.heldFooterSignal.set(null)
+      }
       this.loadedSignal.set(true)
       this.clearAnnounced()
       if (this.focusKey !== null) {
@@ -2223,10 +2382,9 @@ export class TableViewportController<R> implements TableWindowSink {
    * Ingest the window that arrived with the page's own subscription answer (HIL-642).
    *
    * The same window as any other, and one thing besides: it says which order it ran in. This
-   * is the one frame that has to — a reply to a request echoes back an order the reader
-   * chose, while a cold entry runs in the order the table declares on the backend, and
-   * nothing on this side would otherwise know what that is. The first one to arrive also
-   * settles where a reset of the order goes home to.
+   * is the frame that names the stored sort. A standalone reply has only a request id:
+   * a viewer's field scope may have narrowed the requested sort before it was stored.
+   * The first subscription window also settles where a reset of the order goes home to.
    *
    * The first such window of a table that held none is also where the table says what its
    * columns draw ({@link TableViewportControllerOptions.sendRendered}): the server built that
@@ -2266,6 +2424,9 @@ export class TableViewportController<R> implements TableWindowSink {
       return
     }
     this.withPresentationUpdate({ kind: 'window' }, () => {
+      // The descriptor is explicit even if these rows do not match the current filter.
+      const sorted = (sort?.length ?? 0) > 0
+      this.catchUpSorted = sorted
       this.replaceProgress(progress)
       // A refusal ends the skeleton without teaching the window's size or order.
       // Its first successful subscription answer still needs the rendered declaration.
@@ -2288,7 +2449,7 @@ export class TableViewportController<R> implements TableWindowSink {
         this.orderSignal.set(sort)
         this.pageSizeSignal.set(Math.max(1, Math.trunc(limit)))
       }
-      if (!sameFilter(filter, this.filterSignal.get())) {
+      if (!sameJsonValue(filter, this.filterSignal.get())) {
         // Learn only unknown metadata. A reconnect with a different filter must
         // preserve the reader's current order, size and address as well as its filter.
         // A standalone snapshot may have ended loading without an order. Wait
@@ -2307,6 +2468,8 @@ export class TableViewportController<R> implements TableWindowSink {
         lastAnchor,
         limit,
         rowsBefore,
+        undefined,
+        sorted,
       )
       this.openingOrderKnown.set(true)
       if (wasReady) {
@@ -2583,9 +2746,29 @@ export class TableViewportController<R> implements TableWindowSink {
       const previous = this.windowSignal
         .get()
         .filter((entry) => entry.rowKey !== row.rowKey)
+      const deliveredCount =
+        this.deliveredOrder?.length ?? this.liveRowKeys().length
       this.forgetRowState(row.rowKey)
       this.geometryOwner.addRecord(row.rowKey)
-      this.windowSignal.set([...previous, this.liveEntry(row)])
+      if (this.deliveredOrder === null) {
+        this.recordedPositions.set(row.rowKey, deliveredCount)
+      } else {
+        this.recordDeliveredPosition(row.rowKey, deliveredCount)
+      }
+      // The sole append after an exact empty set supplies its entire membership.
+      if (
+        deliveredCount === 0 &&
+        this.loadedSignal.get() &&
+        this.totalExactSignal.get() &&
+        this.totalCountSignal.get() === 0 &&
+        totalExact &&
+        totalCount === 1
+      ) {
+        this.recordedMembershipKnown = true
+      }
+      this.publishWindow(
+        this.releaseReturnedMoves([...previous, this.liveEntry(row)]),
+      )
       this.totalCountSignal.set(Math.max(0, totalCount))
       this.totalExactSignal.set(totalExact)
       this.firstAnchor = firstAnchor
@@ -2642,35 +2825,53 @@ export class TableViewportController<R> implements TableWindowSink {
       if (this.refusalSignal.get() !== null) {
         return
       }
-      const fromTop =
-        this.pageIndex === null && this.anchorDirection === 'before'
-      const rows = this.windowSignal
-        .get()
-        .filter((shown) => shown.rowKey !== row.rowKey)
-      const liveCount = rows.filter((entry) => entry.kind === 'live').length
-      const leaving = Math.max(0, liveCount + 1 - this.pageSizeSignal.get())
-      const destination =
-        Math.max(0, Math.trunc(position)) + (fromTop ? leaving : 0)
-      const index = this.livePositionIndex(rows, destination)
+      const fromTop = this.windowEvictsTop
+      const delivered = (this.deliveredOrder ?? this.liveRowKeys()).filter(
+        (key) => key !== row.rowKey,
+      )
+      const leaving = Math.max(
+        0,
+        delivered.length + 1 - this.pageSizeSignal.get(),
+      )
+      const evicted = new Set(
+        fromTop
+          ? delivered.splice(0, leaving)
+          : delivered.splice(delivered.length - leaving, leaving),
+      )
+      const previous = this.windowSignal.get()
+      const rows = previous.filter(
+        (shown) => shown.rowKey !== row.rowKey && !evicted.has(shown.rowKey),
+      )
+      // The reselect supplies a recorded index only for the new occurrence.
+      // The other keys still enumerate the reselect when Add extended the whole set.
+      this.recordedMembershipKnown =
+        this.recordedMembershipKnown &&
+        leaving === 0 &&
+        this.totalExactSignal.get() &&
+        this.totalCountSignal.get() === delivered.length &&
+        totalExact &&
+        totalCount === delivered.length + 1
+      this.recordedPositions.clear()
+      this.recordDeliveredPosition(row.rowKey)
       this.forgetRowState(row.rowKey)
       this.geometryOwner.addRecord(row.rowKey)
-      rows.splice(index, 0, this.liveEntry(row))
-      const evicted: WindowEntry[] = []
-      for (let count = 0; count < leaving; count++) {
-        const edge = fromTop
-          ? rows.findIndex((entry) => entry.kind === 'live')
-          : rows.length -
-            1 -
-            [...rows].reverse().findIndex((entry) => entry.kind === 'live')
-        const gone = rows.splice(edge, 1)[0]
-        if (gone !== undefined) {
-          evicted.push(gone)
-          this.geometryOwner.retireRecord(gone.rowKey)
-          this.forgetRowState(gone.rowKey)
-        }
+      for (const key of evicted) {
+        this.recordDeliveredPosition(key)
+        this.geometryOwner.retireRecord(key)
       }
-      this.refreshPendingSignals()
-      this.windowSignal.set(rows)
+      this.recordDeliveredPosition(row.rowKey, position)
+      rows.splice(
+        this.deliveredPositionIndex(rows, row.rowKey),
+        0,
+        this.liveEntry(row),
+      )
+      for (const key of evicted) {
+        this.forgetRowState(
+          key,
+          previous.find((entry) => entry.rowKey === key)?.occurrence,
+        )
+      }
+      this.publishWindow(this.releaseReturnedMoves(rows))
       this.ownCreateRequestIdSignal.set(requestId ?? null)
       this.totalCountSignal.set(Math.max(0, totalCount))
       this.totalExactSignal.set(totalExact)
@@ -2680,12 +2881,12 @@ export class TableViewportController<R> implements TableWindowSink {
         this.hasRowsAfterSignal.set(null)
       } else if (
         !fromTop &&
-        evicted.length > 0 &&
+        evicted.size > 0 &&
         this.hasRowsAfterSignal.get() !== null
       ) {
         this.hasRowsAfterSignal.set(true)
       }
-      if (fromTop && evicted.length > 0) {
+      if (fromTop && evicted.size > 0) {
         this.pushedAboveSignal.set(true)
       }
       this.takeFocusBody(row)
@@ -2695,12 +2896,10 @@ export class TableViewportController<R> implements TableWindowSink {
   /**
    * Take one live row delta: apply it now, or accumulate it as pending.
    *
-   * What the gate holds is the POSITION and the MEMBERSHIP of the rows, so the kind
-   * decides. A `row_updated` is a value that left the row where it stood: it lands at
-   * once, highlighted, resolving anything queued for that row, and raises no badge —
-   * a badge whose Apply changes nothing on the screen is the defect this door closes.
-   * A `row_moved` and a `row_removed` wait, because both of them move the list under
-   * a reader who is aiming at it.
+   * A `row_updated` leaves the row in its last delivered slot. If a move to a
+   * known slot is still pending, the update replaces the queued body. Otherwise
+   * the values land at once and raise no badge. A `row_moved` or `row_removed`
+   * waits for Apply while the delivered order advances as positions arrive.
    *
    * A delta is kept only when its row is in the current window (anchored by row-id).
    * A backend-tagged own-change is the ONE exception to the gate: the server marks the
@@ -2734,27 +2933,58 @@ export class TableViewportController<R> implements TableWindowSink {
             delta.kind === 'row_removed' ? (delta.row ?? null) : delta.row,
           )
         }
+        // Only a sorted descriptor emits moves, even when no rank is available.
+        if (
+          delta.kind === 'row_moved' &&
+          (this.deliveredSorted === null ||
+            this.deliveredSorted === 'requested') &&
+          this.isLiveRow(delta.rowKey)
+        ) {
+          this.deliveredSorted = true
+        }
         if (delta.own === true) {
           this.applyOwnDelta(delta)
 
           return
         }
         switch (delta.kind) {
-          case 'row_updated':
-            this.applyRowValues(delta.rowKey, delta.row)
+          case 'row_updated': {
+            const entry = this.liveWindowEntry(delta.rowKey)
+            const confirmed =
+              entry !== undefined && this.confirmDeliveredPosition(delta.rowKey)
+            if (
+              entry !== undefined &&
+              this.pendingMoves.get(delta.rowKey)?.positioned
+            ) {
+              this.holdMove(entry, delta.row, true)
+              this.publishWindow(
+                this.releaseReturnedMoves(
+                  this.windowSignal.get(),
+                  confirmed ? undefined : delta.rowKey,
+                ),
+              )
+            } else {
+              this.applyRowValues(delta.rowKey, delta.row, confirmed)
+            }
 
             return
-          case 'row_moved':
-            if (this.isLiveRow(delta.rowKey)) {
+          }
+          case 'row_moved': {
+            const entry = this.liveWindowEntry(delta.rowKey)
+            if (entry !== undefined) {
+              if (delta.position === undefined) {
+                this.recordUnpositionedMove(delta.rowKey)
+              } else {
+                this.recordDeliveredPosition(delta.rowKey, delta.position)
+              }
               this.geometryOwner.releaseWork(delta.rowKey)
-              this.pendingRemoved.delete(delta.rowKey)
-              this.pendingMoves.set(delta.rowKey, {
-                row: delta.row,
-                position: delta.position,
-              })
+              this.holdMove(entry, delta.row, delta.position !== undefined)
+              this.publishWindow(this.releaseReturnedMoves())
             }
-            break
-          case 'row_removed':
+
+            return
+          }
+          case 'row_removed': {
             // A deleted row's bar goes at once, whatever the gate decides about the row: the
             // server said the row is no more, so nobody will cover it with a bar again, and the
             // end of its work may never arrive at all. A row that only left the window or the
@@ -2770,45 +3000,100 @@ export class TableViewportController<R> implements TableWindowSink {
             // A LIVE row of the window, not any key in it: a row in focus leaves a second time
             // after its placeholder is standing (the server follows it past the window), and a
             // wait on a placeholder is a badge whose Apply changes nothing on the screen.
-            if (this.isLiveRow(delta.rowKey)) {
+            const entry = this.liveWindowEntry(delta.rowKey)
+            if (entry !== undefined) {
+              const projection = this.heldRowProjection(entry)
+              this.recordDeliveredPosition(delta.rowKey)
               this.pendingMoves.delete(delta.rowKey)
-              this.pendingRemoved.set(delta.rowKey, delta.reason)
+              this.pendingRemoved.set(delta.rowKey, {
+                reason: delta.reason,
+                projection,
+              })
+              this.publishWindow(this.releaseReturnedMoves())
             }
-            break
+          }
         }
-        this.refreshPendingSignals()
       },
     )
   }
 
+  /** Queue the latest body with the projection still shown in the old slot. */
+  private holdMove(
+    entry: Extract<WindowEntry, { kind: 'live' }>,
+    row: TableRow,
+    positioned: boolean,
+  ): void {
+    const projection = this.heldRowProjection(entry)
+    this.pendingRemoved.delete(entry.rowKey)
+    this.pendingMoves.set(entry.rowKey, { row, positioned, projection })
+  }
+
+  /** Reconcile complete returns against the window about to be published. */
+  private releaseReturnedMoves(
+    rows = this.windowSignal.get(),
+    onlyRowKey?: string,
+  ): readonly WindowEntry[] {
+    if (this.pendingMoves.size === 0) return rows
+
+    return rows.map((entry) => {
+      if (
+        entry.kind === 'departed' ||
+        (onlyRowKey !== undefined && entry.rowKey !== onlyRowKey)
+      ) {
+        return entry
+      }
+
+      const move = this.pendingMoves.get(entry.rowKey)
+      if (
+        !move?.positioned ||
+        !this.deliveredSlotMatchesDisplay(entry.rowKey, rows) ||
+        !sameJsonValue(
+          entry.row.staleSources ?? NO_STALE_SOURCES,
+          move.row.staleSources ?? NO_STALE_SOURCES,
+        ) ||
+        !sameJsonValue(
+          this.resolveVisibleRow(entry),
+          this.options.resolve(move.row),
+        )
+      ) {
+        return entry
+      }
+
+      this.pendingMoves.delete(entry.rowKey)
+      this.discardedMoves.delete(entry.rowKey)
+      this.geometryOwner.releaseWork(entry.rowKey)
+
+      return { ...entry, row: move.row }
+    })
+  }
+
   /**
-   * Put one shown row's new values in its slot and mark it as just changed.
-   *
-   * Everything queued for that row goes with them: the values that just landed are the
-   * later word, and holding an older move behind the gate would move the row on the next
-   * Apply to a slot computed for a row that no longer exists.
+   * Put one shown row's new values in its slot and clear its queued change.
    *
    * @param rowKey The shown row whose values landed.
    * @param row The row as the server rebuilt it.
+   * @param confirmed Whether the update established new positional evidence.
    */
-  private applyRowValues(rowKey: string, row: TableRow): void {
+  private applyRowValues(
+    rowKey: string,
+    row: TableRow,
+    confirmed: boolean,
+  ): void {
     if (!this.isLiveRow(rowKey)) {
       return
     }
-    this.windowSignal.set(
-      this.windowSignal
-        .get()
-        .map((shown) =>
-          shown.kind === 'live' && shown.rowKey === rowKey
-            ? { ...shown, row }
-            : shown,
-        ),
-    )
     this.pendingMoves.delete(rowKey)
     this.pendingRemoved.delete(rowKey)
+    const rows = this.windowSignal
+      .get()
+      .map((shown) =>
+        shown.kind === 'live' && shown.rowKey === rowKey
+          ? { ...shown, row }
+          : shown,
+      )
+    this.publishWindow(confirmed ? this.releaseReturnedMoves(rows) : rows)
     this.geometryOwner.releaseWork(rowKey)
     this.highlight(rowKey)
-    this.refreshPendingSignals()
   }
 
   /**
@@ -2838,7 +3123,14 @@ export class TableViewportController<R> implements TableWindowSink {
     if (!this.isLiveRow(rowKey)) {
       return
     }
-    this.windowSignal.set(
+    const queued = this.pendingMoves.get(rowKey)
+    if (queued) {
+      this.pendingMoves.set(rowKey, {
+        ...queued,
+        row: { ...queued.row, staleSources },
+      })
+    }
+    this.publishWindow(
       this.windowSignal
         .get()
         .map((entry) =>
@@ -2847,24 +3139,16 @@ export class TableViewportController<R> implements TableWindowSink {
             : entry,
         ),
     )
-    const queued = this.pendingMoves.get(rowKey)
-    if (queued) {
-      this.pendingMoves.set(rowKey, {
-        ...queued,
-        row: { ...queued.row, staleSources },
-      })
-    }
   }
 
   /**
    * Apply a backend-tagged own-change at once, resolving everything accumulated
-   * for that row: this echo is the authoritative latest, so any pending update /
-   * removal already queued for the same row is dropped, and the row is updated in
-   * place (or replaced by a placeholder).
+   * for that row. A plain value takes the destination already delivered for a
+   * pending move, if any. A removal replaces the row with a placeholder.
    *
-   * The author's own move takes its new slot as it lands, which is what the reader is
-   * looking at: they pressed the button, and the row standing still where the sort no
-   * longer puts it would be the surprise, not the movement.
+   * The author's own move takes its new slot as it lands when the delivered
+   * neighbors locate it. If their order leaves its destination open, the new
+   * values can land in the current slot.
    *
    * @param delta The own-change echo (row_updated, row_moved or row_removed).
    */
@@ -2879,18 +3163,43 @@ export class TableViewportController<R> implements TableWindowSink {
 
       return
     }
-    this.pendingMoves.delete(delta.rowKey)
-    this.pendingRemoved.delete(delta.rowKey)
-    if (delta.kind === 'row_updated' || delta.kind === 'row_moved') {
+    if (delta.kind === 'row_removed') {
+      if (this.deliveredOrder === null) {
+        this.extractRecordedPosition(delta.rowKey, this.liveRowKeys().length)
+      } else {
+        this.recordDeliveredPosition(delta.rowKey)
+      }
+      const rows = this.departRows(
+        new Map([[delta.rowKey, { reason: delta.reason }]]),
+      )
+      this.publishWindow(this.releaseReturnedMoves(rows))
+    } else {
+      const positioned =
+        delta.kind === 'row_moved'
+          ? delta.position !== undefined
+          : this.pendingMoves.get(delta.rowKey)?.positioned === true
+      const confirmed =
+        delta.kind === 'row_updated' &&
+        this.confirmDeliveredPosition(delta.rowKey)
+      if (delta.kind === 'row_moved') {
+        if (delta.position === undefined) {
+          this.recordUnpositionedMove(delta.rowKey)
+        } else {
+          this.recordDeliveredPosition(delta.rowKey, delta.position)
+        }
+      }
+      if (positioned) this.discardedMoves.delete(delta.rowKey)
+      this.pendingMoves.delete(delta.rowKey)
+      this.pendingRemoved.delete(delta.rowKey)
       this.geometryOwner.releaseWork(delta.rowKey)
-      this.windowSignal.set(
-        this.placedWindow(delta.rowKey, delta.row, this.slotOf(delta)),
+      const rows = this.placedWindow(delta.rowKey, delta.row, positioned)
+      this.publishWindow(
+        positioned || confirmed || delta.kind === 'row_moved'
+          ? this.releaseReturnedMoves(rows)
+          : rows,
       )
       this.highlight(delta.rowKey)
-    } else {
-      this.departRows(new Map([[delta.rowKey, delta.reason]]))
     }
-    this.refreshPendingSignals()
     this.settleEmptyWindow()
   }
 
@@ -2902,7 +3211,7 @@ export class TableViewportController<R> implements TableWindowSink {
    * slots remain even when no live members remain.
    */
   apply(): void {
-    if (this.pendingCountSignal.get() === 0) {
+    if (this.pendingCount.get() === 0) {
       return
     }
     this.withPresentationUpdate(
@@ -2911,26 +3220,19 @@ export class TableViewportController<R> implements TableWindowSink {
         rowKeys: [...this.pendingRemoved.keys(), ...this.pendingMoves.keys()],
       },
       () => {
-        if (this.pendingRemoved.size > 0) {
-          this.departRows(this.pendingRemoved)
-        }
-
-        // Departures first: server destinations count only live members, while their
-        // placeholders keep standing. Moves run by ascending destination, each against
-        // the live order the earlier ones have already settled.
-        const moves = [...this.pendingMoves.entries()].sort(
-          ([, one], [, other]) =>
-            (one.position ?? Number.MAX_SAFE_INTEGER) -
-            (other.position ?? Number.MAX_SAFE_INTEGER),
-        )
-        for (const [rowKey, move] of moves) {
-          this.windowSignal.set(
-            this.placedWindow(rowKey, move.row, move.position),
-          )
+        const rows =
+          this.pendingRemoved.size > 0
+            ? this.departRows(this.pendingRemoved)
+            : this.windowSignal.get()
+        const applied = this.appliedWindow(rows)
+        const moved = [...this.pendingMoves.keys()]
+        this.pendingMoves.clear()
+        for (const rowKey of moved) this.discardedMoves.delete(rowKey)
+        this.publishWindow(applied)
+        for (const rowKey of moved) {
           this.highlight(rowKey)
         }
 
-        this.clearPending()
         this.settleEmptyWindow()
       },
     )
@@ -3294,15 +3596,45 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Whether the key is a member of the live set, rather than a retained slot. */
   private isLiveRow(rowKey: string): boolean {
+    return this.liveWindowEntry(rowKey) !== undefined
+  }
+
+  private liveWindowEntry(
+    rowKey: string,
+  ): Extract<WindowEntry, { kind: 'live' }> | undefined {
     return this.windowSignal
       .get()
-      .some((entry) => entry.kind === 'live' && entry.rowKey === rowKey)
+      .find(
+        (entry): entry is Extract<WindowEntry, { kind: 'live' }> =>
+          entry.kind === 'live' && entry.rowKey === rowKey,
+      )
+  }
+
+  /** Keep a captured projection with the displayed occurrence until the change applies. */
+  private heldRowProjection(
+    entry: Extract<WindowEntry, { kind: 'live' }>,
+  ): HeldRowProjection<R> | undefined {
+    const pending = this.presentationSignal
+      .get()
+      .pending.get(entry.rowKey)?.projection
+    if (pending?.occurrence === entry.occurrence) return pending
+
+    const prepared = this.preparedProjectionSignal.get()
+
+    return prepared?.entry === entry ? prepared.projection : undefined
+  }
+
+  private resolveVisibleRow(entry: Extract<WindowEntry, { kind: 'live' }>): R {
+    const projection = this.heldRowProjection(entry)
+
+    return projection !== undefined
+      ? projection.value
+      : this.options.resolve(entry.row)
   }
 
   /** The keys of the window's live rows, in window order. */
-  private liveRowKeys(): readonly string[] {
-    return this.windowSignal
-      .get()
+  private liveRowKeys(rows = this.windowSignal.get()): readonly string[] {
+    return rows
       .filter((entry) => entry.kind === 'live')
       .map((entry) => entry.rowKey)
   }
@@ -3323,18 +3655,18 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 
   /** Retire all values after the surrounding presentation boundary captured them. */
-  private departRows(removals: ReadonlyMap<string, TableRemovalReason>): void {
+  private departRows(
+    removals: ReadonlyMap<string, { readonly reason: TableRemovalReason }>,
+  ): readonly WindowEntry[] {
     const live = this.liveRowKeys()
+    const departed: Array<{ rowKey: string; reason: TableRemovalReason }> = []
     const rows = this.windowSignal.get().map((entry): WindowEntry => {
-      const reason = removals.get(entry.rowKey)
+      const reason = removals.get(entry.rowKey)?.reason
       if (entry.kind === 'departed' || reason === undefined) {
         return entry
       }
       this.geometryOwner.depart(entry.rowKey, reason)
-      this.forgetRowState(entry.rowKey)
-      if (reason === 'deleted') {
-        this.dropRowProgress(entry.rowKey)
-      }
+      departed.push({ rowKey: entry.rowKey, reason })
       if (entry.rowKey === live[0]) {
         this.firstAnchor = null
       }
@@ -3350,7 +3682,14 @@ export class TableViewportController<R> implements TableWindowSink {
         deleted: reason === 'deleted',
       }
     })
-    this.windowSignal.set(rows)
+    for (const { rowKey, reason } of departed) {
+      this.forgetRowState(rowKey)
+      if (reason === 'deleted') {
+        this.dropRowProgress(rowKey)
+      }
+    }
+
+    return rows
   }
 
   /**
@@ -3371,7 +3710,7 @@ export class TableViewportController<R> implements TableWindowSink {
     ) {
       return
     }
-    this.windowSignal.set(
+    this.publishWindow(
       window.map((entry) =>
         entry.rowKey === rowKey && entry.kind === 'departed'
           ? { ...entry, deleted: true }
@@ -3385,14 +3724,22 @@ export class TableViewportController<R> implements TableWindowSink {
    * bar: the bar belongs to the key until the server ends it or says the row is deleted.
    *
    * @param rowKey Key of the row whose state goes.
+   * @param occurrence Identity of its slot, including one already removed from the window.
    */
-  private forgetRowState(rowKey: string): void {
-    const entry = this.windowSignal.get().find((row) => row.rowKey === rowKey)
-    if (entry !== undefined) {
-      this.textExpansionOwner.forgetOccurrence(entry.occurrence)
+  private forgetRowState(
+    rowKey: string,
+    occurrence = this.windowSignal.get().find((row) => row.rowKey === rowKey)
+      ?.occurrence,
+  ): void {
+    if (occurrence !== undefined) {
+      this.textExpansionOwner.forgetOccurrence(occurrence)
     }
     this.pendingMoves.delete(rowKey)
     this.pendingRemoved.delete(rowKey)
+    this.unpositionedRows.delete(rowKey)
+    this.forgetDeliveredSides(rowKey)
+    this.deliveredRanks.delete(rowKey)
+    this.discardedMoves.delete(rowKey)
     const selected = new Set(this.selectedKeysSignal.get())
     const expanded = new Set(this.expandedKeysSignal.get())
     const highlighted = new Set(this.highlightedKeysSignal.get())
@@ -3409,72 +3756,589 @@ export class TableViewportController<R> implements TableWindowSink {
     }
   }
 
-  /**
-   * The slot a live or own delta lands in: the one it named, or none for a plain value.
-   *
-   * @param delta The delta being applied at once.
-   * @returns The slot the row takes, or undefined to leave it where it stands.
-   */
-  private slotOf(delta: LiveViewportDelta): number | undefined {
-    return delta.kind === 'row_moved' ? delta.position : undefined
+  /** Apply the server's index edit and refine the working placement evidence. */
+  private recordDeliveredPosition(rowKey: string, position?: number): void {
+    const previous = this.deliveredOrder ?? this.liveRowKeys()
+    const wasMember = previous.includes(rowKey)
+    if (wasMember) this.extractRecordedPosition(rowKey, previous.length)
+
+    let index: number | undefined
+    if (position !== undefined) {
+      const size = previous.length - (wasMember ? 1 : 0)
+      index = Number.isNaN(position)
+        ? size
+        : Math.min(size, Math.max(0, Math.trunc(position)))
+      if (position !== index) {
+        this.recordedPositions.clear()
+        this.recordedMembershipKnown = false
+      } else {
+        this.insertRecordedPosition(rowKey, index)
+      }
+    }
+    this.recordRankPosition(previous, rowKey, index)
+  }
+
+  /** Shift known indexes past the insertion and record the incoming occurrence. */
+  private insertRecordedPosition(rowKey: string, index: number): void {
+    for (const [key, old] of this.recordedPositions) {
+      if (old >= index) this.recordedPositions.set(key, old + 1)
+    }
+    this.recordedPositions.set(rowKey, index)
   }
 
   /**
-   * Translate a server rank among live members into an insertion index, keeping
-   * departed slots in the window. A rank beyond the live rows appends at the tail.
+   * Shift known indexes past an extraction. An unknown key could occupy any
+   * unclaimed index, so an index between those extremes loses its proof.
    *
-   * @param rows The window without the arriving or moving row.
-   * @param position The zero-based destination among live members.
-   * @returns The physical index before that live member, or the window's end.
+   * @param rowKey Key extracted from the recorded window.
+   * @param size Number of live members before extraction.
    */
-  private livePositionIndex(
-    rows: readonly WindowEntry[],
+  private extractRecordedPosition(rowKey: string, size: number): void {
+    if (this.recordedPositions.size === 0) return
+
+    const { first, last } = this.recordedPositionBounds(rowKey, size)
+    this.recordedPositions.delete(rowKey)
+    for (const [key, index] of this.recordedPositions) {
+      if (index > last) this.recordedPositions.set(key, index - 1)
+      else if (index > first) this.recordedPositions.delete(key)
+    }
+  }
+
+  /** Find the extremes of the recorded slots still possible for a member. */
+  private recordedPositionBounds(
+    rowKey: string,
+    size: number,
+  ): { first: number; last: number } {
+    const position = this.recordedPositions.get(rowKey)
+    if (position !== undefined) return { first: position, last: position }
+
+    const occupied = new Set(this.recordedPositions.values())
+    let first = 0
+    let last = size - 1
+    while (occupied.has(first)) first++
+    while (occupied.has(last)) last--
+
+    return { first, last }
+  }
+
+  /**
+   * Refine the working sequence and computed ranks. A confirmation uses this
+   * alone because the server keeps its recorded indexes on a value update.
+   *
+   * @param previous Working sequence before the delivery.
+   * @param rowKey Key whose computed position is refined.
+   * @param position New index in the working sequence, absent for a departure.
+   */
+  private recordRankPosition(
+    previous: readonly string[],
+    rowKey: string,
+    position?: number,
+  ): void {
+    const order = previous.filter((key) => key !== rowKey)
+    const ranks =
+      this.deliveredRanks.size > 0
+        ? this.deliveredRanksWithout(previous, rowKey)
+        : null
+    this.unpositionedRows.delete(rowKey)
+    this.forgetDeliveredSides(rowKey)
+    this.deliveredOrder = order
+    if (ranks !== null) this.deliveredRanks = ranks
+    if (position === undefined) return
+
+    order.splice(position, 0, rowKey)
+    if (ranks !== null) this.recordUncertainOrder(order, rowKey, position)
+  }
+
+  /** An unpositioned move loses the key's sides, but preserves the order of its peers. */
+  private recordUnpositionedMove(rowKey: string): void {
+    const order = this.deliveredOrder ?? this.liveRowKeys()
+    if (!order.includes(rowKey)) return
+
+    const ranks = this.deliveredRanksWithout(order, rowKey)
+    this.forgetDeliveredSides(rowKey)
+    this.unpositionedRows.add(rowKey)
+    this.deliveredOrder = order
+    this.deliveredRanks = ranks
+    for (const [key, { first, last }] of ranks) {
+      ranks.set(key, { first, last: last + 1 })
+    }
+    ranks.set(rowKey, { first: 0, last: order.length - 1 })
+  }
+
+  /**
+   * In a sorted window the server emits a value update only when its computed
+   * rank equals its recorded index. The client can confirm that rank while
+   * its own recorded index still matches the server's.
+   */
+  private confirmDeliveredPosition(rowKey: string): boolean {
+    const order = this.deliveredOrder
+    if (this.deliveredSorted !== true || order === null) return false
+
+    let position = this.recordedPositions.get(rowKey)
+    if (
+      position === undefined &&
+      this.recordedMembershipKnown &&
+      this.recordedPositions.size === order.length - 1 &&
+      order.includes(rowKey)
+    ) {
+      position = this.recordedPositionBounds(rowKey, order.length).first
+    }
+    if (position === undefined) return false
+
+    const rank = this.deliveredRanks.get(rowKey)
+    if (
+      this.unpositionedRows.has(rowKey) ||
+      (rank !== undefined &&
+        (rank.first !== position || rank.last !== position))
+    ) {
+      this.recordRankPosition(order, rowKey, position)
+      return true
+    }
+
+    return false
+  }
+
+  /** Bound each remaining rank by its proven sides and the earlier delivered ranks. */
+  private deliveredRanksWithout(
+    order: readonly string[],
+    rowKey: string,
+  ): Map<string, DeliveredRank> {
+    const removed = order.indexOf(rowKey)
+    const size = order.length - (removed >= 0 ? 1 : 0)
+    const ranks = new Map<string, DeliveredRank>()
+    const indexes = new Map(order.map((key, index) => [key, index]))
+    const positioned =
+      size -
+      this.unpositionedRows.size +
+      (this.unpositionedRows.has(rowKey) ? 1 : 0)
+    let positionedBefore = 0
+
+    for (const [index, key] of order.entries()) {
+      if (key === rowKey) continue
+      const old = this.deliveredRanks.get(key) ?? { first: index, last: index }
+      const side =
+        removed >= 0 ? this.deliveredSide(rowKey, removed, key, index) : 'after'
+      const isPositioned = !this.unpositionedRows.has(key)
+      let preceding = isPositioned ? positionedBefore : 0
+      if (isPositioned) positionedBefore++
+      let following = isPositioned ? positioned - positionedBefore : 0
+      // Index order accounts for the ordinary pairs. Adjust those counts only
+      // where a delivered relation supplies different evidence.
+      for (const [peer, peerSide] of this.deliveredSides.get(key) ?? []) {
+        if (peer === rowKey) continue
+        const peerIndex = indexes.get(peer)
+        if (peerIndex === undefined) continue
+        if (isPositioned && !this.unpositionedRows.has(peer)) {
+          if (peerIndex < index) preceding--
+          else following--
+        }
+        if (peerSide === 'after') preceding++
+        if (peerSide === 'before') following++
+      }
+      ranks.set(key, {
+        first: Math.max(preceding, old.first - (side !== 'after' ? 1 : 0)),
+        last: Math.min(
+          size - 1 - following,
+          old.last - (side === 'before' ? 1 : 0),
+        ),
+      })
+    }
+
+    return ranks
+  }
+
+  /** A named index constrains the next splice even when some pairs remain unresolved. */
+  private recordUncertainOrder(
+    order: readonly string[],
+    rowKey: string,
     position: number,
-  ): number {
-    const live = rows.filter((entry) => entry.kind === 'live')
-    const before = live[Math.max(0, Math.trunc(position))]
+  ): void {
+    for (const [index, key] of order.entries()) {
+      const rank = this.deliveredRanks.get(key)
+      if (rank === undefined) continue
+      const side: DeliveredSide =
+        rank.last < position
+          ? 'before'
+          : rank.first >= position
+            ? 'after'
+            : 'unknown'
+      if (side !== this.deliveredSide(key, index, rowKey, position)) {
+        const peers =
+          this.deliveredSides.get(key) ?? new Map<string, DeliveredSide>()
+        peers.set(rowKey, side)
+        this.deliveredSides.set(key, peers)
+        const others =
+          this.deliveredSides.get(rowKey) ?? new Map<string, DeliveredSide>()
+        others.set(
+          key,
+          side === 'before' ? 'after' : side === 'after' ? 'before' : 'unknown',
+        )
+        this.deliveredSides.set(rowKey, others)
+      }
+      this.deliveredRanks.set(key, {
+        first: rank.first + (rank.first >= position ? 1 : 0),
+        last: rank.last + (rank.last >= position ? 1 : 0),
+      })
+    }
+    this.deliveredRanks.set(rowKey, { first: position, last: position })
+  }
 
-    return before === undefined ? rows.length : rows.indexOf(before)
+  /** Return the proven side of a row relative to a peer in the wire sequence. */
+  private deliveredSide(
+    rowKey: string,
+    index: number,
+    peer: string,
+    peerIndex: number,
+  ): DeliveredSide {
+    const side = this.deliveredSides.get(rowKey)?.get(peer)
+    if (side !== undefined) return side
+    if (this.unpositionedRows.has(rowKey) || this.unpositionedRows.has(peer)) {
+      return 'unknown'
+    }
+
+    return index < peerIndex ? 'before' : 'after'
+  }
+
+  /** A delivery for the same key recomputes only its relations with surviving rows. */
+  private forgetDeliveredSides(rowKey: string): void {
+    const peers = this.deliveredSides.get(rowKey)
+    if (peers === undefined) return
+
+    for (const key of peers.keys()) {
+      const relations = this.deliveredSides.get(key)
+      relations?.delete(rowKey)
+      if (relations?.size === 0) this.deliveredSides.delete(key)
+    }
+    this.deliveredSides.delete(rowKey)
+  }
+
+  /** Whether the delivered move proves the same sides of this row as its displayed slot. */
+  private deliveredSlotMatchesDisplay(
+    rowKey: string,
+    rows: readonly WindowEntry[],
+  ): boolean {
+    const order = this.deliveredOrder
+    if (order === null) return false
+    const rank = order.indexOf(rowKey)
+    if (rank < 0) return false
+    const shown = this.liveRowKeys(rows)
+    const index = shown.indexOf(rowKey)
+    const ranks = new Map(order.map((key, position) => [key, position]))
+
+    return shown.every((key, slot) => {
+      const peerRank = ranks.get(key)
+      return (
+        peerRank === undefined ||
+        key === rowKey ||
+        this.deliveredSide(key, peerRank, rowKey, rank) ===
+          (slot < index ? 'before' : 'after')
+      )
+    })
+  }
+
+  /** Install queued bodies and fit positioned moves around the retained slots. */
+  private appliedWindow(
+    window: readonly WindowEntry[],
+  ): readonly WindowEntry[] {
+    if (this.pendingMoves.size === 0) return window
+
+    const rows = window.map((entry) => {
+      const move = this.pendingMoves.get(entry.rowKey)
+
+      return entry.kind === 'live' && move !== undefined
+        ? { ...entry, row: move.row }
+        : entry
+    })
+    if (
+      this.deliveredOrder === null ||
+      ![...this.pendingMoves.values()].some((move) => move.positioned)
+    ) {
+      return rows
+    }
+
+    const shown = new Map(
+      rows.flatMap((entry, index) =>
+        entry.kind === 'live' ? [[entry.rowKey, index]] : [],
+      ),
+    )
+    const live = new Map(
+      rows.flatMap((entry, index) =>
+        entry.kind === 'live' &&
+        (!this.unpositionedRows.has(entry.rowKey) ||
+          this.hasProvenApplyPosition(entry.rowKey, index, shown))
+          ? [[entry.rowKey, entry]]
+          : [],
+      ),
+    )
+    const ordered =
+      this.deliveredSides.size === 0
+        ? this.deliveredOrder.flatMap((key) => {
+            const entry = live.get(key)
+            return entry === undefined ? [] : [entry]
+          })
+        : this.orderProvenRows(live, this.deliveredOrder)
+    const orderedKeys = new Set(ordered.map((entry) => entry.rowKey))
+    let next = 0
+    if (ordered.some((entry) => this.unpositionedRows.has(entry.rowKey))) {
+      // A recovered position orders the participating rows in their live slots.
+      // A departed or still unresolved slot stays where it was.
+      return rows.map((entry) =>
+        orderedKeys.has(entry.rowKey) ? ordered[next++] : entry,
+      )
+    }
+    const placed: WindowEntry[] = []
+    // Retained slots consume no place in the ordered sequence. Only an aligned live
+    // slot can draw a settled neighbor, with its preceding positioned moves.
+    for (const entry of rows) {
+      if (!orderedKeys.has(entry.rowKey)) {
+        placed.push(entry)
+      } else if (this.pendingMoves.get(entry.rowKey)?.positioned !== true) {
+        while (next < ordered.length) {
+          const row = ordered[next++]
+          placed.push(row)
+          if (this.pendingMoves.get(row.rowKey)?.positioned !== true) break
+        }
+      }
+    }
+
+    return placed.concat(ordered.slice(next))
+  }
+
+  /** An exact rank or a proven crossing can bring a retained row into Apply. */
+  private hasProvenApplyPosition(
+    rowKey: string,
+    index: number,
+    shown: ReadonlyMap<string, number>,
+  ): boolean {
+    const rank = this.deliveredRanks.get(rowKey)
+    if (rank !== undefined && rank.first === rank.last) return true
+
+    for (const [peer, side] of this.deliveredSides.get(rowKey) ?? []) {
+      const peerIndex = shown.get(peer)
+      if (peerIndex === undefined || !this.pendingMoves.get(peer)?.positioned) {
+        continue
+      }
+      if (
+        (side === 'before' && index > peerIndex) ||
+        (side === 'after' && index < peerIndex)
+      ) {
+        return true
+      }
+    }
+
+    return false
   }
 
   /**
-   * The window with one row rewritten, and moved to a slot when one was named.
-   *
-   * A position counts only live members; departed slots keep their place between them.
-   * A position outside the live window is pulled to its nearest edge rather than refused: the
-   * number is the row's place at the moment the frame was raised, and the window is
-   * authoritative only when it changes — clamping keeps the row visible where it was
-   * heading, and the next window settles the rest.
-   *
-   * @param rowKey The shown row to rewrite.
-   * @param row The row as the server rebuilt it.
-   * @param position The slot it lands in, or undefined to leave it where it stands.
-   * @returns The rows of the window after the change.
+   * Fit the positioned rows to their proven sides, preferring displayed order
+   * when more than one row can occupy the next slot.
    */
+  private orderProvenRows(
+    live: ReadonlyMap<string, WindowEntry>,
+    order: readonly string[],
+  ): WindowEntry[] {
+    const ranks = new Map(order.map((key, rank) => [key, rank]))
+    const remaining = [...live.values()].flatMap((entry) => {
+      const rank = ranks.get(entry.rowKey)
+      return rank === undefined ? [] : [{ entry, rank, preceding: 0 }]
+    })
+    for (const row of remaining) {
+      for (const other of remaining) {
+        if (
+          row !== other &&
+          this.deliveredSide(
+            other.entry.rowKey,
+            other.rank,
+            row.entry.rowKey,
+            row.rank,
+          ) === 'before'
+        )
+          row.preceding++
+      }
+    }
+
+    const placed: WindowEntry[] = []
+    while (remaining.length > 0) {
+      const next = remaining.findIndex((row) => row.preceding === 0)
+      if (next < 0) return placed.concat(remaining.map(({ entry }) => entry))
+      const [row] = remaining.splice(next, 1)
+      placed.push(row.entry)
+      for (const other of remaining) {
+        if (
+          this.deliveredSide(
+            row.entry.rowKey,
+            row.rank,
+            other.entry.rowKey,
+            other.rank,
+          ) === 'before'
+        )
+          other.preceding--
+      }
+    }
+
+    return placed
+  }
+
+  /**
+   * Find the visible slot for a delivered key among accepted neighbors.
+   *
+   * A pending body can still anchor the change if its position agrees with
+   * the other neighbors. Keep the author's slot when it fits between anchors.
+   *
+   * @param rows Displayed rows without the arriving or moving row.
+   * @param rowKey Key whose delivered neighbors locate it.
+   * @param current Insertion index that would keep an existing row in its slot.
+   */
+  private deliveredPositionIndex(
+    rows: readonly WindowEntry[],
+    rowKey: string,
+    current?: number,
+  ): number {
+    const order = this.deliveredOrder ?? []
+    const rank = order.indexOf(rowKey)
+    if (rank < 0) return current ?? rows.length
+
+    const ranks = new Map(order.map((key, index) => [key, index]))
+    const neighbors = rows.flatMap((entry, index) => {
+      const peerRank = ranks.get(entry.rowKey)
+      if (
+        entry.kind === 'departed' ||
+        peerRank === undefined ||
+        this.unpositionedRows.has(entry.rowKey) ||
+        this.pendingRemoved.has(entry.rowKey)
+      ) {
+        return []
+      }
+
+      return [
+        {
+          rowKey: entry.rowKey,
+          index,
+          rank: peerRank,
+          side: this.deliveredSide(entry.rowKey, peerRank, rowKey, rank),
+        },
+      ]
+    })
+    const agreesWith = (
+      neighbor: (typeof neighbors)[number],
+      others: typeof neighbors,
+    ) =>
+      others.every((other) => {
+        if (other === neighbor) return true
+        const side = this.deliveredSide(
+          other.rowKey,
+          other.rank,
+          neighbor.rowKey,
+          neighbor.rank,
+        )
+        return (
+          side === 'unknown' ||
+          (side === 'before') === other.index < neighbor.index
+        )
+      })
+    const waiting = (key: string) =>
+      this.pendingMoves.has(key) ||
+      (this.deliveredRanks.size > 0 && this.discardedMoves.has(key))
+
+    // With partial order, a discarded move must not disqualify an independent
+    // anchor. With complete order the existing crossed blocks supply the bounds.
+    const settled = neighbors.filter(({ rowKey }) => !waiting(rowKey))
+    const accepted = settled.filter((neighbor) => agreesWith(neighbor, settled))
+    const positioned = neighbors.filter(
+      (neighbor) =>
+        !this.pendingMoves.has(neighbor.rowKey) ||
+        agreesWith(neighbor, accepted),
+    )
+    const candidates = positioned.filter(
+      (neighbor) => waiting(neighbor.rowKey) && agreesWith(neighbor, accepted),
+    )
+    const anchors = accepted.concat(
+      candidates.filter((neighbor) => agreesWith(neighbor, candidates)),
+    )
+    let after = 0
+    let before = rows.length
+    for (const neighbor of anchors) {
+      if (neighbor.side === 'before')
+        after = Math.max(after, neighbor.index + 1)
+      if (neighbor.side === 'after') before = Math.min(before, neighbor.index)
+    }
+
+    const hasOpenEdge = after === 0 || before === rows.length
+    // Merge adjacent blocks whose delivered ranks cross in display order.
+    const blocks: Array<{
+      firstIndex: number
+      lastIndex: number
+      lowestRank: number
+      highestRank: number
+      hasAlignedPair: boolean
+      side: DeliveredSide
+    }> = []
+    for (const neighbor of positioned) {
+      const block = {
+        firstIndex: neighbor.index,
+        lastIndex: neighbor.index,
+        lowestRank: neighbor.rank,
+        highestRank: neighbor.rank,
+        hasAlignedPair: false,
+        side: neighbor.side,
+      }
+      while (blocks.length > 0) {
+        const previous = blocks[blocks.length - 1]
+        if (previous.highestRank < block.lowestRank) break
+        blocks.pop()
+        block.firstIndex = previous.firstIndex
+        if (block.side !== previous.side) block.side = 'unknown'
+        block.hasAlignedPair =
+          block.hasAlignedPair ||
+          previous.hasAlignedPair ||
+          previous.lowestRank < block.highestRank
+        block.lowestRank = Math.min(block.lowestRank, previous.lowestRank)
+        block.highestRank = Math.max(block.highestRank, previous.highestRank)
+      }
+      blocks.push(block)
+    }
+    // Bound a crossed block only when its entire proven order is on one side.
+    for (const block of blocks) {
+      if (!hasOpenEdge && !block.hasAlignedPair) continue
+      if (block.side === 'before') after = Math.max(after, block.lastIndex + 1)
+      if (block.side === 'after') before = Math.min(before, block.firstIndex)
+    }
+
+    const hasUncertainSide = neighbors.some(
+      (neighbor) => neighbor.side === 'unknown',
+    )
+    if (
+      current !== undefined &&
+      (this.pendingMoves.size + this.pendingRemoved.size > 0 ||
+        this.unpositionedRows.size > 0 ||
+        hasUncertainSide) &&
+      after <= before
+    ) {
+      if (current >= after && current <= before) return current
+      if (hasUncertainSide && current < after) return after
+    }
+
+    return before
+  }
+
+  /** Rewrite an own row, moving it only when it has a delivered destination. */
   private placedWindow(
     rowKey: string,
     row: TableRow,
-    position: number | undefined,
+    positioned: boolean,
   ): readonly WindowEntry[] {
-    const rows = this.windowSignal
-      .get()
-      .map((entry) =>
-        entry.kind === 'live' && entry.rowKey === rowKey
-          ? { ...entry, row }
-          : entry,
-      )
-    if (position === undefined) {
-      return rows
-    }
-    const from = rows.findIndex(
+    const rows = this.windowSignal.get().slice()
+    const index = rows.findIndex(
       (entry) => entry.kind === 'live' && entry.rowKey === rowKey,
     )
-    const updated = rows[from]
-    if (updated === undefined) {
-      return rows
-    }
-    rows.splice(from, 1)
-    rows.splice(this.livePositionIndex(rows, position), 0, updated)
+    const entry = rows[index]
+    if (entry?.kind !== 'live') return rows
+
+    rows.splice(index, 1)
+    const destination = positioned
+      ? this.deliveredPositionIndex(rows, rowKey, index)
+      : index
+    rows.splice(destination, 0, { ...entry, row })
 
     return rows
   }
@@ -3548,7 +4412,8 @@ export class TableViewportController<R> implements TableWindowSink {
       this.textWindowActive = false
       this.textExpansionOwner.clear()
       this.clearHighlights()
-      this.clearPending()
+      this.clearPending(true)
+      this.publishWindow()
       this.clearAnnounced()
       this.clearSelection()
       this.clearExpanded()
@@ -3620,10 +4485,23 @@ export class TableViewportController<R> implements TableWindowSink {
     })
   }
 
-  private clearPending(): void {
+  /** A request discards the queue, while deltas can still address the outgoing window. */
+  private clearPending(keepDeliveredOrder = false): void {
+    if (keepDeliveredOrder) {
+      for (const [key, move] of this.pendingMoves) {
+        if (move.positioned) this.discardedMoves.add(key)
+      }
+    } else {
+      this.deliveredOrder = null
+      this.recordedPositions.clear()
+      this.recordedMembershipKnown = false
+      this.unpositionedRows.clear()
+      this.deliveredSides.clear()
+      this.deliveredRanks.clear()
+      this.discardedMoves.clear()
+    }
     this.pendingMoves.clear()
     this.pendingRemoved.clear()
-    this.refreshPendingSignals()
   }
 
   /**
@@ -3653,19 +4531,36 @@ export class TableViewportController<R> implements TableWindowSink {
     this.clearExpanded()
   }
 
-  private refreshPendingSignals(): void {
-    this.pendingCountSignal.set(
-      this.pendingMoves.size + this.pendingRemoved.size,
-    )
-    const pendingKinds = new Map<string, 'move' | 'remove'>()
-    for (const rowKey of this.pendingMoves.keys()) {
-      pendingKinds.set(rowKey, 'move')
+  private publishWindow(rows = this.windowSignal.get()): void {
+    const pending = new Map<string, WindowPending<R>>()
+    for (const entry of rows) {
+      if (entry.kind === 'departed') continue
+
+      const removal = this.pendingRemoved.get(entry.rowKey)
+      const move = this.pendingMoves.get(entry.rowKey)
+      if (removal !== undefined) {
+        pending.set(entry.rowKey, { kind: 'remove', ...removal })
+      } else if (move !== undefined) {
+        pending.set(entry.rowKey, { kind: 'move', projection: move.projection })
+      }
     }
-    for (const rowKey of this.pendingRemoved.keys()) {
-      pendingKinds.set(rowKey, 'remove')
+
+    const delivered = this.deliveredOrder
+    if (
+      pending.size === 0 &&
+      delivered !== null &&
+      this.deliveredRanks.size === 0
+    ) {
+      // An unpositioned move can leave the two orders apart after Apply.
+      const shown = this.liveRowKeys(rows)
+      if (
+        shown.length === delivered.length &&
+        shown.every((key, index) => key === delivered[index])
+      ) {
+        this.deliveredOrder = null
+      }
     }
-    this.pendingKindSignal.set(pendingKinds)
-    this.pendingRemovalSignal.set(new Map(this.pendingRemoved))
+    this.presentationSignal.set({ rows, pending })
   }
 
   /**
@@ -3721,7 +4616,8 @@ export class TableViewportController<R> implements TableWindowSink {
 
   /** Restore controls for the same route before consuming its retained window. */
   restoreWindow({ current, opening }: TableWindowContinuation): void {
-    if (this.disposed || !sameFilter(opening.filter, this.openingFilter)) return
+    if (this.disposed || !sameJsonValue(opening.filter, this.openingFilter))
+      return
     this.filterSignal.set({ ...current.filter })
     this.openingOrder = opening.sort ?? undefined
     this.orderSignal.set(current.sort ?? undefined)
@@ -3776,7 +4672,28 @@ export class TableViewportController<R> implements TableWindowSink {
       return
     }
     const requestId = `${this.windowRequestMount}:${this.windowRequestEpoch}:${++this.windowRequestSequence}`
-    this.latestWindowRequestId = requestId
+    const descriptor = this.currentDescriptor()
+    const catchUpSorted =
+      this.catchUpSorted === undefined
+        ? this.deliveredSorted
+        : this.catchUpSorted
+    if (
+      this.windowRequestPending &&
+      this.latestWindowRequest?.received === false
+    ) {
+      // A superseded ask may already have installed a different descriptor.
+      if (
+        (this.latestWindowRequest.sort?.length ?? 0) > 0 ||
+        catchUpSorted !== false
+      ) {
+        this.catchUpSorted = null
+      }
+    }
+    this.latestWindowRequest = {
+      id: requestId,
+      sort: descriptor.sort ?? undefined,
+      received: false,
+    }
     this.windowRequestPending = true
     if (this.windowSkeletonTimer !== null) {
       clearTimeout(this.windowSkeletonTimer)
@@ -3785,7 +4702,16 @@ export class TableViewportController<R> implements TableWindowSink {
       this.windowSkeletonTimer = null
       this.windowPendingSignal.set(true)
     }, WINDOW_SKELETON_MS)
-    this.options.sendViewport({ ...this.currentDescriptor(), requestId })
+    this.options.sendViewport({ ...descriptor, requestId })
+  }
+
+  /** Name the installed descriptor before presentation can synchronously send another ask. */
+  private receiveRequestSort(requestId?: string): DeliveredSort {
+    const request = this.latestWindowRequest
+    if (requestId === undefined || request?.id !== requestId) return null
+
+    request.received = true
+    return (request.sort?.length ?? 0) > 0 ? 'requested' : false
   }
 
   /** Complete only the ask still current after synchronous controller subscribers ran. */
@@ -3796,7 +4722,10 @@ export class TableViewportController<R> implements TableWindowSink {
       }
       return
     }
-    if (this.windowRequestPending && requestId === this.latestWindowRequestId) {
+    if (
+      this.windowRequestPending &&
+      requestId === this.latestWindowRequest?.id
+    ) {
       this.windowRequestPending = false
       this.clearWindowPending()
       this.lastAppliedWindowRequestIdSignal.set(requestId)
@@ -3804,8 +4733,8 @@ export class TableViewportController<R> implements TableWindowSink {
   }
 }
 
-/** Compare JSON filter values without depending on object key order. */
-function sameFilter(left: unknown, right: unknown): boolean {
+/** Compare filter values and row projections without depending on object key order. */
+function sameJsonValue(left: unknown, right: unknown): boolean {
   if (left === right) return true
   if (
     left === null ||
@@ -3820,8 +4749,16 @@ function sameFilter(left: unknown, right: unknown): boolean {
       Array.isArray(left) &&
       Array.isArray(right) &&
       left.length === right.length &&
-      left.every((value, index) => sameFilter(value, right[index]))
+      left.every((value, index) => sameJsonValue(value, right[index]))
     )
+  }
+  const leftPrototype: unknown = Object.getPrototypeOf(left)
+  const rightPrototype: unknown = Object.getPrototypeOf(right)
+  if (
+    (leftPrototype !== Object.prototype && leftPrototype !== null) ||
+    (rightPrototype !== Object.prototype && rightPrototype !== null)
+  ) {
+    return false
   }
   const leftMap = left as Record<string, unknown>
   const rightMap = right as Record<string, unknown>
@@ -3833,7 +4770,8 @@ function sameFilter(left: unknown, right: unknown): boolean {
     keys.length === rightKeys.length &&
     keys.every(
       (key) =>
-        Object.hasOwn(rightMap, key) && sameFilter(leftMap[key], rightMap[key]),
+        Object.hasOwn(rightMap, key) &&
+        sameJsonValue(leftMap[key], rightMap[key]),
     )
   )
 }

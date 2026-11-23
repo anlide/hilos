@@ -273,10 +273,10 @@ checks again in `ingestWindow(..., requestId?)` and
 An accepted matching window or refusal completes that request, and the
 read-only `ReadonlySignal<string | null>`
 `lastAppliedWindowRequestId` changes only after the controller has applied the
-update. A latest refusal is terminal for that ask. An authoritative
-snapshot without an id remains valid — including a page's initial or recovered
-`windows` section and an untracked reconnect/source catch-up — but it does not
-acknowledge a tracked ask. Those snapshots therefore carry no request id.
+update. A latest refusal is terminal for that ask. When reading fails after the server
+installs the requested descriptor, the server still owes that descriptor's
+window. An authoritative snapshot without an id can replace the held window
+while a tracked ask is outstanding. Only a matching id acknowledges that ask.
 
 `HilosConnection.sendTableViewport()` sends the id on the one request. The
 descriptor reported by `tableWindowDescriptors()` and the `tableWindows` map in
@@ -932,23 +932,26 @@ neither flag nor predicate is drawn exactly as before. No `data-id` is new.
 ## What applies at once and what waits
 
 The boundary is one: **a change to a value inside a row applies at once; a change
-to the membership or the order of the rows waits for the reader.** A list must
-not move under the hands that are aiming at it, but a value that refreshed in
-place moved nothing, and there is nothing to hold.
+to the membership or the order of the rows waits for the reader.** A row waiting
+to move keeps its displayed fields and slot together until Apply.
 
 | What happened | What the table does | Why |
 |---|---|---|
-| A value changed in a shown row and the row stays where it is | applies **at once**, highlighted, raises no badge | Nothing moved. There is nothing to hold. |
+| A value changed in a shown row and the row stays in its displayed slot | applies **at once**, highlighted, raises no badge | The row remains in place. |
 | A field changed that no column renders, and the row keeps its place | **nothing at all** | The delta compares the rendered row, not the entity. |
 | The edit moves the row under the current order | **waits**, the row is marked *will move* | A move is movement under the reader. |
+| Another edit keeps the destination of a pending move | **waits** with the same *will move* mark | The delivered destination is still waiting to be applied to the displayed window. |
 | The shown row was deleted or left the filter | **waits**, the row is marked *will leave* | Same: its place in the list changes. |
 | **The reader's own** create or edit | applies **at once**, taking the place the sort gives it | They pressed the button and are looking at the result. |
 | Somebody else's new row | depends on where it lands — see the next section | It may appear by itself only where it moves nothing. |
 | Somebody else's edit brings in a row the window does not hold | announced when it lands inside the window or at the tail of a last page with room; nothing above | The reader has not seen it here; F5 would show it. |
 
-Because a change that touches no rendered column produces no delta at all, **an
-Apply button after which the screen looks the same cannot happen**. A badge that
-resolves to nothing visible is a defect, not caution.
+A pending move clears when the delivered facts establish that the row stays on
+the same side of each neighbor still in the delivered window and when its
+complete projection and freshness match what is shown. A later delivery or
+departure can establish that return. An unresolved side of the row keeps its mark. An unresolved pair of
+other rows does not prevent the return. The projection includes the values
+row actions read.
 
 The rendered-row test decides the **value** outcomes only. Place is judged
 separately and wins: a field the table does not render can still be part of the
@@ -961,18 +964,45 @@ A field a cell reads and no column names is a field whose change never reaches t
 screen, and nothing reports it: the row simply stops refreshing that value. That is
 why `reads` names what the dialogs a cell opens read from the row, too.
 
-On the wire this taxonomy is `table_viewport_delta.kind`, which has three values:
-`row_updated` (a value in place — applied at once, highlighted), `row_moved` (a
-move — waits), `row_removed` (gone from the set — waits).
+On the wire, `table_viewport_delta.kind` distinguishes
+`row_updated` (a value in the last delivered slot), `row_moved` (a move), and
+`row_removed` (gone from the window or set). `row_stale` carries freshness marks.
+The server compares each edit with the last order it delivered to the
+subscription. If a foreign `row_updated` arrives for a row with a known move
+still pending, the controller replaces the queued body. A foreign removal
+keeps the displayed fields until Apply, including when it carries a fresh
+body for the focus. The scope's entity store and any open row focus keep
+receiving the latest fields, and a removal without a body clears the focused
+row.
 
 **The reader's own change is the only exception to the gate.** The tab that made
-an edit picks up its own echo immediately; every other tab sees the gate. The
-core marks the row before the action (`expectOwnChange`) and applies the echo in
-place when it returns (`applyOwnDelta`); a failed action drops the mark. That
-correlation is by a row key the client knew *before* the action, so it does not
-cover a create whose key the server mints — that one rides its own frame,
-`table_viewport_own_create`, which carries the place the row takes and the boundaries
-of the re-selected window.
+an edit shows the fields from the server's `own` echo immediately. An own
+`row_moved` with a position takes its delivered place when accepted neighbors
+locate it. An own `row_updated` for a row with a pending positioned move
+uses the same placement rule and clears its move. A neighbor whose position
+agrees with the display can locate the author's row while its own fields still
+wait. When the delivered order leaves the destination ambiguous, the author's
+fields land in the displayed slot if it fits the proven sides of the accepted
+neighbors. A slot outside those bounds moves only to the nearest proven edge
+while the intervening order remains ambiguous. A move without a position
+updates its body in its displayed slot. A later ranked delivery can establish
+the relative place. In a window with confirmed sorting, a value update establishes
+a computed position when the server's recorded index for that row is known.
+An unpositioned move keeps that recorded index while leaving the computed position
+unresolved. A snapshot establishes the recorded indexes of the rows it carries.
+A create whose key the server mints rides `table_viewport_own_create`, which
+carries the new occurrence's index and the boundaries of the reselected window.
+The reselect may reorder existing rows even when their membership and prior
+indexes were known. When the delivered membership is complete and only one
+recorded index is unclaimed, it belongs to the remaining key. A sorted value
+update can use that index to confirm the key's computed position. A later
+positioned move establishes its own recorded index. An extraction with no
+recorded index uses the unclaimed slots to decide which surviving indexes shift
+and which lose their proof. A tail append establishes the new occurrence's index.
+An append reporting an exact total of one restores proof of complete membership
+when the accepted window had an exact total of zero and no delivered live keys.
+Placeholders and rows waiting for a delivered removal can still occupy displayed
+slots. A count alone carries no new key.
 
 **There is no second exception, and no mechanism for one.** A backend used to be
 able to declare an ordinary mutation *live* and have it step around the gate; the
@@ -1087,6 +1117,13 @@ window is what makes the place true again. **Next reads the server's word on the
 edge**, not that delivered place against a live count (HIL-1153): those numbers
 describe different moments. An exact, nonempty, bounded, ordered window
 establishes `hasRowsAfter` from its own `rowsBefore + rows.length < totalCount`.
+The sort declared on an accepted subscription snapshot establishes its order
+even when the snapshot has no request id. A standalone `table_window` without
+an id can carry a catch-up or answer an untracked request for the same table.
+Both can send identical frames, so Next uses the fallback for that snapshot.
+The footer publishes the accepted range and navigation together, and the
+tracked request keeps waiting for its own answer. Sort evidence used to place
+later row deltas follows the delivered and superseded descriptors separately.
 A live count replaces it only when it carries the key. An announcement above or
 inside, an append, and an in-window delete leave it alone; an own create that
 pushes a row out below the window sets it to true. An own create on a full Back
@@ -1120,16 +1157,36 @@ Show — only a delete has a mirror.
 
 ## Apply
 
-**After Apply the screen always changes** — a button after which it is unchanged
-does not exist. The taxonomy above is what guarantees that: only moves and
-removals ever wait, and both are visible.
+Apply resolves the waiting moves and removals on the rows already shown.
 
-Apply resolves exactly those two, on the rows already shown:
-
-- a **move** takes the row to the place the current order gives it;
-- a **removal** leaves a **data-free placeholder** in the row's slot until the
-  replacement window arrives. Apply does not move the window, pull a row up from
-  the next page, or collapse the list. The placeholder shows the existing
+- **Moves** show their latest delivered bodies. Each named destination is a
+  rank among live rows at the time of delivery. Later moves and departures can
+  shift that rank before Apply. A move without a named destination updates
+  its values in its existing slot among the retained rows. Apply preserves that
+  slot on later applies while its placement remains unresolved. A rank
+  delivered for another row can establish its position or prove a crossing
+  of its shown slot. Apply then orders the participating rows in their live
+  slots, leaving departed and unresolved slots in place. Apply places
+  positioned rows around the retained slots using their proven sides, keeping
+  the shown order of unresolved pairs where it fits those sides. A named rank still
+  applies to the server's sequence of delivered keys. The rank and earlier
+  deliveries can establish sides outside that sequence, including after a
+  neighbor with an unknown position departs. The order evidence lives with the
+  accepted window through Apply and requests for a replacement. An accepted
+  snapshot replaces that evidence, and a matching refusal clears the rows and
+  their evidence. Sort evidence belongs to the server's descriptor and can
+  survive the refusal. A subscription snapshot names that descriptor's sort.
+  A correlated standalone answer identifies the request, whose sort may have
+  been narrowed to the viewer's visible fields. A catch-up carries forward the
+  evidence for the descriptor it recovers when its source is known. An
+  ambiguous no-id snapshot still replaces the window and establishes its
+  recorded row indexes. A move on that window confirms that its descriptor
+  sorts the rows. Value updates can confirm a computed position once both
+  its sort and that occurrence's recorded index are established.
+- A **removal** leaves a **data-free placeholder** in the row's slot until the
+  replacement window arrives. An Apply consisting only of removals leaves the
+  remaining live rows in place. Apply does not move the window, pull a row up
+  from the next page, or collapse the list. The placeholder shows the existing
   framework reason: `deleted` says "Removed", `moved_out` says "Moved to another
   page", and `left_set` says "No longer in this list". The departed slot keeps
   its row key, occurrence and reason, plus numeric geometry; it keeps no source
@@ -2196,7 +2253,7 @@ addressed to the one connection it concerns:
 | `table_window` | server → client, reply or catch-up of a window owed whole (see below) | `page`, `tableKey`, `rows`, `limit`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `rowsBefore` (absent when the count is not exact, as `pageCount` is), and the optional `requestId` only when answering a tracked `table_viewport` |
 | `table_window_refused` | server → client, reply only | `page`, `tableKey`, `errorCode` (`internal_error` / `table_not_served`), and the optional `requestId` only when refusing a tracked `table_viewport` |
 | `table_viewport_frozen` | server → client, live | `page`, `tableKey`, `since` (server ms of the first failure) — sent once per freeze |
-| `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
+| `table_viewport_delta` | server → client, live | `page`, `tableKey`, `kind` (`row_updated` / `row_moved` / `row_removed` / `row_stale`), `rowKey`, `row` (on `row_removed` only for the row the tab holds in focus, and only while it is alive), `position` (`row_moved` only, absent when the table could not name the slot), `own` (set for the connection that authored the change), `reason` (`row_removed` only: `deleted` / `left_set` / `moved_out` — the row was deleted, left the filtered set, or moved past an edge of the window), `staleSources` (`row_stale` only, in place of `row`) |
 | `table_viewport_append` | server → client, live | `page`, `tableKey`, `row`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor` — sent **only** when the row's place is the end of the window and the window has room; the anchors name the window after the append |
 | `table_viewport_count` | server → client, live | `page`, `tableKey`, `totalCount`, `totalExact`, `pageCount`, `hasRowsAfter` (absent when the count is inexact or the server did not settle the edge; a frame may carry an unchanged total when only this word changed) |
 | `table_viewport_own_create` | server → client, live | `page`, `tableKey`, `row`, `position`, `totalCount`, `totalExact`, `pageCount`, `firstAnchor`, `lastAnchor`, `requestId` — the row takes the place the sort gives it, not the tail; the anchors name the re-selected window |

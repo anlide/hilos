@@ -160,14 +160,23 @@ final class TableViewportSubscription
      * @param string $rowKey Row-id key
      * @param array{rowKey: int|string, slots: array<string, mixed>, staleSources?: list<string>} $wireRow Wire row delivered for that key
      * @param ?TableAnchorDTO $anchor Place that row stands at, or null when the table could not say
+     * @param ?int $position Zero-based destination of an already delivered row, or null to keep its order
      */
-    public function recordRow(string $rowKey, array $wireRow, ?TableAnchorDTO $anchor = null): void
-    {
+    public function recordRow(
+        string $rowKey,
+        array $wireRow,
+        ?TableAnchorDTO $anchor = null,
+        ?int $position = null,
+    ): void {
         $this->rowDigests[$rowKey] = self::digest($wireRow);
         if ($this->rendered !== []) {
             $this->renderedDigests[$rowKey] = $this->renderedDigest($wireRow);
         }
         $this->rowAnchors[$rowKey] = $anchor;
+        if ($position !== null) {
+            $this->rowDigests = self::withRowAtPosition($this->rowDigests, $rowKey, $position);
+            $this->rowAnchors = self::withRowAtPosition($this->rowAnchors, $rowKey, $position);
+        }
     }
 
     /**
@@ -573,6 +582,25 @@ final class TableViewportSubscription
         $encoded = json_encode($wireRow);
 
         return $encoded === false ? null : hash(self::ROW_DIGEST_ALGO, $encoded);
+    }
+
+    /**
+     * Inserts the row among its neighbours while retaining numeric row keys.
+     *
+     * @template T
+     * @param array<int|string, T> $rows Ordered values keyed by row ID
+     * @param string $rowKey Existing row ID
+     * @param int $position Zero-based destination after removing the row from its old position
+     * @return array<int|string, T> Values in the new order
+     */
+    private static function withRowAtPosition(array $rows, string $rowKey, int $position): array
+    {
+        $movedRow = [$rowKey => $rows[$rowKey]];
+        unset($rows[$rowKey]);
+
+        return array_slice($rows, 0, $position, preserve_keys: true)
+            + $movedRow
+            + array_slice($rows, $position, preserve_keys: true);
     }
 
     /**

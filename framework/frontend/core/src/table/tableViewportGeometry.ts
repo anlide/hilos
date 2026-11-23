@@ -15,6 +15,9 @@ export type TablePresentationChange =
   | { readonly kind: 'rows'; readonly rowKeys: readonly string[] }
   | { readonly kind: 'window' | 'reset' | 'refusal' }
 
+/** Internal binder metadata naming the row to hold through entity publication. */
+export const HOLD_ROW_PROJECTION = Symbol('hold row projection')
+
 /**
  * Occupied fractional CSS pixels, including the actual border model. `gap`
  * includes all separation, including the last record's outer space. Card

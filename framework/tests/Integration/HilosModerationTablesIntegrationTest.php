@@ -1279,6 +1279,52 @@ final class HilosModerationTablesIntegrationTest extends FrameworkIntegrationTes
         $this->assertTrue($count['totalExact']);
     }
 
+    /** Each edit uses the order last delivered to both subscriptions. */
+    public function testRepeatedRuleMovesUseTheLastDeliveredWindowOrder(): void
+    {
+        $alphaId = Hilos::$db->moderationRules->actions->create(ModerationTablesTestDirectory::NOTE, 'Alpha')->id;
+        $rule = Hilos::$db->moderationRules->actions->create(ModerationTablesTestDirectory::NOTE, 'Beta');
+        $gammaId = Hilos::$db->moderationRules->actions->create(ModerationTablesTestDirectory::NOTE, 'Gamma')->id;
+        $browser = $this->bootBrowser();
+        foreach (['author', 'observer'] as $acceptKey) {
+            $window = $this->openWindow(
+                $browser, $acceptKey, HilosModerationRulesTable::TABLE, ModerationTablesTestDirectory::NOTE,
+                sort: TableSortOrderDTO::of(new TableSortDTO(ObjectModerationRule::rule)),
+            );
+            $this->assertSame([$alphaId, $rule->id, $gammaId], array_column($window->rows, PagePayload::rowKey));
+        }
+
+        foreach ([
+            ['Zulu', TableViewportDeltaDTO::KIND_ROW_MOVED, 2],
+            ['Yankee', TableViewportDeltaDTO::KIND_ROW_UPDATED, null],
+            ['Beta', TableViewportDeltaDTO::KIND_ROW_MOVED, 1],
+            ['Zulu', TableViewportDeltaDTO::KIND_ROW_MOVED, 2],
+        ] as [$text, $kind, $position]) {
+            ExecutionContext::withOrigin('author', 'edit-rule', static fn () => $rule->actions->update($text));
+            $frames = $this->flushBrowser($browser);
+            $this->assertRoutes($frames, [
+                ['author', HilosModerationRulesTable::TABLE, SignalTypeConstants::TABLE_VIEWPORT_DELTA],
+                ['observer', HilosModerationRulesTable::TABLE, SignalTypeConstants::TABLE_VIEWPORT_DELTA],
+            ]);
+            foreach (['author', 'observer'] as $acceptKey) {
+                $delta = $this->frameFor($frames, $acceptKey, SignalTypeConstants::TABLE_VIEWPORT_DELTA);
+                $this->assertSame($kind, $delta[TableViewportDeltaDTO::kind], "$acceptKey after editing the rule to $text");
+                $this->assertSame($rule->id, $delta[TableViewportDeltaDTO::rowKey]);
+                $this->assertSame(self::ruleWire($rule->id, $text), $delta[TableViewportDeltaDTO::row]);
+                if ($position === null) {
+                    $this->assertArrayNotHasKey(TableViewportDeltaDTO::position, $delta);
+                } else {
+                    $this->assertSame($position, $delta[TableViewportDeltaDTO::position]);
+                }
+                if ($acceptKey === 'author') {
+                    $this->assertTrue($delta[TableViewportDeltaDTO::own]);
+                } else {
+                    $this->assertArrayNotHasKey(TableViewportDeltaDTO::own, $delta);
+                }
+            }
+        }
+    }
+
     /** @return DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData Sole real action sync frame */
     private function takeDbSyncFrame(): DbSyncCreatedSignalData|DbSyncUpdatedSignalData|DbSyncDeletedSignalData
     {

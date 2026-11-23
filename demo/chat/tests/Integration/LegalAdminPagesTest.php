@@ -302,7 +302,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertSame(1, $deltas['2026-10-01']->row['slots']['revision']['acceptedCount']);
         self::assertSame(0, $deltas['2026-09-17']->row['slots']['revision']['heldCount']);
         self::assertSame(1, $deltas['2026-09-17']->row['slots']['revision']['acceptedCount']);
-        self::assertSame(['2026-09-17', '2026-10-01', '2026-09-27'], $viewport->rowIds());
+        self::assertSame(['2026-10-01', '2026-09-27', '2026-09-17'], $viewport->rowIds());
         self::assertSame($anchors, [$viewport->firstAnchor(), $viewport->lastAnchor()]);
     }
 

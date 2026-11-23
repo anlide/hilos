@@ -6,7 +6,7 @@ import {
 import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
-import { createSignal } from '../../../src/state/signal.js'
+import { createSignal, subscribeSignal } from '../../../src/state/signal.js'
 import {
   bindPageScope,
   PAGE_SIGNAL_SCHEMAS,
@@ -17,6 +17,7 @@ import {
   createHilosModerationRules,
   createHilosModerationRuleDelete,
   createHilosModerationRuleEdit,
+  HILOS_MODERATION_RULE_SLOT,
   moderationKindRulesPath,
   resolveHilosModerationRuleRow,
 } from '../../../src/admin/moderation/index.js'
@@ -70,6 +71,7 @@ function setup(view?: { readonly openAdd: () => void }) {
       readonly filter?: Readonly<Record<string, unknown>>
       readonly sort?: TableSortOrder
       readonly rowsBefore?: number
+      readonly limit?: number
     } = {},
   ) {
     return {
@@ -80,7 +82,7 @@ function setup(view?: { readonly openAdd: () => void }) {
       totalExact: true,
       firstAnchor: rows.length ? { id: rows[0].slots.rule.id } : null,
       lastAnchor: rows.length ? { id: rows.at(-1)!.slots.rule.id } : null,
-      limit: 25,
+      limit: options.limit ?? 25,
       rowsBefore: options.rowsBefore ?? 0,
     }
   }
@@ -610,6 +612,548 @@ describe('moderation Rules', () => {
     },
   )
 
+  it('holds the visible rule through two edits in the same delivered slot', () => {
+    const h = setup()
+    h.start()
+    h.answer(
+      [
+        wireRule(1, 'first', 'Alpha'),
+        wireRule(2, 'first', 'Beta'),
+        wireRule(3, 'first', 'Gamma'),
+      ],
+      3,
+      { sort: [{ field: 'rule', direction: 'asc' }] },
+    )
+    const c = h.rules.controller
+    expect(c.focusRow('2')?.rule).toBe('Beta')
+    const visible = () => c.rows.get().map((view) => view.row?.rule)
+    const published: Array<Array<string | undefined>> = []
+    cleanups.push(
+      subscribeSignal(c.rows, (rows) => {
+        published.push(rows.map((view) => view.row?.rule))
+      }),
+    )
+    const entity = h.scopes
+      .page()
+      ?.entities.signal({ type: HILOS_MODERATION_RULE_SLOT, id: 2 })
+    const edit = (rule: string, position?: number) => {
+      h.receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: TABLE,
+        kind: position === undefined ? 'row_updated' : 'row_moved',
+        rowKey: '2',
+        position,
+        row: { rowKey: '2', slots: { rule: { id: 2, rule } } },
+      })
+    }
+
+    edit('Zulu', 2)
+    expect(visible()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(c.pendingCount.get()).toBe(1)
+    expect(c.rows.get()[1].pending).toBe('move')
+    expect(c.focusedRow.get()?.rule).toBe('Zulu')
+    expect(entity?.get()?.fields.rule).toBe('Zulu')
+
+    edit('Yankee')
+    expect(visible()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(c.pendingCount.get()).toBe(1)
+    expect(c.rows.get()[1].pending).toBe('move')
+    expect(c.focusedRow.get()?.rule).toBe('Yankee')
+    expect(entity?.get()?.fields.rule).toBe('Yankee')
+    expect(published.length).toBeGreaterThan(0)
+    for (const values of published) {
+      expect(values).toEqual(['Alpha', 'Beta', 'Gamma'])
+    }
+
+    h.receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: TABLE,
+      kind: 'row_stale',
+      rowKey: '2',
+      staleSources: [HILOS_MODERATION_RULE_SLOT],
+    })
+    expect(visible()).toEqual(['Alpha', 'Beta', 'Gamma'])
+    expect(c.rows.get()[1].staleSources).toEqual([HILOS_MODERATION_RULE_SLOT])
+    expect(c.rows.get()[1].pending).toBe('move')
+
+    c.apply()
+    expect(visible()).toEqual(['Alpha', 'Gamma', 'Yankee'])
+    expect(c.rows.get()[2].row).toEqual({
+      id: 2,
+      kind: 'first',
+      rule: 'Yankee',
+    })
+    expect(c.rows.get()[2].pending).toBeNull()
+    expect(c.rows.get()[2].staleSources).toEqual([HILOS_MODERATION_RULE_SLOT])
+    expect(c.pendingCount.get()).toBe(0)
+
+    edit('Zebra')
+    expect(visible()).toEqual(['Alpha', 'Gamma', 'Zebra'])
+    expect(c.rows.get()[2].row?.kind).toBe('first')
+    expect(c.pendingCount.get()).toBe(0)
+  })
+
+  it('clears a returned rule move without publishing an intermediate list value', () => {
+    const h = setup()
+    h.start()
+    h.answer(
+      [
+        wireRule(1, 'first', 'Alpha'),
+        wireRule(2, 'first', 'Beta'),
+        wireRule(3, 'first', 'Gamma'),
+      ],
+      3,
+      { sort: [{ field: 'rule', direction: 'asc' }] },
+    )
+    const c = h.rules.controller
+    expect(c.focusRow('2')?.rule).toBe('Beta')
+    const published: Array<string | undefined> = []
+    cleanups.push(
+      subscribeSignal(c.rows, (rows) => published.push(rows[1]?.row?.rule)),
+    )
+    for (const [rule, position] of [
+      ['Zulu', 2],
+      ['Beta', 1],
+    ] as const) {
+      h.receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: TABLE,
+        kind: 'row_moved',
+        rowKey: '2',
+        position,
+        row: wireRule(2, 'first', rule),
+      })
+      expect(c.focusedRow.get()?.rule).toBe(rule)
+      expect(c.pendingCount.get()).toBe(rule === 'Zulu' ? 1 : 0)
+    }
+
+    expect(c.rows.get()[1]).toMatchObject({ pending: null, highlighted: false })
+    expect(published.length).toBeGreaterThan(0)
+    for (const rule of published) expect(rule).toBe('Beta')
+  })
+
+  it.each(['edit', 'create'] as const)(
+    'places an own %s beside a rule whose position has returned but whose fields still wait',
+    (action) => {
+      const h = setup()
+      h.start()
+      h.answer(
+        [
+          wireRule(1, 'first', 'Alpha'),
+          wireRule(2, 'first', 'Beta'),
+          wireRule(3, 'first', 'Gamma'),
+        ],
+        3,
+        { sort: [{ field: 'rule', direction: 'asc' }] },
+      )
+      const c = h.rules.controller
+      for (const [rule, position] of [
+        ['Zulu', 2],
+        ['Bravo', 1],
+      ] as const) {
+        h.receive('table_viewport_delta', {
+          page: PAGE,
+          tableKey: TABLE,
+          kind: 'row_moved',
+          rowKey: '2',
+          position,
+          row: wireRule(2, 'first', rule),
+        })
+      }
+      const occurrence = c.rows.get()[1]?.occurrence
+      const visible = () =>
+        c.rows.get().map((view) => [view.row?.rule, view.pending])
+      expect(visible()).toEqual([
+        ['Alpha', null],
+        ['Beta', 'move'],
+        ['Gamma', null],
+      ])
+
+      if (action === 'edit') {
+        h.receive('table_viewport_delta', {
+          page: PAGE,
+          tableKey: TABLE,
+          kind: 'row_moved',
+          rowKey: '3',
+          position: 1,
+          own: true,
+          row: wireRule(3, 'first', 'Baker'),
+        })
+      } else {
+        h.receive('table_viewport_own_create', {
+          page: PAGE,
+          tableKey: TABLE,
+          row: wireRule(4, 'first', 'Baker'),
+          position: 1,
+          totalCount: 4,
+          totalExact: true,
+          pageCount: 1,
+          firstAnchor: { rule: 'Alpha', id: 1 },
+          lastAnchor: { rule: 'Gamma', id: 3 },
+          requestId: null,
+        })
+      }
+
+      expect(visible()).toEqual([
+        ['Alpha', null],
+        ['Baker', null],
+        ['Beta', 'move'],
+        ...(action === 'create' ? [['Gamma', null]] : []),
+      ])
+      expect(c.rows.get()[2]?.occurrence).toBe(occurrence)
+      expect(c.pendingCount.get()).toBe(1)
+    },
+  )
+
+  it.each(['edit', 'create'] as const)(
+    'uses a returned rule as an anchor for an own %s while another rule crosses the anchors',
+    (action) => {
+      const h = setup()
+      h.start()
+      h.answer(
+        [
+          wireRule(1, 'first', 'Alpha'),
+          wireRule(2, 'first', 'Beta'),
+          wireRule(3, 'first', 'Gamma'),
+          wireRule(4, 'first', 'Omega'),
+        ],
+        4,
+        { sort: [{ field: 'rule', direction: 'asc' }] },
+      )
+      const c = h.rules.controller
+      const [alpha, beta] = c.rows.get()
+      for (const [id, rule, position] of [
+        [2, 'Zulu', 3],
+        [2, 'Bravo', 1],
+        [1, 'Yankee', 3],
+      ] as const) {
+        h.receive('table_viewport_delta', {
+          page: PAGE,
+          tableKey: TABLE,
+          kind: 'row_moved',
+          rowKey: String(id),
+          position,
+          row: wireRule(id, 'first', rule),
+        })
+      }
+
+      if (action === 'edit') {
+        h.receive('table_viewport_delta', {
+          page: PAGE,
+          tableKey: TABLE,
+          kind: 'row_moved',
+          rowKey: '3',
+          position: 0,
+          own: true,
+          row: wireRule(3, 'first', 'Baker'),
+        })
+      } else {
+        h.receive('table_viewport_own_create', {
+          page: PAGE,
+          tableKey: TABLE,
+          row: wireRule(5, 'first', 'Baker'),
+          position: 0,
+          totalCount: 5,
+          totalExact: true,
+          pageCount: 1,
+          firstAnchor: { rule: 'Baker', id: 5 },
+          lastAnchor: { rule: 'Yankee', id: 1 },
+          requestId: null,
+        })
+      }
+
+      const shown = c.rows.get()
+      expect(shown.map((view) => [view.row?.rule, view.pending])).toEqual([
+        ['Alpha', 'move'],
+        ['Baker', null],
+        ['Beta', 'move'],
+        ...(action === 'create' ? [['Gamma', null]] : []),
+        ['Omega', null],
+      ])
+      expect(shown[0]?.occurrence).toBe(alpha?.occurrence)
+      expect(shown[2]?.occurrence).toBe(beta?.occurrence)
+      expect(c.pendingCount.get()).toBe(2)
+      c.apply()
+      expect(c.rows.get().map((view) => view.row?.rule)).toEqual([
+        'Baker',
+        'Bravo',
+        ...(action === 'create' ? ['Gamma'] : []),
+        'Omega',
+        'Yankee',
+      ])
+      expect(c.pendingCount.get()).toBe(0)
+    },
+  )
+
+  it.each(['none', 'changed', 'returned'] as const)(
+    'publishes the held rule until an own create evicts it (other move: %s)',
+    (otherMove) => {
+      const h = setup()
+      h.start()
+      h.answer(
+        [
+          wireRule(1, 'first', 'Alpha'),
+          wireRule(2, 'first', 'Beta'),
+          wireRule(3, 'first', 'Gamma'),
+        ],
+        3,
+        { sort: [{ field: 'rule', direction: 'asc' }], limit: 3 },
+      )
+      const c = h.rules.controller
+      const read = (rows = c.rows.get()) => ({
+        rules: rows.map((view) => view.row?.rule),
+        pending: rows.map((view) => view.pending),
+        count: c.pendingCount.get(),
+        live: c.live.get().top,
+      })
+      const published: ReturnType<typeof read>[] = []
+      cleanups.push(
+        subscribeSignal(c.rows, (rows) => published.push(read(rows))),
+      )
+      h.receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: TABLE,
+        kind: 'row_moved',
+        rowKey: '1',
+        position: 2,
+        row: wireRule(1, 'first', 'Zulu'),
+      })
+      expect(c.rows.get()[0]).toMatchObject({
+        row: { rule: 'Alpha' },
+        pending: 'move',
+      })
+      if (otherMove !== 'none') {
+        for (const [rule, position] of [
+          ['Holly', 1],
+          [otherMove === 'returned' ? 'Beta' : 'Bravo', 0],
+        ] as const) {
+          h.receive('table_viewport_delta', {
+            page: PAGE,
+            tableKey: TABLE,
+            kind: 'row_moved',
+            rowKey: '2',
+            position,
+            row: wireRule(2, 'first', rule),
+          })
+        }
+        expect(c.rows.get()[1]?.pending).toBe('move')
+      }
+
+      h.receive('table_viewport_own_create', {
+        page: PAGE,
+        tableKey: TABLE,
+        row: wireRule(4, 'first', 'Aachen'),
+        position: 0,
+        totalCount: 4,
+        totalExact: true,
+        pageCount: 2,
+        firstAnchor: { rule: 'Aachen', id: 4 },
+        lastAnchor: { rule: 'Gamma', id: 3 },
+        requestId: null,
+      })
+
+      const final = {
+        rules: ['Aachen', 'Beta', 'Gamma'],
+        pending: [null, otherMove === 'changed' ? 'move' : null, null],
+        count: otherMove === 'changed' ? 1 : 0,
+        live: otherMove === 'changed' ? 'pending' : null,
+      }
+      expect(read()).toEqual(final)
+      const firstEvicted = published.findIndex(
+        ({ rules }) => rules[0] === 'Aachen',
+      )
+      expect(firstEvicted).toBeGreaterThan(0)
+      for (const { rules } of published.slice(0, firstEvicted)) {
+        expect(rules).toEqual(['Alpha', 'Beta', 'Gamma'])
+      }
+      for (const snapshot of published.slice(firstEvicted)) {
+        expect(snapshot).toEqual(final)
+      }
+      for (const { pending, count, live } of published) {
+        expect(count).toBe(pending.filter((kind) => kind !== null).length)
+        expect(live).toBe(count > 0 ? 'pending' : null)
+      }
+    },
+  )
+
+  it('keeps the returned rule visible when a focused edit takes it out of the filter', () => {
+    const h = setup()
+    h.start()
+    h.answer()
+    const c = h.rules.controller
+    c.setSearch('target')
+    h.reply(
+      [
+        wireRule(1, 'first', 'Alpha target'),
+        wireRule(2, 'first', 'Beta target'),
+        wireRule(3, 'first', 'Gamma target'),
+      ],
+      undefined,
+      3,
+      {
+        filter: { kind: 'first', search: 'target' },
+        sort: [{ field: 'rule', direction: 'asc' }],
+      },
+    )
+    expect(c.focusRow('2')?.rule).toBe('Beta target')
+    const occurrence = c.rows.get()[1]?.occurrence
+    const entity = h.scopes
+      .page()
+      ?.entities.signal({ type: HILOS_MODERATION_RULE_SLOT, id: 2 })
+    const published: Array<Array<string | undefined>> = []
+    cleanups.push(
+      subscribeSignal(c.rows, (rows) =>
+        published.push(rows.map((view) => view.row?.rule)),
+      ),
+    )
+    for (const [rule, position] of [
+      ['Zulu target', 2],
+      ['Beta target', 1],
+    ] as const) {
+      h.receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: TABLE,
+        kind: 'row_moved',
+        rowKey: '2',
+        position,
+        row: wireRule(2, 'first', rule),
+      })
+    }
+    expect(c.pendingCount.get()).toBe(0)
+
+    const leave = (rule: string) =>
+      h.receive('table_viewport_delta', {
+        page: PAGE,
+        tableKey: TABLE,
+        kind: 'row_removed',
+        rowKey: '2',
+        reason: 'left_set',
+        row: wireRule(2, 'first', rule),
+      })
+    leave('Different')
+
+    expect(c.focusedRow.get()?.rule).toBe('Different')
+    expect(entity?.get()?.fields.rule).toBe('Different')
+    expect(c.rows.get()[1]).toMatchObject({
+      occurrence,
+      row: { rule: 'Beta target' },
+      pending: 'remove',
+      removal: 'left_set',
+    })
+    expect(c.pendingCount.get()).toBe(1)
+    expect(published.length).toBeGreaterThan(0)
+    for (const rules of published) {
+      expect(rules).toEqual(['Alpha target', 'Beta target', 'Gamma target'])
+    }
+
+    c.apply()
+    leave('Still different')
+    expect(c.rows.get().map((view) => view.row?.rule)).toEqual([
+      'Alpha target',
+      undefined,
+      'Gamma target',
+    ])
+    expect(c.rows.get()[1]).toMatchObject({
+      occurrence,
+      row: null,
+      pending: null,
+      placeholder: true,
+      removal: 'left_set',
+    })
+    expect(c.pendingCount.get()).toBe(0)
+    expect(c.focusedRow.get()?.rule).toBe('Still different')
+    expect(entity?.get()?.fields.rule).toBe('Still different')
+    expect(published.flat()).not.toContain('Different')
+  })
+
+  it('keeps the displayed rule when a pending move becomes a deletion', () => {
+    const h = setup()
+    h.start()
+    h.answer(
+      [
+        wireRule(1, 'first', 'Alpha'),
+        wireRule(2, 'first', 'Beta'),
+        wireRule(3, 'first', 'Gamma'),
+      ],
+      3,
+      { sort: [{ field: 'rule', direction: 'asc' }] },
+    )
+    const c = h.rules.controller
+    expect(c.focusRow('2')?.rule).toBe('Beta')
+    const occurrence = c.rows.get()[1].occurrence
+    const entity = h.scopes
+      .page()
+      ?.entities.signal({ type: HILOS_MODERATION_RULE_SLOT, id: 2 })
+    h.receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: TABLE,
+      kind: 'row_moved',
+      rowKey: '2',
+      position: 2,
+      row: wireRule(2, 'first', 'Zulu'),
+    })
+    h.receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: TABLE,
+      kind: 'row_updated',
+      rowKey: '2',
+      row: wireRule(2, 'first', 'Yankee'),
+    })
+    expect(c.rows.get()[1]).toMatchObject({
+      occurrence,
+      row: { id: 2, kind: 'first', rule: 'Beta' },
+      pending: 'move',
+    })
+    expect(c.focusedRow.get()?.rule).toBe('Yankee')
+    expect(entity?.get()?.fields.rule).toBe('Yankee')
+
+    const published: Array<string | undefined> = []
+    cleanups.push(
+      subscribeSignal(c.rows, (rows) => published.push(rows[1]?.row?.rule)),
+    )
+    h.receive('table_viewport_delta', {
+      page: PAGE,
+      tableKey: TABLE,
+      kind: 'row_removed',
+      rowKey: '2',
+      reason: 'deleted',
+    })
+
+    expect(c.rows.get().map((view) => view.row?.rule)).toEqual([
+      'Alpha',
+      'Beta',
+      'Gamma',
+    ])
+    expect(c.rows.get()[1]).toMatchObject({
+      occurrence,
+      pending: 'remove',
+      removal: 'deleted',
+    })
+    expect(c.pendingCount.get()).toBe(1)
+    expect(c.focusedRow.get()).toBeUndefined()
+    expect(entity?.get()?.fields.rule).toBe('Yankee')
+    expect(published.length).toBeGreaterThan(0)
+    for (const rule of published) expect(rule).toBe('Beta')
+
+    c.apply()
+
+    expect(c.rows.get().map((view) => view.row?.rule)).toEqual([
+      'Alpha',
+      undefined,
+      'Gamma',
+    ])
+    expect(c.rows.get()[1]).toMatchObject({
+      occurrence,
+      row: null,
+      pending: null,
+      placeholder: true,
+      removal: 'deleted',
+    })
+    expect(c.pendingCount.get()).toBe(0)
+    expect(entity?.get()?.fields.rule).toBe('Yankee')
+    expect(published).not.toContain('Yankee')
+  })
+
   it('retains the controller Apply, append and count semantics with live values', () => {
     const h = setup()
     h.start()
@@ -633,9 +1177,10 @@ describe('moderation Rules', () => {
       row: wireRule(1, 'first', 'Moved'),
     })
     expect(c.rows.get()[0].pending).toBe('move')
-    expect(c.rows.get()[0].row?.rule).toBe('Moved')
+    expect(c.rows.get()[0].row?.rule).toBe('Updated')
     c.apply()
     expect(c.pendingCount.get()).toBe(0)
+    expect(c.rows.get()[0].row?.rule).toBe('Moved')
     h.receive('table_viewport_append', {
       page: PAGE,
       tableKey: TABLE,

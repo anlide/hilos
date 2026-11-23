@@ -485,7 +485,9 @@ describe('Works page state and viewport', () => {
         position: 1,
       })
       h.delta({ kind: 'row_removed', rowKey: '8', reason: 'deleted' })
-      expect(h.table.controller.rows.get()[0]?.row?.title).toBe('Moved')
+      expect(h.table.controller.rows.get()[0]?.row?.title).toBe(
+        announcement.title,
+      )
       expect(h.table.controller.rows.get()[0]?.rowKey).toBe('7')
       expect(h.table.controller.pendingCount.get()).toBe(2)
       const descriptor = h.table.controller.descriptor()
@@ -499,6 +501,10 @@ describe('Works page state and viewport', () => {
       expect(h.sent).toEqual([])
       h.table.controller.apply()
       expect(h.table.controller.pendingCount.get()).toBe(0)
+      expect(
+        h.table.controller.rows.get().find((view) => view.rowKey === '7')?.row
+          ?.title,
+      ).toBe('Moved')
     } finally {
       h.dispose()
     }
