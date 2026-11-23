@@ -3,13 +3,13 @@ import { randomBytes } from 'node:crypto'
 import type { Page } from '@playwright/test'
 
 import { test as base, expect } from '../test.js'
+import { drawCatalogPicture } from '../helpers/catalogPictures.js'
 
 import {
   ROWS,
   cleanupFixtures,
   clickSubmit,
   dismissToasts,
-  drawPhotoFixture,
   expectTableTotal,
   goToLastPage,
   gotoPage,
@@ -40,22 +40,6 @@ const CATEGORY_DELETE_COMMAND = 'test:ecommerce-shop:category-delete'
 
 const command = createStandCommandChannel({ timeoutMs: 5_000 })
 
-/** Draw a two-color picture of the given type in the browser. */
-function picture(
-  page: Page,
-  mimeType: 'image/jpeg' | 'image/png',
-): Promise<Buffer> {
-  return drawPhotoFixture(page, {
-    width: 320,
-    height: 240,
-    mimeType,
-    rectangles: [
-      { color: '#bc3024', x: 0, y: 0, width: 160, height: 240 },
-      { color: '#246ac4', x: 160, y: 0, width: 160, height: 240 },
-    ],
-  })
-}
-
 test('shop.categories-add: an admin adds a category with a picture, a second tab sees it arrive last, and a taken name is refused in the window', async ({
   page,
   cleanup,
@@ -82,7 +66,7 @@ test('shop.categories-add: an admin adds a category with a picture, a second tab
       .setInputFiles({
         name: mimeType === 'image/png' ? 'picture.png' : 'picture.jpg',
         mimeType,
-        buffer: await picture(page, mimeType),
+        buffer: await drawCatalogPicture(page, mimeType),
       })
   }
   let total = 0

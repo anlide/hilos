@@ -1,13 +1,18 @@
 import { randomBytes } from 'node:crypto'
 
+import type { Page } from '@playwright/test'
+
 import { test as base, expect } from '../test.js'
+import { drawCatalogPicture } from '../helpers/catalogPictures.js'
 import { moneyFieldLabel } from '../../../frontend/src/money/money.js'
 import {
+  SIGNAL_TYPE_ACTION,
   SIGNAL_TYPE_ACTION_ERROR,
   SIGNAL_TYPE_ACTION_SUCCESS,
 } from '../../../../../framework/frontend/core/src/protocol/constants.js'
 import { UPLOAD_ACTION_INIT } from '../../../../../framework/frontend/core/src/uploads/uploadProtocol.js'
 import {
+  PAGE_READY,
   ROWS,
   cleanupFixtures,
   clickSubmit,
@@ -21,13 +26,17 @@ import {
   markDocument,
   nextClientPaint,
   showAnnouncedRows,
+  trackedActionReplies,
   typeInto,
+  watchDeliveryFrames,
+  type DeliveryFrameLog,
+  type DeliveryRequest,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { isApplicationSocket } from '../../../../../framework/frontend/e2e/socket.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
-// spec-owner: demo — proves creation and live delivery on the shop's Products page.
+// spec-owner: demo — proves live catalog changes across the shop's Products list and Overview.
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
@@ -85,15 +94,7 @@ test('shop.products-add: both product kinds can be added with pictures and a sec
     await chooser.setFiles({
       name: `product.${extension}`,
       mimeType,
-      buffer: await drawPhotoFixture(page, {
-        width: 320,
-        height: 240,
-        mimeType,
-        rectangles: [
-          { color: '#bc3024', x: 0, y: 0, width: 160, height: 240 },
-          { color: '#246ac4', x: 160, y: 0, width: 160, height: 240 },
-        ],
-      }),
+      buffer: await drawCatalogPicture(page, mimeType),
     })
     await expect(preview).toBeVisible()
     await expect
@@ -212,6 +213,30 @@ test('shop.products-add: both product kinds can be added with pictures and a sec
     await expectDocumentUnchanged(expect, second)
   })
 
+  await test.step('editing the price on Overview updates the same unique piece in the open list', async () => {
+    await uniqueRow.getByRole('link', { name: `Open ${uniqueName}` }).click()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(uniqueName)
+
+    await page.getByTestId('admin-product-edit-open').click()
+    const edit = page.getByRole('dialog', { name: 'Edit product' })
+    await typeInto(
+      edit.getByRole('textbox', { name: moneyFieldLabel('Price') }),
+      '2 350.75',
+    )
+    await clickSubmit(expect, edit.getByTestId('admin-product-edit-submit'))
+    await expect(edit).toBeHidden()
+    const newPrice = '₴2,350.75'
+    await expect(page.getByText(newPrice, { exact: true })).toBeVisible()
+    await expect(
+      secondRow.getByRole('cell', { name: newPrice, exact: true }),
+    ).toBeVisible()
+    await expect(
+      secondRow.getByRole('cell', { name: 'Unique piece', exact: true }),
+    ).toBeVisible()
+    await expectDocumentUnchanged(expect, second)
+    await gotoPage(expect, page, PRODUCTS_PATH)
+  })
+
   await test.step('a stock item starts with zero units and is out of stock', async () => {
     await openAdd()
     await typeInto(nameField, stockName)
@@ -240,6 +265,156 @@ test('shop.products-add: both product kinds can be added with pictures and a sec
       stockRow.getByRole('cell', { name: 'Out of stock', exact: true }),
     ).toBeVisible()
   })
+})
+
+test('shop.product-warehouse-place: moving a unique piece updates its open Overview in another tab', async ({
+  page,
+  cleanup,
+}) => {
+  const overviewPath = '/hilos/app/product/2'
+  const source = 'Kyiv · Podil'
+  const destination = 'Lviv · Sykhiv'
+  const context = page.context()
+  const delivery = watchDeliveryFrames(page)
+  const action = 'product_warehouse_place'
+  const sentMove = (log: DeliveryFrameLog, from?: number, to?: number) =>
+    log.sent.find(({ wire }) => {
+      const frame = deliveryObject(wire)
+      const data = deliveryObject(frame.data)
+      return (
+        frame.type === SIGNAL_TYPE_ACTION &&
+        frame.action === action &&
+        data.productId === 2 &&
+        (from === undefined || data.expectedWarehouseId === from) &&
+        typeof data.warehouseId === 'number' &&
+        data.warehouseId !== data.expectedWarehouseId &&
+        (to === undefined || data.warehouseId === to)
+      )
+    })
+  const moveReply = (log: DeliveryFrameLog, move?: DeliveryRequest) =>
+    trackedActionReplies(log, action, 0).find(({ request }) => request === move)
+      ?.frame.type
+  const warehouse = (tab: Page, name: string) =>
+    tab.getByText(name, { exact: true })
+  const expectOverview = async (tab: Page, check = expect) => {
+    await check(tab).toHaveURL(overviewPath)
+    await check(tab.getByRole('heading', { level: 1 })).toHaveText(
+      'White peonies, 15 stems',
+    )
+  }
+
+  const move = async (tab: Page, to: string, expectClose = expect) => {
+    await expectOverview(tab)
+    await tab.getByTestId('admin-product-warehouse-open').click()
+    const dialog = tab.getByRole('dialog')
+    await dialog.getByRole('combobox', { name: 'Warehouse' }).selectOption({
+      label: to,
+    })
+    await clickSubmit(
+      expect,
+      dialog.getByTestId('admin-product-warehouse-submit'),
+    )
+    await expectClose(dialog).toBeHidden()
+  }
+
+  cleanup.defer(() => delivery.stop())
+  cleanup.defer(async () => {
+    // Closing the sender cancels any pending click. Keep recording through close.
+    if (!sentMove(delivery, 1)) await page.close()
+    const request = sentMove(delivery, 1)
+    if (!request) return
+
+    await test.step('restore the seeded piece to its original warehouse', async () => {
+      const restore = await context.newPage()
+      // Bound each wait so a stalled read leaves time for another navigation.
+      const readStepTimeout = 750
+      restore.setDefaultNavigationTimeout(readStepTimeout)
+      const snapshotExpect = expect.configure({ timeout: readStepTimeout })
+      const returnDelivery = watchDeliveryFrames(restore)
+      const warehouseName = restore
+        .getByRole('definition')
+        .filter({ hasText: /^One piece, kept in / })
+        .getByRole('strong')
+      const readWarehouse = async () => {
+        try {
+          await gotoPage(snapshotExpect, restore, overviewPath, PAGE_READY)
+          await expectOverview(restore, snapshotExpect)
+          const name = await warehouseName.innerText({
+            timeout: readStepTimeout,
+          })
+          return name.trim()
+            ? { warehouse: name.trim() }
+            : { error: 'Empty warehouse name on the product Overview' }
+        } catch (error) {
+          return { error: String(error) }
+        }
+      }
+      try {
+        let needsReturn = false
+        await expect
+          .poll(
+            async () => {
+              const refusedBeforeRead =
+                moveReply(delivery, request) === SIGNAL_TYPE_ACTION_ERROR
+              const snapshot = await readWarehouse()
+              if (snapshot.warehouse) {
+                needsReturn = snapshot.warehouse !== source
+                if (needsReturn || refusedBeforeRead) return true
+              }
+              return {
+                reply: moveReply(delivery, request) ?? 'unknown',
+                snapshot,
+              }
+            },
+            { message: `Settle the recorded warehouse move: ${request.raw}` },
+          )
+          .toBe(true)
+        if (!needsReturn) return
+
+        let formError: string | undefined
+        try {
+          await move(restore, source, snapshotExpect)
+        } catch (error) {
+          formError = String(error)
+        }
+        await expect
+          .poll(
+            async () => {
+              const snapshot = await readWarehouse()
+              const sent = sentMove(returnDelivery, undefined, 1)
+              if (sent && snapshot.warehouse === source) return true
+              return {
+                sent: sent?.wire ?? 'not observed',
+                reply: moveReply(returnDelivery, sent) ?? 'unknown',
+                formError,
+                snapshot,
+              }
+            },
+            { message: 'Confirm the return to Kyiv on a fresh Overview' },
+          )
+          .toBe(true)
+      } finally {
+        returnDelivery.stop()
+      }
+    })
+  })
+
+  await grantAdminToSelf(expect, page)
+  const observer = await context.newPage()
+  for (const tab of [page, observer]) {
+    await gotoPage(expect, tab, overviewPath)
+    await expect(warehouse(tab, source)).toBeVisible()
+  }
+  await markDocument(observer)
+
+  await move(page, destination)
+  await expect
+    .poll(() => moveReply(delivery, sentMove(delivery, 1, 2)))
+    .toBe(SIGNAL_TYPE_ACTION_SUCCESS)
+  await expect(warehouse(page, destination)).toBeVisible()
+  await expect(warehouse(observer, destination)).toBeVisible()
+  await expectOverview(observer)
+  await expectDocumentUnchanged(expect, observer)
 })
 
 test('shop.products-add-picture: publication replies belong to the selected picture and dialog', async ({
