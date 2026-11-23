@@ -17,7 +17,11 @@ const historyHref = router.path(PAGE_HISTORY) ?? ''
     <header>
       <h1>Hilos</h1>
       <p class="lead mb-0">
-        A PHP framework for applications that update in real time.
+        An AI-first PHP framework for real-time applications.
+      </p>
+      <p class="mt-2 mb-0">
+        Software Factory is the only supported way to build with Hilos. Manual
+        development and standalone AI coding workflows are unsupported.
       </p>
       <p class="text-body-secondary mt-2 mb-0">
         Since 2009 — <HilosLink :to="historyHref">read its history</HilosLink>.
