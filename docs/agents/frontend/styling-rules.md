@@ -144,6 +144,9 @@ Inside a modal, an empty room reserved for a refusal shows a quiet neutral
 background without a border, text, icon or action, and holds the same height
 when the refusal appears.
 
+The shared live-message room above a table shows a quiet neutral fill only
+while it is empty, without a border, text, icon, action, or animation.
+
 Drawing the message **over** the content instead — absolutely positioned, out
 of the flow — is not the other half of this rule but a way around it. It
 cures the jump and buys hiding, and what it hides is the thing being read.

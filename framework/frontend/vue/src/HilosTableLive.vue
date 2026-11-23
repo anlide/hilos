@@ -259,7 +259,11 @@ function openDetails(): void {
 </script>
 
 <template>
-  <div class="position-relative mb-2" data-id="hilos-table-live-slot">
+  <div
+    class="position-relative mb-2"
+    :class="live.top === null ? ['bg-body-tertiary', 'rounded'] : []"
+    data-id="hilos-table-live-slot"
+  >
     <div
       :class="[ROW_CLASS, 'alert-secondary', 'invisible']"
       aria-hidden="true"

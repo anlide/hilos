@@ -125,7 +125,12 @@ const BULK_BAR_NAME = 'Working on the marked rows'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [HilosModal, HilosTableProgress, NgTemplateOutlet],
   template: `
-    <div class="position-relative mb-2" data-id="hilos-table-live-slot">
+    <div
+      class="position-relative mb-2"
+      [class.bg-body-tertiary]="live().top === null"
+      [class.rounded]="live().top === null"
+      data-id="hilos-table-live-slot"
+    >
       <div
         [class]="twinClass"
         aria-hidden="true"

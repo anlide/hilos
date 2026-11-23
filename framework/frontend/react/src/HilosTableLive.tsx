@@ -250,7 +250,10 @@ export function HilosTableLive<R>({
   }
 
   return (
-    <div className="position-relative mb-2" data-id="hilos-table-live-slot">
+    <div
+      className={`position-relative mb-2${top === null ? ' bg-body-tertiary rounded' : ''}`}
+      data-id="hilos-table-live-slot"
+    >
       <div
         className={`${ROW_CLASS} alert-secondary invisible`}
         aria-hidden="true"
