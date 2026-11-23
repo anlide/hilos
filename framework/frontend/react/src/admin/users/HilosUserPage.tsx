@@ -44,6 +44,7 @@ import {
   useImperativeHandle,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -51,6 +52,7 @@ import {
 import {
   ACCOUNT_DELETION_TICK_MS,
   computedSignal,
+  createSignal,
   focusInitial,
   HILOS_STEP_UP_COPY,
   type HilosStepUpOpenOutcome,
@@ -112,9 +114,12 @@ import {
   hilosPasswordFateChoices,
 } from '@hilos/core/admin/users'
 import type {
+  HilosAccountMergeCancel,
+  HilosAccountMergeWindow,
   HilosMergeCandidateIdentity,
   HilosMergeCandidateRow,
   HilosPasswordFate,
+  HilosUserStanding,
   HilosUsersContext,
 } from '@hilos/core/admin/users'
 
@@ -173,6 +178,30 @@ const MergeCancelRefusal = forwardRef<TrackedAction>(
   },
 )
 
+/** One effect setup's standing reader, observation window and cancellation. */
+interface HilosUserMergeGeneration {
+  readonly context: HilosUsersContext
+  readonly userStanding: HilosUserStanding
+  readonly mergeWindow: HilosAccountMergeWindow
+  readonly mergeCancel: HilosAccountMergeCancel
+}
+
+// Empty signals the card reads before a generation's setup has committed.
+const ABSENT_STANDING: HilosUserStanding['standing'] = createSignal(null)
+const ABSENT_ERASURE: HilosUserStanding['erasure'] = createSignal(null)
+const ABSENT_MERGE: HilosUserStanding['merge'] = createSignal(null)
+const ABSENT_MERGE_AVAILABILITY: HilosUserStanding['mergeAvailability'] =
+  createSignal(null)
+const ABSENT_MERGE_OPENED: HilosAccountMergeWindow['opened'] =
+  createSignal(false)
+const ABSENT_MERGE_VIEW: HilosAccountMergeWindow['view'] = createSignal(null)
+const ABSENT_MERGE_START_NOTICE: HilosAccountMergeWindow['startNotice'] =
+  createSignal(null)
+const ABSENT_CANCEL_AVAILABLE: HilosAccountMergeCancel['available'] =
+  createSignal(false)
+const ABSENT_CANCEL_PENDING: HilosAccountMergeCancel['pending'] =
+  createSignal(false)
+
 /**
  * The framework user-detail admin page: profile, presence, and a modal rename.
  *
@@ -188,6 +217,10 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const editor = useMemo(
     () => createHilosUserRenameEdit(userDetail, rename),
     [userDetail, rename],
+  )
+  const accountMerge = useMemo(
+    () => createHilosAccountMerge(context),
+    [context],
   )
 
   const detail = useSignal(userDetail)
@@ -218,20 +251,44 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     useState<HilosUserLifecyclePrompt | null>(null)
   const graceDays = useSignal(lifecycle.graceDays)
   const lifecycleUserId = useSignal(lifecycle.currentUserId)
-  const userStanding = useMemo(
-    () => createHilosUserStanding(context),
-    [context],
-  )
-  const standing = useSignal(userStanding.standing)
-  useEffect(() => {
+  const [mergeGeneration, setMergeGeneration] =
+    useState<HilosUserMergeGeneration | null>(null)
+  // Standing, the observation window and cancellation dispose for good, so
+  // every effect setup, including a StrictMode replay, creates its own.
+  useLayoutEffect(() => {
+    const userStanding = createHilosUserStanding(context)
+    const mergeWindow = createHilosAccountMergeWindow(
+      userStanding.merge,
+      computedSignal(() => userDetail.get()?.id),
+    )
+    const mergeCancel = createHilosAccountMergeCancel(
+      context,
+      mergeWindow,
+      accountMerge,
+    )
     userStanding.start()
+    setMergeGeneration({ context, userStanding, mergeWindow, mergeCancel })
+    return () => {
+      mergeCancel.dispose()
+      mergeWindow.dispose()
+      userStanding.dispose()
+      setMergeGeneration((current) =>
+        current?.userStanding === userStanding ? null : current,
+      )
+    }
+  }, [context, userDetail, accountMerge])
+  const generation =
+    mergeGeneration?.context === context ? mergeGeneration : null
+  const standing = useSignal(
+    generation?.userStanding.standing ?? ABSENT_STANDING,
+  )
+  useEffect(() => {
     editor.start()
 
     return () => {
       editor.dispose()
-      userStanding.dispose()
     }
-  }, [userStanding, editor])
+  }, [editor])
   const standingBadge =
     standing === null ? null : hilosStandingBadge(standing.shown)
   // The header draws it only under a row, so the absent row's word is never seen.
@@ -248,11 +305,11 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       () =>
         computedSignal(() =>
           hilosUserErasureSection(
-            userStanding.erasure.get(),
+            (generation?.userStanding.erasure ?? ABSENT_ERASURE).get(),
             userDetail.get()?.id,
           ),
         ),
-      [userStanding, userDetail],
+      [generation, userDetail],
     ),
   )
   const erasureCopy = HILOS_USER_ERASURE_COPY
@@ -260,9 +317,12 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     useMemo(
       () =>
         computedSignal(() =>
-          hilosUserMergeSection(userStanding.merge.get(), userDetail.get()?.id),
+          hilosUserMergeSection(
+            (generation?.userStanding.merge ?? ABSENT_MERGE).get(),
+            userDetail.get()?.id,
+          ),
         ),
-      [userStanding, userDetail],
+      [generation, userDetail],
     ),
   )
   // A merged account (HIL-1292): the notice under the header stands in for
@@ -358,7 +418,9 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       return true
     }
     const currentDetail = userDetail.get()
-    const currentStanding = userStanding.standing.get()
+    const currentStanding = (
+      generation?.userStanding.standing ?? ABSENT_STANDING
+    ).get()
     const currentSections = hilosUserLifecycleSections(
       currentDetail,
       lifecycle.currentUserId.get(),
@@ -537,38 +599,37 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   const mergeDraftBlockedSignal = useMemo(
     () =>
       computedSignal(() => {
-        const progress = userStanding.merge.get()
+        const progress = (generation?.userStanding.merge ?? ABSENT_MERGE).get()
         return (
-          userStanding.mergeAvailability.get()?.available !== true ||
+          (
+            generation?.userStanding.mergeAvailability ??
+            ABSENT_MERGE_AVAILABILITY
+          ).get()?.available !== true ||
           (progress !== null &&
             progress.state !== 'end' &&
             progress.outcome !== 'not_started')
         )
       }),
-    [userStanding],
+    [generation],
   )
   const mergeDraftBlocked = useSignal(mergeDraftBlockedSignal)
-  const accountMerge = useMemo(
-    () => createHilosAccountMerge(context),
-    [context],
+  const mergeDraftBlockedRef = useRef(mergeDraftBlockedSignal)
+  useEffect(() => {
+    mergeDraftBlockedRef.current = mergeDraftBlockedSignal
+  }, [mergeDraftBlockedSignal])
+  const mergeObserved = useSignal(
+    generation?.mergeWindow.opened ?? ABSENT_MERGE_OPENED,
   )
-  const mergeWindow = useMemo(
-    () =>
-      createHilosAccountMergeWindow(
-        userStanding.merge,
-        computedSignal(() => userDetail.get()?.id),
-      ),
-    [userStanding, userDetail],
+  const mergeView = useSignal(generation?.mergeWindow.view ?? ABSENT_MERGE_VIEW)
+  const mergeStartNotice = useSignal(
+    generation?.mergeWindow.startNotice ?? ABSENT_MERGE_START_NOTICE,
   )
-  const mergeCancel = useMemo(
-    () => createHilosAccountMergeCancel(context, mergeWindow, accountMerge),
-    [context, mergeWindow, accountMerge],
+  const mergeCancelAvailable = useSignal(
+    generation?.mergeCancel.available ?? ABSENT_CANCEL_AVAILABLE,
   )
-  const mergeObserved = useSignal(mergeWindow.opened)
-  const mergeView = useSignal(mergeWindow.view)
-  const mergeStartNotice = useSignal(mergeWindow.startNotice)
-  const mergeCancelAvailable = useSignal(mergeCancel.available)
-  const mergeCancelPending = useSignal(mergeCancel.pending)
+  const mergeCancelPending = useSignal(
+    generation?.mergeCancel.pending ?? ABSENT_CANCEL_PENDING,
+  )
   const cancelAction = useRef<TrackedAction>(null)
   const mergeAccess = useSignal(hilosAdminAccess)
   const mergeObservation = mergeView?.kind === 'progress' ? mergeView : null
@@ -587,13 +648,6 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           { hasSecondFactor: observedChoice.expectedLoserHasSecondFactor },
         ).filter((choice) => choice.value === observedChoice.secondFactorFate)
       : []
-  useEffect(
-    () => () => {
-      mergeCancel.dispose()
-      mergeWindow.dispose()
-    },
-    [mergeCancel, mergeWindow],
-  )
   const currentUserIdSignal = useMemo(
     () => sessionUserId(context.scopes),
     [context],
@@ -615,7 +669,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
           survivor &&
           mergeProofRef.current === 'ask' &&
           mergeOpenRef.current &&
-          !mergeDraftBlockedSignal.get()
+          !mergeDraftBlockedRef.current.get()
         ) {
           mergeProofRef.current = 'skip'
           setMergeProof('skip')
@@ -772,7 +826,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       userDetail.get()?.id !== survivorId ||
       hilosAdminAccess.get() !== access ||
       mergeDraftBlockedSignal.get() ||
-      mergeWindow.opened.get()
+      (generation?.mergeWindow.opened ?? ABSENT_MERGE_OPENED).get()
     )
       return
     moveMergeProof(proof)
@@ -806,7 +860,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
 
   function closeMerge(): void {
     showMerge(false)
-    mergeWindow.close()
+    generation?.mergeWindow.close()
     mergeCandidates.dispose()
   }
 
@@ -848,6 +902,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
 
   async function submitMerge(): Promise<void> {
     if (
+      generation === null ||
       !detail ||
       !selectedCandidate ||
       mergeDraftBlockedSignal.get() ||
@@ -871,7 +926,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       selectedCandidate.hasSecondFactor,
     )
     await Promise.all([
-      mergeWindow.track(handle, {
+      generation.mergeWindow.track(handle, {
         survivorUserId: detail.id,
         loserUserId: selectedCandidate.id,
         passwordFate: fate ?? null,
@@ -1047,12 +1102,12 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
             </div>
           ) : null}
           <HilosUserMergeSection section={mergeSection} />
-          {mergeSection ? (
+          {mergeSection && generation !== null ? (
             <button
               type="button"
               className="btn btn-sm btn-outline-secondary mb-4"
               data-id="hilos-user-merge-view"
-              onClick={() => mergeWindow.open()}
+              onClick={() => generation.mergeWindow.open()}
             >
               {mergeWindowCopy.view}
             </button>
@@ -1563,13 +1618,14 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               >
                 {mergeWindowCopy.close}
               </button>
-              {mergeCancelAvailable || mergeCancelPending ? (
+              {generation !== null &&
+              (mergeCancelAvailable || mergeCancelPending) ? (
                 <LoadingButton
                   className="btn btn-sm btn-outline-danger"
                   data-id="hilos-user-merge-operation-cancel"
                   loading={mergeCancelPending}
                   onClick={() => {
-                    const handle = mergeCancel.cancel()
+                    const handle = generation.mergeCancel.cancel()
                     if (handle) void cancelAction.current?.run(handle)
                   }}
                 >

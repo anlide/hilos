@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import {
   type TableViewportController,
@@ -30,6 +31,7 @@ import type {
 import {
   HILOS_USER_MERGE_SECTION,
   HILOS_USER_MERGE_AVAILABILITY_SECTION,
+  HILOS_USER_MERGE_COPY,
   HILOS_ACCOUNT_MERGE_WINDOW_COPY,
   type HilosAccountMergeProgress,
   HILOS_USER_ERASURE_SECTION,
@@ -493,12 +495,17 @@ function openModal(context: HilosUsersContext): void {
   )
 }
 
-function renderPage(context: HilosUsersContext, value: HilosRouter = router()) {
-  return render(
+function renderPage(
+  context: HilosUsersContext,
+  value: HilosRouter = router(),
+  strict = false,
+) {
+  const page = (
     <HilosRouterContext.Provider value={value}>
       <HilosUserPage context={context} />
-    </HilosRouterContext.Provider>,
+    </HilosRouterContext.Provider>
   )
+  return render(strict ? <StrictMode>{page}</StrictMode> : page)
 }
 
 describe('HilosUserPage', () => {
@@ -3673,5 +3680,57 @@ describe('HilosUserPage merge observation, draft and cancellation', () => {
     ).toBeNull()
     await click('hilos-user-merge-operation-cancel')
     expect(world.sent).toHaveLength(2)
+  })
+
+  it('under StrictMode shows the merge the page answered with and opens its observation', async () => {
+    const world = setup()
+    renderPage(world, router(), true)
+    expect(byId('hilos-user-merge')).not.toBeNull()
+    expect(byId('hilos-user-merge-status')?.textContent).toBe(
+      HILOS_USER_MERGE_COPY.preparing,
+    )
+    await click('hilos-user-merge-view')
+    expect(dialog().getAttribute('aria-label')).toBe(
+      HILOS_USER_MERGE_COPY.title,
+    )
+  })
+
+  it('under StrictMode opens the observation of a merge that arrived by a live frame', async () => {
+    const world = setup(false, null)
+    renderPage(world, router(), true)
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('')
+    expect(byId('hilos-user-merge-view')).toBeNull()
+    await act(async () => {
+      world.update(
+        progress({
+          state: 'end',
+          stage: 'go',
+          outcome: 'completed',
+          parts: [],
+          waits: [],
+        }),
+      )
+    })
+    expect(byId('hilos-user-merge-status')?.textContent).toBe(
+      HILOS_USER_MERGE_COPY.completed,
+    )
+    await click('hilos-user-merge-view')
+    expect(dialog().getAttribute('aria-label')).toBe(
+      HILOS_USER_MERGE_COPY.title,
+    )
+  })
+
+  it('under StrictMode cancels the observed merge with one request', async () => {
+    const world = setup(true)
+    renderPage(world, router(), true)
+    await click('hilos-user-merge-view')
+    await click('hilos-user-merge-operation-cancel')
+    expect(world.sent).toEqual([
+      {
+        action: 'hilos_user_merge_cancel',
+        data: { operationId: 40 },
+        requestId: expect.any(String),
+      },
+    ])
   })
 })
