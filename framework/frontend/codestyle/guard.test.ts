@@ -38,6 +38,7 @@ import { checkRepository as checkSpelling } from './spelling.js'
 import { checkRepository as checkStyleInline } from './inlineStyle.js'
 import { checkRepository as checkStyleSheetHome } from './styleSheetHome.js'
 import { checkRepository as checkStyleThemePinned } from './themePinned.js'
+import { checkRepository as checkTableLiveRoom } from './tableLiveRoom.js'
 import { checkRepository as checkTypeCheck } from './typeCheck.js'
 import { checkRepository as checkVueTemplateRef } from './vueTemplateRef.js'
 import { checkRepository as checkWireKeyCase } from './wireKeyCase.js'
@@ -72,6 +73,7 @@ const RULES = [
   checkStyleInline,
   checkStyleSheetHome,
   checkStyleThemePinned,
+  (root: string) => checkTableLiveRoom(root, (line) => console.warn(line)),
   checkTypeCheck,
   checkVueTemplateRef,
   checkWireKeyCase,

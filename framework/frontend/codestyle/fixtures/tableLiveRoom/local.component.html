@@ -1,0 +1,47 @@
+<section>
+  <div class="alert invisible" data-id="page-reserve"></div>
+  <hilos-action-error />
+  <ng-template #unused>
+    <div class="alert invisible"></div>
+  </ng-template>
+  <ng-template #waiting>
+    <div [style.min-height.px]="40" data-id="cell-reserve"></div>
+  </ng-template>
+  <hilos-viewport-table>
+    <ng-template hilosTableCell="name">
+      <div *ngIf="error; else waiting" class="alert alert-danger">
+        {{ error }}
+      </div>
+    </ng-template>
+    <ng-template hilosTableCell="note">
+      @if (error) {
+        <div class="alert alert-danger">{{ error }}</div>
+      }
+      <div class="opacity-0" aria-hidden="true"></div>
+      <i class="bi bi-snow invisible"></i>
+      <span class="hilos-table-marks invisible">
+        <span class="badge border border-warning-subtle text-warning-emphasis"
+          >Will move</span
+        >
+      </span>
+      <div class="hilos-table-work-space hilos-table-work-reserve"></div>
+      <div class="hilos-table-record-space">Gone</div>
+      @if (rowMessage) {
+        <span data-id="hilos-table-row-message">{{ rowMessage }}</span>
+      }
+      <!-- <div class="alert invisible"></div> -->
+      <hilos-modal>
+        <div class="alert invisible" data-id="dialog-reserve"></div>
+        <hilos-viewport-table>
+          <ng-template hilosTableDetail="note">
+            <div
+              class="alert alert-warning"
+              [class.opacity-0]="true"
+              data-id="nested-reserve"
+            ></div>
+          </ng-template>
+        </hilos-viewport-table>
+      </hilos-modal>
+    </ng-template>
+  </hilos-viewport-table>
+</section>

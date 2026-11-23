@@ -1,0 +1,17 @@
+<!-- <div data-id="hilos-table-live-slot"></div> -->
+<script>
+  const example = '<div data-id="hilos-table-live-idle"></div>'
+</script>
+
+<hilos-modal>
+  @if (ready) {
+    <hilos-viewport-table>
+      <div
+        data-id="hilos-table-live-slot"
+        [attr.data-id]="'hilos-table-live-idle'"
+      ></div>
+    </hilos-viewport-table>
+  }
+  <div bind-attr.data-id="'hilos-table-live-idle'"></div>
+  <p>&lt;div data-id="hilos-table-live-slot"&gt;&lt;/div&gt;</p>
+</hilos-modal>
