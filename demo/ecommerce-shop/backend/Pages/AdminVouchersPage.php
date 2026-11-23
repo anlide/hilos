@@ -11,11 +11,13 @@ use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Database\Actions\VoucherFields;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\VoucherCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\VoucherUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooLongException;
@@ -31,13 +33,15 @@ use Hilos\Core\TruthSource\Exception\ExternalWriterException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\Actions\Exception\DuplicateIdException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Exception\TableNameUndeterminedException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 
 /**
- * The shop's vouchers table and add action under the head of its administration section.
+ * The shop's vouchers table and its actions under the head of the administration section.
  *
  * @property VouchersLibraryAgent $agent
  */
@@ -65,6 +69,7 @@ final class AdminVouchersPage extends AbstractPage
 
     public const array ACTIONS = [
         EcommerceShopSignalConstants::VOUCHER_CREATE => VoucherCreateActionDTO::class,
+        EcommerceShopSignalConstants::VOUCHER_UPDATE => VoucherUpdateActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -72,7 +77,7 @@ final class AdminVouchersPage extends AbstractPage
     ];
 
     /**
-     * Dispatches the voucher create action in the vouchers library.
+     * Dispatches voucher actions in the vouchers library.
      *
      * @param string $acceptKey WebSocket connection sending the action
      * @param string $action Action name from the WebSocket envelope
@@ -82,13 +87,16 @@ final class AdminVouchersPage extends AbstractPage
      * @throws InvalidActionPayloadException When the DTO does not match the action
      * @throws EmptyValueException When the voucher code is empty
      * @throws ValueTooLongException When the voucher code is longer than its column
-     * @throws ValidationException When the code or percentage is invalid
+     * @throws ValidationException When the code or percentage is invalid or the voucher changed elsewhere
+     * @throws ItemNotFoundForUpdateException When the voucher to edit no longer exists or has no ID
+     * @throws ItemNotFoundException When the collection cannot resolve the target key
      * @throws DuplicateValueException When another voucher already has the code
      * @throws CreateNotAllowedException When this process may not add a voucher
      * @throws ExternalWriterException When the collection is configured for an external writer
      * @throws WriteNotAllowedException When the write guard refuses the save
      * @throws CallbackNotSetException When the collection cannot wrap the new object
-     * @throws DatabaseException When the insert or collection loading fails
+     * @throws DatabaseException When the write or collection loading fails
+     * @throws ObjectCollectionNullException When the voucher has no backing collection for the update
      * @throws SourceChangeSubscriberException When a subscriber to the write announcement fails
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException When the object lacks a usable primary key
@@ -105,6 +113,14 @@ final class AdminVouchersPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, VoucherCreateActionDTO::class, $dto);
                 }
                 $this->handleCreate($dto);
+
+                return null;
+
+            case EcommerceShopSignalConstants::VOUCHER_UPDATE:
+                if (!$dto instanceof VoucherUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, VoucherUpdateActionDTO::class, $dto);
+                }
+                $this->handleUpdate($dto);
 
                 return null;
 
@@ -142,5 +158,47 @@ final class AdminVouchersPage extends AbstractPage
             $dto->active,
         );
         $this->setActionSuccessMessage(sprintf('Voucher “%s” added.', $voucher->code));
+    }
+
+    /**
+     * Checks the editor's expected values and saves in the same handler of the voucher's owning library.
+     *
+     * @param VoucherUpdateActionDTO $dto Update action payload
+     * @throws ItemNotFoundForUpdateException When the voucher no longer exists or has no ID
+     * @throws ItemNotFoundException When the collection cannot resolve the target key
+     * @throws ValidationException When the voucher changed elsewhere or the code or percentage is invalid
+     * @throws EmptyValueException When the voucher code is empty
+     * @throws ValueTooLongException When the voucher code is longer than its column
+     * @throws DuplicateValueException When another voucher already has the code
+     * @throws LogicException When the vouchers collection is not configured
+     * @throws InvalidArgumentException When a loaded object has the wrong type or the DB-sync signal cannot be named
+     * @throws WriteNotAllowedException When the write guard refuses the edit
+     * @throws CreateNotAllowedException When the object is new and creating it is forbidden
+     * @throws DatabaseException When the write or collection loading fails
+     * @throws ObjectCollectionNullException When the voucher has no backing collection for the update
+     * @throws ObjectGetIdStringNotImplementedException When the object lacks a usable primary key
+     * @throws SourceChangeSubscriberException When a subscriber to the write announcement fails
+     */
+    private function handleUpdate(VoucherUpdateActionDTO $dto): void
+    {
+        $voucher = Hilos::$db->vouchers[$dto->id] ?? null;
+        if ($voucher === null) {
+            throw new ItemNotFoundForUpdateException('This voucher no longer exists');
+        }
+
+        if (
+            $voucher->code !== $dto->expectedCode
+            || $voucher->discountPercent !== $dto->expectedDiscountPercent
+            || $voucher->active !== $dto->expectedActive
+        ) {
+            throw new ValidationException('The voucher changed elsewhere. Review the current values and save again.');
+        }
+
+        $voucher->actions->update(
+            $dto->code,
+            VoucherFields::discountPercentFromInput($dto->discountPercent),
+            $dto->active,
+        );
+        $this->setActionSuccessMessage(sprintf('Voucher “%s” saved.', $voucher->code));
     }
 }

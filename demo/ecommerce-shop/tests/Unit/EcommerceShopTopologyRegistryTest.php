@@ -72,6 +72,7 @@ use Demo\EcommerceShop\Pages\DTO\ProductStockSetUnitsActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
 use Demo\EcommerceShop\Pages\DTO\VoucherCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\VoucherUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
@@ -1455,12 +1456,20 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AdminVouchersPage::BROWSER,
         );
         self::assertSame('subscription_page_admin_vouchers', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_VOUCHERS);
-        $action = EcommerceShopSignalConstants::VOUCHER_CREATE;
-        self::assertSame('voucher_create', $action);
-        self::assertSame([$action => VoucherCreateActionDTO::class], AdminVouchersPage::ACTIONS);
-        self::assertSame('admin_vouchers', Hilos::getPageActionRoutes()[$action]);
-        self::assertSame('vouchers_library', Hilos::getActionAgentRoutes()[$action]);
-        self::assertSame(VoucherCreateActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
+        $create = EcommerceShopSignalConstants::VOUCHER_CREATE;
+        $update = EcommerceShopSignalConstants::VOUCHER_UPDATE;
+        self::assertSame('voucher_create', $create);
+        self::assertSame('voucher_update', $update);
+        self::assertSame([
+            $create => VoucherCreateActionDTO::class,
+            $update => VoucherUpdateActionDTO::class,
+        ], AdminVouchersPage::ACTIONS);
+        self::assertSame('admin_vouchers', Hilos::getPageActionRoutes()[$create]);
+        self::assertSame('vouchers_library', Hilos::getActionAgentRoutes()[$create]);
+        self::assertSame(VoucherCreateActionDTO::class, Hilos::getActionDtoRoutes()[$create]);
+        self::assertSame('admin_vouchers', Hilos::getPageActionRoutes()[$update]);
+        self::assertSame('vouchers_library', Hilos::getActionAgentRoutes()[$update]);
+        self::assertSame(VoucherUpdateActionDTO::class, Hilos::getActionDtoRoutes()[$update]);
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Vouchers',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Discount codes buyers enter in the cart.',

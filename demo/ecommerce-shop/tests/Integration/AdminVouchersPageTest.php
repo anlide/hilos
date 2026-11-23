@@ -13,6 +13,7 @@ use Demo\EcommerceShop\Database\Entity\Item\Voucher as EntityVoucher;
 use Demo\EcommerceShop\Database\Object\Item\Voucher as ObjectVoucher;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminVouchersPage;
+use Demo\EcommerceShop\Pages\DTO\VoucherUpdateActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\Voucher\VouchersTable;
@@ -328,6 +329,146 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
         self::assertSame($stored, self::storedVouchers());
     }
 
+    /** A tracked edit keeps the voucher ID and redraws the same row in both open windows. */
+    public function testAnAdminUpdatesAVoucherInBothOpenWindows(): void
+    {
+        $sort = TableSortOrderDTO::of(new TableSortDTO(VoucherTableRow::code));
+        $this->subscribe(self::ADMIN_KEY, $sort);
+        $this->subscribe(self::VISITOR_KEY, $sort);
+        $code = $this->activeCode . 'NEW';
+        $requestId = 'req-voucher-update';
+        $dto = new VoucherUpdateActionDTO($this->activeId, '  ' . strtolower($code) . ' ', ' 055 ', false, $this->activeCode, 15, true);
+
+        $mirror = new class implements SourceMirrorSubscriberInterface {
+            public bool $armed = true;
+            public ?SourceChange $updated = null;
+
+            public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+            {
+                if ($this->armed && $change->sourceKey === EcommerceShopDbContext::vouchers
+                    && $change->mutationType === TableMutationType::Update
+                ) {
+                    $this->updated = $change;
+                }
+            }
+        };
+        SourceChangeBus::subscribe($mirror);
+        try {
+            $reply = $this->dispatchUpdate(self::ADMIN_KEY, $dto, $requestId);
+        } finally {
+            $mirror->armed = false;
+        }
+
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertSame(sprintf('Voucher “%s” saved.', $code), $reply->message);
+        $stored = Database::sql('SELECT id, code, discount_percent, active FROM voucher WHERE code = ?', [$code])->rows();
+        self::assertSame([[
+            EntityVoucher::id => (string)$this->activeId,
+            EntityVoucher::code => $code,
+            EntityVoucher::discount_percent => '55',
+            EntityVoucher::active => '0',
+        ]], $stored);
+
+        // The rollback scope holds browser reactions. Replay the actual update with its action origin.
+        self::assertNotNull($mirror->updated);
+        self::assertSame((string)$this->activeId, $mirror->updated->sourceId);
+        Hilos::$browser->record($mirror->updated);
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+
+        $deltas = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== SignalTypeConstants::TABLE_VIEWPORT_DELTA) {
+                continue;
+            }
+            self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            self::assertInstanceOf(TableViewportDeltaDTO::class, $signal->data->data);
+            self::assertArrayNotHasKey($signal->data->targetAcceptKey, $deltas);
+            $deltas[$signal->data->targetAcceptKey] = $signal->data->data;
+        }
+        self::assertCount(2, $deltas);
+        foreach ([self::ADMIN_KEY => true, self::VISITOR_KEY => false] as $acceptKey => $own) {
+            self::assertArrayHasKey($acceptKey, $deltas);
+            $delta = $deltas[$acceptKey];
+            self::assertSame($own, $delta->own);
+            self::assertSame(AdminVouchersPage::PAGE, $delta->page);
+            self::assertSame(EcommerceShopTableContext::vouchers, $delta->tableKey);
+            self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+            self::assertSame((string)$this->activeId, (string)$delta->rowKey);
+            self::assertNotNull($delta->row);
+            self::assertSame((string)$this->activeId, (string)$delta->row[PagePayload::rowKey]);
+            self::assertSame([
+                VoucherTableRow::id => $this->activeId,
+                VoucherTableRow::code => $code,
+                VoucherTableRow::discountPercent => 55,
+                VoucherTableRow::active => false,
+            ], $delta->row[PagePayload::slots][VouchersTable::ROW_SLOT]);
+        }
+    }
+
+    /** Each expected value independently protects a newer write to the same voucher. */
+    public function testEachStaleExpectedValueRefusesVoucherUpdate(): void
+    {
+        $dto = new VoucherUpdateActionDTO($this->activeId, $this->activeCode . 'DRAFT', '25', true, $this->activeCode, 15, true);
+        $voucher = Hilos::$db->vouchers[$this->activeId];
+        foreach ([
+            'code' => [$this->activeCode . 'OTHER', 15, true],
+            'discount' => [$this->activeCode, 30, true],
+            'active' => [$this->activeCode, 15, false],
+        ] as $field => [$code, $discountPercent, $active]) {
+            $voucher->actions->update($code, $discountPercent, $active);
+            $stored = self::storedVouchers();
+            $this->assertUpdateRefused(
+                $dto,
+                "req-stale-{$field}",
+                'The voucher changed elsewhere. Review the current values and save again.',
+            );
+            self::assertSame($stored, self::storedVouchers());
+        }
+    }
+
+    /** A duplicate code and an invalid raw discount leave both vouchers intact. */
+    public function testInvalidVoucherUpdatesDoNotPartiallyWrite(): void
+    {
+        $stored = self::storedVouchers();
+        $this->assertUpdateRefused(
+            new VoucherUpdateActionDTO($this->activeId, strtolower($this->inactiveCode), '25', false, $this->activeCode, 15, true),
+            'req-update-duplicate',
+            'A voucher with this code already exists',
+        );
+        self::assertSame($stored, self::storedVouchers());
+
+        $this->assertUpdateRefused(
+            new VoucherUpdateActionDTO($this->activeId, $this->activeCode . 'DRAFT', '1.5', false, $this->activeCode, 15, true),
+            'req-update-discount',
+            'Discount must be a whole percent from 1 to 100',
+        );
+        self::assertSame($stored, self::storedVouchers());
+    }
+
+    /** A matching code on a different voucher cannot become the target of the update. */
+    public function testVoucherUpdateRequiresTheRequestedId(): void
+    {
+        $stored = self::storedVouchers();
+        $this->assertUpdateRefused(
+            new VoucherUpdateActionDTO($this->inactiveId + 1, $this->activeCode, '25', false, $this->activeCode, 15, true),
+            'req-update-missing',
+            'This voucher no longer exists',
+        );
+        self::assertSame($stored, self::storedVouchers());
+    }
+
+    /** An open view-mode window gives the visitor no right to update a voucher. */
+    public function testViewModeRefusesVoucherUpdate(): void
+    {
+        $this->subscribe(self::VISITOR_KEY);
+        $stored = self::storedVouchers();
+        $dto = new VoucherUpdateActionDTO($this->activeId, $this->activeCode, '25', false, $this->activeCode, 15, true);
+        $reply = $this->dispatchUpdate(self::VISITOR_KEY, $dto, 'req-update-viewer');
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+        self::assertSame(ActionViewModeException::ERROR_CODE, $reply->errorCode);
+        self::assertSame($stored, self::storedVouchers());
+    }
+
     /**
      * A library edit of the active voucher's percent reaches the guest's open window under the same row key.
      *
@@ -404,18 +545,61 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
         bool $active,
         string $requestId,
     ): PageActionSuccessSignalData|PageActionErrorSignalData {
+        return $this->dispatchAction(new WebSocketActionSignalDTO($acceptKey, EcommerceShopSignalConstants::VOUCHER_CREATE, [
+            ObjectVoucher::code => $code,
+            ObjectVoucher::discountPercent => $discountPercent,
+            ObjectVoucher::active => $active,
+        ], $requestId));
+    }
+
+    /**
+     * @param VoucherUpdateActionDTO $dto Update request
+     * @param string $requestId Client-minted request id
+     * @param string $reason Expected domain refusal
+     */
+    private function assertUpdateRefused(VoucherUpdateActionDTO $dto, string $requestId, string $reason): void
+    {
+        $reply = $this->dispatchUpdate(self::ADMIN_KEY, $dto, $requestId);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+        self::assertSame($reason, $reply->reason);
+    }
+
+    /**
+     * @param string $acceptKey Acting connection
+     * @param VoucherUpdateActionDTO $dto Update request
+     * @param string $requestId Client-minted request id
+     * @return PageActionSuccessSignalData|PageActionErrorSignalData The correlated update acknowledgement
+     */
+    private function dispatchUpdate(
+        string $acceptKey,
+        VoucherUpdateActionDTO $dto,
+        string $requestId,
+    ): PageActionSuccessSignalData|PageActionErrorSignalData {
+        $reply = $this->dispatchAction(new WebSocketActionSignalDTO(
+            $acceptKey,
+            EcommerceShopSignalConstants::VOUCHER_UPDATE,
+            $dto->toArray(),
+            $requestId,
+        ));
+        self::assertSame($requestId, $reply->requestId);
+        self::assertSame(EcommerceShopSignalConstants::VOUCHER_UPDATE, $reply->action);
+
+        return $reply;
+    }
+
+    /**
+     * @param WebSocketActionSignalDTO $frame WebSocket action as received by the page router
+     * @return PageActionSuccessSignalData|PageActionErrorSignalData The single tracked acknowledgement
+     */
+    private function dispatchAction(WebSocketActionSignalDTO $frame): PageActionSuccessSignalData|PageActionErrorSignalData
+    {
         $agent = new VouchersLibraryAgent();
         $router = new PageSignalRouter(
             new HilosPageFactory($agent, Hilos::class),
             new ActionRouteConfig(Hilos::getPageActionRoutes()),
         );
-        $frame = new WebSocketActionSignalDTO($acceptKey, EcommerceShopSignalConstants::VOUCHER_CREATE, [
-            ObjectVoucher::code => $code,
-            ObjectVoucher::discountPercent => $discountPercent,
-            ObjectVoucher::active => $active,
-        ], $requestId);
         ExecutionContext::run(
-            new ExecutionFrame(agentId: $agent->getId(), acceptKey: $acceptKey),
+            new ExecutionFrame(agentId: $agent->getId(), acceptKey: $frame->acceptKey),
             static fn () => $router->dispatchAction($frame, 'websocket'),
         );
 
@@ -423,7 +607,7 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if (in_array($signal->signalName->getName(), [SignalConstants::ACTION_SUCCESS, SignalConstants::ACTION_ERROR], true)) {
                 self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
-                self::assertSame($acceptKey, $signal->data->targetAcceptKey);
+                self::assertSame($frame->acceptKey, $signal->data->targetAcceptKey);
                 $replies[] = $signal->data->data;
             }
         }

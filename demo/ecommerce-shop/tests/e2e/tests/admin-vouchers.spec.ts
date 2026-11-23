@@ -16,7 +16,7 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
-// spec-owner: demo — proves creation and refusals on the shop's Vouchers page.
+// spec-owner: demo — proves creation, editing and refusals on the shop's Vouchers page.
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
@@ -25,16 +25,27 @@ const VOUCHER_GET_COMMAND = 'test:ecommerce-shop:voucher-fixture-get'
 const VOUCHER_DELETE_COMMAND = 'test:ecommerce-shop:voucher-fixture-delete'
 const command = createStandCommandChannel({ timeoutMs: 5_000 })
 
-test('shop.vouchers-add: an admin corrects a refused discount, adds a voucher live and gets a refusal for a duplicate code', async ({
+test('shop.vouchers-add: an admin corrects a refused discount, adds and edits a voucher live and gets a duplicate-code refusal', async ({
   page,
   cleanup,
 }) => {
   const code = `ZZE2EV${randomBytes(12).toString('hex').toUpperCase()}`
+  const renamedCode = `ZZE2EV${randomBytes(12).toString('hex').toUpperCase()}`
   const enteredCode = code.toLowerCase()
-  expect(await command(VOUCHER_GET_COMMAND, { code })).toEqual({
-    voucher: null,
-  })
-  cleanup.defer(() => command(VOUCHER_DELETE_COMMAND, { code }))
+  for (const ownedCode of [code, renamedCode]) {
+    expect(await command(VOUCHER_GET_COMMAND, { code: ownedCode })).toEqual({
+      voucher: null,
+    })
+    cleanup.defer(async () => {
+      expect(await command(VOUCHER_GET_COMMAND, { code: ownedCode })).toEqual({
+        voucher: null,
+      })
+    })
+  }
+  // LIFO deletes the original first, so a queued Save cannot leave a renamed row.
+  for (const ownedCode of [renamedCode, code]) {
+    cleanup.defer(() => command(VOUCHER_DELETE_COMMAND, { code: ownedCode }))
+  }
 
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, VOUCHERS_PATH)
@@ -47,10 +58,9 @@ test('shop.vouchers-add: an admin corrects a refused discount, adds a voucher li
   const active = dialog.getByTestId('admin-vouchers-add-active')
   const error = dialog.getByTestId('admin-vouchers-add-error')
   const submit = page.getByTestId('admin-vouchers-add-submit')
-  const rows = page
-    .getByTestId('admin-vouchers-table')
-    .locator(ROWS)
-    .filter({ hasText: code })
+  const rows = page.getByTestId('admin-vouchers-table').locator(ROWS)
+  const addedRow = rows.filter({ hasText: code })
+  const editedRow = rows.filter({ hasText: renamedCode })
 
   await test.step('the server refuses 101 percent and the dialog keeps the draft', async () => {
     await open.click()
@@ -74,26 +84,56 @@ test('shop.vouchers-add: an admin corrects a refused discount, adds a voucher li
     await clickSubmit(expect, submit)
 
     await expect(dialog).toBeHidden()
-    await expect(rows).toHaveCount(1)
-    await expect(rows.getByText(code, { exact: true })).toBeVisible()
-    await expect(rows.getByText('20%', { exact: true })).toBeVisible()
+    await expect(addedRow).toHaveCount(1)
+    await expect(addedRow.getByText(code, { exact: true })).toBeVisible()
+    await expect(addedRow.getByText('20%', { exact: true })).toBeVisible()
+    await expectDocumentUnchanged(expect, page)
+  })
+
+  await test.step('editing the voucher replaces its row without reloading', async () => {
+    await dismissToasts(page)
+    await addedRow.getByTestId('admin-vouchers-edit-open').click()
+    const edit = page.getByTestId('admin-vouchers-edit')
+    const editCode = edit.getByTestId('admin-vouchers-edit-code')
+    const editDiscount = edit.getByTestId(
+      'admin-vouchers-edit-discount-percent',
+    )
+    const editActive = edit.getByTestId('admin-vouchers-edit-active')
+
+    await expect(editCode).toHaveValue(code)
+    await expect(editDiscount).toHaveValue('20')
+    await expect(editActive).not.toBeChecked()
+    await typeInto(editCode, renamedCode)
+    await typeInto(editDiscount, '35')
+    await editActive.check()
+    await clickSubmit(expect, page.getByTestId('admin-vouchers-edit-submit'))
+
+    await expect(edit).toBeHidden()
+    await expect(editedRow).toHaveCount(1)
+    await expect(
+      editedRow.getByText(renamedCode, { exact: true }),
+    ).toBeVisible()
+    await expect(editedRow.getByText('35%', { exact: true })).toBeVisible()
+    await expect(editedRow.getByText('Active', { exact: true })).toBeVisible()
+    await expect(addedRow).toHaveCount(0)
     await expectDocumentUnchanged(expect, page)
   })
 
   await test.step('the server refuses the same code in another case and keeps the draft', async () => {
     await dismissToasts(page)
     await open.click()
-    await typeInto(codeField, code)
+    const duplicateCode = renamedCode.toLowerCase()
+    await typeInto(codeField, duplicateCode)
     await typeInto(discount, '25')
     await active.uncheck()
     await clickSubmit(expect, submit)
 
     await expect(error).toContainText('A voucher with this code already exists')
     await expect(dialog).toBeVisible()
-    await expect(codeField).toHaveValue(code)
+    await expect(codeField).toHaveValue(duplicateCode)
     await expect(discount).toHaveValue('25')
     await expect(active).not.toBeChecked()
-    await expect(rows).toHaveCount(1)
-    await expect(rows.getByText('20%', { exact: true })).toBeVisible()
+    await expect(editedRow).toHaveCount(1)
+    await expect(editedRow.getByText('35%', { exact: true })).toBeVisible()
   })
 })

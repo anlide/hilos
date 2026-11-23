@@ -4,6 +4,7 @@
 // fields are read back through the resolver the caller hands in, keeping this
 // module free of the application bootstrap.
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   readBoolean,
   readNumber,
   readString,
@@ -81,6 +82,17 @@ export const VOUCHERS_COLUMNS: HilosTableColumnOf<VoucherRow>[] = [
     key: VOUCHER_ACTIVE_FIELD,
     label: 'Active',
     card: 'badge',
+  },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    reads: [
+      VOUCHER_CODE_FIELD,
+      VOUCHER_DISCOUNT_PERCENT_FIELD,
+      VOUCHER_ACTIVE_FIELD,
+    ],
   },
 ]
 
