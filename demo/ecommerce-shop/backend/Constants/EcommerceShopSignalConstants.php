@@ -86,6 +86,15 @@ final class EcommerceShopSignalConstants
     /** @var string Browser subscription marker for the product's Stock page */
     public const string SUBSCRIPTION_PAGE_ADMIN_PRODUCT_STOCK = 'subscription_page_admin_product_stock';
 
+    /** @var string Browser action to set a product's units in one warehouse */
+    public const string PRODUCT_STOCK_SET_UNITS = 'product_stock_set_units';
+
+    /** @var string Stock page → stock library: set units in one warehouse */
+    public const string STOCK_SET_UNITS = 'stock_set_units';
+
+    /** @var string Stock library → Stock page: the outcome of setting units */
+    public const string ADMIN_PRODUCT_STOCK_SET_UNITS_DONE = 'admin_product_stock_set_units_done';
+
     /** @var string Server → client, WS_GROUP: the whole cart of one guest session or one person, sent by its owner */
     public const string CART_STATE = 'cart_state';
 

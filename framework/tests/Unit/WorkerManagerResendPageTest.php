@@ -1345,6 +1345,7 @@ final class ResendWorkerTestBrowser extends BrowserContext
     public function __construct()
     {
         parent::__construct();
+        $this->bindHilosFacade(ResendWorkerTestHilos::class);
         $this->identity = ConnectionIdentity::resolved(5);
     }
 
@@ -1480,4 +1481,11 @@ final class ResendWorkerTestTable extends TableDefinition implements SelfSnapsho
     {
         return $this->filterInMemory([['id' => 'a', 'label' => 'Alpha'], ['id' => 'b', 'label' => 'Beta']], $query);
     }
+}
+
+abstract class ResendWorkerTestHilos extends Hilos
+{
+    public const array PAGE_TABLES = [
+        ResendWorkerTestPage::PAGE => [ResendWorkerTestTable::TABLE => []],
+    ];
 }

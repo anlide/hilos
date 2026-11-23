@@ -1,4 +1,5 @@
 import { useContext, useLayoutEffect, useMemo, useState } from 'react'
+import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
 import {
   HilosRouterContext,
   HilosViewportTable,
@@ -15,6 +16,7 @@ import {
   createProductStockTable,
   type ProductStockTable,
 } from './adminProductStockPage.js'
+import { ProductStockEditModal } from './ProductStockEditModal.js'
 
 /** The addressed product's stock in each warehouse. */
 export default function AdminProductStock() {
@@ -48,6 +50,7 @@ export default function AdminProductStock() {
 
 function StockWindow({ productId }: { productId: number }) {
   const [table, setTable] = useState<ProductStockTable | null>(null)
+  const [editKey, setEditKey] = useState(0)
 
   useLayoutEffect(() => {
     // Each setup owns its controller so StrictMode can replay the mount.
@@ -57,16 +60,37 @@ function StockWindow({ productId }: { productId: number }) {
     return () => stock.dispose()
   }, [productId])
 
-  return table ? (
-    <HilosViewportTable
-      controller={table.controller}
-      dataId="admin-product-stock-table"
-      cells={{
-        [STOCK_WAREHOUSE_NAME_FIELD]: (row) => (
-          <span className="fw-medium">{row.warehouseName}</span>
-        ),
-        [STOCK_UNITS_FIELD]: (row) => row.units,
-      }}
-    />
-  ) : null
+  if (!table) return null
+
+  return (
+    <>
+      <HilosViewportTable
+        controller={table.controller}
+        dataId="admin-product-stock-table"
+        cells={{
+          [STOCK_WAREHOUSE_NAME_FIELD]: (row) => (
+            <span className="fw-medium">{row.warehouseName}</span>
+          ),
+          [STOCK_UNITS_FIELD]: (row) => row.units,
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              aria-label={`Set stock · ${row.warehouseName}`}
+              data-id="admin-product-stock-edit-open"
+              onClick={(event) => {
+                if (table.edit.open(String(row.warehouseId))) {
+                  event.currentTarget.focus({ preventScroll: true })
+                  setEditKey((key) => key + 1)
+                }
+              }}
+            >
+              <i className="bi bi-pencil" aria-hidden="true" />
+            </button>
+          ),
+        }}
+      />
+      <ProductStockEditModal key={editKey} edit={table.edit} />
+    </>
+  )
 }

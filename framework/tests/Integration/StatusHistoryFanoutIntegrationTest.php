@@ -278,6 +278,8 @@ final class StatusHistoryFanoutIntegrationTest extends FrameworkIntegrationTestC
                 self::assertTrue(true);
             }
         }
+        Hilos::$sr->subscribeToPage(StatusHistoryFanoutPage::PAGE,
+            new WebSocketPageSubscribeSignalDTO('history-reader', StatusHistoryFanoutPage::PAGE));
         $viewport = new TableViewportSubscription(tableKey: HilosStatusHistoryTable::TABLE, limit: 32);
         Hilos::$sr->setTableViewport('history-reader', $viewport);
         self::assertFalse($this->browser->sendTableWindow(StatusHistoryFanoutPage::PAGE, 'history-reader', $viewport));

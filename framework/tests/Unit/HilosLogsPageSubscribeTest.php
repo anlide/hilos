@@ -37,6 +37,7 @@ use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
 use JsonException;
@@ -1007,8 +1008,8 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->mountNodeTable();
         $this->fileThePicture(self::nodeSlot('node-a'), self::nodeSlot('node-b'));
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
-        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
-        $page->onSubscribe(self::SECOND_ACCEPT_KEY, new PageRouteParams([]));
+        $this->subscribeToNodeWindows($page, self::ACCEPT_KEY);
+        $this->subscribeToNodeWindows($page, self::SECOND_ACCEPT_KEY);
         $this->drainTheQueue();
         Hilos::$sr?->setTableViewport(self::ACCEPT_KEY, new TableViewportSubscription(
             HilosLogNodesTable::TABLE,
@@ -1046,13 +1047,13 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->mountNodeTable();
         $this->fileThePicture(self::nodeSlot('node-a'));
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
-        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->subscribeToNodeWindows($page, self::ACCEPT_KEY);
         $this->drainTheQueue();
         $this->fileThePicture(self::nodeSlot(
             'node-a',
             keys: [new LogKeySummary('daemon.log', LogKeySummary::CLASS_DAEMON, true, [], 900)],
         ));
-        $page->onSubscribe(self::SECOND_ACCEPT_KEY, new PageRouteParams([]));
+        $this->subscribeToNodeWindows($page, self::SECOND_ACCEPT_KEY);
         $this->drainTheQueue();
 
         $windows = $this->tickNodeWindows();
@@ -1088,7 +1089,7 @@ final class HilosLogsPageSubscribeTest extends TestCase
         $this->mountNodeTable();
         $this->fileThePicture(self::nodeSlot('node-a'));
         $page = new LogsPageSubscribeTestPage(new LogsPageSubscribeTestAgent());
-        $page->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        $this->subscribeToNodeWindows($page, self::ACCEPT_KEY);
         $this->drainTheQueue();
 
         $pictures = [
@@ -1140,6 +1141,22 @@ final class HilosLogsPageSubscribeTest extends TestCase
         Hilos::$table = new LogsPageSubscribeTestTableContext();
         Hilos::$table->configure();
         LogsPageSubscribeTestHilos::initBrowser(new IdentityTestBrowser(userId: 1, admin: true));
+    }
+
+    /**
+     * Records the active Logs subscription after the page answers, as the worker does.
+     *
+     * @param LogsPageSubscribeTestPage $page Logs page that serves the node window
+     * @param string $acceptKey Accept key of the subscribing connection
+     */
+    private function subscribeToNodeWindows(LogsPageSubscribeTestPage $page, string $acceptKey): void
+    {
+        $params = new PageRouteParams([]);
+        $page->onSubscribe($acceptKey, $params);
+        Hilos::$sr->subscribeToPage(
+            HilosPageConstants::HILOS_LOGS,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, HilosPageConstants::HILOS_LOGS, $params->toArray()),
+        );
     }
 
     /** @return array<string, TableWindowSignalData> One re-served node window per connection */

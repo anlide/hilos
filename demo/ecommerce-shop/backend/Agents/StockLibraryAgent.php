@@ -7,6 +7,9 @@ namespace Demo\EcommerceShop\Agents;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\StockSetUnitsSignalData;
+use Demo\EcommerceShop\Database\Actions\Collection\ProductWarehouseStocksActions;
+use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Action\ActionRefusal;
@@ -16,10 +19,12 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Object\Objects;
 use Hilos\HilosException;
 use Hilos\WiringRefusal;
@@ -59,6 +64,7 @@ final class StockLibraryAgent extends AbstractAgent
 
     public const array AGENT_SIGNALS = [
         EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE => ProductWarehousePlaceSignalData::class,
+        EcommerceShopSignalConstants::STOCK_SET_UNITS => StockSetUnitsSignalData::class,
     ];
 
     /** Stock actions arrive in frames; there is no periodic work. */
@@ -88,7 +94,7 @@ final class StockLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Routes placement requests to the stock writer in this process.
+     * Routes placement requests and stock edits to the stock writer in this process.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender as described by {@see SignalSource::describe()}, unused
@@ -108,6 +114,15 @@ final class StockLibraryAgent extends AbstractAgent
                 }
 
                 $this->placeUnique($placement);
+
+                return;
+
+            case EcommerceShopSignalConstants::STOCK_SET_UNITS:
+                $ask = $data->data;
+                if (!$ask instanceof StockSetUnitsSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StockSetUnitsSignalData::class, $ask);
+                }
+                $this->setStockUnits($ask);
 
                 return;
 
@@ -142,5 +157,70 @@ final class StockLibraryAgent extends AbstractAgent
         }
 
         $this->sendToAgent($placement->replySignal, HandoverAnswerSignalData::to($placement, $refusal));
+    }
+
+    /**
+     * Judges one edit and sends the outcome back to its gatekeeper.
+     *
+     * The writer's transaction covers the domain reads and the write. A failure before commit rolls
+     * back the row, its journal entry and the held collection state. On commit, the worker's handler
+     * accounts for a failed announcement separately, so a committed edit still receives success.
+     * A no-op commits without a stock write or announcement.
+     *
+     * @param StockSetUnitsSignalData $ask Stock edit and response address
+     * @throws InvalidArgumentException When the response signal cannot be queued
+     */
+    private function setStockUnits(StockSetUnitsSignalData $ask): void
+    {
+        $refusal = null;
+        try {
+            Database::transaction(
+                DatabaseNames::PRIMARY,
+                static fn () => Hilos::$db->productWarehouseStocks->actions->setUnitsFrom(
+                    $ask->productId,
+                    $ask->warehouseId,
+                    $ask->expectedUnits,
+                    self::parseUnits($ask->units),
+                ),
+            );
+        } catch (WiringRefusal $e) {
+            // The collection's read guard already logged the wiring failure.
+            $refusal = ActionRefusal::fromThrowable($e);
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Could not set stock for product {$ask->productId} in warehouse {$ask->warehouseId}: {$e->getMessage()}");
+            }
+        }
+
+        $this->sendToAgent($ask->replySignal, HandoverAnswerSignalData::to($ask, $refusal));
+    }
+
+    /**
+     * Parses the decimal edit and bounds its magnitude before casting.
+     *
+     * @param string $rawUnits Units as entered in the browser
+     * @return int Units to store
+     * @throws ValidationException When the edit has the wrong format or lies outside the stock range
+     */
+    private static function parseUnits(string $rawUnits): int
+    {
+        $units = trim($rawUnits);
+        if (preg_match('/\A-?[0-9]+\z/', $units) !== 1) {
+            throw new ValidationException('Enter a whole number of units.');
+        }
+
+        $digits = ltrim($units, '-0');
+        if ($digits === '') {
+            return 0;
+        }
+        if ($units[0] === '-') {
+            throw new ValidationException(ProductWarehouseStocksActions::NEGATIVE_UNITS_REASON);
+        }
+        if (strlen($digits) > strlen((string)ProductWarehouseStocksActions::UNITS_MAX)) {
+            throw new ValidationException(ProductWarehouseStocksActions::EXCESS_UNITS_REASON);
+        }
+
+        return (int)$digits;
     }
 }

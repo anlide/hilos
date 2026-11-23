@@ -483,6 +483,7 @@ final class DeliveryErrorContext extends BrowserContext
     public function __construct(private readonly bool $broken = false, private readonly bool $signedInOnly = false)
     {
         parent::__construct();
+        $this->bindHilosFacade(DeliveryErrorUnitHilos::class);
     }
 
     /**
@@ -769,4 +770,11 @@ final class DeliveryErrorItem extends RtItem
     {
         return $this->getState()->toArray();
     }
+}
+
+abstract class DeliveryErrorUnitHilos extends Hilos
+{
+    public const array PAGE_TABLES = [
+        DeliveryErrorContext::PAGE => [DeliveryErrorWindowTable::TABLE => []],
+    ];
 }

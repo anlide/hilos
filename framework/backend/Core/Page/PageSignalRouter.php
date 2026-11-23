@@ -42,8 +42,6 @@ use Hilos\Core\Page\Exception\ActionImpersonationException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\ActionViewModeException;
-use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
-use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
@@ -73,6 +71,7 @@ use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Definition\WindowScopedViewportTable;
 use Hilos\Core\Table\Exception\TableBulkActionNotOfferedException;
 use Hilos\Core\Table\Exception\TableBulkRunBusyException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
@@ -928,7 +927,11 @@ class PageSignalRouter
      */
     private function runTableViewportFrame(WebSocketTableViewportSignalDTO $data, string $source, string $name): void
     {
-        $previous = Hilos::$sr?->getTableViewport($data->acceptKey, $data->tableKey);
+        $browser = Hilos::$browser;
+        if ($browser === null) {
+            return;
+        }
+
         $viewport = new TableViewportSubscription(
             tableKey: $data->tableKey,
             filter: $data->filter,
@@ -939,19 +942,17 @@ class PageSignalRouter
             pageIndex: $data->pageIndex,
             rendered: $data->rendered,
         );
-        try {
-            if ($this->resolvePage($name, reportFailure: false)?->acceptsTableViewport($data->acceptKey, $viewport) === false) {
-                return;
-            }
-        } catch (InvalidPageRouteParamException | MissingPageRouteParamException) {
+        if (!$browser->pageAcceptsTableViewport($name, $data->acceptKey, $viewport)) {
             return;
         }
 
-        // A viewer of the admin view mode holds the window narrowed to what they may be served, so the
-        // window held and the window served are one window (HIL-1250).
-        $viewport = Hilos::$browser?->viewportForViewer($name, $data->acceptKey, $viewport) ?? $viewport;
-        Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
-        if (Hilos::$browser?->sendTableWindow($name, $data->acceptKey, $viewport, $data->requestId) === false) {
+        $previous = Hilos::$sr?->getTableViewport($data->acceptKey, $data->tableKey);
+        if ($browser->pageViewportTable($name, $data->tableKey) !== null) {
+            // A viewer holds the same narrowed window they are served (HIL-1250).
+            $viewport = $browser->viewportForViewer($name, $data->acceptKey, $viewport);
+            Hilos::$sr?->setTableViewport($data->acceptKey, $viewport);
+        }
+        if (!$browser->sendTableWindow($name, $data->acceptKey, $viewport, $data->requestId)) {
             // The refusal frame already left sendTableWindow when the table is not served
             // or the window could not be built. This line is the door's own trace: a page
             // silently missing its table used to look the same as a page whose table is
@@ -1087,7 +1088,8 @@ class PageSignalRouter
      *
      * The focus is kept beside the connection's facets, not on its window, so it outlives every
      * window the tab asks for after it ({@see SubscriptionRegistry::setTableFocus()}). An empty row
-     * key is the release. A held row is answered only when the window does not carry it
+     * key is the release. A window-scoped table needs an accepted window to identify its subject.
+     * A held row is answered only when the window does not carry it
      * ({@see BrowserContext::answerTableRowFocus()}): the tab re-sends the focus with every window it
      * receives, and the row it holds may have left while the frame was in flight or while the
      * connection was down.
@@ -1104,8 +1106,23 @@ class PageSignalRouter
             return;
         }
 
+        $browser = Hilos::$browser;
+        if ($browser === null || !$this->subscribedToPage($data->acceptKey, $name)) {
+            return;
+        }
+        $table = $browser->pageViewportTable($name, $data->tableKey);
+        if ($table === null) {
+            return;
+        }
+        $viewport = Hilos::$sr?->getTableViewport($data->acceptKey, $data->tableKey);
+        if (($viewport === null && $table instanceof WindowScopedViewportTable)
+            || ($viewport !== null && !$browser->pageAcceptsTableViewport($name, $data->acceptKey, $viewport))
+        ) {
+            return;
+        }
+
         Hilos::$sr?->setTableFocus($data->acceptKey, $data->tableKey, $data->rowKey);
-        Hilos::$browser?->answerTableRowFocus($name, $data->acceptKey, $data->tableKey, $data->rowKey);
+        $browser->answerTableRowFocus($name, $data->acceptKey, $data->tableKey, $data->rowKey);
     }
 
     /**

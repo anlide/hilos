@@ -94,6 +94,10 @@ final class BrowserContextTableWindowTest extends TestCase
     public function testSendTableWindowQueuesTheWindowedSnapshotAndRecordsRowIds(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$sr->subscribeToPage(
+            TableWindowUnitBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', TableWindowUnitBrowserContext::PAGE),
+        );
         Hilos::$table = new TableWindowUnitTableContext([
             new TableWindowUnitRow('a', 'Alpha'),
             new TableWindowUnitRow('b', 'Beta'),
@@ -155,6 +159,10 @@ final class BrowserContextTableWindowTest extends TestCase
     public function testAWindowAskedForPastTheEndOfTheSetSaysTheWholeSetStandsBeforeIt(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$sr->subscribeToPage(
+            TableWindowUnitBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', TableWindowUnitBrowserContext::PAGE),
+        );
         Hilos::$table = new TableWindowUnitTableContext([
             new TableWindowUnitRow('a', 'Alpha'),
             new TableWindowUnitRow('b', 'Beta'),
@@ -179,6 +187,10 @@ final class BrowserContextTableWindowTest extends TestCase
     public function testSendTableWindowRefusesATableThatIsNotServed(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$sr->subscribeToPage(
+            TableWindowUnitBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', TableWindowUnitBrowserContext::PAGE),
+        );
         Hilos::$table = new TableWindowUnitTableContext([]);
         Hilos::$table->configure();
 
@@ -284,6 +296,10 @@ final class BrowserContextTableWindowTest extends TestCase
     public function testSendTableWindowRefusesWhenARowRefusedItsOwnPayload(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$sr->subscribeToPage(
+            TableWindowUnitBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', TableWindowUnitBrowserContext::PAGE),
+        );
         Hilos::$table = new TableWindowUnitTableContext([]);
         Hilos::$table->configure();
 
@@ -315,6 +331,10 @@ final class BrowserContextTableWindowTest extends TestCase
     public function testSendTableWindowRefusesWhenGetPageThrowsAndLogsOnce(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$sr->subscribeToPage(
+            TableWindowUnitBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', TableWindowUnitBrowserContext::PAGE),
+        );
         Hilos::$table = new TableWindowUnitTableContext([]);
         Hilos::$table->configure();
 
@@ -671,6 +691,10 @@ final class BrowserContextTableWindowTest extends TestCase
     private function mountLabelledRows(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$sr->subscribeToPage(
+            TableWindowUnitBrowserContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', TableWindowUnitBrowserContext::PAGE),
+        );
         Hilos::$table = new TableWindowUnitTableContext([
             new TableWindowUnitRow('a', 'Alpha'),
             new TableWindowUnitRow('b', 'Beta'),
@@ -683,6 +707,12 @@ final class BrowserContextTableWindowTest extends TestCase
 final class TableWindowUnitBrowserContext extends BrowserContext
 {
     public const string PAGE = 'table_window_unit_page';
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->bindHilosFacade(TableWindowUnitHilos::class);
+    }
 }
 
 /**
@@ -720,6 +750,12 @@ final class TableWindowGuardUnitBrowserContext extends BrowserContext
 {
     public const string PAGE = 'table_window_guard_unit_page';
     public const string SIGNAL = 'table_window_guard_unit_signal';
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->bindHilosFacade(TableWindowUnitHilos::class);
+    }
 
     /**
      * Resolves a guarded page config whose DB_EXISTS guard always fails (its source
@@ -1018,3 +1054,12 @@ final class TableWindowRefusingReadTable extends TableDefinition implements Self
     }
 }
 
+abstract class TableWindowUnitHilos extends Hilos
+{
+    public const array PAGE_TABLES = [
+        TableWindowUnitBrowserContext::PAGE => [
+            TableWindowUnitTable::TABLE => [], TableWindowRefusedRowTable::TABLE => [], TableWindowRefusingReadTable::TABLE => [],
+        ],
+        TableWindowGuardUnitBrowserContext::PAGE => [TableWindowUnitTable::TABLE => []],
+    ];
+}

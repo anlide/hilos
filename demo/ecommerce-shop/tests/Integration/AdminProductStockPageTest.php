@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
+use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
+use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
 use Demo\EcommerceShop\Database\Object\Item\Warehouse as ObjectWarehouse;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminProductPage;
@@ -32,16 +34,23 @@ use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableAnchorDTO;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\DTO\TableWindowRefusedSignalData;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\Table\TableWindowRefusalCode;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
 use Hilos\Testing\IntegrationTest;
 use Hilos\Users\AccountStandingResolver;
@@ -212,6 +221,115 @@ final class AdminProductStockPageTest extends AdminProductsPageEnvironment
         self::assertNull(Hilos::$sr->getTableViewport(self::ADMIN_KEY, ProductStockTable::TABLE)?->anchor);
     }
 
+    public function testOverviewCannotStoreOrReadAStockWindow(): void
+    {
+        $page = AdminProductPage::PAGE;
+        $this->subscribe($page, $this->bulbs);
+        $filter = [ProductStockTable::FILTER_PRODUCT => $this->bulbs, TableConstants::FILTER_KEY_SEARCH => 'Kyiv'];
+        $this->pages->dispatchTableViewport(new WebSocketTableViewportSignalDTO(
+            self::ADMIN_KEY,
+            $page,
+            ProductStockTable::TABLE,
+            filter: $filter,
+        ), 'ws', $page);
+        self::assertNull(Hilos::$sr->getTableViewport(self::ADMIN_KEY, ProductStockTable::TABLE));
+        $frames = self::stockFrames();
+        self::assertCount(1, $frames);
+        self::assertInstanceOf(TableWindowRefusedSignalData::class, $frames[0]);
+        self::assertSame(TableWindowRefusalCode::NOT_SERVED, $frames[0]->errorCode);
+
+        $viewport = new TableViewportSubscription(tableKey: ProductStockTable::TABLE, filter: $filter);
+        self::assertFalse(Hilos::$browser->sendTableWindow($page, self::ADMIN_KEY, $viewport));
+        $frames = self::stockFrames();
+        self::assertCount(1, $frames);
+        self::assertInstanceOf(TableWindowRefusedSignalData::class, $frames[0]);
+        // A refusal can mark debt. Clear it so the focus check proves admission on its own.
+        Hilos::$sr->clearTableWindowDebt(self::ADMIN_KEY, ProductStockTable::TABLE);
+
+        // An addressed answer must judge even a viewport already present in the mirror.
+        Hilos::$sr->setTableViewport(self::ADMIN_KEY, $viewport);
+        $rowKey = (string)$this->lviv;
+        $this->pages->dispatchTableRowFocus(new WebSocketTableRowFocusSignalDTO(
+            self::ADMIN_KEY,
+            $page,
+            ProductStockTable::TABLE,
+            $rowKey,
+        ), 'ws', $page);
+        self::assertNull(Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
+        Hilos::$browser->answerTableRowFocus($page, self::ADMIN_KEY, ProductStockTable::TABLE, $rowKey);
+        self::assertSame([], self::stockFrames());
+    }
+
+    /** A focused warehouse follows the window's product after it leaves the search, until the warehouse is deleted. */
+    public function testAFocusedWarehouseKeepsItsProductStockOutsideTheSearch(): void
+    {
+        $report = [ProductStockTable::TABLE => new TableWindowDescriptorDTO(
+            filter: [ProductStockTable::FILTER_PRODUCT => $this->bulbs, TableConstants::FILTER_KEY_SEARCH => 'Kyiv'],
+            sort: Hilos::$table->productStock->defaultSort(),
+            limit: 1,
+        )];
+        $reply = $this->subscribe(AdminProductStockPage::PAGE, $this->bulbs, $report);
+        self::assertInstanceOf(PageResponseSignalData::class, $reply);
+        self::assertSame(
+            [self::stockRow($this->kyiv, 'Kyiv', 30)],
+            $reply->payload->windows[ProductStockTable::TABLE][TableWindowSignalData::rows],
+        );
+        $rowKey = (string)$this->kyiv;
+        $this->focusStockRow($rowKey);
+        self::assertSame([], self::stockFrames());
+
+        $this->asWarehousesLibrary(fn () => Hilos::$db->warehouses[$this->kyiv]->actions->update('Podil', self::WAREHOUSE_ADDRESS));
+        // The rollback scope holds the announcement. Deliver the source fact at the worker's entry point.
+        Hilos::$browser->record(SourceChange::dbUpdated(
+            EcommerceShopDbContext::warehouses,
+            $rowKey,
+            [ObjectWarehouse::name => 'Podil'],
+            previous: [ObjectWarehouse::name => 'Kyiv'],
+        ));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertStockFocusDelta(TableViewportDeltaDTO::REASON_LEFT_SET, self::stockRow($this->kyiv, 'Podil', 30));
+        $viewport = Hilos::$sr->getTableViewport(self::ADMIN_KEY, ProductStockTable::TABLE);
+        self::assertNotNull($viewport);
+        self::assertFalse($viewport->hasRow($rowKey));
+
+        $stock = Hilos::$db->productWarehouseStocks->whereColumnIs(ObjectProductWarehouseStock::productId, $this->bulbs)->first();
+        self::assertNotNull($stock);
+        Hilos::$db->productWarehouseStocks->actions->setUnits($this->bulbs, $this->kyiv, 42);
+        Hilos::$browser->record(SourceChange::dbUpdated(
+            EcommerceShopDbContext::productWarehouseStocks,
+            (string)$stock->id,
+            [ObjectProductWarehouseStock::units => 42],
+            previous: [ObjectProductWarehouseStock::units => 30],
+        ));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertStockFocusDelta(TableViewportDeltaDTO::REASON_LEFT_SET, self::stockRow($this->kyiv, 'Podil', 42));
+        self::assertSame($rowKey, Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
+
+        $reply = $this->subscribe(AdminProductStockPage::PAGE, $this->bulbs, $report);
+        self::assertInstanceOf(PageResponseSignalData::class, $reply);
+        self::assertSame([], $reply->payload->windows[ProductStockTable::TABLE][TableWindowSignalData::rows]);
+        $this->focusStockRow($rowKey);
+        $this->assertStockFocusDelta(TableViewportDeltaDTO::REASON_LEFT_SET, self::stockRow($this->kyiv, 'Podil', 42));
+
+        $this->updateStockAddress($this->seeds);
+        self::assertNull(Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
+        $this->requestStockWindow($this->seeds, 'Lviv');
+        self::assertCount(1, self::stockFrames());
+        $this->focusStockRow($rowKey);
+        $this->assertStockFocusDelta(TableViewportDeltaDTO::REASON_LEFT_SET, self::stockRow($this->kyiv, 'Podil', 0));
+
+        Hilos::$db->productWarehouseStocks->actions->setUnits($this->bulbs, $this->kyiv, 0);
+        $this->asWarehousesLibrary(fn () => Hilos::$db->warehouses[$this->kyiv]->actions->delete());
+        Hilos::$browser->record(SourceChange::dbDeleted(EcommerceShopDbContext::warehouses, $rowKey));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $this->assertStockFocusDelta(TableViewportDeltaDTO::REASON_DELETED, null);
+        self::assertNull(Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
+
+        $this->focusStockRow($rowKey);
+        $this->assertStockFocusDelta(TableViewportDeltaDTO::REASON_LEFT_SET, null);
+        self::assertNull(Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
+    }
+
     /** A delayed window request for the previous address cannot replace the current Stock window. */
     public function testLateViewportLeavesTheAddressedStockWindowInPlace(): void
     {
@@ -229,6 +347,20 @@ final class AdminProductStockPageTest extends AdminProductsPageEnvironment
             [ProductStockTable::FILTER_PRODUCT => $this->seeds],
             Hilos::$sr->getTableViewport(self::ADMIN_KEY, ProductStockTable::TABLE)?->filter,
         );
+
+        $wrongSubject = new TableViewportSubscription(
+            tableKey: ProductStockTable::TABLE,
+            filter: [ProductStockTable::FILTER_PRODUCT => $this->bulbs],
+        );
+        self::assertFalse(Hilos::$browser->sendTableWindow(AdminProductStockPage::PAGE, self::ADMIN_KEY, $wrongSubject));
+        self::assertSame([], self::stockFrames());
+
+        $current = Hilos::$sr->getTableViewport(self::ADMIN_KEY, ProductStockTable::TABLE);
+        self::assertNotNull($current);
+        Hilos::$sr->setTableViewport(self::ADMIN_KEY, $wrongSubject);
+        Hilos::$browser->answerTableRowFocus(AdminProductStockPage::PAGE, self::ADMIN_KEY, ProductStockTable::TABLE, (string)$this->kyiv);
+        self::assertSame([], self::stockFrames());
+        Hilos::$sr->setTableViewport(self::ADMIN_KEY, $current);
 
         $this->requestStockWindow($this->seeds, 'Lviv');
         $frames = self::stockFrames();
@@ -291,9 +423,14 @@ final class AdminProductStockPageTest extends AdminProductsPageEnvironment
         self::assertNull(Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::ADMIN_KEY));
 
+        $rowKey = (string)$this->kyiv;
+        $this->focusStockRow($rowKey);
+        self::assertNull(Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
+        self::assertSame([], self::stockFrames());
+
         Hilos::$browser->record(SourceChange::dbUpdated(
             EcommerceShopDbContext::warehouses,
-            (string)$this->kyiv,
+            $rowKey,
             [ObjectWarehouse::name => 'Kyiv'],
         ));
         self::assertSame([], Hilos::$browser->flushToSignalRouter());
@@ -313,6 +450,12 @@ final class AdminProductStockPageTest extends AdminProductsPageEnvironment
             Hilos::$sr->getTableViewport(self::ADMIN_KEY, ProductStockTable::TABLE)?->filter,
         );
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::ADMIN_KEY));
+
+        $this->requestStockWindow($this->seeds, 'Lviv');
+        self::assertCount(1, self::stockFrames());
+        $this->focusStockRow($rowKey);
+        self::assertSame($rowKey, Hilos::$sr->getTableFocus(self::ADMIN_KEY, ProductStockTable::TABLE));
+        $this->assertStockFocusDelta(TableViewportDeltaDTO::REASON_LEFT_SET, self::stockRow($this->kyiv, 'Kyiv', 0));
     }
 
     /**
@@ -352,6 +495,47 @@ final class AdminProductStockPageTest extends AdminProductsPageEnvironment
             new ExecutionFrame(acceptKey: self::ADMIN_KEY),
             fn () => $this->pages->dispatchTableViewport($request, 'ws', AdminProductStockPage::PAGE),
         );
+    }
+
+    /**
+     * @param callable(): void $write Warehouse mutation performed by its library
+     */
+    private function asWarehousesLibrary(callable $write): void
+    {
+        $library = new WarehousesLibraryAgent();
+        OwnershipDeclaration::claimAll($library);
+        try {
+            ExecutionContext::run(new ExecutionFrame(agentId: $library->getId()), $write);
+        } finally {
+            TruthSourceRegistry::unregisterAgent($library->getId());
+        }
+    }
+
+    /**
+     * @param string $rowKey Key of the warehouse whose stock the tab holds in focus
+     */
+    private function focusStockRow(string $rowKey): void
+    {
+        $request = new WebSocketTableRowFocusSignalDTO(self::ADMIN_KEY, AdminProductStockPage::PAGE, ProductStockTable::TABLE, $rowKey);
+        ExecutionContext::run(
+            new ExecutionFrame(acceptKey: self::ADMIN_KEY),
+            fn () => $this->pages->dispatchTableRowFocus($request, 'ws', AdminProductStockPage::PAGE),
+        );
+    }
+
+    /**
+     * @param string $reason Expected removal reason
+     * @param ?array<string, mixed> $row Expected warehouse row, or null when the warehouse is gone
+     */
+    private function assertStockFocusDelta(string $reason, ?array $row): void
+    {
+        $deltas = array_values(array_filter(self::stockFrames(), static fn (SignalDataInterface $frame): bool =>
+            $frame instanceof TableViewportDeltaDTO));
+        self::assertCount(1, $deltas);
+        self::assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $deltas[0]->kind);
+        self::assertSame((string)$this->kyiv, (string)$deltas[0]->rowKey);
+        self::assertSame($reason, $deltas[0]->reason);
+        self::assertSame($row, $deltas[0]->row);
     }
 
     /** @return list<SignalDataInterface> All pending browser frames for the Stock subscriber */

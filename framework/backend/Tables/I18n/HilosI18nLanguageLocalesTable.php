@@ -268,12 +268,25 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): bool
     {
+        return $this->findRowInWindow($rowKey, $query) !== null;
+    }
+
+    /**
+     * Reads a locale pair in the window's language.
+     *
+     * @param string|int $rowKey The pair of parent IDs
+     * @param TableQueryDTO $window Window query whose filter names the language
+     * @return ?HilosI18nLanguageLocalesTableRow The row, or null when the language has no such pair
+     * @throws HilosException When an i18n collection cannot be read
+     */
+    public function findRowInWindow(string|int $rowKey, TableQueryDTO $window): ?HilosI18nLanguageLocalesTableRow
+    {
         [$languageId] = self::pairOf((string) $rowKey);
-        if ($languageId !== self::languageIdOf($query)) {
-            return false;
+        if ($languageId === null || $languageId !== self::languageIdOf($window)) {
+            return null;
         }
 
-        return $this->findRow($rowKey) !== null;
+        return $this->findRow($rowKey);
     }
 
     /**

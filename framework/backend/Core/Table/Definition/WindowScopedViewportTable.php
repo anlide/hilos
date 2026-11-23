@@ -8,6 +8,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Throwable;
 
 /**
@@ -44,4 +45,14 @@ interface WindowScopedViewportTable extends ViewportTable
      * @throws Throwable Whatever the concrete table's row build raises
      */
     public function buildMutationsForWindow(SourceChange $change, TableQueryDTO $window): array;
+
+    /**
+     * Reads a row in the window's subject independently of search, sort, anchors and pagination.
+     *
+     * @param string|int $rowKey Key identifying the row within the subject
+     * @param TableQueryDTO $window Window query whose filter names the subject
+     * @return ?AbstractTableRow Row in that subject, or null when the subject has no such row
+     * @throws Throwable Whatever the concrete table's row read raises
+     */
+    public function findRowInWindow(string|int $rowKey, TableQueryDTO $window): ?AbstractTableRow;
 }

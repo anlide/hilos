@@ -47,6 +47,8 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -635,7 +637,7 @@ abstract class BrowserContext
         TableViewportSubscription $viewport,
         ?string $requestId = null,
     ): bool {
-        if (Hilos::$sr === null) {
+        if (Hilos::$sr?->pageSubscription($acceptKey)?->page !== $page) {
             return false;
         }
 
@@ -670,6 +672,22 @@ abstract class BrowserContext
             return false;
         }
 
+        $table = $this->pageViewportTable($page, $viewport->tableKey);
+        if ($table === null) {
+            $this->sendTableWindowRefusal(
+                $page,
+                $acceptKey,
+                $viewport->tableKey,
+                TableWindowRefusalCode::NOT_SERVED,
+                $requestId,
+            );
+
+            return false;
+        }
+        if (!$this->pageAcceptsTableViewport($page, $acceptKey, $viewport)) {
+            return false;
+        }
+
         // Passing the guards permits a probe, not a partial answer. Keep the debt while the
         // page is built so a refused or failed probe stays silent and cannot release a window.
         if (Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
@@ -685,19 +703,6 @@ abstract class BrowserContext
             if (Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
                 return false;
             }
-        }
-
-        $table = Hilos::$table?->get($viewport->tableKey);
-        if (!$table instanceof ViewportTable) {
-            $this->sendTableWindowRefusal(
-                $page,
-                $acceptKey,
-                $viewport->tableKey,
-                TableWindowRefusalCode::NOT_SERVED,
-                $requestId,
-            );
-
-            return false;
         }
 
         $window = $this->buildTableWindow($table, $viewport, $page, $acceptKey);
@@ -1062,7 +1067,7 @@ abstract class BrowserContext
      */
     public function answerTableRowFocus(string $page, string $acceptKey, string $tableKey, string $rowKey): void
     {
-        if (Hilos::$sr === null) {
+        if (Hilos::$sr === null || Hilos::$sr->isTableWindowOwed($acceptKey, $tableKey)) {
             return;
         }
 
@@ -1071,8 +1076,8 @@ abstract class BrowserContext
             return;
         }
 
-        $table = Hilos::$table?->get($tableKey);
-        if (!$table instanceof ViewportTable) {
+        $table = $this->pageViewportTable($page, $tableKey);
+        if ($table === null || !$this->pageAcceptsTableViewport($page, $acceptKey, $viewport)) {
             return;
         }
 
@@ -1103,7 +1108,7 @@ abstract class BrowserContext
             $inSet = null;
         }
 
-        $delta = $this->focusedRowDelta($table, $rowKey, $page, $acceptKey, $tableKey, false, $inSet);
+        $delta = $this->focusedRowDelta($table, $viewport, $rowKey, $page, $acceptKey, $tableKey, false, $inSet);
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
         }
@@ -3433,6 +3438,35 @@ abstract class BrowserContext
     }
 
     /**
+     * Checks the active page address and its rule for the proposed window subject.
+     * Callers resolve the table binding with {@see self::pageViewportTable()}.
+     *
+     * @param string $page Page the window is addressed to
+     * @param string $acceptKey Connection requesting or holding the window
+     * @param TableViewportSubscription $viewport Window whose subject is checked
+     * @return bool Whether the active address admits the viewport subject
+     */
+    final public function pageAcceptsTableViewport(string $page, string $acceptKey, TableViewportSubscription $viewport): bool
+    {
+        if (Hilos::$sr?->pageSubscription($acceptKey)?->page !== $page) {
+            return false;
+        }
+
+        $pageClass = $this->hilosClass::PAGES[$page] ?? AbstractPage::class;
+        try {
+            return $pageClass::acceptsTableViewport($acceptKey, $viewport);
+        } catch (InvalidPageRouteParamException | MissingPageRouteParamException) {
+            return false;
+        } catch (Throwable $failure) {
+            Logger::error(
+                "Table viewport subject could not be checked: page={$page}, table={$viewport->tableKey}, error={$failure->getMessage()}",
+            );
+
+            return false;
+        }
+    }
+
+    /**
      * Resolves page table bindings from project topology.
      *
      * @param string $page Page name from the subscription mirror
@@ -5278,7 +5312,7 @@ abstract class BrowserContext
                 $this->browserRowToWire($table->browserRow($mutation->row), $this->viewerTableOf($page, $acceptKey, $table)),
             );
         } else {
-            $delta = $this->focusedRowDelta($table, $mutation->rowKey, $page, $acceptKey, $browserKey, $own, $membership());
+            $delta = $this->focusedRowDelta($table, $viewport, $mutation->rowKey, $page, $acceptKey, $browserKey, $own, $membership());
         }
         if ($delta !== null) {
             $this->queueAddressedTableSignal(SignalTypeConstants::TABLE_VIEWPORT_DELTA, $delta, $acceptKey);
@@ -5288,16 +5322,17 @@ abstract class BrowserContext
     /**
      * Builds the frame that hands a tab the row it holds in focus from outside its window, or nothing.
      *
-     * The row is read from the table's own set ({@see ViewportTable::findRow()}), not taken from the
-     * mutation: the mutation's row was built for the change, and a row the set has since let go of
-     * would still be in it. A row the set holds travels with its body - `left_set` when the window's
-     * set has let it go, `moved_out` otherwise. A row the set does not hold travels without one and
+     * The table reads the current row in its own set, using the window's subject when its rows
+     * depend on one ({@see WindowScopedViewportTable::findRowInWindow()}). A row in that subject is
+     * readable outside the searched or paginated window. Its body travels as `left_set` when the
+     * window's set has let it go, `moved_out` otherwise. A row the set does not hold travels without one and
      * releases the focus: past that set the tab may read nothing, and the dialog is told "deleted".
      * A table that refuses the read sends nothing and KEEPS the focus: the refusal says nothing
      * about the row, the next change puts the question again, and a focus let go of here would leave
      * the dialog on a body nobody refreshes for good. The log line is what says it happened.
      *
      * @param ViewportTable $table Viewport table the row belongs to
+     * @param TableViewportSubscription $viewport Connection's current window
      * @param int|string $rowKey Key of the row in focus
      * @param string $page Subscribed page key
      * @param string $acceptKey Target accept key
@@ -5308,6 +5343,7 @@ abstract class BrowserContext
      */
     private function focusedRowDelta(
         ViewportTable $table,
+        TableViewportSubscription $viewport,
         int|string $rowKey,
         string $page,
         string $acceptKey,
@@ -5316,7 +5352,9 @@ abstract class BrowserContext
         ?bool $inSet,
     ): ?TableViewportDeltaDTO {
         try {
-            $row = $table->findRow($rowKey);
+            $row = $table instanceof WindowScopedViewportTable
+                ? $table->findRowInWindow($rowKey, $this->viewportQuery($viewport))
+                : $table->findRow($rowKey);
             $wireRow = $row === null
                 ? null
                 : $this->browserRowToWire($table->browserRow($row), $this->viewerTableOf($page, $acceptKey, $table));

@@ -56,6 +56,10 @@ final class BrowserContextSourceFanoutWindowTest extends TestCase
     public function testSendTableWindowServesASourceFanoutViewportTable(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$sr->subscribeToPage(
+            SourceFanoutWindowUnitContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', SourceFanoutWindowUnitContext::PAGE),
+        );
         Hilos::$table = new SourceFanoutWindowUnitTableContext([
             new SourceFanoutWindowUnitRow('a', 'Alpha'),
             new SourceFanoutWindowUnitRow('b', 'Beta'),
@@ -327,6 +331,12 @@ final class SourceFanoutWindowUnitContext extends BrowserContext
     public const string PAGE = 'source_fanout_window_page';
     public const string SIGNAL = 'source_fanout_window_signal';
 
+    public function __construct()
+    {
+        parent::__construct();
+        $this->bindHilosFacade(SourceFanoutWindowUnitHilos::class);
+    }
+
     /**
      * Resolves the test page browser metadata.
      *
@@ -501,4 +511,11 @@ final class SourceFanoutWindowUnitRow extends AbstractTableRow
             (string) $data['label'],
         );
     }
+}
+
+abstract class SourceFanoutWindowUnitHilos extends Hilos
+{
+    public const array PAGE_TABLES = [
+        SourceFanoutWindowUnitContext::PAGE => [SourceFanoutWindowUnitTable::TABLE => []],
+    ];
 }

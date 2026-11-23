@@ -1088,6 +1088,7 @@ final class LivePublicationTestBrowser extends IdentityTestBrowser
     public function __construct(?int $userId = 1)
     {
         parent::__construct($userId, true);
+        $this->bindHilosFacade(LivePublicationTestBindings::class);
     }
 
     public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
@@ -1166,7 +1167,20 @@ final class LivePublicationTestResender implements PageResender
     }
 }
 
-abstract class LivePublicationTestHilos extends Hilos
+abstract class LivePublicationTestBindings extends Hilos
+{
+    public const array PAGE_TABLES = [
+        'publication' => [
+            HilosDaemonWorkersTable::TABLE => [], HilosDaemonPlacementTable::TABLE => [], HilosDaemonAgentsTable::TABLE => [],
+            HilosDaemonCronTable::TABLE => [], HilosDaemonHttpRoutesTable::TABLE => [], HilosDaemonEnvMismatchTable::TABLE => [],
+        ],
+        AbstractHilosDaemonEnvMismatchPage::PAGE => [HilosDaemonEnvMismatchTable::TABLE => []],
+        AbstractHilosDaemonCronPage::PAGE => [HilosDaemonCronTable::TABLE => []],
+        AbstractHilosDaemonWorkersPage::PAGE => [HilosDaemonWorkersTable::TABLE => []],
+    ];
+}
+
+abstract class LivePublicationTestHilos extends LivePublicationTestBindings
 {
     public const array AGENTS = ['x' => []];
     public const array PAGES = [

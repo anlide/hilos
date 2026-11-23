@@ -206,24 +206,32 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): bool
     {
-        $subjectId = $this->subjectIdOf($query);
-        $id = filter_var($rowKey, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        if ($id === false || (string) $id !== (string) $rowKey) {
-            return false;
-        }
-        if (!isset(Hilos::$db->languages[$id])) {
-            return false;
-        }
-        $language = Hilos::$db->languages[$id];
-        if ($subjectId === null || $this->excludesRowLanguage($subjectId, (int) $language->id)) {
-            return false;
-        }
+        $language = $this->rowLanguage($rowKey, $this->subjectIdOf($query));
 
-        return $this->containsRowInMemory(
+        return $language !== null && $this->containsRowInMemory(
             [[HilosI18nNameTableRow::rowKey => (string) $language->id]],
             $rowKey,
             $this->scopeSearch($query),
         );
+    }
+
+    /**
+     * Reads the row of one language in the window's names subject.
+     *
+     * @param string|int $rowKey Decimal primary ID of the row's language
+     * @param TableQueryDTO $window Window query whose filter names the subject
+     * @return ?HilosI18nNameTableRow Names row, or null when the subject has no such row
+     * @throws HilosException When an i18n collection or the default language cannot be read
+     */
+    public function findRowInWindow(string|int $rowKey, TableQueryDTO $window): ?HilosI18nNameTableRow
+    {
+        $subjectId = $this->subjectIdOf($window);
+        if ($subjectId === null) {
+            return null;
+        }
+        $language = $this->rowLanguage($rowKey, $subjectId);
+
+        return $language === null ? null : $this->rowFor($subjectId, $language, $this->defaultLanguageId());
     }
 
     /**
@@ -402,6 +410,25 @@ abstract class AbstractHilosI18nNamesTable extends TableDefinition implements Wi
         $id = $query->filter[$this->filterKey()] ?? null;
 
         return is_int($id) && $id > 0 ? $this->subjectId($id) : null;
+    }
+
+    /**
+     * Resolves the language of a row belonging to the names subject.
+     *
+     * @param string|int $rowKey Decimal primary ID of the row's language
+     * @param ?int $subjectId Primary ID of the subject, or null when the window has none
+     * @return ?DbLanguage Row language, or null when the subject has no such row
+     * @throws HilosException When the languages cannot be read
+     */
+    private function rowLanguage(string|int $rowKey, ?int $subjectId): ?DbLanguage
+    {
+        $id = filter_var($rowKey, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($id === false || (string) $id !== (string) $rowKey || !isset(Hilos::$db->languages[$id])) {
+            return null;
+        }
+        $language = Hilos::$db->languages[$id];
+
+        return $subjectId === null || $this->excludesRowLanguage($subjectId, (int) $language->id) ? null : $language;
     }
 
     /**

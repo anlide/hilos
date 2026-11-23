@@ -206,21 +206,36 @@ final class ProductStockTable extends TableDefinition implements WindowScopedVie
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): bool
     {
-        $productId = $this->subjectIdOf($query);
+        $row = $this->findRowInWindow($rowKey, $query);
+
+        return $row !== null && $this->containsRowInMemory([$row->toArray()], $rowKey, $this->scopeSearch($query));
+    }
+
+    /**
+     * Reads an existing warehouse and its current units for the window's stock product.
+     *
+     * @param string|int $rowKey Warehouse id
+     * @param TableQueryDTO $window Window query whose filter names the product
+     * @return ?ProductStockTableRow Warehouse stock row, or null when the product or warehouse is absent
+     * @throws DatabaseException When the product, the warehouse or the stock rows cannot be read
+     * @throws LogicException When a collection is not configured
+     * @throws InvalidArgumentException When a loaded item has the wrong type
+     * @throws ObjectGetIdStringNotImplementedException If a stock row's Object does not implement getIdString()
+     * @throws CollectionNotManualException When a stock row is rejected by a non-manual collection
+     * @throws HilosException When the kind of the product cannot be read
+     */
+    public function findRowInWindow(string|int $rowKey, TableQueryDTO $window): ?ProductStockTableRow
+    {
+        $productId = $this->subjectIdOf($window);
         $warehouseId = filter_var($rowKey, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($productId === null || $warehouseId === false || (string) $warehouseId !== (string) $rowKey) {
-            return false;
+            return null;
         }
         if (!isset(Hilos::$db->warehouses[$warehouseId])) {
-            return false;
+            return null;
         }
-        $warehouse = Hilos::$db->warehouses[$warehouseId];
 
-        return $this->containsRowInMemory(
-            [$this->rowFor($warehouse, $this->unitsByWarehouse($productId))->toArray()],
-            $rowKey,
-            $this->scopeSearch($query),
-        );
+        return $this->rowFor(Hilos::$db->warehouses[$warehouseId], $this->unitsByWarehouse($productId));
     }
 
     /**

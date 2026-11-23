@@ -254,12 +254,24 @@ final class BrowserContextTableRowFocusTest extends TestCase
 final class RowFocusUnitBrowserContext extends BrowserContext
 {
     public const string PAGE = 'row_focus_unit_page';
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->bindHilosFacade(RowFocusUnitHilos::class);
+    }
 }
 
 final class RowFocusGuardUnitBrowserContext extends BrowserContext
 {
     public const string PAGE = 'row_focus_guard_unit_page';
     public const string SIGNAL = 'row_focus_guard_unit_signal';
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->bindHilosFacade(RowFocusUnitHilos::class);
+    }
 
     /**
      * Resolves a guarded page config whose DB_EXISTS guard always fails (its source is absent).
@@ -443,4 +455,12 @@ final class RowFocusUnitRow extends AbstractTableRow
             self::requireString($data, 'label'),
         );
     }
+}
+
+abstract class RowFocusUnitHilos extends Hilos
+{
+    public const array PAGE_TABLES = [
+        RowFocusUnitBrowserContext::PAGE => [RowFocusUnitTable::TABLE => []],
+        RowFocusGuardUnitBrowserContext::PAGE => [RowFocusUnitTable::TABLE => []],
+    ];
 }

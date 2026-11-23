@@ -1671,6 +1671,10 @@ final class ModerationTablesSettingsCatalog implements CatalogProviderInterface
 abstract class ModerationTablesTestHilos extends Hilos
 {
     public const array PAGES = [ModerationTablesBrowser::PAGE => ModerationTablesPage::class];
+    public const array PAGE_TABLES = [ModerationTablesBrowser::PAGE => [
+        HilosModerationKindsTable::TABLE => [],
+        HilosModerationRulesTable::TABLE => [],
+    ]];
 
     protected const array FEATURES = [HilosFeature::PROFILE_PHOTO];
     protected const string MODERATION_KIND_DIRECTORY = ModerationTablesTestDirectory::class;

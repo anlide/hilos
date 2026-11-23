@@ -1,4 +1,5 @@
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   TableViewportController,
   bindTableViewport,
   readNumber,
@@ -12,6 +13,10 @@ import { connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
 import { slotFields } from '../../entityFields/entityFields.js'
 import { PAGE_ADMIN_PRODUCT_STOCK } from '../../pages/keys.js'
+import {
+  createProductStockEdit,
+  type ProductStockEdit,
+} from './productStockEdit.js'
 import { type ProductStockRow } from './types/tables/ProductStockRow.js'
 
 const PRODUCT_STOCK_TABLE = 'productStock'
@@ -37,6 +42,13 @@ const columns: HilosTableColumnOf<ProductStockRow>[] = [
     headerClass: 'text-end',
     cellClass: 'text-end',
   },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    reads: [STOCK_WAREHOUSE_NAME_FIELD, STOCK_UNITS_FIELD],
+  },
 ]
 
 function resolveProductStockRow(row: TableRow): ProductStockRow {
@@ -61,6 +73,8 @@ function resolveProductStockRow(row: TableRow): ProductStockRow {
 export interface ProductStockTable {
   /** The server-windowed controller rendered by the page. */
   readonly controller: TableViewportController<ProductStockRow>
+  /** The Set stock session over this product's warehouse rows. */
+  readonly edit: ProductStockEdit
   /** Bind the controller and consume the first window from the page response. */
   start(): void
   /** Release the binding and the controller when this product's view leaves. */
@@ -101,10 +115,12 @@ export function createProductStockTable(productId: number): ProductStockTable {
         rowKey,
       ),
   })
+  const edit = createProductStockEdit(controller, productId)
   let unbind: (() => void) | undefined
 
   return {
     controller,
+    edit,
     start() {
       unbind = bindTableViewport(
         connection,
@@ -112,9 +128,10 @@ export function createProductStockTable(productId: number): ProductStockTable {
         { page: PAGE_ADMIN_PRODUCT_STOCK, tableKey: PRODUCT_STOCK_TABLE },
         controller,
       )
+      edit.start()
     },
     dispose() {
-      controller.releaseFocus()
+      edit.dispose()
       unbind?.()
       controller.dispose()
     },

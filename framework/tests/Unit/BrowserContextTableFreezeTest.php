@@ -1389,6 +1389,7 @@ final class FreezeUnitContext extends BrowserContext
     public function __construct(private readonly bool $brokenList = false)
     {
         parent::__construct();
+        $this->bindHilosFacade(FreezeUnitHilos::class);
     }
 
     /**
@@ -1783,4 +1784,11 @@ final class FreezeUnitItem extends RtItem
     {
         return $this->getState()->toArray();
     }
+}
+
+abstract class FreezeUnitHilos extends Hilos
+{
+    public const array PAGE_TABLES = [
+        FreezeUnitContext::PAGE => [FreezeUnitTable::TABLE => [], FreezeUnitTable::NEIGHBOR => []],
+    ];
 }

@@ -32,8 +32,8 @@ use Hilos\HilosException;
  * product a warehouse keeps, one at least: no row is no units. A stock item has a row in each
  * warehouse that keeps it; a unique piece is one row of one unit, in the warehouse it is kept
  * in. Every check comes before any write, so a refused call leaves nothing behind, and a call
- * that changes nothing writes nothing - neither a row nor a line of the journal. Each write is
- * one statement, so no transaction is opened.
+ * that changes nothing writes nothing - neither a row nor a line of the journal. Each action
+ * changes at most one row. The tracked writer runs the checks and the write in its transaction.
  *
  * The warehouse is checked twice: against the warehouses read in memory first, and by the
  * database's reference last. A warehouse deleted after the first check refuses a row that names
@@ -47,6 +47,9 @@ final class ProductWarehouseStocksActions extends DbActions
 {
     /** Most units of one product one warehouse keeps. */
     public const int UNITS_MAX = 999_999;
+
+    public const string NEGATIVE_UNITS_REASON = 'Units cannot be negative';
+    public const string EXCESS_UNITS_REASON = 'Units cannot be more than 999,999';
 
     /**
      * Sets how many units of a stock item a warehouse keeps.
@@ -67,44 +70,26 @@ final class ProductWarehouseStocksActions extends DbActions
      */
     public function setUnits(int $productId, int $warehouseId, int $units): void
     {
-        if ($this->checkedProductKind($productId) !== ProductKind::STOCK) {
-            throw new ValidationException('A unique piece has no units to set: it is kept in one warehouse');
-        }
-        $this->checkWarehouseExists($warehouseId);
-        if ($units < 0) {
-            throw new ValidationException('Units cannot be negative');
-        }
-        if ($units > self::UNITS_MAX) {
-            throw new ValidationException('Units cannot be more than 999,999');
-        }
+        $this->writeUnits($productId, $warehouseId, $units, null);
+    }
 
-        $stock = null;
-        foreach ($this->collection->whereColumnIs(ObjectProductWarehouseStock::productId, $productId) as $row) {
-            if ($row->warehouseId === $warehouseId) {
-                $stock = $row->getObject();
-                break;
-            }
-        }
-
-        if ($stock === null) {
-            if ($units !== 0) {
-                $this->addStock($productId, $warehouseId, $units);
-            }
-            return;
-        }
-        if ($units === 0) {
-            $this->ensureCanWrite(TruthSourceOperation::Remove);
-            $idString = $stock->getIdString();
-            $stock->delete();
-            unset($this->objectCollection[$idString]);
-            return;
-        }
-        if ($stock->units === $units) {
-            return;
-        }
-        $this->ensureCanWrite(TruthSourceOperation::Update);
-        $stock->units = $units;
-        $stock->sync();
+    /**
+     * Sets the units if the warehouse still holds the expected count, or already holds the target count.
+     *
+     * @param int $productId Id of the stock item
+     * @param int $warehouseId Id of the warehouse
+     * @param int $expectedUnits Units the caller saw, zero for no row
+     * @param int $units Target units, zero for none
+     * @throws ValidationException When the product, warehouse or units are invalid, or the expected count is stale
+     * @throws CreateNotAllowedException When this process may not add a row
+     * @throws WriteNotAllowedException When this process may not change or remove a row
+     * @throws DatabaseException When the rows cannot be read, or the database refuses the write
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws HilosException When the right, the database or the collection refuses the write
+     */
+    public function setUnitsFrom(int $productId, int $warehouseId, int $expectedUnits, int $units): void
+    {
+        $this->writeUnits($productId, $warehouseId, $units, $expectedUnits);
     }
 
     /**
@@ -209,6 +194,65 @@ final class ProductWarehouseStocksActions extends DbActions
     }
 
     /**
+     * Checks the domain and compares the saved count in the same turn of the stock owner that writes it.
+     *
+     * @param int $productId Id of the stock item
+     * @param int $warehouseId Id of the warehouse
+     * @param int $units Target units, zero for none
+     * @param ?int $expectedUnits Units the caller saw, or null for an unconditional set
+     * @throws ValidationException When the product, warehouse or units are invalid, or the expected count is stale
+     * @throws CreateNotAllowedException When this process may not add a row
+     * @throws WriteNotAllowedException When this process may not change or remove a row
+     * @throws DatabaseException When the rows cannot be read, or the database refuses the write
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws HilosException When the right, the database or the collection refuses the write
+     */
+    private function writeUnits(int $productId, int $warehouseId, int $units, ?int $expectedUnits): void
+    {
+        if ($this->checkedProductKind($productId) !== ProductKind::STOCK) {
+            throw new ValidationException('A unique piece has no units to set: it is kept in one warehouse');
+        }
+        $this->checkWarehouseExists($warehouseId);
+        if ($units < 0) {
+            throw new ValidationException(self::NEGATIVE_UNITS_REASON);
+        }
+        if ($units > self::UNITS_MAX) {
+            throw new ValidationException(self::EXCESS_UNITS_REASON);
+        }
+
+        $stock = null;
+        foreach ($this->collection->whereColumnIs(ObjectProductWarehouseStock::productId, $productId) as $row) {
+            if ($row->warehouseId === $warehouseId) {
+                $stock = $row->getObject();
+                break;
+            }
+        }
+
+        $currentUnits = $stock?->units ?? 0;
+        if ($currentUnits === $units) {
+            return;
+        }
+        if ($expectedUnits !== null && $currentUnits !== $expectedUnits) {
+            throw new ValidationException('Stock changed elsewhere. Review the current units and try again.');
+        }
+        if ($stock === null) {
+            $this->addStock($productId, $warehouseId, $units);
+            return;
+        }
+        if ($units === 0) {
+            $this->ensureCanWrite(TruthSourceOperation::Remove);
+            $idString = $stock->getIdString();
+            $stock->delete();
+            // The collection remembers this membership for rollback. Commit reactions see the row already gone.
+            unset($this->objectCollection[$idString]);
+            return;
+        }
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+        $stock->units = $units;
+        $stock->sync();
+    }
+
+    /**
      * Adds the row of a product in a warehouse that keeps none of it yet.
      *
      * @param int $productId Id of the product
@@ -229,6 +273,7 @@ final class ProductWarehouseStocksActions extends DbActions
         $stock->warehouseId = $warehouseId;
         $stock->units = $units;
         $this->syncNamingWarehouse($stock);
+        // The collection remembers this membership for rollback. Commit reactions can read the new row.
         $this->addObjectToCollection($stock);
     }
 

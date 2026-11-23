@@ -154,6 +154,43 @@ final class BrowserContextWindowScopedTableTest extends TestCase
         $this->assertFalse(Hilos::$sr?->isTableWindowOwed('ak-de', WindowScopedUnitTable::TABLE));
     }
 
+    public function testFocusIsAnsweredOnlyAfterTheOwedWindowArrives(): void
+    {
+        $table = $this->boot();
+        $context = new WindowScopedUnitContext();
+        $viewport = new TableViewportSubscription(
+            tableKey: WindowScopedUnitTable::TABLE,
+            filter: [WindowScopedUnitTable::FILTER_SUBJECT => 'de'],
+            limit: 1,
+        );
+        Hilos::$sr->setTableViewport('ak-de', $viewport);
+        self::assertTrue($context->sendTableWindow(WindowScopedUnitContext::PAGE, 'ak-de', $viewport));
+        self::assertFalse($viewport->hasRow('b'));
+        Hilos::$sr->setTableFocus('ak-de', WindowScopedUnitTable::TABLE, 'b');
+
+        $table->failOn = ['de'];
+        $this->flushChange('a', 'Alpha');
+        self::assertCount(1, $this->namedFor('ak-de', SignalTypeConstants::TABLE_VIEWPORT_FROZEN));
+        $this->taken = [];
+
+        Hilos::$sr->setTableFocus('ak-de', WindowScopedUnitTable::TABLE, 'b');
+        $context->answerTableRowFocus(WindowScopedUnitContext::PAGE, 'ak-de', WindowScopedUnitTable::TABLE, 'b');
+        self::assertSame([], $this->namedFor('ak-de', null));
+        self::assertSame('b', Hilos::$sr->getTableFocus('ak-de', WindowScopedUnitTable::TABLE));
+
+        $table->failOn = [];
+        $this->flushChange('a', 'Alpha');
+        self::assertCount(1, $this->namedFor('ak-de', SignalTypeConstants::TABLE_WINDOW));
+        self::assertSame([], $this->namedFor('ak-de', SignalTypeConstants::TABLE_VIEWPORT_DELTA));
+        self::assertFalse(Hilos::$sr->isTableWindowOwed('ak-de', WindowScopedUnitTable::TABLE));
+
+        $context->answerTableRowFocus(WindowScopedUnitContext::PAGE, 'ak-de', WindowScopedUnitTable::TABLE, 'b');
+        $deltas = $this->namedFor('ak-de', SignalTypeConstants::TABLE_VIEWPORT_DELTA);
+        self::assertCount(1, $deltas);
+        self::assertSame('b', $deltas[0]->rowKey);
+        self::assertSame('de:Renamed', $deltas[0]->row[PagePayload::slots][WindowScopedUnitTable::SLOT]['label']);
+    }
+
     public function testAnOrdinaryTableOnTheSamePageStillBuildsOneRowForEveryWindow(): void
     {
         $this->boot(withPlain: true);
@@ -296,6 +333,12 @@ final class WindowScopedUnitContext extends BrowserContext
 
     private const string SIGNAL = 'window_scoped_signal';
 
+    public function __construct()
+    {
+        parent::__construct();
+        $this->bindHilosFacade(WindowScopedUnitHilos::class);
+    }
+
     /**
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Test page metadata, or null when absent
@@ -418,6 +461,20 @@ final class WindowScopedUnitTable extends TableDefinition implements WindowScope
         return in_array((string) $rowKey, self::ROWS, true);
     }
 
+    /**
+     * @param string|int $rowKey Row key to look up
+     * @param TableQueryDTO $window Window query whose filter names the subject
+     * @return ?WindowScopedUnitRow Row labelled with its subject, or null when absent
+     */
+    public function findRowInWindow(string|int $rowKey, TableQueryDTO $window): ?WindowScopedUnitRow
+    {
+        $subject = $window->filter[self::FILTER_SUBJECT] ?? null;
+
+        return is_string($subject) && $this->containsRow($rowKey, $window)
+            ? new WindowScopedUnitRow((string) $rowKey, "{$subject}:Renamed")
+            : null;
+    }
+
     protected function init(): void
     {
         $this->setRowClass(WindowScopedUnitRow::class);
@@ -532,4 +589,11 @@ final class WindowScopedUnitRow extends AbstractTableRow
     {
         return new static((string) $data['key'], (string) $data['label']);
     }
+}
+
+abstract class WindowScopedUnitHilos extends Hilos
+{
+    public const array PAGE_TABLES = [
+        WindowScopedUnitContext::PAGE => [WindowScopedUnitTable::TABLE => [], WindowScopedUnitPlainTable::TABLE => []],
+    ];
 }

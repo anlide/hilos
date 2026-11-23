@@ -37,11 +37,13 @@ final class WireTestAdminPage extends AbstractPage
     public const string PAGE = 'admin_view_mode_wire_page';
 
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
+    public const bool OPEN_WHILE_FROZEN = true;
 }
 
 final class WireTestHilos extends Hilos
 {
     public const array PAGES = [WireTestAdminPage::PAGE => WireTestAdminPage::class];
+    public const array PAGE_TABLES = [WireTestAdminPage::PAGE => [WireTestTable::TABLE => []]];
 
     /**
      * @return HilosDbContext Test DB context

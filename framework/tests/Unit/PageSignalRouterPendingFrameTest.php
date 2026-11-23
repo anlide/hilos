@@ -25,6 +25,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\TableConstants;
@@ -39,6 +40,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketTableFacetsSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRenderedSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
@@ -83,6 +85,13 @@ final class PageSignalRouterPendingFrameTest extends TestCase
     protected function setUp(): void
     {
         Hilos::$sr = new SignalRouter();
+        Hilos::$table = new class extends TableContext {
+            public function configure(): void
+            {
+                $this->register(PendingFrameTestPage::TABLE_KEY, new HilosDaemonWorkersTable());
+            }
+        };
+        Hilos::$table->configure();
         $this->previousRt = Hilos::$rt;
     }
 
@@ -91,6 +100,7 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         RtTruthSourceRegistry::unregisterDaemon(StateTableLagRuntime::RT_ITEM);
         Hilos::$rt = $this->previousRt;
         Hilos::$sr = null;
+        Hilos::$table = null;
         Hilos::resetBrowser();
         if ($this->logFile !== '') {
             Logger::resetLogFile();
@@ -1004,6 +1014,7 @@ final class PendingFrameTestBrowser extends BrowserContext
     public function __construct()
     {
         parent::__construct();
+        $this->bindHilosFacade(PendingFrameTestHilos::class);
         $this->identity = ConnectionIdentity::pending();
     }
 
@@ -1167,4 +1178,9 @@ final class PendingFrameTestRtContext extends RtContext
     public function configure(): void
     {
     }
+}
+
+abstract class PendingFrameTestHilos extends Hilos
+{
+    public const array PAGE_TABLES = [PendingFrameTestPage::PAGE => [PendingFrameTestPage::TABLE_KEY => []]];
 }

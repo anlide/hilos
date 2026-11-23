@@ -8,23 +8,36 @@ use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Constants\ProductKind;
+use Demo\EcommerceShop\Core\Router\DTO\StockSetUnitsSignalData;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\AdminProductPageSubscribeParams;
+use Demo\EcommerceShop\Pages\DTO\ProductStockSetUnitsActionDTO;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Table\Exception\TableNotFoundException;
 use Hilos\Database\DatabaseException;
@@ -34,6 +47,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 /** The units of one stock product by warehouse, under that product's shared head. */
 final class AdminProductStockPage extends AbstractPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = PageConstants::ADMIN_PRODUCT_STOCK;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -41,6 +56,16 @@ final class AdminProductStockPage extends AbstractPage
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::ADMIN;
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::PRODUCTS_LIBRARY;
+
+    public const array ACTIONS = [
+        EcommerceShopSignalConstants::PRODUCT_STOCK_SET_UNITS => ProductStockSetUnitsActionDTO::class,
+    ];
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            EcommerceShopSignalConstants::ADMIN_PRODUCT_STOCK_SET_UNITS_DONE => HandoverAnswerSignalData::class,
+        ],
+    ];
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCT_STOCK,
@@ -96,20 +121,15 @@ final class AdminProductStockPage extends AbstractPage
      * @throws InvalidPageRouteParamException When the current Stock address is malformed
      * @throws MissingPageRouteParamException When the current Stock address omits the product id
      */
-    public function acceptsTableViewport(string $acceptKey, TableViewportSubscription $viewport): bool
+    public static function acceptsTableViewport(string $acceptKey, TableViewportSubscription $viewport): bool
     {
         if ($viewport->tableKey !== ProductStockTable::TABLE) {
             return true;
         }
 
-        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
-        if ($subscription?->page !== self::PAGE) {
-            return false;
-        }
+        $productId = self::activeStockProductId($acceptKey);
 
-        $params = AdminProductPageSubscribeParams::fromPageRouteParams(new PageRouteParams($subscription->stringParams()));
-
-        return ($viewport->filter[ProductStockTable::FILTER_PRODUCT] ?? null) === $params->productId;
+        return $productId !== null && ($viewport->filter[ProductStockTable::FILTER_PRODUCT] ?? null) === $productId;
     }
 
     /**
@@ -118,6 +138,61 @@ final class AdminProductStockPage extends AbstractPage
     public function onUnsubscribe(string $acceptKey): void
     {
         Hilos::$sr?->forgetTableViewport($acceptKey, ProductStockTable::TABLE);
+    }
+
+    /**
+     * Routes the admin action to the stock writer through the page's handover.
+     *
+     * @param string $acceptKey Acting connection
+     * @param string $action Browser action name
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO Deferred reply from the writer, so this handler returns null
+     * @throws AgentUnknownActionException When the action is not declared by this page
+     * @throws InvalidActionPayloadException When the action and payload disagree
+     * @throws ValidationException When the connection is no longer on Stock for this product
+     * @throws InvalidArgumentException When the stock edit cannot be queued
+     */
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case EcommerceShopSignalConstants::PRODUCT_STOCK_SET_UNITS:
+                if (!$dto instanceof ProductStockSetUnitsActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProductStockSetUnitsActionDTO::class, $dto);
+                }
+                $this->forwardStockEdit($acceptKey, $dto);
+
+                return null;
+
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+    }
+
+    /**
+     * Answers the connection once the stock library reports the outcome.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $sender Full sender identity (unused)
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When the name is not declared by this page
+     * @throws InvalidAgentSignalPayloadException When the name and payload disagree
+     * @throws InvalidArgumentException When the acknowledgement cannot be queued
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case EcommerceShopSignalConstants::ADMIN_PRODUCT_STOCK_SET_UNITS_DONE:
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
+                }
+                $this->answerHandover($answer);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /**
@@ -169,6 +244,22 @@ final class AdminProductStockPage extends AbstractPage
     }
 
     /**
+     * @param string $acceptKey Connection whose active address is checked
+     * @return ?int Active Stock product id, or null when the connection is elsewhere
+     * @throws InvalidPageRouteParamException When the current Stock address is malformed
+     * @throws MissingPageRouteParamException When the current Stock address omits the product id
+     */
+    private static function activeStockProductId(string $acceptKey): ?int
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription?->page !== self::PAGE) {
+            return null;
+        }
+
+        return AdminProductPageSubscribeParams::fromPageRouteParams(new PageRouteParams($subscription->stringParams()))->productId;
+    }
+
+    /**
      * @param int $productId Product's primary key
      * @return bool Whether the key names a stock product
      * @throws LogicException When the products collection is not configured
@@ -179,5 +270,40 @@ final class AdminProductStockPage extends AbstractPage
     private static function isStockProduct(int $productId): bool
     {
         return isset(Hilos::$db->products[$productId]) && Hilos::$db->products[$productId]->kind === ProductKind::STOCK;
+    }
+
+    /**
+     * Hands the edit over only while its product is still the connection's Stock address.
+     *
+     * @param string $acceptKey Acting connection
+     * @param ProductStockSetUnitsActionDTO $dto Stock edit
+     * @throws ValidationException When the connection is no longer on Stock for this product
+     * @throws InvalidArgumentException When the stock edit cannot be queued
+     */
+    private function forwardStockEdit(string $acceptKey, ProductStockSetUnitsActionDTO $dto): void
+    {
+        try {
+            $productId = self::activeStockProductId($acceptKey);
+        } catch (InvalidPageRouteParamException|MissingPageRouteParamException) {
+            $productId = null;
+        }
+        if ($productId !== $dto->productId) {
+            throw new ValidationException('Open Stock for this product before setting its units.');
+        }
+
+        $this->forward(
+            EcommerceShopSignalConstants::STOCK_SET_UNITS,
+            new StockSetUnitsSignalData(
+                productId: $dto->productId,
+                warehouseId: $dto->warehouseId,
+                units: $dto->units,
+                expectedUnits: $dto->expectedUnits,
+                replySignal: EcommerceShopSignalConstants::ADMIN_PRODUCT_STOCK_SET_UNITS_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: EcommerceShopSignalConstants::PRODUCT_STOCK_SET_UNITS,
+                successMessage: null,
+            ),
+        );
     }
 }

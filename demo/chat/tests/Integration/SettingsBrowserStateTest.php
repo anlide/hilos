@@ -28,6 +28,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Collection\Settings as ViewSettings;
 use Hilos\Database\View\Item\Setting as ViewSetting;
 use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Settings\HilosSettingTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -238,6 +239,10 @@ final class SettingsBrowserStateTest extends IntegrationTestCase
     private function sendSettingsWindow(string $acceptKey): array
     {
         $this->resetFrontendRouter();
+        Hilos::$sr->subscribeToPage(
+            PageConstants::HILOS_SETTINGS,
+            new WebSocketPageSubscribeSignalDTO($acceptKey, PageConstants::HILOS_SETTINGS),
+        );
         Hilos::$browser?->sendTableWindow(
             PageConstants::HILOS_SETTINGS,
             $acceptKey,

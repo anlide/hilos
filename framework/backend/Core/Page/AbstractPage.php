@@ -601,7 +601,8 @@ abstract class AbstractPage implements ActionHostInterface
 
     /**
      * Lets a page with route-scoped windows discard a request for an address it has left.
-     * The router checks this before storing a viewport. Delivery still runs its own access guards.
+     * The router checks this before storing a viewport. Addressed deliveries check it again against
+     * the active subscription as well as running the page's access guards.
      *
      * @param string $acceptKey Connection requesting the window
      * @param TableViewportSubscription $viewport Requested viewport
@@ -609,7 +610,7 @@ abstract class AbstractPage implements ActionHostInterface
      * @throws InvalidPageRouteParamException When the current address is malformed
      * @throws MissingPageRouteParamException When the current address is missing a required param
      */
-    public function acceptsTableViewport(string $acceptKey, TableViewportSubscription $viewport): bool
+    public static function acceptsTableViewport(string $acceptKey, TableViewportSubscription $viewport): bool
     {
         return true;
     }

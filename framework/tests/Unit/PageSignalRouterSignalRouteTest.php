@@ -25,11 +25,14 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketTableViewportSignalDTO;
+use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
 use PHPUnit\Framework\TestCase;
 use Throwable;
 
@@ -106,7 +109,18 @@ final class PageSignalRouterSignalRouteTest extends TestCase
     public function testDispatchTableViewportStoresTheDescriptor(): void
     {
         $previousRouter = HilosFacade::$sr;
+        $previousBrowser = HilosFacade::$browser;
+        $previousTable = HilosFacade::$table;
         HilosFacade::$sr = new SignalRouter();
+        PageSignalRouterTestHilos::initBrowser(new class extends BrowserContext {
+        });
+        HilosFacade::$table = new class extends TableContext {
+            public function configure(): void
+            {
+                $this->register(HilosDaemonWorkersTable::TABLE, new HilosDaemonWorkersTable());
+            }
+        };
+        HilosFacade::$table->configure();
         try {
             $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
             $router = new PageSignalRouter($factory, new ActionRouteConfig());
@@ -123,7 +137,7 @@ final class PageSignalRouterSignalRouteTest extends TestCase
                 new WebSocketTableViewportSignalDTO(
                     acceptKey: 'ak',
                     page: PageSignalRouterTestPage::PAGE,
-                    tableKey: 'settings',
+                    tableKey: HilosDaemonWorkersTable::TABLE,
                     limit: 10,
                     pageIndex: 1,
                 ),
@@ -131,12 +145,14 @@ final class PageSignalRouterSignalRouteTest extends TestCase
                 PageSignalRouterTestPage::PAGE,
             );
 
-            $viewport = HilosFacade::$sr->getTableViewport('ak', 'settings');
+            $viewport = HilosFacade::$sr->getTableViewport('ak', HilosDaemonWorkersTable::TABLE);
             $this->assertNotNull($viewport);
-            $this->assertSame('settings', $viewport->tableKey);
+            $this->assertSame(HilosDaemonWorkersTable::TABLE, $viewport->tableKey);
             $this->assertSame(1, $viewport->pageIndex);
         } finally {
             HilosFacade::$sr = $previousRouter;
+            HilosFacade::$browser = $previousBrowser;
+            HilosFacade::$table = $previousTable;
         }
     }
 
@@ -486,6 +502,8 @@ final class PageSignalRouterTestHilos extends HilosFacade
     public const array PAGES = [
         PageSignalRouterTestPageWithDto::PAGE => PageSignalRouterTestPageWithDto::class,
     ];
+
+    public const array PAGE_TABLES = [PageSignalRouterTestPage::PAGE => [HilosDaemonWorkersTable::TABLE => []]];
 
     /**
      * Creates a no-op DB context for page signal router tests.

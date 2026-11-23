@@ -68,6 +68,7 @@ use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
+use Demo\EcommerceShop\Pages\DTO\ProductStockSetUnitsActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
@@ -93,6 +94,7 @@ use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\StockSetUnitsSignalData;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
@@ -1271,10 +1273,17 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([EcommerceShopDbContext::productWarehouseStocks], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::productWarehouseStocks]->asList());
         self::assertSame([EcommerceShopDbContext::products, EcommerceShopDbContext::warehouses], StockLibraryAgent::readDbCollections());
+        $ask = 'stock_set_units';
+        self::assertSame(AgentType::STOCK_LIBRARY, Hilos::getAgentSignalRoutes()[$ask]);
+        self::assertSame(StockSetUnitsSignalData::class, Hilos::getAgentSignalDtoRoutes()[$ask]);
+        self::assertArrayNotHasKey($ask, Hilos::getActionAgentRoutes());
 
         $signal = EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE;
         self::assertSame('stock_place_unique', $signal);
-        self::assertSame([$signal => ProductWarehousePlaceSignalData::class], StockLibraryAgent::AGENT_SIGNALS);
+        self::assertSame(
+            [$signal => ProductWarehousePlaceSignalData::class, $ask => StockSetUnitsSignalData::class],
+            StockLibraryAgent::AGENT_SIGNALS,
+        );
         self::assertSame(AgentType::STOCK_LIBRARY, Hilos::getAgentSignalRoutes()[$signal]);
         self::assertSame(ProductWarehousePlaceSignalData::class, Hilos::getAgentSignalDtoRoutes()[$signal]);
     }
@@ -1674,6 +1683,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([EcommerceShopTableContext::productStock => []], Hilos::PAGE_TABLES[AdminProductStockPage::PAGE]);
         self::assertArrayNotHasKey(AdminProductStockPage::PAGE, Hilos::PAGE_LISTS);
 
+        $action = 'product_stock_set_units';
+        self::assertSame(AdminProductStockPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+        self::assertSame(ProductStockSetUnitsActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getActionAgentRoutes()[$action]);
+        $answer = 'admin_product_stock_set_units_done';
+        self::assertSame(AdminProductStockPage::PAGE, Hilos::getPageSignalRoutes()[SignalTypeConstants::AGENT_SIGNAL][$answer]);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageSignalAgentRoutes()[SignalTypeConstants::AGENT_SIGNAL][$answer]);
+        self::assertSame(HandoverAnswerSignalData::class, Hilos::getPageSignalDtoRoutes()[SignalTypeConstants::AGENT_SIGNAL][$answer]);
+        self::assertArrayNotHasKey($answer, Hilos::getActionAgentRoutes());
+
         $browser = new EcommerceShopBrowserContext();
         $browser->bindHilosFacade(Hilos::class);
         self::assertEqualsCanonicalizing([
@@ -1875,6 +1894,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISHED => AgentType::CATEGORIES_LIBRARY,
                 EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISHED => AgentType::PRODUCTS_LIBRARY,
                 EcommerceShopSignalConstants::STOCK_PLACE_UNIQUE => AgentType::STOCK_LIBRARY,
+                EcommerceShopSignalConstants::STOCK_SET_UNITS => AgentType::STOCK_LIBRARY,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::GUEST_CARTS_LIBRARY,
                 EcommerceShopSignalConstants::GUEST_CART_SEND => AgentType::GUEST_CARTS_LIBRARY,
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
