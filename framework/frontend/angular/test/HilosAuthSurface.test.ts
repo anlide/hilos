@@ -2969,9 +2969,17 @@ it('shows the server refusal above actions on the code_expired step during regis
     expect(codeTwin).not.toBeNull()
     const errorTwinInCode = codeTwin.querySelector('.alert.alert-danger')
     expect(errorTwinInCode).not.toBeNull()
-    expect(Array.from(errorTwinInCode?.classList ?? []).sort()).toEqual(
-      rowClasses,
-    )
+    expect(Array.from(errorTwinInCode?.classList ?? []).sort()).toEqual([
+      'alert',
+      'alert-danger',
+      'align-items-center',
+      'd-flex',
+      'gap-2',
+      'my-2',
+      'px-2',
+      'py-1',
+      'small',
+    ])
     expect(
       Array.from(
         errorTwinInCode?.querySelector('.btn')?.classList ?? [],

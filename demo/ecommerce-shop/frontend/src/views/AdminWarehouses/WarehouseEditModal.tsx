@@ -62,13 +62,15 @@ function WarehouseStockReason({
 }) {
   return (
     <>
-      <p
-        id={id}
-        className={`mb-0 mt-2 small text-body-secondary${visible ? '' : ' invisible'}`}
-        aria-hidden={!visible}
-      >
-        {STOCK_REASON}
-      </p>
+      <div className={`mt-2 mb-0${visible ? '' : ' bg-body-tertiary rounded'}`}>
+        <p
+          id={id}
+          className={`mb-0 small text-body-secondary${visible ? '' : ' invisible'}`}
+          aria-hidden={!visible}
+        >
+          {STOCK_REASON}
+        </p>
+      </div>
       <span className="visually-hidden" role="status" aria-live="polite">
         {announce ? STOCK_REASON : ''}
       </span>

@@ -1,11 +1,14 @@
 // The Angular port of react/test/HilosFormError.test.tsx and
 // vue/src/HilosFormError.test.ts, under the same case names: the base refusal
 // row, and what an action's refusal switches on in it.
+import { NgComponentOutlet } from '@angular/common'
 import { Component, signal } from '@angular/core'
 import { TestBed, type ComponentFixture } from '@angular/core/testing'
 import { describe, expect, it } from 'vitest'
 
 import { HilosFormError } from '../src/HilosFormError.js'
+import { HilosModal } from '../src/HilosModal.js'
+import { HILOS_MODAL_TOKEN } from '../src/hilosModalToken.js'
 
 /** A host that drives every input of the row through signals. */
 @Component({
@@ -28,6 +31,80 @@ class FormErrorHost {
   readonly errorDetail = signal<string | null>(null)
   readonly copyText = signal('')
   readonly announce = signal(false)
+}
+
+/** A host that provides HILOS_MODAL_TOKEN for direct modal context. */
+@Component({
+  selector: 'test-modal-form-error-host',
+  imports: [HilosFormError],
+  providers: [{ provide: HILOS_MODAL_TOKEN, useValue: true }],
+  template: `
+    <hilos-form-error
+      [message]="message()"
+      dataId="e"
+      [errorType]="errorType()"
+      [errorDetail]="errorDetail()"
+      [copyText]="copyText()"
+      [announce]="announce()"
+    />
+  `,
+})
+class ModalFormErrorHost {
+  readonly message = signal<string | null>(null)
+  readonly errorType = signal<string | null>(null)
+  readonly errorDetail = signal<string | null>(null)
+  readonly copyText = signal('')
+  readonly announce = signal(false)
+}
+
+/** A host that mounts HilosFormError inside HilosModal via content projection. */
+@Component({
+  selector: 'test-in-modal-host',
+  imports: [HilosModal, HilosFormError],
+  template: `
+    <hilos-modal [open]="true" title="Edit">
+      <hilos-form-error [message]="null" dataId="in-modal-error" />
+    </hilos-modal>
+  `,
+})
+class InModalHost {}
+
+/** A host that mounts HilosFormError inside HilosModal custom #modalBody template outlet. */
+@Component({
+  selector: 'test-in-modal-outlet-host',
+  imports: [HilosModal, HilosFormError],
+  template: `
+    <hilos-modal [open]="true" title="Edit">
+      <ng-template #modalBody>
+        <hilos-form-error [message]="null" dataId="outlet-modal-error" />
+      </ng-template>
+    </hilos-modal>
+  `,
+})
+class InModalOutletHost {}
+
+/** A component mounted dynamically inside HilosModal. */
+@Component({
+  selector: 'test-dynamic-error-component',
+  imports: [HilosFormError],
+  template: `
+    <hilos-form-error [message]="null" dataId="dynamic-modal-error" />
+  `,
+})
+class DynamicErrorComponent {}
+
+/** A host that mounts a component dynamically via ngComponentOutlet inside HilosModal. */
+@Component({
+  selector: 'test-in-modal-dynamic-host',
+  imports: [HilosModal, NgComponentOutlet],
+  template: `
+    <hilos-modal [open]="true" title="Edit">
+      <ng-container [ngComponentOutlet]="innerType" />
+    </hilos-modal>
+  `,
+})
+class InModalDynamicHost {
+  readonly innerType = DynamicErrorComponent
 }
 
 /** A host that heads the details panel the way a tracked action's plate does. */
@@ -100,10 +177,87 @@ describe('HilosFormError', () => {
 
     const slot = byId('e-slot')
     expect(slot).not.toBeNull()
+    expect(slot?.classList.contains('my-2')).toBe(true)
     // No role anywhere on what is seen: the surface's own live region does the
     // announcing, and a second role would say the sentence twice.
     expect(slot?.getAttribute('role')).toBeNull()
     expect(byId('e')).toBeNull()
+
+    const idle = byId('e-idle')
+    const idleWrapper = idle?.parentElement
+    expect(idleWrapper).toBe(slot)
+    expect(idleWrapper?.classList.contains('bg-body-tertiary')).toBe(false)
+    expect(idleWrapper?.classList.contains('rounded')).toBe(false)
+  })
+
+  it('applies neutral background to the idle twin only inside a modal', () => {
+    const fixture = TestBed.createComponent(ModalFormErrorHost)
+    fixture.detectChanges()
+
+    const slot = byId('e-slot')
+    expect(slot?.classList.contains('my-2')).toBe(true)
+    const idle = byId('e-idle')
+    expect(idle).not.toBeNull()
+    const idleBox = idle?.parentElement as HTMLElement
+    expect(idleBox.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(idleBox.classList.contains('rounded')).toBe(true)
+    expect(idleBox.getAttribute('data-id')).toBeNull()
+    expect(idleBox.getAttribute('role')).toBeNull()
+
+    // Empty string behaves identically to null.
+    fixture.componentInstance.message.set('')
+    fixture.detectChanges()
+    expect(idleBox.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(idleBox.classList.contains('rounded')).toBe(true)
+
+    // With a message, the neutral fill is removed and the visible refusal is shown.
+    fixture.componentInstance.message.set('Incorrect password')
+    fixture.detectChanges()
+    expect(byId('e')).not.toBeNull()
+    expect(byId('e-idle')).toBeNull()
+    expect(document.querySelector('.bg-body-tertiary')).toBeNull()
+
+    // Clearing the refusal brings back the neutral fill on the twin.
+    fixture.componentInstance.message.set(null)
+    fixture.detectChanges()
+    const restoredIdle = byId('e-idle')
+    expect(restoredIdle).not.toBeNull()
+    const restoredBox = restoredIdle?.parentElement as HTMLElement
+    expect(restoredBox.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(restoredBox.classList.contains('rounded')).toBe(true)
+  })
+
+  it('inherits modal context when mounted inside HilosModal', () => {
+    const fixture = TestBed.createComponent(InModalHost)
+    fixture.detectChanges()
+
+    const idle = byId('in-modal-error-idle')
+    expect(idle).not.toBeNull()
+    const box = idle?.parentElement as HTMLElement
+    expect(box.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(box.classList.contains('rounded')).toBe(true)
+  })
+
+  it('inherits modal context when rendered in custom modalBody template', () => {
+    const fixture = TestBed.createComponent(InModalOutletHost)
+    fixture.detectChanges()
+
+    const idle = byId('outlet-modal-error-idle')
+    expect(idle).not.toBeNull()
+    const box = idle?.parentElement as HTMLElement
+    expect(box.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(box.classList.contains('rounded')).toBe(true)
+  })
+
+  it('inherits modal context when rendered dynamically via ngComponentOutlet', () => {
+    const fixture = TestBed.createComponent(InModalDynamicHost)
+    fixture.detectChanges()
+
+    const idle = byId('dynamic-modal-error-idle')
+    expect(idle).not.toBeNull()
+    const box = idle?.parentElement as HTMLElement
+    expect(box.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(box.classList.contains('rounded')).toBe(true)
   })
 
   it('holds the room with a hidden twin of the whole row', () => {

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 
 import { HilosFormError } from '../src/HilosFormError.js'
+import { HilosModal } from '../src/HilosModal.js'
+import { HilosModalContext } from '../src/hilosModalContext.js'
 
 // The detail panel is a HilosModal, which portals to <body>: assertions about it
 // query the document, not the render.
@@ -28,10 +30,81 @@ describe('HilosFormError', () => {
 
     const slot = byId('auth-error-slot')
     expect(slot).not.toBeNull()
+    expect(slot?.classList.contains('my-2')).toBe(true)
     // No role anywhere on what is seen: the surface's own live region does the
     // announcing, and a second role would say the sentence twice.
     expect(slot?.getAttribute('role')).toBeNull()
     expect(byId('auth-error')).toBeNull()
+
+    const idle = byId('auth-error-idle')
+    const idleWrapper = idle?.parentElement
+    expect(idleWrapper).toBe(slot)
+    expect(idleWrapper?.classList.contains('bg-body-tertiary')).toBe(false)
+    expect(idleWrapper?.classList.contains('rounded')).toBe(false)
+  })
+
+  it('applies neutral background to the idle twin only inside a modal', () => {
+    const view = render(
+      <HilosModalContext.Provider value={true}>
+        <HilosFormError message={null} dataId="auth-error" />
+      </HilosModalContext.Provider>,
+    )
+
+    const slot = byId('auth-error-slot')
+    expect(slot?.classList.contains('my-2')).toBe(true)
+    const idle = byId('auth-error-idle')
+    expect(idle).not.toBeNull()
+    const idleBox = idle?.parentElement as HTMLElement
+    expect(idleBox.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(idleBox.classList.contains('rounded')).toBe(true)
+    expect(idleBox.getAttribute('data-id')).toBeNull()
+    expect(idleBox.getAttribute('role')).toBeNull()
+
+    // Empty string behaves identically to null.
+    view.rerender(
+      <HilosModalContext.Provider value={true}>
+        <HilosFormError message="" dataId="auth-error" />
+      </HilosModalContext.Provider>,
+    )
+    expect(idleBox.classList.contains('bg-body-tertiary')).toBe(true)
+    expect(idleBox.classList.contains('rounded')).toBe(true)
+
+    // With a message, the neutral fill is removed and the visible refusal is shown.
+    view.rerender(
+      <HilosModalContext.Provider value={true}>
+        <HilosFormError message="Incorrect password" dataId="auth-error" />
+      </HilosModalContext.Provider>,
+    )
+    expect(byId('auth-error')).not.toBeNull()
+    expect(byId('auth-error-idle')).toBeNull()
+    expect(document.querySelector('.bg-body-tertiary')).toBeNull()
+
+    // Clearing the refusal restores the neutral fill.
+    view.rerender(
+      <HilosModalContext.Provider value={true}>
+        <HilosFormError message={null} dataId="auth-error" />
+      </HilosModalContext.Provider>,
+    )
+    expect(byId('auth-error')).toBeNull()
+    const restoredIdle = byId('auth-error-idle')
+    expect(restoredIdle).not.toBeNull()
+    expect(
+      restoredIdle?.parentElement?.classList.contains('bg-body-tertiary'),
+    ).toBe(true)
+  })
+
+  it('receives modal context automatically when mounted inside HilosModal', () => {
+    render(
+      <HilosModal open={true} title="Dialog">
+        <HilosFormError message={null} dataId="modal-error" />
+      </HilosModal>,
+    )
+    const idle = byId('modal-error-idle')
+    expect(idle).not.toBeNull()
+    expect(idle?.parentElement?.classList.contains('bg-body-tertiary')).toBe(
+      true,
+    )
+    expect(idle?.parentElement?.classList.contains('rounded')).toBe(true)
   })
 
   it('holds the room with a hidden twin of the whole row', () => {

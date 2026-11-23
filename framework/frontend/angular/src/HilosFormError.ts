@@ -28,12 +28,14 @@ import {
   Component,
   computed,
   effect,
+  inject,
   input,
   signal,
 } from '@angular/core'
 
 import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'
+import { HILOS_MODAL_TOKEN } from './hilosModalToken.js'
 
 /** A form's refusal, drawn in room that is held whether or not there is one. */
 @Component({
@@ -42,6 +44,7 @@ import { HilosModal } from './HilosModal.js'
   imports: [HilosLongText, HilosModal],
   template: `
     <div
+      class="my-2"
       [attr.data-id]="dataId() + '-slot'"
       [attr.role]="announce() ? 'alert' : null"
       [attr.aria-live]="announce() ? 'assertive' : null"
@@ -70,6 +73,24 @@ import { HilosModal } from './HilosModal.js'
               >
             }
           </button>
+        </div>
+      } @else if (isModal) {
+        <div class="bg-body-tertiary rounded">
+          <div
+            [class]="rowClass + ' invisible'"
+            aria-hidden="true"
+            [attr.data-id]="dataId() + '-idle'"
+          >
+            <i
+              class="bi bi-exclamation-circle flex-shrink-0"
+              aria-hidden="true"
+            ></i>
+            <span class="flex-grow-1 text-truncate">&nbsp;</span>
+            <!-- A span, not a button: the twin holds room, it does not take focus. -->
+            <span [class]="detailsClass">
+              <i class="bi bi-info-circle" aria-hidden="true"></i>
+            </span>
+          </div>
         </div>
       } @else {
         <div
@@ -160,12 +181,15 @@ export class HilosFormError {
    */
   readonly detailsTitle = input('Error details')
 
+  protected readonly isModal =
+    inject(HILOS_MODAL_TOKEN, { optional: true }) ?? false
+
   /**
    * The row and its idle twin, to the character — only `invisible` differs. The
    * room equals the true height of the row exactly while the markup matches.
    */
   protected readonly rowClass =
-    'alert alert-danger small py-1 px-2 my-2 d-flex align-items-center gap-2'
+    'alert alert-danger small py-1 px-2 mb-0 d-flex align-items-center gap-2'
 
   /** The details button and the inert copy of it the twin holds the room for. */
   protected readonly detailsClass =

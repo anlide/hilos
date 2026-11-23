@@ -545,6 +545,12 @@ describe('HilosDaemonAgentsPage', () => {
   it('disables confirmation when the focused row leaves, and preserves its identity', () => {
     const h = harness()
     open(h)
+    const unavailable = h.el('hilos-daemon-restart-unavailable')
+    expect(unavailable?.classList.contains('invisible')).toBe(true)
+    expect(
+      unavailable?.parentElement?.classList.contains('bg-body-tertiary'),
+    ).toBe(true)
+    expect(unavailable?.parentElement?.classList.contains('rounded')).toBe(true)
     h.emit('tableViewportDelta', {
       data: {
         page: HilosPages.DAEMON_AGENTS,
@@ -561,6 +567,9 @@ describe('HilosDaemonAgentsPage', () => {
     expect(h.el('hilos-daemon-restart-agent')?.textContent).toContain('agent:1')
     expect(
       h.el('hilos-daemon-restart-unavailable')?.classList.contains('invisible'),
+    ).toBe(false)
+    expect(
+      unavailable?.parentElement?.classList.contains('bg-body-tertiary'),
     ).toBe(false)
     h.el('hilos-daemon-restart-confirm')!.click()
     expect(h.dispatch).not.toHaveBeenCalled()

@@ -320,13 +320,17 @@ function Agents({
             {restartCommand}
           </code>
         </div>
-        <p
-          className={`small text-body-secondary mt-2 mb-0 ${restartUnavailable ? '' : 'invisible'}`}
-          aria-hidden={!restartUnavailable}
-          data-id="hilos-daemon-restart-unavailable"
+        <div
+          className={`mt-2 mb-0${restartUnavailable ? '' : ' bg-body-tertiary rounded'}`}
         >
-          This agent has disappeared or is currently unavailable for restart.
-        </p>
+          <p
+            className={`small text-body-secondary mb-0 ${restartUnavailable ? '' : 'invisible'}`}
+            aria-hidden={!restartUnavailable}
+            data-id="hilos-daemon-restart-unavailable"
+          >
+            This agent has disappeared or is currently unavailable for restart.
+          </p>
+        </div>
       </HilosModal>
     </>
   )

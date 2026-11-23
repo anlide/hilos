@@ -75,6 +75,7 @@ import {
 } from '@hilos/core/base'
 
 import { useConnectionInteraction } from './hilosConnectionInteraction.js'
+import { HilosModalContext } from './hilosModalContext.js'
 import { useSignal } from './useSignal.js'
 
 /**
@@ -380,7 +381,7 @@ export function HilosModal({
   }
 
   return createPortal(
-    <>
+    <HilosModalContext.Provider value={true}>
       <div
         className="modal-backdrop fade show hilos-modal-layer"
         style={{ '--hilos-modal-depth': layerDepth } as CSSProperties}
@@ -528,7 +529,7 @@ export function HilosModal({
           </div>
         </>
       ) : null}
-    </>,
+    </HilosModalContext.Provider>,
     document.body,
   )
 }

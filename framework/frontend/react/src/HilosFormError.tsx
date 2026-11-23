@@ -28,6 +28,7 @@ import { useEffect, useState } from 'react'
 import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'
 import { useFocusAfterControlRemoval } from './useFocusAfterControlRemoval.js'
+import { useHilosModal } from './hilosModalContext.js'
 
 /** Props for {@link HilosFormError}. */
 export interface HilosFormErrorProps {
@@ -63,7 +64,7 @@ export interface HilosFormErrorProps {
  * room equals the true height of the row exactly while the markup matches.
  */
 const ROW_CLASS =
-  'alert alert-danger small py-1 px-2 my-2 d-flex align-items-center gap-2'
+  'alert alert-danger small py-1 px-2 mb-0 d-flex align-items-center gap-2'
 
 /** The details button and the inert copy of it the twin holds the room for. */
 const DETAILS_CLASS =
@@ -84,6 +85,7 @@ export function HilosFormError({
   announce = false,
   detailsTitle = 'Error details',
 }: HilosFormErrorProps) {
+  const isModal = useHilosModal()
   const [detailOpen, setDetailOpen] = useState(false)
   // An empty string is the absence of a refusal, the same as null: one meaning,
   // one behavior — otherwise an empty string would draw a red row about nothing.
@@ -105,29 +107,38 @@ export function HilosFormError({
     }
   }, [shown])
 
+  const idleTwin = (
+    <div
+      className={`${ROW_CLASS} invisible`}
+      aria-hidden="true"
+      data-id={`${dataId}-idle`}
+    >
+      <i
+        className="bi bi-exclamation-circle flex-shrink-0"
+        aria-hidden="true"
+      ></i>
+      <span className="flex-grow-1 text-truncate">&nbsp;</span>
+      {/* A span, not a button: the twin holds room, it does not take focus. */}
+      <span className={DETAILS_CLASS}>
+        <i className="bi bi-info-circle" aria-hidden="true"></i>
+      </span>
+    </div>
+  )
+
   return (
     <>
       <div
+        className="my-2"
         data-id={`${dataId}-slot`}
         role={announce ? 'alert' : undefined}
         aria-live={announce ? 'assertive' : undefined}
       >
         {shown === null ? (
-          <div
-            className={`${ROW_CLASS} invisible`}
-            aria-hidden="true"
-            data-id={`${dataId}-idle`}
-          >
-            <i
-              className="bi bi-exclamation-circle flex-shrink-0"
-              aria-hidden="true"
-            ></i>
-            <span className="flex-grow-1 text-truncate">&nbsp;</span>
-            {/* A span, not a button: the twin holds room, it does not take focus. */}
-            <span className={DETAILS_CLASS}>
-              <i className="bi bi-info-circle" aria-hidden="true"></i>
-            </span>
-          </div>
+          isModal ? (
+            <div className="bg-body-tertiary rounded">{idleTwin}</div>
+          ) : (
+            idleTwin
+          )
         ) : (
           <div className={ROW_CLASS} data-id={dataId}>
             <i

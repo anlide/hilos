@@ -60,6 +60,7 @@ import {
   nextTick,
   onScopeDispose,
   onUnmounted,
+  provide,
   ref,
   shallowRef,
   useId,
@@ -83,7 +84,10 @@ import {
 } from '@hilos/core/base'
 
 import { useConnectionInteraction } from './hilosConnectionInteraction.js'
+import { HILOS_MODAL_CONTEXT } from './hilosModalContext.js'
 import { useSignal } from './useSignal.js'
+
+provide(HILOS_MODAL_CONTEXT, true)
 
 const narrow = shallowRef(false)
 onScopeDispose(bindNarrowScreen((value) => (narrow.value = value)))

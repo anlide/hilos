@@ -262,14 +262,19 @@ async function submitRestart(): Promise<void> {
           restartCommand
         }}</code>
       </div>
-      <p
-        class="small text-body-secondary mt-2 mb-0"
-        :class="{ invisible: !restartUnavailable }"
-        :aria-hidden="!restartUnavailable"
-        data-id="hilos-daemon-restart-unavailable"
+      <div
+        class="mt-2 mb-0"
+        :class="{ 'bg-body-tertiary rounded': !restartUnavailable }"
       >
-        This agent has disappeared or is currently unavailable for restart.
-      </p>
+        <p
+          class="small text-body-secondary mb-0"
+          :class="{ invisible: !restartUnavailable }"
+          :aria-hidden="!restartUnavailable"
+          data-id="hilos-daemon-restart-unavailable"
+        >
+          This agent has disappeared or is currently unavailable for restart.
+        </p>
+      </div>
       <template #actions="{ requestClose }">
         <button
           type="button"

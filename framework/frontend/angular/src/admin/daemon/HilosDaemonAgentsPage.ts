@@ -212,14 +212,21 @@ import type { HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
               restartCommand()
             }}</code>
           </div>
-          <p
-            class="small text-body-secondary mt-2 mb-0"
-            [ngClass]="{ invisible: !restartUnavailable() }"
-            [attr.aria-hidden]="!restartUnavailable()"
-            data-id="hilos-daemon-restart-unavailable"
+          <div
+            class="mt-2 mb-0"
+            [class.bg-body-tertiary]="!restartUnavailable()"
+            [class.rounded]="!restartUnavailable()"
           >
-            This agent has disappeared or is currently unavailable for restart.
-          </p>
+            <p
+              class="small text-body-secondary mb-0"
+              [ngClass]="{ invisible: !restartUnavailable() }"
+              [attr.aria-hidden]="!restartUnavailable()"
+              data-id="hilos-daemon-restart-unavailable"
+            >
+              This agent has disappeared or is currently unavailable for
+              restart.
+            </p>
+          </div>
           <ng-template #modalActions let-requestClose="requestClose">
             <button
               type="button"

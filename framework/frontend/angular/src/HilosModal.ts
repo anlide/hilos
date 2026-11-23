@@ -58,6 +58,7 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  Injector,
   afterRenderEffect,
   computed,
   contentChild,
@@ -89,6 +90,7 @@ import {
 } from '@hilos/core/base'
 
 import { injectConnectionInteraction } from './hilosConnectionInteraction.js'
+import { HILOS_MODAL_TOKEN } from './hilosModalToken.js'
 import { hilosSignal } from './hilosSignal.js'
 
 // Distinct targets for concurrent dialogs and their confirm layers.
@@ -123,6 +125,7 @@ export interface ModalBodyContext {
   selector: 'hilos-modal',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NgTemplateOutlet],
+  providers: [{ provide: HILOS_MODAL_TOKEN, useValue: true }],
   template: `
     @if (open()) {
       <div
@@ -189,6 +192,7 @@ export interface ModalBodyContext {
                 <ng-container
                   [ngTemplateOutlet]="tpl"
                   [ngTemplateOutletContext]="{ busy: busy() }"
+                  [ngTemplateOutletInjector]="modalOutletInjector"
                 />
               } @else {
                 <fieldset class="m-0 p-0 border-0" [disabled]="busy()">
@@ -219,6 +223,7 @@ export interface ModalBodyContext {
                   <ng-container
                     [ngTemplateOutlet]="tpl"
                     [ngTemplateOutletContext]="{ requestClose: requestClose }"
+                    [ngTemplateOutletInjector]="modalOutletInjector"
                   />
                 }
               </div>
@@ -414,6 +419,10 @@ export class HilosModal {
     contentChild<TemplateRef<ModalBodyContext>>('modalBody')
   protected readonly actions =
     contentChild<TemplateRef<ModalActionsContext>>('modalActions')
+  protected readonly modalOutletInjector = Injector.create({
+    providers: [{ provide: HILOS_MODAL_TOKEN, useValue: true }],
+    parent: inject(Injector),
+  })
   protected readonly requestClose = (): void => {
     this.modal.requestClose()
   }

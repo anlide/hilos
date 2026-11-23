@@ -23,10 +23,13 @@ living inside a form that swaps its steps would die with its step; only a
 surface that stays put under the row makes the slot itself the region
 (`announce`). -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 
+import { HILOS_MODAL_CONTEXT } from './hilosModalContext.js'
 import HilosLongText from './HilosLongText.vue'
 import HilosModal from './HilosModal.vue'
+
+const isModal = inject(HILOS_MODAL_CONTEXT, false)
 
 const props = withDefaults(
   defineProps<{
@@ -70,7 +73,7 @@ const props = withDefaults(
  * room equals the true height of the row exactly while the markup matches.
  */
 const ROW_CLASS =
-  'alert alert-danger small py-1 px-2 my-2 d-flex align-items-center gap-2'
+  'alert alert-danger small py-1 px-2 mb-0 d-flex align-items-center gap-2'
 
 /** The details button and the inert copy of it the twin holds the room for. */
 const DETAILS_CLASS =
@@ -103,6 +106,7 @@ watch(shown, (value) => {
 
 <template>
   <div
+    class="my-2"
     :data-id="`${dataId}-slot`"
     :role="announce ? 'alert' : undefined"
     :aria-live="announce ? 'assertive' : undefined"
@@ -126,6 +130,23 @@ watch(shown, (value) => {
           >{{ errorType }}</span
         >
       </button>
+    </div>
+    <div v-else-if="isModal" class="bg-body-tertiary rounded">
+      <div
+        :class="[ROW_CLASS, 'invisible']"
+        aria-hidden="true"
+        :data-id="`${dataId}-idle`"
+      >
+        <i
+          class="bi bi-exclamation-circle flex-shrink-0"
+          aria-hidden="true"
+        ></i>
+        <span class="flex-grow-1 text-truncate">&nbsp;</span>
+        <!-- A span, not a button: the twin holds room, it does not take focus. -->
+        <span :class="DETAILS_CLASS">
+          <i class="bi bi-info-circle" aria-hidden="true"></i>
+        </span>
+      </div>
     </div>
     <div
       v-else

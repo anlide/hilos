@@ -453,6 +453,11 @@ describe('HilosDaemonAgentsPage', () => {
   it('preserves the missing row identity and policy warning while blocking confirmation', async () => {
     const h = ready('policy')
     open(h)
+    const unavailable = h.find('hilos-daemon-restart-unavailable')
+    expect(
+      unavailable?.parentElement?.classList.contains('bg-body-tertiary'),
+    ).toBe(true)
+    expect(unavailable?.parentElement?.classList.contains('rounded')).toBe(true)
     h.emit('tableViewportDelta', {
       page: HilosPages.DAEMON_AGENTS,
       tableKey: 'hilosDaemonAgents',
@@ -463,10 +468,9 @@ describe('HilosDaemonAgentsPage', () => {
     expect(h.find('hilos-daemon-restart-agent')?.textContent).toBe('room:12')
     expect(h.find('hilos-daemon-restart-policy')).not.toBeNull()
     expect(button(h).disabled).toBe(true)
+    expect(unavailable?.classList.contains('invisible')).toBe(false)
     expect(
-      h
-        .find('hilos-daemon-restart-unavailable')
-        ?.classList.contains('invisible'),
+      unavailable?.parentElement?.classList.contains('bg-body-tertiary'),
     ).toBe(false)
     fireEvent.click(button(h))
     expect(h.dispatch).not.toHaveBeenCalled()

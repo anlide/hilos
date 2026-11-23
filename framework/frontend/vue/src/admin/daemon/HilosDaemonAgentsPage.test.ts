@@ -671,6 +671,11 @@ describe('HilosDaemonAgentsPage restart', () => {
   it('keeps a disappeared target visible by identity and refuses confirm', async () => {
     const h = restartHarness()
     await open(h)
+    const unavailable = modal('hilos-daemon-restart-unavailable')
+    expect(
+      unavailable.parentElement?.classList.contains('bg-body-tertiary'),
+    ).toBe(true)
+    expect(unavailable.parentElement?.classList.contains('rounded')).toBe(true)
     h.gone()
     await nextTick()
     expect(modal('hilos-daemon-restart-agent').textContent).toBe('agent:1')
@@ -679,6 +684,9 @@ describe('HilosDaemonAgentsPage restart', () => {
     ).toBe(true)
     expect(
       modal('hilos-daemon-restart-unavailable').classList.contains('invisible'),
+    ).toBe(false)
+    expect(
+      unavailable.parentElement?.classList.contains('bg-body-tertiary'),
     ).toBe(false)
     expect(h.dispatch).not.toHaveBeenCalled()
   })
