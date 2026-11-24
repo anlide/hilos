@@ -13,7 +13,7 @@
     "test:modal-geometry:build": "vue-tsc --noEmit -p tests/modalGeometry/tsconfig.json && vite build --config tests/modalGeometry/vite.config.ts && node node_modules/@hilos/core/bin/theme-head.mjs dist/__modal_geometry",
     "preview": "vite preview",
     "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
-    "check": "vue-tsc --noEmit -p tsconfig.json",
+    "check": "node ../../../framework/frontend/scripts/check-app-routes.mjs src/pages/routes.ts && vue-tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",

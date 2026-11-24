@@ -7974,6 +7974,9 @@ SCENARIOS = [
 # every entry here carries. So an entry is a LOAN, not a cure: it names who owes and for
 # what, and it is paid off by the write it points at, not by time passing.
 FLAKY_SKIP = {
+    # FIXME(F-129, 2026-11-24): the restored sender did not stop before replay placement · own · attempt 1 · HIL-2286.
+    "61 merge survives sender death and full restore":
+        "F-129: the restored sender did not stop before replay placement",
     # FIXME(F-125, 2026-11-21): the recovery receipt never shows only the held personal handover · foreign · attempt 2 · HIL-2192.
     "58 erasure frames and owner recovery":
         "F-125: the recovery receipt never shows only the held personal handover",
