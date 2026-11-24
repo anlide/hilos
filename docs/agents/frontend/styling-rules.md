@@ -142,7 +142,15 @@ tallest of them, held the same way.
 
 Inside a modal, an empty room reserved for a refusal shows a quiet neutral
 background without a border, text, icon or action, and holds the same height
-when the refusal appears.
+when the refusal appears. Checked automatically: `MODAL-ERROR-ROOM`,
+`MODAL-ERROR-EMPTY`.
+
+The guard traces the reserve to the refusal state through direct markup,
+statically resolved local views and projections, and known Angular templates.
+Availability reasons follow their own triggers. A table establishes a separate
+scope, and a nested modal establishes a fresh modal scope. Review each concrete
+reserve reported under `Manual review` when its refusal source, mount, or empty
+branch depends on a dynamic wrapper, computation, or unknown callback.
 
 The shared live-message room above a table shows a quiet neutral fill only
 while it is empty, without a border, text, icon, action, or animation.

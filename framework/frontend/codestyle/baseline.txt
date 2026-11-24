@@ -2,6 +2,9 @@
 #     <RULE-ID> <path from repository root> <count> # <HIL-nnn>
 # The ticket is mandatory: it names the leaf that removes the record.
 # Regenerate with CODESTYLE_BASELINE_UPDATE=1 on the frontend unit run.
+MODAL-ERROR-ROOM framework/frontend/angular/src/public/HilosSupportModal.ts 1 # HIL-2257
+MODAL-ERROR-ROOM framework/frontend/react/src/public/HilosSupportModal.tsx 1 # HIL-2257
+MODAL-ERROR-ROOM framework/frontend/vue/src/public/HilosSupportModal.vue 1 # HIL-2257
 SHELL-PARITY framework/frontend/vue/src/admin/security/HilosSecurityOauthProviderPage.vue 3 # HIL-1669
 SHELL-PARITY framework/frontend/vue/src/admin/security/HilosSecurityPage.vue 6 # HIL-1669
 STYLE-INLINE demo/chat/frontend/src/views/Main/Main.vue 3 # HIL-449

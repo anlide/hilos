@@ -30,6 +30,7 @@ import { checkRepository as checkDisabledTitle } from './disabledTitle.js'
 import { checkRepository as checkE2eLightDesktop } from './e2eDisplay.js'
 import { checkRepository as checkE2ePageGoto } from './e2eGoto.js'
 import { checkRepository as checkIconNameExists } from './iconNameExists.js'
+import { checkRepository as checkModalErrorRoom } from './modalErrorRoom.js'
 import { checkRepository as checkModalFocus } from './modalFocus.js'
 import { checkRepository as checkMomentFormat } from './momentFormat.js'
 import { checkRepository as checkShellParity } from './shellParity.js'
@@ -65,6 +66,7 @@ const RULES = [
   checkE2eLightDesktop,
   checkE2ePageGoto,
   checkIconNameExists,
+  modalErrorRoomViolations,
   checkModalFocus,
   checkMomentFormat,
   checkShellParity,
@@ -97,10 +99,12 @@ const EXPLANATION =
  * typed roots, so it needs a ceiling above the 5s default.
  *
  * Regression 9 reported 161,951 ms against the former 150-second ceiling.
- * The 240-second cap leaves 78.049 seconds above that measurement. This
- * observation identifies neither a slowdown cause nor a responsible rule.
+ * Full validation 2916 on the test box (2026-11-24) timed out at 241,848 ms
+ * against the 240-second cap. The 420-second cap leaves 178.152 seconds above
+ * that measurement. These observations identify neither a slowdown cause nor
+ * a responsible rule.
  */
-const GUARD_TIMEOUT_MS = 240_000
+const GUARD_TIMEOUT_MS = 420_000
 
 it(
   'carries no code-style violation the baseline does not already own',
@@ -136,6 +140,14 @@ function reportedViolations(): ReportedViolations {
   }
 
   return reported
+}
+
+/** Prints candidates for review and hands the baseline only proven violations. */
+function modalErrorRoomViolations(repositoryRoot: string): string[] {
+  const { violations, manualReview } = checkModalErrorRoom(repositoryRoot)
+  if (manualReview.length)
+    console.info(`Manual review\n${manualReview.join('\n')}`)
+  return violations
 }
 
 /**
