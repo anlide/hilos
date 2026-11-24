@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Database\Object\Collection\Products as ObjectProducts;
 use Demo\EcommerceShop\Database\View\Item\Product;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
@@ -27,6 +28,21 @@ final class Products extends DbCollection
 {
     public const string DB_ITEM_CLASS = Product::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectProducts::class;
+
+    /**
+     * Reads the product's slug only if its stored row still belongs to the category.
+     *
+     * @param int $productId Product primary key
+     * @param int $categoryId Category the product must belong to
+     * @return ?string Stored slug, or null if the product is missing or belongs to another category
+     * @throws ObjectCollectionNullException When the collection is detached
+     * @throws DatabaseException When the product cannot be read
+     * @throws InvalidArgumentException When the Entity query is invalid
+     */
+    public function storedSlugInCategory(int $productId, int $categoryId): ?string
+    {
+        return $this->objectCollection->storedSlugInCategory($productId, $categoryId);
+    }
 
     /**
      * @param int $categoryId Category primary id

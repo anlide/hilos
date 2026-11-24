@@ -1,17 +1,26 @@
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 import { PAGE_PRODUCT } from '../../../frontend/src/pages/keys.js'
+import { SIGNAL_TYPE_ACTION_SUCCESS } from '../../../../../framework/frontend/core/src/protocol/constants.js'
 import {
   PAGE_READY,
   PAGE_REFUSED,
+  cleanupFixtures,
   expectDocumentUnchanged,
   expectPageReady,
   gotoPage,
   markDocument,
   navigateByHistory,
+  sessionToken,
+  trackedActionReplies,
+  type TestCleanup,
+  watchDeliveryFrames,
   watchPageErrorFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
 // spec-owner: demo — the shop's own storefront
+
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
 // The shop front e2e: what a visitor finds on the shop's pages. The data is the
 // catalog a database reset opens the shop on — six categories of five products
@@ -135,3 +144,108 @@ test('a guest browses shop categories and sees a refusal for an unknown category
     await expect(error.getByText(message, { exact: true })).toBeVisible()
   })
 })
+
+// Browser traces can include the guest's session cookie.
+const guestCartTest = test.extend({ trace: 'off' })
+
+function deferGuestCartCleanup(
+  cleanup: TestCleanup,
+  token: string,
+  productId: number,
+  addFinished: () => boolean | Promise<boolean>,
+): void {
+  const command = createStandCommandChannel({ timeoutMs: 5_000 })
+  cleanup.defer(async () => {
+    // The browser can send the add before the observer receives framesent.
+    let unconfirmed: Error | undefined
+    try {
+      await expect
+        .poll(addFinished, {
+          message: 'Guest cart cleanup waits for the add reply or cart line',
+        })
+        .toBe(true)
+    } catch (error) {
+      unconfirmed = new Error(
+        'Guest cart cleanup could not confirm that the add finished',
+        { cause: error },
+      )
+    }
+
+    // An error can arrive after the cart write commits, so remove after either reply.
+    try {
+      await command('test:ecommerce-shop:guest-cart-set-quantity', {
+        sessionToken: token,
+        productId,
+        quantity: 0,
+      })
+    } catch (error) {
+      if (unconfirmed === undefined) throw error
+      throw new AggregateError(
+        [unconfirmed, error],
+        'Guest cart add was unconfirmed and the fallback removal failed',
+        { cause: error },
+      )
+    }
+    if (unconfirmed !== undefined) throw unconfirmed
+  })
+}
+
+guestCartTest(
+  'a guest adds from the category table and opens the cart from tiles',
+  async ({ browser, cleanup }) => {
+    // The product ID in 001_hilos_flowers.sql identifies the cleanup target.
+    const morningMeadow = { id: 1, name: 'Morning meadow' }
+    const guestContext = await browser.newContext({ colorScheme: 'light' })
+    cleanup.defer(() => guestContext.close())
+
+    const guest = await guestContext.newPage()
+    const delivery = watchDeliveryFrames(guest)
+    cleanup.defer(() => delivery.stop())
+    await gotoPage(expect, guest, '/category/bouquets')
+    await expect(
+      guest.getByTestId('nav-cart').getByTestId('cart-badge'),
+    ).toHaveText('0')
+
+    const products = guest.getByTestId('shop-category-products')
+    const productLink = guest.getByRole('link', {
+      name: morningMeadow.name,
+      exact: true,
+    })
+    await products.getByTestId('hilos-table-view-table').click()
+    const row = products.getByRole('table').getByRole('row').filter({
+      has: productLink,
+    })
+    const tile = products.getByRole('listitem').filter({ has: productLink })
+
+    const token = await sessionToken(guest)
+    const since = delivery.sent.length
+    const replies = () =>
+      trackedActionReplies(delivery, 'category_add_to_cart', since)
+    const cartLink = tile.getByTestId('shop-category-go-to-cart')
+    const rowCartLink = row.getByTestId('shop-category-go-to-cart')
+    deferGuestCartCleanup(
+      cleanup,
+      token,
+      morningMeadow.id,
+      async () =>
+        replies().length > 0 ||
+        (await rowCartLink.isVisible()) ||
+        (await cartLink.isVisible()),
+    )
+    await row.getByTestId('shop-category-add-to-cart').click()
+    await expect.poll(() => replies().length).toBe(1)
+    expect(replies()[0].frame.type).toBe(SIGNAL_TYPE_ACTION_SUCCESS)
+
+    await products.getByTestId('hilos-table-view-tiles').click()
+    await expect(cartLink).toHaveText('In cart')
+    await cartLink.click()
+    await expect(guest).toHaveURL('/cart')
+    await expectPageReady(expect, guest)
+
+    const lines = guest.getByTestId('shop-cart-line')
+    await expect(lines).toHaveCount(1)
+    await expect(lines.getByTestId('shop-cart-product-link')).toHaveText(
+      morningMeadow.name,
+    )
+  },
+)

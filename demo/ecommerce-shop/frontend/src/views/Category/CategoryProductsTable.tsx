@@ -1,6 +1,7 @@
 // One category's storefront in Tiles and Table views.
 import { useLayoutEffect, useState } from 'react'
-import { HilosLink, HilosViewportTable } from '@hilos/react/base'
+import { createSignal, HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
+import { HilosLink, HilosViewportTable, useSignal } from '@hilos/react/base'
 
 import { kindText } from '../../catalog/catalog.js'
 import {
@@ -8,6 +9,7 @@ import {
   availabilityTone,
 } from '../../catalog/productAvailability.js'
 import { formatMoney } from '../../money/money.js'
+import { CategoryCartAction } from './CategoryCartAction.js'
 import {
   PRODUCT_AVAILABILITY_FIELD,
   PRODUCT_KIND_FIELD,
@@ -35,6 +37,10 @@ export default function CategoryProductsTable({
   const [products, setProducts] = useState<CategoryProductsTableHandle | null>(
     null,
   )
+  const [pendingAdds] = useState(() =>
+    createSignal<ReadonlySet<number>>(new Set()),
+  )
+  const pending = useSignal(pendingAdds)
 
   useLayoutEffect(() => {
     // Each setup owns a fresh handle because disposal is permanent.
@@ -43,6 +49,23 @@ export default function CategoryProductsTable({
     setProducts(table)
     return () => table.dispose()
   }, [page, categoryId])
+
+  async function trackAdd(
+    productId: number,
+    submit: () => Promise<boolean>,
+  ): Promise<void> {
+    const current = pendingAdds.get()
+    if (current.has(productId)) return
+
+    pendingAdds.set(new Set([...current, productId]))
+    try {
+      await submit()
+    } finally {
+      const remaining = new Set(pendingAdds.get())
+      remaining.delete(productId)
+      pendingAdds.set(remaining)
+    }
+  }
 
   return (
     products && (
@@ -87,6 +110,13 @@ export default function CategoryProductsTable({
               </span>
             )
           },
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <CategoryCartAction
+              row={row}
+              pending={pending.has(row.id)}
+              trackAdd={trackAdd}
+            />
+          ),
         }}
       />
     )

@@ -1,4 +1,5 @@
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   readNumber,
   readNumberOrNull,
   readString,
@@ -100,6 +101,19 @@ export const CATEGORY_PRODUCTS_COLUMNS: HilosTableColumnOf<CategoryProductRow>[]
       label: 'Availability',
       card: 'badge',
       reads: [PRODUCT_UNITS_FIELD],
+    },
+    {
+      key: HILOS_TABLE_ACTIONS_KEY,
+      label: 'Actions',
+      headerClass: 'text-end',
+      cellClass: 'text-end',
+      reads: [
+        PRODUCT_ID_FIELD,
+        PRODUCT_NAME_FIELD,
+        PRODUCT_KIND_FIELD,
+        PRODUCT_UNITS_FIELD,
+        PRODUCT_AVAILABILITY_FIELD,
+      ],
     },
   ]
 

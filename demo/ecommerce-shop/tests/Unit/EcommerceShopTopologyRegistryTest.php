@@ -1773,6 +1773,32 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         );
     }
 
+    /** The categories library gates the cart add and receives the writer's unindexed reply for the page. */
+    public function testCategoryCartAddRoutesFromTheOpenCategoryToTheCartOwnerAndBack(): void
+    {
+        $action = 'category_add_to_cart';
+        $reply = 'cart_category_add_done';
+        $signalType = SignalTypeConstants::AGENT_SIGNAL;
+
+        self::assertSame($action, EcommerceShopSignalConstants::CATEGORY_ADD_TO_CART);
+        self::assertSame($reply, EcommerceShopSignalConstants::CART_CATEGORY_ADD_DONE);
+        self::assertSame([$action => ProductAddToCartActionDTO::class], CategoryPage::ACTIONS);
+        self::assertSame(CategoryPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+        self::assertSame(AgentType::CATEGORIES_LIBRARY, Hilos::getActionAgentRoutes()[$action]);
+        self::assertSame(ProductAddToCartActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
+        self::assertNotContains($action, CategoryPage::READING_ACTIONS);
+        self::assertArrayNotHasKey($action, Hilos::getAgentActionRoutes());
+
+        self::assertSame([$signalType => [$reply => CartAddProductDoneSignalData::class]], CategoryPage::SIGNALS);
+        self::assertSame(CategoryPage::PAGE, Hilos::getPageSignalRoutes()[$signalType][$reply]);
+        self::assertSame(AgentType::CATEGORIES_LIBRARY, Hilos::getPageSignalAgentRoutes()[$signalType][$reply]);
+        self::assertSame(CartAddProductDoneSignalData::class, Hilos::getPageSignalDtoRoutes()[$signalType][$reply]);
+        self::assertArrayNotHasKey($reply, Hilos::getAgentSignalRoutes());
+        self::assertArrayNotHasKey($reply, Hilos::getAgentSignalIndexFields());
+        self::assertArrayNotHasKey(CategoryPage::PAGE, Hilos::getPageAgentIndexRoutes());
+        self::assertSame([EcommerceShopRtContext::connections], CategoryPage::READS_RT);
+    }
+
     /**
      * The products admin page is served by the products library, binds its table and live
      * category filter options, and is reached from the dashboard's shop group.

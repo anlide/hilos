@@ -46,7 +46,8 @@ final class CartLineRules
      * Returns the quantity of a line after one unit of its product is put in the cart.
      *
      * A stock item gets a line of one unit, or one unit more on the line it has. A unique piece
-     * gets a line of its one unit, and one already in the cart stays as it is.
+     * gets a line of its one unit, and one already in the cart stays as it is. Both checks use
+     * stored stock because the Add can reach the cart writer before a stock change is synced.
      *
      * @param int $productId Id of the product
      * @param ?int $quantity Quantity of its line now, or null when the cart has none
@@ -63,7 +64,7 @@ final class CartLineRules
     public static function added(int $productId, ?int $quantity): int
     {
         if (self::productKind($productId) === ProductKind::UNIQUE) {
-            if (self::unitsInStock($productId) === 0) {
+            if (Hilos::$db->productWarehouseStocks->storedUnitsOfProduct($productId) === 0) {
                 throw new ValidationException('This piece is not in a warehouse yet');
             }
 
@@ -71,7 +72,7 @@ final class CartLineRules
         }
 
         $added = $quantity === null ? self::QUANTITY_MIN : $quantity + self::STEP_UP;
-        self::checkInStock($productId, $added);
+        self::checkInStock($productId, $added, readStoredStock: true);
 
         return $added;
     }
