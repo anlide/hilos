@@ -4,16 +4,26 @@ import { connection } from '../../bootstrap/connection.js'
 import { currentUserId, scopes } from '../../bootstrap/session.js'
 import { availabilityText } from '../../catalog/productAvailability.js'
 import { formatDeduction, formatMoney } from '../../money/money.js'
+import { CartQuantityControls } from './CartQuantityControls.js'
 import CartSkeleton from './CartSkeleton.js'
+import { type CartOwnerKind } from './cartActions.js'
 import { createCartPageSignal } from './cartPage.js'
 import { type CartLine, type CartVoucher } from './types/Cart.js'
 
 const cartPage = createCartPageSignal(scopes, currentUserId, connection)
 
 /** A saved selection at the current price and availability. */
-function CartItem({ line }: { line: CartLine }) {
+function CartItem({
+  line,
+  ownerKind,
+}: {
+  line: CartLine
+  ownerKind: CartOwnerKind
+}) {
   const unavailable = line.availableQuantity === 0
   const limited = line.availableQuantity < line.quantity
+  const atLimit =
+    line.kind === 'stock' && line.availableQuantity === line.quantity
 
   return (
     <li
@@ -41,19 +51,21 @@ function CartItem({ line }: { line: CartLine }) {
         </div>
       </div>
       <div className="d-flex flex-wrap align-items-center gap-2 small">
-        <span>
-          {line.kind === 'unique'
-            ? '1 · one of a kind'
-            : `Quantity: ${line.quantity}`}
-        </span>
-        {limited && (
+        {line.kind === 'unique' ? (
+          <span>1 · one of a kind</span>
+        ) : (
+          <CartQuantityControls line={line} ownerKind={ownerKind} />
+        )}
+        {(limited || atLimit) && (
           <span
-            className={`badge rounded-pill ${unavailable ? 'bg-secondary-subtle text-secondary-emphasis' : 'bg-warning-subtle text-warning-emphasis'}`}
+            className={`badge rounded-pill ${limited && !unavailable ? 'bg-warning-subtle text-warning-emphasis' : 'bg-secondary-subtle text-secondary-emphasis'}`}
           >
-            {availabilityText(
-              unavailable ? 'out_of_stock' : 'low',
-              line.availableQuantity,
-            )}
+            {atLimit
+              ? `${line.availableQuantity} in stock`
+              : availabilityText(
+                  unavailable ? 'out_of_stock' : 'low',
+                  line.availableQuantity,
+                )}
           </span>
         )}
       </div>
@@ -103,6 +115,8 @@ export default function Cart() {
     )
   }
 
+  const ownerKind = cart.userId === null ? 'guest' : 'account'
+
   return (
     <>
       <h1 className="h4 mb-3">Cart</h1>
@@ -130,7 +144,11 @@ export default function Cart() {
           <div className="col-lg-8">
             <ul className="list-group list-group-flush" role="list">
               {cart.lines.map((line) => (
-                <CartItem key={line.productId} line={line} />
+                <CartItem
+                  key={`${ownerKind}:${line.lineId}`}
+                  line={line}
+                  ownerKind={ownerKind}
+                />
               ))}
             </ul>
           </div>

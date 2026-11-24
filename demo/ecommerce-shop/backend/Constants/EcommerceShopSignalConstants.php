@@ -101,6 +101,9 @@ final class EcommerceShopSignalConstants
     /** @var string Stock library → Stock page: the outcome of setting units */
     public const string ADMIN_PRODUCT_STOCK_SET_UNITS_DONE = 'admin_product_stock_set_units_done';
 
+    /** @var string Browser action to step the quantity of a saved cart line */
+    public const string CART_STEP_QUANTITY = 'cart_step_quantity';
+
     /** @var string Server → client, WS_GROUP: the whole cart of one guest session or one person, sent by its owner */
     public const string CART_STATE = 'cart_state';
 

@@ -7,11 +7,13 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -45,6 +47,28 @@ final class PeerSignalDTOTest extends TestCase
         $this->assertSame(SignalSource::AGENT, $parsed->signal->signalSource->getSource());
         $this->assertSame('chat_message', $parsed->signal->signalName->getName());
         $this->assertSame(['text' => 'hi'], $parsed->signal->data->toArray());
+    }
+
+    public function testAForwardedWebSocketActionPreservesNumericTypes(): void
+    {
+        $action = new WebSocketActionSignalDTO(
+            acceptKey: 'browser-key',
+            action: 'project_action',
+            data: ['integer' => 1, 'wholeFloat' => -1.0, 'fractionalFloat' => 1.25],
+            requestId: 'request-1',
+        );
+        $frame = new PeerSignalDTO('node-A', 'node-B', 'project_agent', '42', new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName($action->action),
+            $action,
+        ));
+
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        self::assertInstanceOf(PeerSignalDTO::class, $parsed);
+        self::assertInstanceOf(WebSocketActionSignalDTO::class, $parsed->signal->data);
+        self::assertSame($frame->toArray(), $parsed->toArray());
     }
 
     public function testPlacementRecoveryRelayIsOptionalAndRoundTripsOnlyWhenTrue(): void

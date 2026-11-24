@@ -39,6 +39,9 @@ final class CartLineRules
     /** Fewest units a line keeps: below it the line is taken out, not kept empty. */
     public const int QUANTITY_MIN = 1;
 
+    /** Refusal for a cart line whose captured identity no longer grants access. */
+    public const string LINE_UNAVAILABLE = 'This cart item is no longer available.';
+
     /**
      * Returns the quantity of a line after one unit of its product is put in the cart.
      *
@@ -81,6 +84,7 @@ final class CartLineRules
      * @param int $productId Id of the product
      * @param ?int $quantity Quantity of its line now, or null when the cart has none
      * @param int $step {@see self::STEP_UP} or {@see self::STEP_DOWN}
+     * @param bool $readStoredStock Read storage for an increase that may precede stock synchronization
      * @return int Quantity of the line from now on
      * @throws InvalidArgumentException When the step is neither one unit up nor one down, or a loaded stock object does
      *     not match its collection
@@ -92,7 +96,7 @@ final class CartLineRules
      * @throws CollectionNotManualException When a matched stock item is rejected by a non-manual collection
      * @throws HilosException When the products cannot be read
      */
-    public static function stepped(int $productId, ?int $quantity, int $step): int
+    public static function stepped(int $productId, ?int $quantity, int $step, bool $readStoredStock = false): int
     {
         if ($step !== self::STEP_UP && $step !== self::STEP_DOWN) {
             throw new InvalidArgumentException("A cart line steps by one unit up or down, not by {$step}");
@@ -103,7 +107,7 @@ final class CartLineRules
         }
 
         $stepped = $current + $step;
-        self::checkInStock($productId, $stepped);
+        self::checkInStock($productId, $stepped, $readStoredStock);
 
         return $stepped;
     }
@@ -204,6 +208,7 @@ final class CartLineRules
      *
      * @param int $productId Id of the stock item
      * @param int $quantity Quantity the line is to hold
+     * @param bool $readStoredStock Read storage independently of the worker's stock mirror
      * @throws ValidationException When the product is out of stock, or the quantity is above its stock
      * @throws LogicException When the stock collection class constants are not configured
      * @throws InvalidArgumentException When a loaded stock object does not match its collection
@@ -211,9 +216,11 @@ final class CartLineRules
      * @throws ObjectGetIdStringNotImplementedException If a matched stock item's Object does not implement getIdString()
      * @throws CollectionNotManualException When a matched stock item is rejected by a non-manual collection
      */
-    private static function checkInStock(int $productId, int $quantity): void
+    private static function checkInStock(int $productId, int $quantity, bool $readStoredStock = false): void
     {
-        $units = self::unitsInStock($productId);
+        $units = $readStoredStock
+            ? Hilos::$db->productWarehouseStocks->storedUnitsOfProduct($productId)
+            : self::unitsInStock($productId);
         if ($units === 0) {
             throw new ValidationException('This product is out of stock');
         }

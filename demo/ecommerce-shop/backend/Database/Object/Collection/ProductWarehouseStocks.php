@@ -30,6 +30,27 @@ final class ProductWarehouseStocks extends Objects
     public const string COLLECTION_KEY = EcommerceShopDbContext::productWarehouseStocks;
 
     /**
+     * Sums the persisted units across warehouses for a product without changing the Object store.
+     *
+     * @param int $productId Product primary key
+     * @return int Stored units, zero when no warehouse keeps the product
+     * @throws DatabaseException When the stock rows cannot be read
+     * @throws InvalidArgumentException When the Entity query is invalid
+     */
+    public function storedUnitsOfProduct(int $productId): int
+    {
+        $stocks = static::entityClass()::get( // fresh-sql: a cart increase can arrive before the worker receives the stock update.
+            [EntityProductWarehouseStock::product_id => $productId],
+        );
+        $units = 0;
+        foreach ($stocks as $stock) {
+            $units += $stock->units;
+        }
+
+        return $units;
+    }
+
+    /**
      * Reads a held stock key directly or uses the Entity's keyed query without hydrating the Object collection.
      *
      * @param int $stockId Primary key of the changed warehouse stock row

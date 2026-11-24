@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
@@ -16,6 +17,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /** Page analytics follows raw connection frames before the master's signal queue is drained. */
@@ -124,6 +126,27 @@ final class WebSocketClientPageAnalyticsTest extends TestCase
         $this->assertSame($records[1]['key'], $records[2]['pageKey']);
         $this->assertSame($records[1]['key'], $records[3]['key']);
         $this->assertNull($records[4]['pageKey']);
+    }
+
+    /** Finite numeric types and numeric-looking text reach the usual action queue and journal. */
+    public function testRepresentableActionDataIsQueuedAndRecorded(): void
+    {
+        $probe = $this->handshakenProbe();
+        $this->records();
+        $probe->feed($this->textFrame(
+            '{"type":"action","action":"probe_action","requestId":"req-2","data":{"items":[1,-1.0,1.25,"1e400"]}}',
+        ));
+
+        $action = Hilos::$sr->getNextQueuedSignal();
+        self::assertNotNull($action);
+        self::assertSame(SignalTypeConstants::ACTION, $action->signalType->getType());
+        self::assertSame('probe_action', $action->signalName->getName());
+        self::assertInstanceOf(WebSocketActionSignalDTO::class, $action->data);
+        self::assertSame($probe->acceptKey, $action->data->acceptKey);
+        self::assertSame('req-2', $action->data->requestId);
+        self::assertSame(['items' => [1, -1.0, 1.25, '1e400']], $action->data->data);
+        self::assertFalse(Hilos::$sr->hasQueuedSignals());
+        self::assertSame([AnalyticsJournalRecord::TYPE_USER_ACTION], array_column($this->records(), AnalyticsJournalRecord::KEY_TYPE));
     }
 
     /**

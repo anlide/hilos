@@ -17,7 +17,9 @@ use Demo\EcommerceShop\Database\Actions\Collection\VouchersActions;
 use Demo\EcommerceShop\Database\Actions\Collection\WarehousesActions;
 use Demo\EcommerceShop\Database\Actions\Item\CategoryActions;
 use Demo\EcommerceShop\Database\Actions\Item\ProductActions;
+use Demo\EcommerceShop\Database\Actions\Item\SessionProductCartActions;
 use Demo\EcommerceShop\Database\Actions\Item\SessionVoucherCartActions;
+use Demo\EcommerceShop\Database\Actions\Item\UserProductCartActions;
 use Demo\EcommerceShop\Database\Actions\Item\UserVoucherCartActions;
 use Demo\EcommerceShop\Database\Actions\Item\VoucherActions;
 use Demo\EcommerceShop\Database\Actions\Item\WarehouseActions;
@@ -130,14 +132,19 @@ final class EcommerceShopDbContext extends HilosDbContext
         $this->setRepresent(self::products, Products::class, ProductsActions::class, ProductActions::class);
         $this->setRepresent(self::productSlugs, ProductSlugs::class, ProductSlugsActions::class);
         $this->setRepresent(self::productWarehouseStocks, ProductWarehouseStocks::class, ProductWarehouseStocksActions::class);
-        $this->setRepresent(self::sessionProductCarts, SessionProductCarts::class, SessionProductCartsActions::class);
+        $this->setRepresent(
+            self::sessionProductCarts,
+            SessionProductCarts::class,
+            SessionProductCartsActions::class,
+            SessionProductCartActions::class,
+        );
         $this->setRepresent(
             self::sessionVoucherCarts,
             SessionVoucherCarts::class,
             SessionVoucherCartsActions::class,
             SessionVoucherCartActions::class,
         );
-        $this->setRepresent(self::userProductCarts, UserProductCarts::class, UserProductCartsActions::class);
+        $this->setRepresent(self::userProductCarts, UserProductCarts::class, UserProductCartsActions::class, UserProductCartActions::class);
         $this->setRepresent(self::userVoucherCarts, UserVoucherCarts::class, UserVoucherCartsActions::class, UserVoucherCartActions::class);
         $this->setRepresent(self::vouchers, Vouchers::class, VouchersActions::class, VoucherActions::class);
     }

@@ -204,6 +204,49 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Steps an existing line of the session's guest cart and publishes the committed cart.
+     *
+     * @param int $sessionId Browser session ID
+     * @param int $lineId Primary key of the saved line
+     * @param int $step One unit up or down
+     * @throws ValidationException When the cart line cannot be addressed or the product rules refuse the step
+     * @throws InvalidArgumentException When the direction, database read or sync signal is invalid
+     * @throws LogicException When a configured collection cannot provide its item class
+     * @throws DatabaseException When a read, write or commit fails
+     * @throws ObjectGetIdStringNotImplementedException When a cart or stock row cannot provide its key
+     * @throws CollectionNotManualException When a stock selection refuses a matched row
+     * @throws ItemNotFoundException When a keyed row disappears during its read
+     * @throws ObjectCollectionNullException When the line has no backing collection
+     * @throws WriteNotAllowedException When this process cannot update the line
+     * @throws CreateNotAllowedException When the write guard refuses a new row
+     * @throws SourceChangeSubscriberException When a DB change subscriber fails
+     * @throws NamedDatabaseException When the primary database is not configured
+     * @throws NestedTransactionRefusedException When the primary database already has an application transaction
+     * @throws TransactionNotOpenException When the level is no longer open at commit
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the database refuses the commit
+     * @throws AnnouncementFailedException When a commit announcement fails outside a handler
+     * @throws HilosException When the configured cart sources cannot be read
+     * @throws Throwable When the transaction propagates another failure from the cart operation
+     */
+    public function stepProductLine(int $sessionId, int $lineId, int $step): void
+    {
+        Database::transaction(DatabaseNames::PRIMARY, function () use ($sessionId, $lineId, $step): void {
+            if (!Hilos::$db->sessions->isStoredGuest($sessionId)) {
+                throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+            }
+
+            $line = Hilos::$db->sessionProductCarts[$lineId] ?? null;
+            if ($line === null || $line->sessionId !== $sessionId) {
+                throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+            }
+
+            $line->actions->step($step);
+            $this->publishCart($sessionId);
+        });
+    }
+
+    /**
      * Assigns an active voucher to a guest cart, even when the cart has no product lines.
      *
      * @param int $sessionId Browser session ID

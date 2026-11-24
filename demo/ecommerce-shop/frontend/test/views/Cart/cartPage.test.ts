@@ -18,6 +18,7 @@ import {
 } from '../../../src/views/Cart/types/Cart.js'
 
 const line: CartLine = {
+  lineId: 11,
   productId: 7,
   slug: 'pine-bark',
   name: 'Pine bark',
@@ -127,6 +128,19 @@ describe('Cart page projection', () => {
     expect(snapshot.get()).toEqual(emptyCart)
   })
 
+  it.each([undefined, null, 0, -1, 1.5, '11', true])(
+    'rejects %j for the required saved line ID',
+    (lineId) => {
+      const { snapshot, answer } = openCart()
+
+      answer({ ...guestCart, lines: [{ ...line, lineId }] })
+      expect(snapshot.get()).toBeNull()
+
+      answer(guestCart)
+      expect(snapshot.get()).toEqual(guestCart)
+    },
+  )
+
   it.each([
     undefined,
     24000,
@@ -225,6 +239,7 @@ describe('Cart page projection', () => {
     const { snapshot, answer } = openCart()
     const unique = {
       ...line,
+      lineId: 12,
       productId: 8,
       slug: 'morning-meadow',
       name: 'Morning meadow',

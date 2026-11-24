@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\DaemonWorkerSignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
@@ -19,6 +26,7 @@ use PHPUnit\Framework\TestCase;
  * refuses the JSON before anyone can look inside it, so the checks here go through
  * {@see WorkerDTO::factoryWorkerDTO()} rather than calling `fromArray()` directly - the
  * registration is half of what is being asserted.
+ * An addressed browser action uses the same factory through its own message type.
  */
 final class DaemonWorkerSignalDTOTest extends TestCase
 {
@@ -39,6 +47,28 @@ final class DaemonWorkerSignalDTOTest extends TestCase
         $this->assertInstanceOf(DaemonWorkerSignalDTOTestPayload::class, $restored->data);
         $this->assertSame('degraded', $restored->data->reason);
         $this->assertSame(4, $restored->data->nodeCount);
+    }
+
+    public function testAnAddressedWebSocketActionPreservesNumericTypes(): void
+    {
+        $action = new WebSocketActionSignalDTO(
+            acceptKey: 'browser-key',
+            action: 'project_action',
+            data: ['integer' => 19, 'wholeFloat' => 19.0, 'fractionalFloat' => -0.25],
+            requestId: 'request-1',
+        );
+        $frame = new DaemonAgentMessageDTO('project_agent', new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName($action->action),
+            $action,
+        ));
+
+        $restored = WorkerDTO::factoryWorkerDTO($frame->toJson());
+
+        self::assertInstanceOf(DaemonAgentMessageDTO::class, $restored);
+        self::assertInstanceOf(WebSocketActionSignalDTO::class, $restored->signal->data);
+        self::assertSame($frame->toArray(), $restored->toArray());
     }
 
     /**

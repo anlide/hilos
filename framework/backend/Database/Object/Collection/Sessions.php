@@ -105,6 +105,23 @@ class Sessions extends Objects
     }
 
     /**
+     * Checks a persisted account binding before a delayed request can use an older session mirror.
+     *
+     * @param int $sessionId Session primary key
+     * @param int $userId Expected bound user
+     * @return bool Whether storage holds an unexpired session bound to that user
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function isStoredActiveForUser(int $sessionId, int $userId): bool
+    {
+        $session = static::entityClass()::getById($sessionId);
+
+        return $session !== null && $session->user_id === $userId
+            && ($session->expires_at === null || $session->expires_at > TimeHelper::nowMs());
+    }
+
+    /**
      * Finds a session by its cookie token.
      *
      * @param string $token Session cookie token (empty string returns null)

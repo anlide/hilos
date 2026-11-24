@@ -51,6 +51,10 @@ abstract class BaseDTO
     public function toJson(): string
     {
         $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+        if ($this->shouldPreserveJsonZeroFraction()) {
+            $flags |= JSON_PRESERVE_ZERO_FRACTION;
+        }
+
         $json = json_encode($this->toArray(), $flags);
         if ($json === false) {
             return '{"error":"json_encode_failed"}';
@@ -72,6 +76,16 @@ abstract class BaseDTO
     public static function fromJson(string $json): static
     {
         return static::fromArray(static::decodePayload($json));
+    }
+
+    /**
+     * Selects whether JSON encoding must keep whole floats distinct from integers.
+     *
+     * @return bool True when a downstream reader needs the original numeric type
+     */
+    protected function shouldPreserveJsonZeroFraction(): bool
+    {
+        return false;
     }
 
     /**

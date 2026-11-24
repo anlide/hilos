@@ -36,6 +36,19 @@ final class ProductWarehouseStocks extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectProductWarehouseStocks::class;
 
     /**
+     * Reads the product's stored warehouse total independently of the worker's stock mirror.
+     *
+     * @param int $productId Product primary key
+     * @return int Stored units, zero when no warehouse keeps the product
+     * @throws DatabaseException When the stock rows cannot be read
+     * @throws InvalidArgumentException When the Entity query is invalid
+     */
+    public function storedUnitsOfProduct(int $productId): int
+    {
+        return $this->objectCollection->storedUnitsOfProduct($productId);
+    }
+
+    /**
      * Resolves the product of a stock fact without adding a cold stock row to the worker's ORM.
      *
      * @param int $stockId Primary key of the changed warehouse stock row

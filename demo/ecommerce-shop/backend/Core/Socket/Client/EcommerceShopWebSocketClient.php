@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Core\Socket\Client;
 
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\Client\WebSocketClient;
 
@@ -37,6 +40,26 @@ final class EcommerceShopWebSocketClient extends WebSocketClient
         ) {
             throw new AgentUnknownActionException("Unknown websocket action type: {$actionName}");
         }
+    }
+
+    /**
+     * Admit only the flat cart step payload before it reaches IPC.
+     *
+     * @param string $actionName Registered action name
+     * @param mixed $actionData Decoded browser payload
+     * @throws InvalidFormatException When the cart step payload has the wrong shape or values
+     */
+    protected function validateInboundActionData(string $actionName, mixed $actionData): void
+    {
+        if ($actionName !== EcommerceShopSignalConstants::CART_STEP_QUANTITY) {
+            return;
+        }
+
+        if (!is_array($actionData) || count($actionData) !== 3) {
+            throw new InvalidFormatException('Cart quantity action must carry exactly three fields');
+        }
+
+        CartStepQuantityActionDTO::fromArray($actionData);
     }
 
     /**

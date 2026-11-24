@@ -146,9 +146,11 @@ test('a guest sees live prices in the cart and follows the product link', async 
 
   const line = guest.getByTestId('shop-cart-line')
   const productLink = line.getByTestId('shop-cart-product-link')
+  const itemsRow = guest.getByText('Items', { exact: true }).locator('..')
   const expectAmounts = async (price: string, total: string) => {
     await expect(line.getByText(`${price} each`, { exact: true })).toBeVisible()
     await expect(line.getByTestId('shop-cart-line-total')).toHaveText(total)
+    await expect(itemsRow.getByText(total, { exact: true })).toBeVisible()
     await expect(guest.getByTestId('shop-cart-total')).toHaveText(total)
   }
 
@@ -169,6 +171,23 @@ test('a guest sees live prices in the cart and follows the product link', async 
 
     await expect(productLink).toHaveText(name)
     await expect(line.getByText('Quantity: 3', { exact: true })).toBeVisible()
+    await expectAmounts('₴410', '₴1,230')
+    await expectDocumentUnchanged(expect, guest)
+  })
+
+  await test.step('step the quantity up and down in the live cart', async () => {
+    const quantityControls = guest.getByRole('group', {
+      name: `Quantity of ${name}`,
+      exact: true,
+    })
+    const quantity = line.getByTestId('shop-cart-quantity')
+
+    await quantityControls.getByRole('button', { name: 'One more' }).click()
+    await expect(quantity).toHaveText('Quantity: 4')
+    await expectAmounts('₴410', '₴1,640')
+
+    await quantityControls.getByRole('button', { name: 'One less' }).click()
+    await expect(quantity).toHaveText('Quantity: 3')
     await expectAmounts('₴410', '₴1,230')
     await expectDocumentUnchanged(expect, guest)
   })

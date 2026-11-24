@@ -11,6 +11,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -100,5 +101,15 @@ class DaemonAgentMessageDTO extends WorkerDTO
             signal: $signal,
             uploadReceiptId: self::optionalString($data, self::UPLOAD_RECEIPT_ID),
         );
+    }
+
+    /**
+     * Keeps browser action numeric types intact until the worker validates the payload.
+     *
+     * @return bool True when this message carries a browser action
+     */
+    protected function shouldPreserveJsonZeroFraction(): bool
+    {
+        return $this->signal->data instanceof WebSocketActionSignalDTO;
     }
 }

@@ -7,19 +7,24 @@ namespace Demo\EcommerceShop\Pages;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
+use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\SessionProductCart;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\CartPageData;
+use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Runtime\View\Item\Connection;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
@@ -28,12 +33,16 @@ use Hilos\Core\Page\Exception\PageConflictException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Throwable;
 
 /** The public storefront cart, answered by the owner of the connection's cart. */
 final class CartPage extends AbstractPage
@@ -45,6 +54,10 @@ final class CartPage extends AbstractPage
     public const array SUBSCRIPTION_AGENT_INDEX = [
         PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER_OR_GUEST,
         PageAgentIndexKey::FALLBACK_AGENT_TYPE => AgentType::GUEST_CARTS_LIBRARY,
+    ];
+
+    public const array ACTIONS = [
+        EcommerceShopSignalConstants::CART_STEP_QUANTITY => CartStepQuantityActionDTO::class,
     ];
 
     /**
@@ -80,13 +93,41 @@ final class CartPage extends AbstractPage
     }
 
     /**
+     * @param string $acceptKey Connection invoking the action
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action fields
+     * @return ?ActionReplyDTO Null so the dispatcher sends the standard success reply
+     * @throws AgentUnknownActionException When the page does not own the action
+     * @throws InvalidActionPayloadException When the payload does not match the action
+     * @throws ValidationException When the cart owner changed or the line or quantity is unavailable
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
+     * @throws LogicException When the cart operation raises an unexpected failure
+     * @throws HilosException When the runtime, database or cart sources cannot complete the action
+     */
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case EcommerceShopSignalConstants::CART_STEP_QUANTITY:
+                if (!$dto instanceof CartStepQuantityActionDTO) {
+                    throw new InvalidActionPayloadException($action, CartStepQuantityActionDTO::class, $dto);
+                }
+                $this->handleStepQuantity($acceptKey, $dto);
+
+                return null;
+
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+    }
+
+    /**
      * @param string $acceptKey Subscribing connection supplied by the router
      * @param PageRouteParams $params Route parameters, unused
      * @return PagePayload A complete cart for the confirmed owner
      * @throws PageConflictException When the connection's identity is unconfirmed or the cart owner changed
      * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      * @throws InvalidArgumentException When a collection, stock total or picture variant is misconfigured
-     * @throws LogicException When the collection classes are not configured or a monetary amount is invalid
+     * @throws LogicException When a line has no ID, the collection classes are not configured or a monetary amount is invalid
      * @throws DatabaseException When a cart, its products, its stock or its voucher cannot be read
      * @throws ItemNotFoundException When the saved voucher is missing or the binding disappears during its keyed read
      * @throws ObjectGetIdStringNotImplementedException When a matched row cannot provide a key
@@ -119,7 +160,12 @@ final class CartPage extends AbstractPage
                 continue;
             }
 
-            $lines[] = CartPageData::line($product, $line->quantity, $stock->of($line->productId)->unitCount);
+            $lines[] = CartPageData::line(
+                $line->id ?? throw new LogicException('A saved cart line must have an ID'),
+                $product,
+                $line->quantity,
+                $stock->of($line->productId)->unitCount,
+            );
         }
         $cart = new CartPageData($userId, $lines, $this->cartVoucher($sessionId));
 
@@ -129,6 +175,55 @@ final class CartPage extends AbstractPage
         }
 
         return new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
+    }
+
+    /**
+     * @param string $acceptKey Connection invoking the action
+     * @param CartStepQuantityActionDTO $dto Target and direction
+     * @throws ValidationException When ownership changed or the cart refuses the requested step
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
+     * @throws LogicException When the cart operation raises an unexpected failure
+     * @throws HilosException When the runtime, database or cart sources cannot complete the action
+     */
+    private function handleStepQuantity(string $acceptKey, CartStepQuantityActionDTO $dto): void
+    {
+        try {
+            $connection = $this->requireConnection($acceptKey);
+        } catch (PageConflictException $failure) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
+        }
+
+        $sessionId = $connection->sessionId;
+        if ($sessionId === null || $sessionId <= 0) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        $agent = $this->getAgent();
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if (!$agent instanceof AgentInterface || $subscription?->page !== self::PAGE
+            || $subscription->agentType !== $agent->getType() || $subscription->agentIndex !== $agent->getIndex()
+        ) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        try {
+            if ($agent instanceof GuestCartsLibraryAgent && $dto->ownerKind === CartStepQuantityActionDTO::GUEST) {
+                $agent->stepProductLine($sessionId, $dto->lineId, $dto->step);
+
+                return;
+            }
+            if ($agent instanceof UserAgent && $dto->ownerKind === CartStepQuantityActionDTO::ACCOUNT) {
+                $agent->stepProductLine($sessionId, $dto->lineId, $dto->step);
+
+                return;
+            }
+        } catch (HilosException $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new LogicException('Failed to step the cart line', previous: $failure);
+        }
+
+        throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
     }
 
     /**

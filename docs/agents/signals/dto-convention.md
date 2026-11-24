@@ -115,6 +115,10 @@ field, is loose: `requireFloat()` widens an integer, since `json_encode(0.0)`
 writes `0` and a whole float comes back as one; `requireIntOrString()` carries a
 row key, which is whatever the table's own key column holds.
 
+The internal peer and daemon-to-worker envelopes opt in to
+`JSON_PRESERVE_ZERO_FRACTION` when they carry a WebSocket action. This preserves
+the decoded numeric type until the action's DTO validates the payload.
+
 The refusal is invisible from outside the DTO, and deliberately so. On the
 hydrated paths `SignalPayloadHydrator` wraps it as
 `InvalidAgentSignalPayloadException` or `InvalidCommandPayloadException` (the

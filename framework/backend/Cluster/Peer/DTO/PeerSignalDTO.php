@@ -8,6 +8,7 @@ use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Files\Upload\DTO\UploadMemoryReservationData;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Throwable;
 
 /**
@@ -152,5 +153,15 @@ final class PeerSignalDTO extends PeerDTO
             uploadReservation: $uploadReservation,
             placementRecoveryRelay: $placementRecoveryRelay,
         );
+    }
+
+    /**
+     * Keeps browser action numeric types intact across the peer hop before worker validation.
+     *
+     * @return bool True when this frame carries a browser action
+     */
+    protected function shouldPreserveJsonZeroFraction(): bool
+    {
+        return $this->signal->data instanceof WebSocketActionSignalDTO;
     }
 }

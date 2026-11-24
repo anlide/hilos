@@ -60,6 +60,20 @@ class Sessions extends DbCollection
     }
 
     /**
+     * Reads the current account binding independently of the worker's session mirror.
+     *
+     * @param int $sessionId Session primary key
+     * @param int $userId Expected bound user
+     * @return bool Whether the persisted session is active and bound to that user
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function isStoredActiveForUser(int $sessionId, int $userId): bool
+    {
+        return $this->objectCollection->isStoredActiveForUser($sessionId, $userId);
+    }
+
+    /**
      * @param int $sessionId Session primary key
      * @param ?int $userId Person the session must act as, or null for a guest
      * @param ?string $token Required for a state frame; null when a token rotation is immaterial

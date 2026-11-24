@@ -21,13 +21,15 @@ use Hilos\Files\HilosFiles;
  * The storefront cart's complete data, with all monetary amounts in kopecks.
  *
  * @phpstan-type CartLine array{
- *     productId: int, slug: string, name: string, kind: string, pictureUrl: string,
+ *     lineId: int, productId: int, slug: string, name: string, kind: string, pictureUrl: string,
  *     price: int, quantity: int, availableQuantity: int, lineTotal: string
  * }
  * @phpstan-type CartVoucher array{code: string, active: bool, discount: string}
  */
 final readonly class CartPageData
 {
+    public const string lineId = 'lineId';
+
     private const string productId = 'productId';
     private const string pictureUrl = 'pictureUrl';
     private const string quantity = 'quantity';
@@ -50,6 +52,7 @@ final readonly class CartPageData
     }
 
     /**
+     * @param int $lineId Primary key of the saved cart line
      * @param Product $product The catalog item referenced by the saved line
      * @param int $quantity The saved selection
      * @param int $availableQuantity The total stock across warehouses
@@ -57,13 +60,14 @@ final readonly class CartPageData
      * @throws InvalidArgumentException When the catalog picture variant is misconfigured
      * @throws LogicException When the price or counted quantity is below zero
      */
-    public static function line(Product $product, int $quantity, int $availableQuantity): array
+    public static function line(int $lineId, Product $product, int $quantity, int $availableQuantity): array
     {
         $kind = $product->kind;
         $price = $product->price;
         $quantity = $kind === ProductKind::UNIQUE ? CartLineRules::QUANTITY_MIN : $quantity;
 
         return [
+            self::lineId => $lineId,
             self::productId => $product->id,
             EntityProduct::slug => $product->slug,
             EntityProduct::name => $product->name,

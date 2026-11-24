@@ -63,6 +63,7 @@ use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryDeleteActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
@@ -1060,7 +1061,15 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame('cart', CartPage::PAGE);
         self::assertSame(PageAccessLevel::PUBLIC, CartPage::ACCESS_LEVEL);
         self::assertSame(PageReach::ROUTE, CartPage::REACH);
-        self::assertSame([], CartPage::ACTIONS);
+        $cartStep = EcommerceShopSignalConstants::CART_STEP_QUANTITY;
+        self::assertSame('cart_step_quantity', $cartStep);
+        self::assertSame([$cartStep => CartStepQuantityActionDTO::class], CartPage::ACTIONS);
+        self::assertSame(CartPage::PAGE, Hilos::getPageActionRoutes()[$cartStep]);
+        self::assertSame(CartStepQuantityActionDTO::class, Hilos::getActionDtoRoutes()[$cartStep]);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getActionAgentRoutes()[$cartStep]);
+        self::assertArrayNotHasKey($cartStep, Hilos::getAgentActionRoutes());
+        self::assertArrayNotHasKey($cartStep, Hilos::getAgentActionDtoRoutes());
+        self::assertArrayNotHasKey($cartStep, Hilos::getAgentSignalRoutes());
         foreach ([
             EcommerceShopDbContext::sessionVoucherCarts,
             EcommerceShopDbContext::userVoucherCarts,

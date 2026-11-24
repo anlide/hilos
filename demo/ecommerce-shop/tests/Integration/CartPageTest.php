@@ -227,10 +227,10 @@ final class CartPageTest extends CartPageEnvironment
         $firstProduct = self::product(ProductKind::STOCK);
         $secondProduct = self::product(ProductKind::STOCK);
         $userId = self::person();
-        self::guestLine(101, $secondProduct, 2);
-        self::guestLine(101, $firstProduct, 3);
-        self::guestLine(102, $firstProduct, 1);
-        self::accountLine($userId, $secondProduct, 5);
+        $firstLine = self::guestLine(101, $secondProduct, 2);
+        $secondLine = self::guestLine(101, $firstProduct, 3);
+        $otherLine = self::guestLine(102, $firstProduct, 1);
+        $accountLine = self::accountLine($userId, $secondProduct, 5);
         self::connect(self::FIRST, null, 101);
         self::connect(self::SECOND, null, 102);
         self::connect(self::ACCOUNT, $userId, 103);
@@ -240,16 +240,19 @@ final class CartPageTest extends CartPageEnvironment
         $this->subscribe($guest, self::FIRST);
         $first = $this->cart(self::FIRST);
         self::assertNull($first['userId']);
+        self::assertSame([$firstLine, $secondLine], array_column($first['lines'], 'lineId'));
         self::assertSame([$secondProduct, $firstProduct], array_column($first['lines'], 'productId'));
         self::assertSame([2, 3], array_column($first['lines'], 'quantity'));
         $this->subscribe($guest, self::SECOND);
         $second = $this->cart(self::SECOND);
         self::assertNull($second['userId']);
+        self::assertSame([$otherLine], array_column($second['lines'], 'lineId'));
         self::assertSame([$firstProduct], array_column($second['lines'], 'productId'));
         self::assertSame([1], array_column($second['lines'], 'quantity'));
         $this->subscribe(new UserAgent((string)$userId), self::ACCOUNT);
         $account = $this->cart(self::ACCOUNT);
         self::assertSame($userId, $account['userId']);
+        self::assertSame([$accountLine], array_column($account['lines'], 'lineId'));
         self::assertSame([$secondProduct], array_column($account['lines'], 'productId'));
         self::assertSame([5], array_column($account['lines'], 'quantity'));
 
@@ -638,7 +641,7 @@ final class CartPageTest extends CartPageEnvironment
         $firstStock = Database::lastInsertId();
         self::stock($stockProductId, $secondWarehouse, 2);
         $secondStock = Database::lastInsertId();
-        self::guestLine(101, $stockProductId, 5);
+        $lineId = self::guestLine(101, $stockProductId, 5);
         self::guestLine(101, $uniqueProductId, 1);
         self::connect(self::FIRST, null, 101);
         $guest = new GuestCartsLibraryAgent();
@@ -670,6 +673,7 @@ final class CartPageTest extends CartPageEnvironment
             self::assertCount(2, $cart['lines']);
             $product = Hilos::$db->products[$stockProductId];
             self::assertSame([
+                'lineId' => $lineId,
                 'productId' => $stockProductId,
                 'slug' => $product->slug,
                 'name' => $product->name,

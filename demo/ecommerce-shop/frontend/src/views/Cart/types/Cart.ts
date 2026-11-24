@@ -9,6 +9,7 @@ export const cartSnapshotSchema = z.object({
   userId: z.number().int().positive().nullable(),
   lines: z.array(
     z.object({
+      lineId: z.number().int().positive(),
       productId: z.number().int().positive(),
       slug: z.string().min(1),
       name: z.string(),

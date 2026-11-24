@@ -17,6 +17,7 @@ use Hilos\Constants\AgentConstants;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
@@ -35,9 +36,11 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Files\Upload\UploadFrame;
 use Hilos\Files\Upload\UploadMemoryInput;
@@ -2232,15 +2235,27 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
                 $this->onActionValidated($actionName);
 
-                $actionData = is_array($decoded[SignalPayloadConstants::FIELD_DATA] ?? null)
-                    ? $decoded[SignalPayloadConstants::FIELD_DATA]
-                    : [];
-
+                $actionData = $decoded[SignalPayloadConstants::FIELD_DATA] ?? null;
                 $requestId = isset($decoded[SignalPayloadConstants::FIELD_REQUEST_ID])
                     && is_string($decoded[SignalPayloadConstants::FIELD_REQUEST_ID])
                     && $decoded[SignalPayloadConstants::FIELD_REQUEST_ID] !== ''
                     ? $decoded[SignalPayloadConstants::FIELD_REQUEST_ID]
                     : null;
+
+                try {
+                    $this->validateInboundActionData($actionName, $actionData);
+                } catch (InvalidFormatException) {
+                    Hilos::$sr->queueSignal(
+                        new SignalSource(SignalSource::DAEMON),
+                        new SignalType(SignalTypeConstants::WS_USER),
+                        new SignalName(SignalConstants::ACTION_ERROR),
+                        new WebSocketSignalData(
+                            data: new PageActionErrorSignalData($actionName, SignalConstants::ACTION_FAILED_REASON, $requestId),
+                            targetAcceptKey: $acceptKey,
+                        ),
+                    );
+                    break;
+                }
 
                 // Who is asking rides with the action itself. There is no accept-key→IP map
                 // anywhere to consult instead: the handshake is routed to the WebSocket
@@ -2249,14 +2264,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 $dto = new WebSocketActionSignalDTO(
                     acceptKey: $acceptKey,
                     action: $actionName,
-                    data: $actionData,
+                    data: is_array($actionData) ? $actionData : [],
                     requestId: $requestId,
                     clientIp: $this->handshakeClientIp,
                     sessionIdentity: $this->sessionIdentity,
                 );
 
                 $this->acceptDeliveryRequest();
-                $userActionKey = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);
+                $userActionKey = Hilos::$ac?->logUserAction($acceptKey, $actionName, $dto->data);
                 Hilos::$ac?->startUserActionCapture($userActionKey);
                 try {
                     Hilos::$sr->queueSignal(
@@ -2637,6 +2652,19 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     protected function onActionValidated(string $actionName): void
     {
         throw new AgentUnknownActionException("Unknown websocket action type: {$actionName}");
+    }
+
+    /**
+     * Optionally validate decoded data for selected actions before delivery admission.
+     * Overrides run on the master loop and must do bounded work without I/O.
+     *
+     * @param string $actionName Action name accepted by the project
+     * @param mixed $actionData Decoded data before normalization, or null when omitted
+     * @throws InvalidFormatException To send a private action error and skip queuing the action
+     */
+    protected function validateInboundActionData(string $actionName, mixed $actionData): void
+    {
+        // Default: leave payload validation to the action handler.
     }
 
     /**
