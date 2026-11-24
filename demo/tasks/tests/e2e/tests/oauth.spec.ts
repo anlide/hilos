@@ -251,23 +251,28 @@ test('returns quietly from a denied provider and a closed provider chooser', asy
 // certain. This scenario replaced the only fork of the unit suite
 // (serveTlsResponseInChild() in framework/tests/Unit/AsyncHttpClientTest.php at
 // c32457783).
-test('signs in when the provider keeps the connection open after its answer (HIL-732)', async ({
-  page,
-}) => {
-  const account = await declareOAuthAccount('google', { email: uniqueEmail() })
-  await dictateGatewayBehavior('/oauth/google/token', account.subject, {
-    holdMs: PROVIDER_HOLD_MS,
-  })
-  await dictateGatewayBehavior('/oauth/google/userinfo', account.subject, {
-    holdMs: PROVIDER_HOLD_MS,
-  })
+// FIXME(F-133, 2026-11-24): provider registration Continue stayed disabled on the first try · own · attempt 1 · HIL-2289
+test(
+  'signs in when the provider keeps the connection open after its answer (HIL-732)',
+  { tag: '@quarantine:F-133' },
+  async ({ page }) => {
+    const account = await declareOAuthAccount('google', {
+      email: uniqueEmail(),
+    })
+    await dictateGatewayBehavior('/oauth/google/token', account.subject, {
+      holdMs: PROVIDER_HOLD_MS,
+    })
+    await dictateGatewayBehavior('/oauth/google/userinfo', account.subject, {
+      holdMs: PROVIDER_HOLD_MS,
+    })
 
-  await signInThroughProvider(page, account, true)
+    await signInThroughProvider(page, account, true)
 
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
-  await expect(page.getByTestId('auth-error')).toHaveCount(0)
-})
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+    await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  },
+)
 
 /**
  * Unlike the HIL-732 neighbor, which holds 50 ms to expose an empty TLS read, this

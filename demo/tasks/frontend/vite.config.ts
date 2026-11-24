@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { initialBundleBudget } from '@hilos/core/build/initial-bundle-budget'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { appRouteCheck } from '../../../framework/frontend/scripts/app-route-check.mjs'
 
 // Stamp the frontend build timestamp into the dist output. The daemon reads
 // dist/build-timestamp.txt at startup and ships it in the handshake welcome
@@ -38,6 +39,9 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
     plugins: [
       react(),
       buildTimestampPlugin(),
+      command === 'build' &&
+        !isSsrBuild &&
+        appRouteCheck('src/pages/routes.ts'),
       command === 'build' &&
         !isSsrBuild &&
         initialBundleBudget({

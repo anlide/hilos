@@ -69,7 +69,7 @@ The src root stays thin and the boot wiring lives in `src/bootstrap/`
   the page key. Before opening a browser, run `npm run build` and `npm run check`
   in the frontend CLI container; if `package.json` defines a `test` script, run
   `npm run test` there too. The kit's normal
-  check will run the reserved-route validator (not in the code yet — HIL-2289).
+  check will run the reserved-route validator.
 - `src/App.tsx`: `HilosLayout` with the `brand` and `user` props and a
   `HilosView` over the page map, the page skeletons and the project's
   `AuthSurface` (a wrapper closing the project's `HilosAuthContext` over the

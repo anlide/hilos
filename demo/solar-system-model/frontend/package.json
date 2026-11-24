@@ -12,7 +12,7 @@
     "test:table-geometry:build": "tsc --noEmit -p tests/tableGeometry/tsconfig.json && vite build --config tests/tableGeometry/vite.config.ts && node node_modules/@hilos/core/bin/theme-head.mjs dist/__table_geometry",
     "preview": "vite preview",
     "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
-    "check": "tsc --noEmit -p tsconfig.json",
+    "check": "node ../../../framework/frontend/scripts/check-app-routes.mjs src/pages/routes.ts && tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
