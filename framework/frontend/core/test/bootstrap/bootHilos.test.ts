@@ -1276,9 +1276,7 @@ describe('bootHilos', () => {
     // page name, two page-change announcements for one navigation.
     const connection = fakeConnection()
     const scopes = new ScopeManager()
-    const router = createAppPageRouter({
-      [HilosPages.SETTINGS]: { path: '/hilos/settings', admin: true },
-    })
+    const router = createAppPageRouter({})
     const hilosConnection = connection as unknown as HilosConnection
     const hilosRouter = bootHilos({
       viewLayer: 'vue',

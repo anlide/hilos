@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import {
   createHilosRouter,
   type NavigablePages,
@@ -1001,11 +1000,11 @@ describe('createHilosRouter', () => {
     const { env } = fakeEnvironment('/hilos/moderation/kind/profile_name/rules')
     const { pages, pageIdentity, dashboardSections } = fakePages()
     const navigator = createHilosRouter(
-      createAppPageRouter({
+      createPageRouter({
+        ...HILOS_ROUTE_DECLARATIONS,
         project: { path: '/project', admin: true, icon: 'bi-robot' },
         [HilosPages.MODERATION_KIND_RULES]: {
-          path: '/hilos/moderation/kind/{kind}/rules',
-          admin: true,
+          ...HILOS_ROUTE_DECLARATIONS[HilosPages.MODERATION_KIND_RULES],
           icon: 'bi-list',
         },
       }),

@@ -1,7 +1,7 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import {
-  createAppPageRouter,
   createHilosRouter,
+  createPageRouter,
   HILOS_ROUTE_DECLARATIONS,
   HilosPages,
   PageSubscription,
@@ -99,7 +99,8 @@ function harness(param: string | undefined = '57', icon = OWNER.icon) {
     scopes,
   )
   let path = `/hilos/analytics/browser-session/${param ?? ''}`
-  const routes = createAppPageRouter({
+  const routes = createPageRouter({
+    ...HILOS_ROUTE_DECLARATIONS,
     [PAGE]: { ...HILOS_ROUTE_DECLARATIONS[PAGE], icon },
   })
   const router = createHilosRouter(routes, subscription, {

@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
+import { validateAppPageRoutes } from '../../src/base/index.js'
 import { createAppPageRouter } from '../../src/routing/appPageRouter.js'
 import { HilosPages } from '../../src/routing/hilosPages.js'
+
+function captureRouteError(run: () => void): Error {
+  try {
+    run()
+  } catch (error) {
+    if (error instanceof Error) {
+      return error
+    }
+    throw error
+  }
+  throw new Error('Expected the project route to be rejected.')
+}
 
 describe('createAppPageRouter', () => {
   it('reads icons from the same merged declarations as paths, with project precedence', () => {
@@ -215,6 +228,53 @@ describe('createAppPageRouter', () => {
     })
   })
 
+  it.each([
+    ['root', '/hilos', 'reserved Hilos segment "/hilos"'],
+    ['root', '/hilos/', 'reserved Hilos segment "/hilos"'],
+    [HilosPages.USERS, '/hilos/users', 'reserved Hilos segment "users"'],
+    ['export_users', '/hilos/users/export', 'reserved Hilos segment "users"'],
+    ['tools', '/hilos/mcp/tools', 'reserved Hilos segment "mcp"'],
+    ['section', '/hilos/{section}', 'first segment "{section}"'],
+    ['section', '/hilos/{section?}/list', 'first segment "{section?}"'],
+    ['export', '/hilos/u{suffix}/export', 'first segment "u{suffix}"'],
+    ['users', '/hilos//users', 'empty first segment'],
+  ])('rejects the project route %s at %s', (page, path, diagnostic) => {
+    const { message } = captureRouteError(() =>
+      createAppPageRouter({ [page]: { path, admin: false } }),
+    )
+
+    expect(message).toContain(`"${page}"`)
+    expect(message).toContain(`"${path}"`)
+    expect(message).toContain(diagnostic)
+  })
+
+  it('routes free literal branches and paths outside the Hilos root', () => {
+    const router = createAppPageRouter({
+      users_extra: { path: '/hilos/users-extra', admin: false },
+      export_users: { path: '/hilos/users-extra/{exportId}', admin: true },
+      other_users: { path: '/hilos-extra/users', admin: false },
+    })
+
+    expect(router.match('/hilos/users-extra')).toEqual({
+      page: 'users_extra',
+      params: {},
+      admin: false,
+    })
+    expect(router.match('/hilos/users-extra/42')).toEqual({
+      page: 'export_users',
+      params: { exportId: '42' },
+      admin: true,
+    })
+    expect(router.path('export_users', { exportId: '42' })).toBe(
+      '/hilos/users-extra/42',
+    )
+    expect(router.match('/hilos-extra/users')).toEqual({
+      page: 'other_users',
+      params: {},
+      admin: false,
+    })
+  })
+
   it('mounts the Hilos admin catalog alongside the project routes', () => {
     const router = createAppPageRouter({ main: { path: '/', admin: false } })
 
@@ -263,5 +323,25 @@ describe('createAppPageRouter', () => {
       params: {},
       admin: true,
     })
+  })
+})
+
+describe('validateAppPageRoutes from @hilos/core/base', () => {
+  it('accepts a path-only map and reports a conflict the same way as the factory', () => {
+    expect(() =>
+      validateAppPageRoutes({
+        export_users: { path: '/hilos/users-extra/{exportId}' },
+      }),
+    ).not.toThrow()
+
+    const path = '/hilos/users/export'
+    const factoryError = captureRouteError(() =>
+      createAppPageRouter({ export_users: { path, admin: false } }),
+    )
+    const validationError = captureRouteError(() =>
+      validateAppPageRoutes({ export_users: { path } }),
+    )
+
+    expect(validationError.message).toBe(factoryError.message)
   })
 })

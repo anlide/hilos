@@ -1136,7 +1136,10 @@ export {
   type PageRouteMatch,
 } from '../routing/PageRouter.js'
 export { type PageError } from '../routing/pageError.js'
-export { createAppPageRouter } from '../routing/appPageRouter.js'
+export {
+  createAppPageRouter,
+  validateAppPageRoutes,
+} from '../routing/appPageRouter.js'
 export {
   createHilosRouter,
   browserNavigationEnvironment,

@@ -6,8 +6,8 @@ import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import {
-  createAppPageRouter,
   createHilosRouter,
+  createPageRouter,
   createSignal,
   HILOS_ROUTE_DECLARATIONS,
   HilosPages,
@@ -154,7 +154,8 @@ function harness(
 ) {
   const scopes = new ScopeManager()
   scopes.openPage(PAGE)
-  const routes = createAppPageRouter({
+  const routes = createPageRouter({
+    ...HILOS_ROUTE_DECLARATIONS,
     [PAGE]: { ...HILOS_ROUTE_DECLARATIONS[PAGE], icon },
   })
   const currentRoute = createSignal<PageRouteMatch>({

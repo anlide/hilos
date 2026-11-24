@@ -110,6 +110,15 @@ const ROUTE_SLOT_PATTERN = /\{(\w+)(\??)}/g
 /** An optional `{name?}` slot together with the slash that precedes it. */
 const OPTIONAL_ROUTE_SLOT_PATTERN = /\/\{(\w+)\?}/g
 
+/**
+ * Check for a template slot without advancing the path codec's global pattern.
+ *
+ * @param segment The declared path segment to check.
+ */
+export function containsRouteSlot(segment: string): boolean {
+  return segment.search(ROUTE_SLOT_PATTERN) !== -1
+}
+
 /** Escape a literal path segment so its characters carry no regex meaning. */
 function escapeSegment(segment: string): string {
   return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
