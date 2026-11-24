@@ -40,6 +40,7 @@ import {
 } from './pages/keys.js'
 import About from './views/About/About.js'
 import Cart from './views/Cart/Cart.js'
+import CartHeaderLink from './views/Cart/CartHeaderLink.js'
 import CartSkeleton from './views/Cart/CartSkeleton.js'
 import CategorySkeleton from './views/Category/CategorySkeleton.js'
 import License from './views/License/License.js'
@@ -345,6 +346,7 @@ export default function App({ authGate }: AppProps) {
   return (
     <HilosLayout
       connection={connection}
+      actions={<CartHeaderLink />}
       brand={
         <span className="d-inline-flex align-items-center gap-2">
           <img src="/ecommerce-shop-medium.svg" width={32} height={32} alt="" />
