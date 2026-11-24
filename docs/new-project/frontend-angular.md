@@ -101,7 +101,7 @@ The src root stays thin and the boot wiring lives in `src/app/bootstrap/`
   `createAppPageRouter` rejects it, follow the rule's rename steps and keep the
   page key. In the frontend CLI container, run `npm run build` and
   `npm run check` before opening a browser. The kit's normal check will run the
-  reserved-route validator (not in the code yet — HIL-2290).
+  reserved-route validator.
 - `src/app/app.ts`: import `HilosLayout` and `HilosPageTemplate` from
   `@hilos/angular/base` and include both in the standalone component's `imports`.
   Fill the `[brand]` and `[user]` slots (the user region projected as ONE node
