@@ -69,6 +69,7 @@ use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
+use Demo\EcommerceShop\Pages\DTO\ProductAddToCartActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductStockSetUnitsActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
@@ -95,6 +96,9 @@ use Demo\EcommerceShop\Core\Agent\Daemon\VouchersLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductDoneSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\StockSetUnitsSignalData;
@@ -302,6 +306,14 @@ use Hilos\Tables\Daemon\HilosDaemonEnvOrphansTable;
 use Hilos\Tables\Daemon\HilosDaemonHttpRoutesTable;
 use Hilos\Tables\Daemon\HilosDaemonPlacementTable;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
+use Hilos\Core\Router\Destination\AgentDestination;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Page\PageAccessLevel;
@@ -382,6 +394,43 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(AccountCartSendSignalData::userId, Hilos::getAgentSignalIndexFields()[EcommerceShopSignalConstants::ACCOUNT_CART_SEND]);
         self::assertSame(AccountCartSendSignalData::class, Hilos::getAgentSignalDtoRoutes()[EcommerceShopSignalConstants::ACCOUNT_CART_SEND]);
         self::assertArrayNotHasKey(CartGroup::NAME, Hilos::GROUPS);
+    }
+
+    /** Each leg of a cart add is declared at the address that handles it. */
+    public function testProductCartAddRoutesFromTheBoundProductAddressToTheOwnersAndBack(): void
+    {
+        $action = 'product_add_to_cart';
+        self::assertSame([$action => ProductAddToCartActionDTO::class], ProductPage::ACTIONS);
+        self::assertSame(ProductPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+        self::assertSame(ProductAddToCartActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
+
+        $signals = Hilos::getAgentSignalRoutes();
+        $dtos = Hilos::getAgentSignalDtoRoutes();
+        $indices = Hilos::getAgentSignalIndexFields();
+        self::assertSame(AgentType::GUEST_CARTS_LIBRARY, $signals['guest_cart_add_product']);
+        self::assertSame(CartAddProductSignalData::class, $dtos['guest_cart_add_product']);
+        self::assertArrayNotHasKey('guest_cart_add_product', $indices);
+        self::assertSame(HilosAgentType::HILOS_USER, $signals['account_cart_add_product']);
+        self::assertSame(CartAddProductSignalData::class, $dtos['account_cart_add_product']);
+        self::assertSame('userId', $indices['account_cart_add_product']);
+        self::assertSame(AgentType::PRODUCT, $signals['cart_product_add_done']);
+        self::assertSame(CartAddProductDoneSignalData::class, $dtos['cart_product_add_done']);
+        self::assertSame('productSlug', $indices['cart_product_add_done']);
+
+        $router = new EcommerceShopSignalRouter();
+        $source = new SignalSource(SignalSource::WEBSOCKET);
+        foreach (['one' => 'morning-meadow', 'two' => 'spring-roses'] as $acceptKey => $slug) {
+            $subscribe = new WebSocketPageSubscribeSignalDTO($acceptKey, ProductPage::PAGE, ['slug' => $slug]);
+            $router->subscribeToPage(ProductPage::PAGE, $subscribe);
+            $router->bindPageAgent($acceptKey, ProductPage::PAGE, AgentType::PRODUCT, $slug);
+            $frame = new SignalDTO(
+                $source,
+                new SignalType(SignalTypeConstants::ACTION),
+                new SignalName($action),
+                new WebSocketActionSignalDTO($acceptKey, $action, [CartStateSignalData::PRODUCT_ID => 31]),
+            );
+            self::assertEquals([new AgentDestination(AgentType::PRODUCT, $slug)], $router->getDestinations($frame));
+        }
     }
 
     public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
@@ -1379,6 +1428,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             [
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class,
                 EcommerceShopSignalConstants::GUEST_CART_SEND => GuestCartSendSignalData::class,
+                EcommerceShopSignalConstants::GUEST_CART_ADD_PRODUCT => CartAddProductSignalData::class,
             ],
             GuestCartsLibraryAgent::AGENT_SIGNALS,
         );
@@ -2053,6 +2103,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 EcommerceShopSignalConstants::STOCK_SET_UNITS => AgentType::STOCK_LIBRARY,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::GUEST_CARTS_LIBRARY,
                 EcommerceShopSignalConstants::GUEST_CART_SEND => AgentType::GUEST_CARTS_LIBRARY,
+                EcommerceShopSignalConstants::GUEST_CART_ADD_PRODUCT => AgentType::GUEST_CARTS_LIBRARY,
+                EcommerceShopSignalConstants::CART_PRODUCT_ADD_DONE => AgentType::PRODUCT,
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_AGENT_PASS => HilosAgentType::HILOS_INDEX,
@@ -2165,6 +2217,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PUSH_RELEASE => HilosAgentType::HILOS_USER,
                 EcommerceShopSignalConstants::ACCOUNT_CART_SEND => HilosAgentType::HILOS_USER,
+                EcommerceShopSignalConstants::ACCOUNT_CART_ADD_PRODUCT => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,

@@ -8,15 +8,21 @@ use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Browser\ProductPageBasis;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Constants\ProductAvailability;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductSignalData;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Pages\DTO\ProductAddToCartActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPageSubscribeParams;
 use Demo\EcommerceShop\ShopFront\ProductReading;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
@@ -25,11 +31,15 @@ use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageMovedException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageResourceAnswer;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Files\HilosFiles;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -45,6 +55,8 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
  */
 final class ProductPage extends AbstractPage
 {
+    use HandoverGatekeeperTrait;
+
     public const string PAGE = PageConstants::PRODUCT;
 
     public const PageReach REACH = PageReach::ROUTE;
@@ -59,9 +71,15 @@ final class ProductPage extends AbstractPage
         PageAgentIndexKey::FALLBACK_AGENT_TYPE => AgentType::ECOMMERCE_SHOP,
     ];
 
+    public const array ACTIONS = [
+        EcommerceShopSignalConstants::PRODUCT_ADD_TO_CART => ProductAddToCartActionDTO::class,
+    ];
+
     public const string DATA_PRODUCT = 'product';
 
     public const string DATA_PRODUCT_VIEWERS = 'productViewers';
+
+    private const string PRODUCT_UNAVAILABLE = 'This product is no longer available on this page.';
 
     private const string pictureUrl = 'pictureUrl';
     private const string units = 'units';
@@ -128,6 +146,37 @@ final class ProductPage extends AbstractPage
     }
 
     /**
+     * Routes the click to the owner of the acting connection's cart.
+     *
+     * @param string $acceptKey Acting connection
+     * @param string $action Browser action name
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO The cart owner answers separately, so this handler returns null
+     * @throws AgentUnknownActionException When the action is not declared by this page
+     * @throws InvalidActionPayloadException When the action and payload disagree
+     * @throws ValidationException When the card or acting session is no longer suitable
+     * @throws InvalidFormatException When the handover address is malformed
+     * @throws InvalidArgumentException When the handover cannot be queued
+     * @throws HilosException When the catalog reading fails
+     */
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case EcommerceShopSignalConstants::PRODUCT_ADD_TO_CART:
+                if (!$dto instanceof ProductAddToCartActionDTO) {
+                    throw new InvalidActionPayloadException($action, ProductAddToCartActionDTO::class, $dto);
+                }
+
+                $this->forwardCartAdd($acceptKey, $dto);
+
+                return null;
+
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+    }
+
+    /**
      * Builds the card and the comparison basis from the reading that identifies its resource.
      *
      * @param string $acceptKey WebSocket accept key
@@ -174,6 +223,63 @@ final class ProductPage extends AbstractPage
                 $agent->productPageAnswered($acceptKey, (int)$resource->idString, $audience);
             }
         });
+    }
+
+    /**
+     * Hands over the click while the accepted card still names this product at this address.
+     *
+     * @param string $acceptKey Acting connection
+     * @param ProductAddToCartActionDTO $dto Product named by the click
+     * @throws ValidationException When the page, product or acting session no longer matches
+     * @throws InvalidFormatException When the handover address is malformed
+     * @throws InvalidArgumentException When the handover cannot be queued
+     * @throws HilosException When the catalog reading fails
+     */
+    private function forwardCartAdd(string $acceptKey, ProductAddToCartActionDTO $dto): void
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        $resource = Hilos::$sr?->pageResource($acceptKey);
+        $agent = $this->agent;
+        if (!$agent instanceof ProductAgent
+            || $subscription?->page !== self::PAGE
+            || $subscription->agentType !== AgentType::PRODUCT
+            || $subscription->agentIndex !== $agent->address()
+            || Hilos::$sr->hasPageDeliveryFailure($acceptKey)
+            || $resource?->collectionKey !== EcommerceShopDbContext::products
+            || $resource->idString !== (string)$dto->productId) {
+            throw new ValidationException(self::PRODUCT_UNAVAILABLE);
+        }
+
+        try {
+            $reading = $this->requireReading(new PageRouteParams($subscription->stringParams()));
+        } catch (MissingPageRouteParamException|PageMovedException|PageResourceNotFoundException) {
+            throw new ValidationException(self::PRODUCT_UNAVAILABLE);
+        }
+        if ($reading->product->id !== $dto->productId) {
+            throw new ValidationException(self::PRODUCT_UNAVAILABLE);
+        }
+
+        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        $sessionId = $connection?->sessionId;
+        $userId = $connection?->userId;
+        if ($sessionId === null || $sessionId <= 0 || ($userId !== null && $userId <= 0)) {
+            throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+        }
+
+        $this->forward(
+            $userId === null ? EcommerceShopSignalConstants::GUEST_CART_ADD_PRODUCT : EcommerceShopSignalConstants::ACCOUNT_CART_ADD_PRODUCT,
+            new CartAddProductSignalData(
+                productId: $dto->productId,
+                productSlug: $agent->address(),
+                sessionId: $sessionId,
+                userId: $userId,
+                replySignal: EcommerceShopSignalConstants::CART_PRODUCT_ADD_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: EcommerceShopSignalConstants::PRODUCT_ADD_TO_CART,
+                successMessage: null,
+            ),
+        );
     }
 
     /**

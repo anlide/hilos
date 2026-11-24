@@ -77,10 +77,10 @@ use RuntimeException;
  * Real commits: an owner sends the cart once its transaction commits, and a rollback-scoped case
  * discards what waits for that commit, so the frames are read here and not beside the cart
  * actions. The guest carts library and the person's agent start the way their workers start
- * them; the lines are written past them, before the library reads the carts in whole, and the
- * person's agent reads its person's lines from the database. The products are the seeded
- * catalog's. A case leaves nothing behind: its lines and its people are removed after it, and
- * the memory that read them is forgotten. Voucher cases also create and remove their own fixtures.
+ * them. Lines written before the library starts enter its mirror, and a line written past it
+ * after startup is visible only in storage. The person's agent reads its person's lines from
+ * the database. Cases use products from the seeded catalog. Teardown removes the case's lines,
+ * sessions, people, and vouchers, and forgets the memory that read them.
  */
 final class CartStateTest extends IntegrationTestCase
 {
@@ -98,7 +98,8 @@ final class CartStateTest extends IntegrationTestCase
     /** @var list<int> Catalog vouchers the case created, removed after it */
     private array $voucherIds = [];
 
-    private ?int $guestSessionId = null;
+    /** @var list<int> Guest sessions the case created, removed after it */
+    private array $guestSessionIds = [];
 
     private ?GuestCartsLibraryAgent $carts = null;
     private ?EcommerceShopWorkerManager $cartWorker = null;
@@ -125,10 +126,10 @@ final class CartStateTest extends IntegrationTestCase
                 ]);
             }
             Database::sqlRun('DELETE FROM `session_product_cart` WHERE `session_id` IN (?, ?)', [self::SESSION, self::OTHER_SESSION]);
-            if ($this->guestSessionId !== null) {
-                Database::sqlRun('DELETE FROM `session_product_cart` WHERE `session_id` = ?', [$this->guestSessionId]);
-                Database::sqlRun('DELETE FROM `session_voucher_cart` WHERE `session_id` = ?', [$this->guestSessionId]);
-                Database::sqlRun('DELETE FROM `hilos_session` WHERE `id` = ?', [$this->guestSessionId]);
+            foreach ($this->guestSessionIds as $sessionId) {
+                Database::sqlRun('DELETE FROM `session_product_cart` WHERE `session_id` = ?', [$sessionId]);
+                Database::sqlRun('DELETE FROM `session_voucher_cart` WHERE `session_id` = ?', [$sessionId]);
+                Database::sqlRun('DELETE FROM `hilos_session` WHERE `id` = ?', [$sessionId]);
             }
             if ($this->userIds !== []) {
                 $people = implode(',', $this->userIds);
@@ -149,7 +150,7 @@ final class CartStateTest extends IntegrationTestCase
             $this->carts = null;
             $this->userIds = [];
             $this->voucherIds = [];
-            $this->guestSessionId = null;
+            $this->guestSessionIds = [];
             if ($this->cartWorker !== null) {
                 $this->releaseCartWorker();
             }
@@ -456,19 +457,58 @@ final class CartStateTest extends IntegrationTestCase
     {
         $token = SessionToken::mint();
         $session = Hilos::$db->sessions->actions->createAnonymous($token);
-        $this->guestSessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $sessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $this->guestSessionIds[] = $sessionId;
+        $otherSessionId = Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint())->id
+            ?? self::fail('The control session was not persisted');
+        $this->guestSessionIds[] = $otherSessionId;
         $productId = self::seededProduct('pine-bark-5-l');
+        self::guestLine($otherSessionId, $productId, 1);
 
         foreach ([[3, true], [3, false], [2, true], [0, true], [0, false]] as [$quantity, $changed]) {
             [$reply, $frames] = $this->guestFixture($token, $productId, $quantity);
             self::assertTrue($reply->isOk());
             self::assertSame(['quantity' => $quantity], $reply->payload);
+            self::assertSame($quantity === 0 ? null : $quantity, self::storedGuestQuantity($sessionId, $productId));
+            self::assertSame(1, self::storedGuestQuantity($otherSessionId, $productId));
             $lines = $quantity === 0 ? [] : [['productId' => $productId, 'quantity' => $quantity]];
             $cart = ['userId' => null, 'lines' => $lines, 'voucherId' => null];
-            self::assertSame($changed ? [[CartGroup::forSession($this->guestSessionId), $cart]] : [], $frames);
-            $this->askGuestCart($this->guestSessionId);
-            self::assertSame([[CartGroup::forSession($this->guestSessionId), $cart]], $this->cartStates());
+            self::assertSame($changed ? [[CartGroup::forSession($sessionId), $cart]] : [], $frames);
+            $this->askGuestCart($sessionId);
+            self::assertSame([[CartGroup::forSession($sessionId), $cart]], $this->cartStates());
         }
+    }
+
+    /** A fixture removal cannot succeed while storage still holds a line missing from the owner's mirror. */
+    public function testGuestCartFixtureRefusesRemovalWhenTheMirrorMissesTheStoredLine(): void
+    {
+        $token = SessionToken::mint();
+        $sessionId = Hilos::$db->sessions->actions->createAnonymous($token)->id ?? self::fail('The guest session was not persisted');
+        $this->guestSessionIds[] = $sessionId;
+        $otherSessionId = Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint())->id
+            ?? self::fail('The control session was not persisted');
+        $this->guestSessionIds[] = $otherSessionId;
+        $productId = self::seededProduct('morning-meadow');
+
+        $this->guestCarts();
+        self::guestLine($sessionId, $productId, 1);
+        self::guestLine($otherSessionId, $productId, 1);
+        self::assertSame(1, self::storedGuestQuantity($sessionId, $productId));
+        self::assertSame(1, self::storedGuestQuantity($otherSessionId, $productId));
+        $this->askGuestCart($sessionId);
+        self::assertSame(
+            [[CartGroup::forSession($sessionId), ['userId' => null, 'lines' => [], 'voucherId' => null]]],
+            $this->cartStates(),
+        );
+
+        [$reply, $frames] = $this->guestFixture($token, $productId, 0);
+
+        self::assertSame(1, self::storedGuestQuantity($sessionId, $productId));
+        self::assertSame(1, self::storedGuestQuantity($otherSessionId, $productId));
+        self::assertSame([], $frames);
+        self::assertStringNotContainsString($token, $reply->toJson());
+        self::assertSame(CommandConstants::STATUS_ERROR, $reply->status);
+        self::assertSame([CommandConstants::FIELD_MESSAGE => 'The guest cart fixture removal could not be confirmed'], $reply->payload);
     }
 
     /** Refused exact quantities leave no partial line, and invalid sessions cannot change the cart. */
@@ -476,21 +516,22 @@ final class CartStateTest extends IntegrationTestCase
     {
         $token = SessionToken::mint();
         $session = Hilos::$db->sessions->actions->createAnonymous($token);
-        $this->guestSessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $sessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $this->guestSessionIds[] = $sessionId;
         $stock = self::seededProduct('pine-bark-5-l');
         $unique = self::seededProduct('morning-meadow');
 
         $this->assertFixtureRefused($token, $stock, 999_999, 'Only 120 in stock');
         $this->assertFixtureRefused($token, $unique, 2, 'A unique piece has no quantity: it is one of a kind');
         $this->assertFixtureRefused($token, PHP_INT_MAX, 1, 'This product does not exist');
-        $this->askGuestCart($this->guestSessionId);
+        $this->askGuestCart($sessionId);
         self::assertSame(
-            [[CartGroup::forSession($this->guestSessionId), ['userId' => null, 'lines' => [], 'voucherId' => null]]],
+            [[CartGroup::forSession($sessionId), ['userId' => null, 'lines' => [], 'voucherId' => null]]],
             $this->cartStates(),
         );
         self::assertSame(0, (int)Database::sql(
             'SELECT COUNT(*) AS total FROM session_product_cart WHERE session_id = ?',
-            [$this->guestSessionId],
+            [$sessionId],
         )->field('total'));
 
         $unavailable = 'This guest session is no longer available';
@@ -515,21 +556,19 @@ final class CartStateTest extends IntegrationTestCase
     {
         $token = SessionToken::mint();
         $session = Hilos::$db->sessions->actions->createAnonymous($token);
-        $this->guestSessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $sessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $this->guestSessionIds[] = $sessionId;
         $productId = self::seededProduct('pine-bark-5-l');
         [$reply] = $this->guestFixture($token, $productId, 2);
         self::assertTrue($reply->isOk());
 
         // Update storage as another worker would, with its DB_SYNC still in flight.
         $expiresAt = TimeHelper::nowMs();
-        Database::sqlRun('UPDATE `hilos_session` SET `expires_at` = ? WHERE `id` = ?', [$expiresAt, $this->guestSessionId]);
+        Database::sqlRun('UPDATE `hilos_session` SET `expires_at` = ? WHERE `id` = ?', [$expiresAt, $sessionId]);
         self::assertTrue($session->expiresAt === null || $session->expiresAt > $expiresAt);
 
         $this->assertFixtureRefused($token, $productId, 1, 'This guest session is no longer available');
-        self::assertSame(2, (int)Database::sql(
-            'SELECT quantity FROM session_product_cart WHERE session_id = ? AND product_id = ?',
-            [$this->guestSessionId, $productId],
-        )->field('quantity'));
+        self::assertSame(2, self::storedGuestQuantity($sessionId, $productId));
     }
 
     /** A guest's voucher-only cart is told on commit, on change and on request. */
@@ -537,7 +576,7 @@ final class CartStateTest extends IntegrationTestCase
     {
         $sessionId = Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint())->id
             ?? self::fail('The guest session was not persisted');
-        $this->guestSessionId = $sessionId;
+        $this->guestSessionIds[] = $sessionId;
         $group = CartGroup::forSession($sessionId);
         $first = $this->createVoucher('CART10', 10);
         $second = $this->createVoucher('CART20', 20);
@@ -654,10 +693,11 @@ final class CartStateTest extends IntegrationTestCase
     /** @return int Persisted guest session registered for case cleanup */
     private function storedGuestSession(): int
     {
-        $this->guestSessionId = Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint())->id
+        $sessionId = Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint())->id
             ?? self::fail('The guest session was not persisted');
+        $this->guestSessionIds[] = $sessionId;
 
-        return $this->guestSessionId;
+        return $sessionId;
     }
 
     /** Mounts the worker and source fan-out for the tests that dispatch cart page actions. */
@@ -1058,6 +1098,21 @@ final class CartStateTest extends IntegrationTestCase
         self::assertCount(2, $products, 'The seeded catalog is reset with the test database');
 
         return $products;
+    }
+
+    /**
+     * @param int $sessionId Session owning the line
+     * @param int $productId Product in the line
+     * @return ?int Stored quantity, or null when the exact pair has no row
+     */
+    private static function storedGuestQuantity(int $sessionId, int $productId): ?int
+    {
+        $quantity = Database::sql(
+            'SELECT quantity FROM session_product_cart WHERE session_id = ? AND product_id = ?',
+            [$sessionId, $productId],
+        )->field('quantity');
+
+        return $quantity === null ? null : (int)$quantity;
     }
 
     /**

@@ -9,7 +9,10 @@ import {
   PAGE_PRODUCT,
 } from '../../../frontend/src/pages/keys.js'
 import { PRODUCT_STOCK_SET_UNITS } from '../../../frontend/src/views/AdminProductStock/adminProductStockActions.js'
-import { SIGNAL_TYPE_ACTION } from '../../../../../framework/frontend/core/src/protocol/constants.js'
+import {
+  SIGNAL_TYPE_ACTION,
+  SIGNAL_TYPE_ACTION_SUCCESS,
+} from '../../../../../framework/frontend/core/src/protocol/constants.js'
 import {
   PAGE_READY,
   PAGE_REFUSED,
@@ -24,6 +27,7 @@ import {
   grantAdminToSelf,
   markDocument,
   navigateByHistory,
+  sessionToken,
   trackedActionReplies,
   type TestCleanup,
   typeInto,
@@ -138,6 +142,111 @@ test('a guest browses shop categories and sees a refusal for an unknown category
     ).toBeVisible()
   })
 })
+
+// Browser traces can include the guest's session cookie.
+const guestCartTest = test.extend({ trace: 'off' })
+
+guestCartTest(
+  'adding a product to a guest cart updates another tab without reloading',
+  async ({ browser, cleanup }) => {
+    // The product ID in 001_hilos_flowers.sql identifies the cleanup target.
+    const morningMeadow = {
+      id: 1,
+      slug: 'morning-meadow',
+      name: 'Morning meadow',
+    }
+    const productPath = `/product/${morningMeadow.slug}`
+    const guestContext = await browser.newContext({ colorScheme: 'light' })
+    cleanup.defer(() => guestContext.close())
+
+    const firstTab = await guestContext.newPage()
+    const delivery = watchDeliveryFrames(firstTab)
+    cleanup.defer(() => delivery.stop())
+    await gotoPage(expect, firstTab, productPath)
+    await expect(
+      firstTab.getByTestId('nav-cart').getByTestId('cart-badge'),
+    ).toHaveText('0')
+
+    const secondTab = await guestContext.newPage()
+    await gotoPage(expect, secondTab, productPath)
+    const secondBadge = secondTab
+      .getByTestId('nav-cart')
+      .getByTestId('cart-badge')
+    const availability = secondTab.getByTestId('shop-product-availability')
+    await expect(secondBadge).toHaveText('0')
+    await expect(availability).toHaveText('One of a kind')
+    await markDocument(secondTab)
+
+    const token = await sessionToken(firstTab)
+    const command = createStandCommandChannel({ timeoutMs: 5_000 })
+    const addToCart = 'product_add_to_cart'
+    const since = delivery.sent.length
+    const replies = () => trackedActionReplies(delivery, addToCart, since)
+    let clickAttempted = false
+
+    cleanup.defer(async () => {
+      if (!clickAttempted) return
+
+      // The browser can send the add before the observer receives framesent.
+      const ownCartLine = availability.filter({ hasText: /^In your cart$/ })
+      let unconfirmed: Error | undefined
+      try {
+        await expect
+          .poll(() => replies().length > 0 || ownCartLine.isVisible(), {
+            message: 'Guest cart cleanup waits for the add reply or cart line',
+          })
+          .toBe(true)
+      } catch (error) {
+        unconfirmed = new Error(
+          'Guest cart cleanup could not confirm that the add finished',
+          { cause: error },
+        )
+      }
+
+      // An error can arrive after the cart write commits, so remove after either reply.
+      try {
+        await command('test:ecommerce-shop:guest-cart-set-quantity', {
+          sessionToken: token,
+          productId: morningMeadow.id,
+          quantity: 0,
+        })
+      } catch (error) {
+        if (unconfirmed === undefined) throw error
+        throw new AggregateError(
+          [unconfirmed, error],
+          'Guest cart add was unconfirmed and the fallback removal failed',
+          { cause: error },
+        )
+      }
+      if (unconfirmed !== undefined) throw unconfirmed
+    })
+
+    const addButton = firstTab.getByTestId('shop-product-add-to-cart')
+    clickAttempted = true
+    await addButton.click()
+    await expect.poll(() => replies().length).toBe(1)
+    expect(replies()[0].frame.type).toBe(SIGNAL_TYPE_ACTION_SUCCESS)
+    await expect(firstTab.getByTestId('shop-product-go-to-cart')).toBeVisible()
+
+    await expect(secondBadge).toHaveText('1')
+    await expect(availability).toHaveText('In your cart')
+    const cartLink = secondTab.getByTestId('shop-product-go-to-cart')
+    await expect(cartLink).toHaveRole('link')
+    await expect(cartLink).toHaveAccessibleName('In your cart — go to cart')
+    await expect(cartLink).toHaveAttribute('href', '/cart')
+    await expectDocumentUnchanged(expect, secondTab)
+
+    await cartLink.click()
+    await expect(secondTab).toHaveURL('/cart')
+    await expectPageReady(expect, secondTab)
+    await expect(
+      secondTab
+        .getByTestId('shop-cart-line')
+        .getByTestId('shop-cart-product-link'),
+    ).toHaveText(morningMeadow.name)
+    expect(replies().length).toBe(1)
+  },
+)
 
 test('a guest sees live price and stock changes on a product and a server refusal for an unknown product', async ({
   browser,

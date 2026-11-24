@@ -6,6 +6,8 @@ namespace Demo\EcommerceShop\Agents\Hilos;
 
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductDoneSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
@@ -17,6 +19,8 @@ use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -50,6 +54,7 @@ use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Users\AccountErasure;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\Agent\AbstractUserAgent;
@@ -89,17 +94,21 @@ final class UserAgent extends AbstractUserAgent
         EcommerceShopRtContext::connections,
     ];
 
-    /** @var array<string, mixed> The framework's frames, and the ask to tell the person's tabs the cart */
+    /** @var array<string, mixed> The framework's frames and the requests for this person's cart */
     public const array AGENT_SIGNALS = [
         ...parent::AGENT_SIGNALS,
         EcommerceShopSignalConstants::ACCOUNT_CART_SEND => [
             AgentSignalConfigKey::INDEX_FIELD => AccountCartSendSignalData::userId,
             AgentSignalConfigKey::DTO => AccountCartSendSignalData::class,
         ],
+        EcommerceShopSignalConstants::ACCOUNT_CART_ADD_PRODUCT => [
+            AgentSignalConfigKey::INDEX_FIELD => AccountCartSendSignalData::userId,
+            AgentSignalConfigKey::DTO => CartAddProductSignalData::class,
+        ],
     ];
 
     /**
-     * Tells the person's tabs the cart when asked; the ask is not answered. Inherited frames keep their own protocol.
+     * Tells the person's tabs their cart and handles storefront additions. Inherited frames keep their own protocol.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Full sender identity, passed to the inherited handler
@@ -107,8 +116,8 @@ final class UserAgent extends AbstractUserAgent
      * @throws AgentUnknownSignalException When the name is unknown to this agent
      * @throws InvalidAgentSignalPayloadException When the payload differs from its declaration
      * @throws AgentException When the frame names another person
-     * @throws InvalidArgumentException When an inherited answer cannot be named or queued
-     * @throws InvalidFormatException When an inherited renewal or account operation answer is malformed
+     * @throws InvalidArgumentException When an answer cannot be named or queued
+     * @throws InvalidFormatException When a cart add, renewal or account operation answer is malformed
      * @throws DatabaseException When the folded-account lookup fails
      * @throws LogicException When the folded-account collection cannot be read
      */
@@ -123,6 +132,16 @@ final class UserAgent extends AbstractUserAgent
 
                 $this->refuseAnotherPerson($send->userId, $name);
                 $this->answerCartAsk($send->userId);
+
+                return;
+
+            case EcommerceShopSignalConstants::ACCOUNT_CART_ADD_PRODUCT:
+                $ask = $data->data;
+                if (!$ask instanceof CartAddProductSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, CartAddProductSignalData::class, $ask);
+                }
+
+                $this->addProductToCart($ask);
 
                 return;
 
@@ -331,6 +350,48 @@ final class UserAgent extends AbstractUserAgent
         } catch (HilosException $e) {
             $this->logAgentError("Cart of user #{$userId} not told: {$e->getMessage()}");
         }
+    }
+
+    /**
+     * Writes the original person's cart and hands back the committed outcome.
+     *
+     * @param CartAddProductSignalData $ask Product and acting session from the storefront
+     * @throws InvalidFormatException When the outcome has no original product address
+     * @throws InvalidArgumentException When the outcome cannot be queued
+     */
+    private function addProductToCart(CartAddProductSignalData $ask): void
+    {
+        $refusal = null;
+        try {
+            $userId = $ask->userId;
+            $connection = Hilos::$rt?->sessionConnectionsSource()?->get($ask->acceptKey);
+            if (
+                $userId === null || $connection?->sessionId !== $ask->sessionId || $connection->userId !== $userId
+                || RtStaleness::staleSince(EcommerceShopRtContext::connections, $ask->acceptKey) !== null
+            ) {
+                throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+            }
+            $this->refuseAnotherPerson($userId, EcommerceShopSignalConstants::ACCOUNT_CART_ADD_PRODUCT);
+
+            Database::transaction(DatabaseNames::PRIMARY, function () use ($ask, $userId): void {
+                if (!Hilos::$db->sessions->isStoredBoundToUser($ask->sessionId, $userId)) {
+                    throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+                }
+
+                AddressablePerson::require($userId);
+                Hilos::$db->userProductCarts->actions->add($userId, $ask->productId);
+                $this->publishCart($userId);
+            });
+        } catch (WiringRefusal $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+        } catch (Throwable $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Account cart add failed for user #{$ask->userId}: {$failure->getMessage()}");
+            }
+        }
+
+        $this->sendToAgent($ask->replySignal, new CartAddProductDoneSignalData($ask->productSlug, HandoverAnswerSignalData::to($ask, $refusal)));
     }
 
     /**

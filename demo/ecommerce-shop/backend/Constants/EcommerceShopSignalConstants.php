@@ -107,6 +107,18 @@ final class EcommerceShopSignalConstants
     /** @var string Server → client, WS_GROUP: the whole cart of one guest session or one person, sent by its owner */
     public const string CART_STATE = 'cart_state';
 
+    /** @var string Browser action to add a product from its storefront card */
+    public const string PRODUCT_ADD_TO_CART = 'product_add_to_cart';
+
+    /** @var string Product page → guest carts library: add a product to the session's cart */
+    public const string GUEST_CART_ADD_PRODUCT = 'guest_cart_add_product';
+
+    /** @var string Product page → person's agent: add a product to the person's cart */
+    public const string ACCOUNT_CART_ADD_PRODUCT = 'account_cart_add_product';
+
+    /** @var string Cart owner → original product agent: the outcome of adding a product */
+    public const string CART_PRODUCT_ADD_DONE = 'cart_product_add_done';
+
     /** @var string Shop connections agent → guest carts library: tell every tab of a session its cart */
     public const string GUEST_CART_SEND = 'guest_cart_send';
 

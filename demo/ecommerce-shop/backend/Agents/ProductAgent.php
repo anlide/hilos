@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Agents;
 
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\ProductAvailability;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductDoneSignalData;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
 use Demo\EcommerceShop\Database\Entity\Item\ProductSlug as EntityProductSlug;
@@ -16,10 +18,15 @@ use Demo\EcommerceShop\Runtime\View\Item\Connection;
 use Demo\EcommerceShop\Runtime\View\Item\ProductViewerCount;
 use Demo\EcommerceShop\ShopFront\ProductReading;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageResource;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
@@ -63,6 +70,13 @@ final class ProductAgent extends AbstractAgent
 
     public const string AGENT_TYPE = AgentType::PRODUCT;
 
+    public const array AGENT_SIGNALS = [
+        EcommerceShopSignalConstants::CART_PRODUCT_ADD_DONE => [
+            AgentSignalConfigKey::INDEX_FIELD => CartAddProductDoneSignalData::productSlug,
+            AgentSignalConfigKey::DTO => CartAddProductDoneSignalData::class,
+        ],
+    ];
+
     public const array READS_RT = [EcommerceShopRtContext::connections];
 
     public const array OWNS_RT_ROWS = [EcommerceShopRtContext::productViewerCounts => TruthSourceOperation::BY_KIND];
@@ -96,6 +110,35 @@ final class ProductAgent extends AbstractAgent
         }
         $this->agentIndex = $agentIndex;
         $this->address = $agentIndex;
+    }
+
+    /**
+     * Receives the owner's outcome at the original product address.
+     *
+     * @param AgentSignalData $data Wrapped agent-signal payload
+     * @param string $sender Full sender identity, unused
+     * @param string $name Routed signal name
+     * @throws AgentUnknownSignalException When this agent does not handle the signal
+     * @throws InvalidAgentSignalPayloadException When the name and payload disagree
+     * @throws AgentException When the outcome belongs to another address or action
+     * @throws InvalidArgumentException When the acknowledgement cannot be queued
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case EcommerceShopSignalConstants::CART_PRODUCT_ADD_DONE:
+                $done = $data->data;
+                if (!$done instanceof CartAddProductDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, CartAddProductDoneSignalData::class, $done);
+                }
+
+                $this->answerCartAdd($done);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /**
@@ -496,6 +539,30 @@ final class ProductAgent extends AbstractAgent
         } catch (Throwable $failure) {
             Database::transactionRollbackSilent();
             throw $failure;
+        }
+    }
+
+    /**
+     * Relays the outcome to the connection that clicked, even if it has navigated since then.
+     *
+     * @param CartAddProductDoneSignalData $done Writer's outcome and original correlation
+     * @throws AgentException When the outcome belongs to another address or action
+     * @throws InvalidArgumentException When the acknowledgement cannot be queued
+     */
+    private function answerCartAdd(CartAddProductDoneSignalData $done): void
+    {
+        $answer = $done->answer;
+        if ($done->productSlug !== $this->address || $answer->action !== EcommerceShopSignalConstants::PRODUCT_ADD_TO_CART) {
+            throw new AgentException('Cart add outcome does not match this product address and action.');
+        }
+        if ($answer->requestId === null) {
+            return;
+        }
+
+        if ($answer->error === null) {
+            $this->sendActionSuccess($answer->acceptKey, $answer->action, $answer->requestId);
+        } else {
+            $this->sendActionFail($answer->acceptKey, $answer->action, $answer->requestId, $answer->error);
         }
     }
 }

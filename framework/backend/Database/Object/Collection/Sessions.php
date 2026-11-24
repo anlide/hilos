@@ -91,6 +91,27 @@ class Sessions extends Objects
     }
 
     /**
+     * Reads the current binding because the session mirror can lag behind a committed change.
+     * The shared row lock keeps the binding in place for the rest of the caller's transaction.
+     *
+     * @param int $sessionId Session primary key
+     * @param int $userId Expected bound user
+     * @return bool Whether the stored session is bound to this user
+     * @throws DatabaseException When storage or its database binding refuses the read
+     */
+    public function isStoredBoundToUser(int $sessionId, int $userId): bool
+    {
+        $storedUserId = Database::sql(
+            'SELECT `' . EntitySession::user_id . '` FROM ' . static::entityClass()::getSqlTableName()
+            . ' WHERE `' . EntitySession::id . '` = ? LOCK IN SHARE MODE',
+            [$sessionId],
+            index: static::entityClass()::getDatabase()->connectionIndex,
+        )->field(EntitySession::user_id);
+
+        return $storedUserId !== null && (int) $storedUserId === $userId;
+    }
+
+    /**
      * @param int $sessionId Session primary key
      * @return bool Whether storage holds an unexpired session without a bound user
      * @throws DatabaseException When the primary-key read fails

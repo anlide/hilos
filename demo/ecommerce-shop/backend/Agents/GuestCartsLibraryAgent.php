@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Agents;
 
-use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\CLI\DTO\GuestCartSetQuantityCommandData;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductDoneSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\CartAddProductSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
@@ -24,6 +25,8 @@ use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -32,6 +35,7 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -125,6 +129,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class,
         EcommerceShopSignalConstants::GUEST_CART_SEND => GuestCartSendSignalData::class,
+        EcommerceShopSignalConstants::GUEST_CART_ADD_PRODUCT => CartAddProductSignalData::class,
     ];
 
     /** Frames and the recovery rule wake the worker. Each scheduled tick takes one bounded page per cart table. */
@@ -335,14 +340,14 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Removes the carts of the sessions the sessions library swept, and tells a session's tabs its cart when asked.
+     * Removes swept sessions' carts, tells a session's tabs its cart and handles storefront additions.
      *
      * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
-     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
-     *     (unused: only {@see SessionsLibraryAgent} sends the sweep, and only {@see EcommerceShopAgent} asks for a cart)
+     * @param string $sender Sender in full, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
+     * @throws InvalidFormatException When the cart add outcome has no original product address
      * @throws InvalidArgumentException When the cart frame cannot be named or queued outside a transaction
      * @throws HilosException When the right, the database or the collection refuses the delete or the read
      * @throws NamedDatabaseException When the sweep database is not configured
@@ -376,6 +381,16 @@ final class GuestCartsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case EcommerceShopSignalConstants::GUEST_CART_ADD_PRODUCT:
+                $ask = $data->data;
+                if (!$ask instanceof CartAddProductSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, CartAddProductSignalData::class, $ask);
+                }
+
+                $this->addProductToCart($ask);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -383,6 +398,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
 
     /**
      * Answers the stand's exact-quantity command under the guest carts library's ownership.
+     * A zero is acknowledged only after storage confirms the line is absent following commit.
      *
      * @param CommandRequestDTO $data Topology-hydrated command
      * @param string $source Command source, unused
@@ -407,7 +423,8 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         }
 
         try {
-            Database::transaction(DatabaseNames::PRIMARY, fn () => $this->setFixtureQuantity($query));
+            $sessionId = Database::transaction(DatabaseNames::PRIMARY, fn (): int => $this->setFixtureQuantity($query));
+            $removalUnconfirmed = $query->quantity === 0 && Hilos::$db->sessionProductCarts->hasCartLine($sessionId, $query->productId);
         } catch (ValidationException $refusal) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $refusal->getMessage()));
             return;
@@ -415,6 +432,11 @@ final class GuestCartsLibraryAgent extends AbstractAgent
             throw new AgentException('The guest cart fixture data sources are unavailable', previous: $refusal);
         } catch (Throwable $failure) {
             throw new AgentException('The guest cart fixture could not be changed', previous: $failure);
+        }
+
+        if ($removalUnconfirmed) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'The guest cart fixture removal could not be confirmed'));
+            return;
         }
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [EcommerceShopCommandConstants::quantity => $query->quantity]));
@@ -428,6 +450,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
 
     /**
      * @param GuestCartSetQuantityCommandData $query Exact quantity to leave for an active guest
+     * @return int Validated guest session ID even when the quantity was already reached
      * @throws ValidationException When the session or requested quantity is refused
      * @throws LogicException When a collection or write is misconfigured
      * @throws InvalidArgumentException When a selection or signal cannot be built
@@ -439,7 +462,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @throws SourceChangeSubscriberException When a store change subscriber fails
      * @throws HilosException When the configured cart sources refuse the operation
      */
-    private function setFixtureQuantity(GuestCartSetQuantityCommandData $query): void
+    private function setFixtureQuantity(GuestCartSetQuantityCommandData $query): int
     {
         $session = Hilos::$db->sessions->findByToken($query->sessionToken);
         $sessionId = $session?->id;
@@ -454,7 +477,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
             ->filter(static fn (CartLine $line): bool => $line->productId === $query->productId)
             ->first();
         if (($line?->quantity ?? 0) === $query->quantity) {
-            return;
+            return $sessionId;
         }
 
         if ($query->quantity === 0) {
@@ -469,6 +492,8 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         }
 
         $this->publishCart($sessionId);
+
+        return $sessionId;
     }
 
     /**
@@ -546,6 +571,42 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         } catch (Throwable $failure) {
             throw new LogicException('Failed to sweep guest carts', previous: $failure);
         }
+    }
+
+    /**
+     * Writes the original guest session's cart and hands back the committed outcome.
+     *
+     * @param CartAddProductSignalData $ask Product and acting session from the storefront
+     * @throws InvalidFormatException When the outcome has no original product address
+     * @throws InvalidArgumentException When the outcome cannot be queued
+     */
+    private function addProductToCart(CartAddProductSignalData $ask): void
+    {
+        $refusal = null;
+        try {
+            $connection = Hilos::$rt?->sessionConnectionsSource()?->get($ask->acceptKey);
+            if ($ask->userId !== null || $connection?->sessionId !== $ask->sessionId || $connection->userId !== null) {
+                throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+            }
+
+            Database::transaction(DatabaseNames::PRIMARY, function () use ($ask): void {
+                if (!Hilos::$db->sessions->isStoredGuest($ask->sessionId)) {
+                    throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+                }
+
+                Hilos::$db->sessionProductCarts->actions->add($ask->sessionId, $ask->productId);
+                $this->publishCart($ask->sessionId);
+            });
+        } catch (WiringRefusal $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+        } catch (Throwable $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Guest cart add failed for session #{$ask->sessionId}: {$failure->getMessage()}");
+            }
+        }
+
+        $this->sendToAgent($ask->replySignal, new CartAddProductDoneSignalData($ask->productSlug, HandoverAnswerSignalData::to($ask, $refusal)));
     }
 
     /**

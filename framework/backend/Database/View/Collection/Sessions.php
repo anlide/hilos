@@ -49,6 +49,19 @@ class Sessions extends DbCollection
     }
 
     /**
+     * Reads the binding from storage and holds a shared row lock until the caller's transaction ends.
+     *
+     * @param int $sessionId Session primary key
+     * @param int $userId Expected bound user
+     * @return bool Whether the stored session is bound to this user
+     * @throws DatabaseException When storage or its database binding refuses the read
+     */
+    public function isStoredBoundToUser(int $sessionId, int $userId): bool
+    {
+        return $this->objectCollection->isStoredBoundToUser($sessionId, $userId);
+    }
+
+    /**
      * @param int $sessionId Session primary key
      * @return bool Whether the persisted session is still an active guest
      * @throws DatabaseException When the primary-key read fails

@@ -270,6 +270,8 @@ services:
       - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-ecommerce-shop-test}
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      # The catalog rerun test creates and drops its own schemas on this server.
+      - DB_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
     profiles:
       - cli
     depends_on:
