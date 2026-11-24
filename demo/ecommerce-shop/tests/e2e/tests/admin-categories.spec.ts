@@ -47,7 +47,7 @@ import { createStandCommandChannel } from '../../../../../framework/frontend/scr
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-const CATEGORIES_PATH = '/hilos/app/categories'
+const CATEGORIES_PATH = '/hilos/categories'
 
 const CATEGORIES_TABLE = 'admin-categories-table'
 

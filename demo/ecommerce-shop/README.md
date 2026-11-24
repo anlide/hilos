@@ -143,15 +143,15 @@ Stock is a library of its own because it is the number that changes most —
 orders will take from it in later phases — and the products library does not
 become the writer of those changes.
 
-The shop's own admin pages live under `/hilos/app/` and are entered from the
+The shop's own admin pages live directly under `/hilos` and are entered from the
 "Shop administration" section of the dashboard at `/hilos`; administrators
 only.
 
-- `/hilos/app/warehouses` — Warehouses;
-- `/hilos/app/categories` — Categories, in the order of the home page;
-- `/hilos/app/products` — Products, recently changed first;
-- `/hilos/app/product/{productId}` — a product's page; a stock item also has
-  its Stock tab at `/hilos/app/product/{productId}/stock`, and a unique piece
+- `/hilos/warehouses` — Warehouses;
+- `/hilos/categories` — Categories, in the order of the home page;
+- `/hilos/products` — Products, recently changed first;
+- `/hilos/product/{productId}` — a product's page; a stock item also has
+  its Stock tab at `/hilos/product/{productId}/stock`, and a unique piece
   has no tabs.
 
 Every list and every number on these pages changes by itself when another
@@ -366,7 +366,7 @@ What people see:
   voucher per order. A new one replaces the one already applied."; the window
   closes on the server's answer, and a refused code stays in the field with
   the server's words above it.
-- **Shop administration**: `/hilos/app/vouchers` — "Vouchers", entered from
+- **Shop administration**: `/hilos/vouchers` — "Vouchers", entered from
   its card in the "Shop administration" section, "Discount codes buyers enter
   in the cart."; administrators only. A live table of "Code", "Discount" and
   "Active", searched by code ("Search codes"), filtered by "Active", in the

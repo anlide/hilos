@@ -27,7 +27,7 @@ const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 // The edit test temporarily changes the seeded stock both tests use.
 test.describe.configure({ mode: 'default' })
 
-const OVERVIEW_PATH = '/hilos/app/product/17'
+const OVERVIEW_PATH = '/hilos/product/17'
 const STOCK_PATH = `${OVERVIEW_PATH}/stock`
 
 test('an admin opens and reloads warehouse stock for a stock product, while a unique product refuses Stock', async ({
@@ -92,7 +92,7 @@ test('an admin opens and reloads warehouse stock for a stock product, while a un
   })
 
   await test.step('a unique product refuses its Stock address', async () => {
-    const uniquePath = '/hilos/app/product/1'
+    const uniquePath = '/hilos/product/1'
     await gotoPage(expect, page, uniquePath)
     await expect(productName).toHaveText('Morning meadow')
     await expect(stock).toHaveCount(0)
@@ -103,6 +103,17 @@ test('an admin opens and reloads warehouse stock for a stock product, while a un
       '404',
     )
     await expect(stockWindow).toHaveCount(0)
+  })
+
+  // The catalog used to live at this address. A cold load stays on it
+  // and shows Page Not Found.
+  await test.step('the former stock address stays on that path and shows Page Not Found', async () => {
+    const missed = '/hilos/app/product/17/stock'
+    await gotoPage(expect, page, missed, PAGE_REFUSED)
+    expect(new URL(page.url()).pathname).toBe(missed)
+    const error = page.getByTestId('page-error')
+    await expect(error).toHaveAttribute('data-error-code', '404')
+    await expect(error).toContainText('Page Not Found')
   })
 })
 

@@ -38,9 +38,9 @@ const OPERATIONS_SCREENS = [
   '/hilos/maintenance',
   '/hilos/maintenance/circle',
   '/hilos/maintenance/words',
-  '/hilos/app/warehouses',
-  '/hilos/app/categories',
-  '/hilos/app/products',
+  '/hilos/warehouses',
+  '/hilos/categories',
+  '/hilos/products',
 ]
 
 test.afterEach(() => setAdminViewMode(false))
@@ -70,7 +70,7 @@ test('a guest picking a category picture meets the view-mode refusal on the uplo
   page,
 }) => {
   await setAdminViewMode(true)
-  await gotoPage(expect, page, '/hilos/app/categories', PAGE_READY)
+  await gotoPage(expect, page, '/hilos/categories', PAGE_READY)
   await page.getByTestId('hilos-table-main-action').click()
   const dialog = page.getByTestId('admin-categories-add')
   await expect(dialog).toBeVisible()

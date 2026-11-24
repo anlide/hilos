@@ -40,7 +40,7 @@ import { createStandCommandChannel } from '../../../../../framework/frontend/scr
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-const PRODUCTS_PATH = '/hilos/app/products'
+const PRODUCTS_PATH = '/hilos/products'
 const PRODUCTS_TABLE = 'admin-products-table'
 
 // EcommerceShopCommandConstants::PRODUCT_TEST_DELETE, request key `name`.
@@ -284,7 +284,7 @@ test('shop.product-warehouse-place: moving a unique piece updates its open Overv
   page,
   cleanup,
 }) => {
-  const overviewPath = '/hilos/app/product/2'
+  const overviewPath = '/hilos/product/2'
   const source = 'Kyiv · Podil'
   const destination = 'Lviv · Sykhiv'
   const context = page.context()

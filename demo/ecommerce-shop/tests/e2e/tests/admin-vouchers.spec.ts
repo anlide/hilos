@@ -20,7 +20,7 @@ import { createStandCommandChannel } from '../../../../../framework/frontend/scr
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-const VOUCHERS_PATH = '/hilos/app/vouchers'
+const VOUCHERS_PATH = '/hilos/vouchers'
 const VOUCHER_GET_COMMAND = 'test:ecommerce-shop:voucher-fixture-get'
 const VOUCHER_DELETE_COMMAND = 'test:ecommerce-shop:voucher-fixture-delete'
 const command = createStandCommandChannel({ timeoutMs: 5_000 })

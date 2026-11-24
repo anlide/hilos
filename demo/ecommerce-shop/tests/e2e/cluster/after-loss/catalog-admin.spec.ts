@@ -109,7 +109,7 @@ test('stock survives the worker loss and a second edit reaches the other master'
       name: 'warehouses.png',
     },
   )
-  await gotoPage(expect, observer.page, '/hilos/app/warehouses')
+  await gotoPage(expect, observer.page, '/hilos/warehouses')
   for (const [id, totals] of Object.entries(totalsAfterLive)) {
     await expectWarehouseTotals(observer.page, Number(id), totals)
   }
@@ -118,7 +118,7 @@ test('stock survives the worker loss and a second edit reaches the other master'
     name: 'stock.png',
   })
   expect(author.userId).not.toBe(observer.userId)
-  await gotoPage(expect, author.page, `/hilos/app/product/${productId}/stock`)
+  await gotoPage(expect, author.page, `/hilos/product/${productId}/stock`)
   const row = productStockRow(author.page, Number(warehouseId))
   await expect(row.getByRole('cell', { name: '7', exact: true })).toBeVisible()
 

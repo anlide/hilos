@@ -14,7 +14,7 @@ use Hilos\Core\Page\PageRouteParams;
  * AdminProductPageSubscribeParams - Typed subscribe params for one product's admin page.
  *
  * Parsed from the raw route params by {@see AdminProductPage::onSubscribeBeforeResponse()}. Guarantees
- * a positive `productId` read from the `productId` route segment (`/hilos/app/product/{productId}`).
+ * a positive `productId` read from the `productId` route segment (`/hilos/product/{productId}`).
  * Whether the number names a product is not this DTO's question.
  */
 final class AdminProductPageSubscribeParams extends AbstractPageSubscribeParamsDTO

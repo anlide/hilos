@@ -3,10 +3,12 @@
 // from @hilos/core, so this file only declares the demo's own pages;
 // `createAppPageRouter` mounts the `hilos_*` admin pages under them.
 //
-// The shop's own admin screen answers under /hilos/app/: warehouses, categories, products, one product and vouchers. The `app`
-// segment says "application screen, not framework screen", so a Hilos page
-// added later cannot collide with it by construction. Its page key does not
-// change with the address — a key is identity on the wire, a path is not.
+// The shop's six admin pages answer on free literal first segments directly
+// under /hilos: warehouses, categories, products, product and vouchers. A
+// route parameter sits below that segment. These segments are free under the
+// reserved-branch rule; this file does not restate the reserve. A page key
+// does not change with the address — a key is identity on the wire, a path
+// is not.
 import {
   createAppPageRouter,
   type HilosRouteDeclaration,
@@ -37,32 +39,32 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
   [PAGE_PRODUCT]: { path: '/product/{slug}', admin: false },
   [PAGE_CART]: { path: '/cart', admin: false },
   [PAGE_ADMIN_WAREHOUSES]: {
-    path: '/hilos/app/warehouses',
+    path: '/hilos/warehouses',
     admin: true,
     icon: 'bi-buildings',
   },
   [PAGE_ADMIN_CATEGORIES]: {
-    path: '/hilos/app/categories',
+    path: '/hilos/categories',
     admin: true,
     icon: 'bi-tags',
   },
   [PAGE_ADMIN_PRODUCTS]: {
-    path: '/hilos/app/products',
+    path: '/hilos/products',
     admin: true,
     icon: 'bi-box-seam',
   },
   [PAGE_ADMIN_PRODUCT]: {
-    path: '/hilos/app/product/{productId}',
+    path: '/hilos/product/{productId}',
     admin: true,
     icon: 'bi-box',
   },
   [PAGE_ADMIN_PRODUCT_STOCK]: {
-    path: '/hilos/app/product/{productId}/stock',
+    path: '/hilos/product/{productId}/stock',
     admin: true,
     icon: 'bi-boxes',
   },
   [PAGE_ADMIN_VOUCHERS]: {
-    path: '/hilos/app/vouchers',
+    path: '/hilos/vouchers',
     admin: true,
     icon: 'bi-ticket-perforated',
   },

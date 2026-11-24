@@ -89,12 +89,12 @@ function deliver(rows: readonly unknown[]): void {
 
 describe('Vouchers table', () => {
   it('matches the vouchers route both ways and keeps it administrative', () => {
-    expect(router.match('/hilos/app/vouchers')).toEqual({
+    expect(router.match('/hilos/vouchers')).toEqual({
       page: PAGE_ADMIN_VOUCHERS,
       params: {},
       admin: true,
     })
-    expect(router.path(PAGE_ADMIN_VOUCHERS)).toBe('/hilos/app/vouchers')
+    expect(router.path(PAGE_ADMIN_VOUCHERS)).toBe('/hilos/vouchers')
     expect(router.icon?.(PAGE_ADMIN_VOUCHERS)).toBe('bi-ticket-perforated')
   })
 

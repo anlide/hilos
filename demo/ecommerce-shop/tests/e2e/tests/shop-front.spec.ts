@@ -399,7 +399,7 @@ test('a guest sees live price and stock changes on a product and a server refusa
 
   await grantAdminToSelf(expect, page)
   await test.step('create a stock item through Add product', async () => {
-    await gotoPage(expect, page, '/hilos/app/products')
+    await gotoPage(expect, page, '/hilos/products')
     const products = page.getByTestId('admin-products-table')
     await products.getByTestId('hilos-table-main-action').click()
 
@@ -614,7 +614,7 @@ test('shop.product-viewers: Overview and shop tabs see viewers join and leave li
   await emulateSystemTheme(page, 'light')
   await grantAdminToSelf(expect, page)
   await test.step('open Overview before anyone views the product', async () => {
-    await gotoPage(expect, page, '/hilos/app/product/1', PAGE_READY)
+    await gotoPage(expect, page, '/hilos/product/1', PAGE_READY)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       productName,
     )

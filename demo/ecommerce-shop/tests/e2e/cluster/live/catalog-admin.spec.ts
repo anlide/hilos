@@ -32,7 +32,7 @@ const libraries = [
 ]
 const productId = 17
 const warehouseId = 3
-const stockPath = `/hilos/app/product/${productId}/stock`
+const stockPath = `/hilos/product/${productId}/stock`
 
 // The first positive stock for product 17 at warehouse 3 adds one product and seven units.
 const expectedWarehouseTotals = {
@@ -65,12 +65,12 @@ test('catalog edits reach an administrator on the other master', async ({
 
   await test.step('warehouse 3 receives its new address on both masters', async () => {
     const address = 'Odesa, 7 Chornomorska Dorohy St'
-    await gotoPage(expect, observer.page, '/hilos/app/warehouses')
+    await gotoPage(expect, observer.page, '/hilos/warehouses')
     const observedRow = warehouseRow(observer.page, warehouseId)
     await expect(
       observedRow.getByText('Odesa, 4 Chornomorska Dorohy St', { exact: true }),
     ).toBeVisible()
-    await gotoPage(expect, author.page, '/hilos/app/warehouses')
+    await gotoPage(expect, author.page, '/hilos/warehouses')
     const row = warehouseRow(author.page, warehouseId)
     await row.getByTestId('admin-warehouses-edit-open').click()
     const edit = author.page.getByTestId('admin-warehouses-edit')
@@ -93,14 +93,14 @@ test('catalog edits reach an administrator on the other master', async ({
 
   await test.step('category 1 changes name in the open catalog window', async () => {
     const name = 'Seasonal bouquets'
-    await gotoPage(expect, tab, '/hilos/app/categories')
+    await gotoPage(expect, tab, '/hilos/categories')
     const observedRow = tab
       .getByTestId('admin-categories-table')
       .getByTestId('hilos-table-row-1')
     await expect(
       observedRow.getByText('Bouquets', { exact: true }),
     ).toBeVisible()
-    await gotoPage(expect, author.page, '/hilos/app/categories')
+    await gotoPage(expect, author.page, '/hilos/categories')
     const row = author.page
       .getByTestId('admin-categories-table')
       .getByTestId('hilos-table-row-1')

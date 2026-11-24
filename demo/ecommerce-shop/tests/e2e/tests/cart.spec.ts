@@ -43,7 +43,7 @@ test('a guest sees live prices in the cart and follows the product link', async 
 
   const productId =
     await test.step('create a stock item with a picture', async () => {
-      await gotoPage(expect, page, '/hilos/app/products', PAGE_READY)
+      await gotoPage(expect, page, '/hilos/products', PAGE_READY)
       const products = page.getByTestId('admin-products-table')
       await products.getByTestId('hilos-table-main-action').click()
 
@@ -96,7 +96,7 @@ test('a guest sees live prices in the cart and follows the product link', async 
       await expect(dialog).toBeHidden()
       await products.getByRole('link', { name, exact: true }).click()
       await expectPageReady(expect, page)
-      await expect(page).toHaveURL(/\/hilos\/app\/product\/[1-9]\d*$/)
+      await expect(page).toHaveURL(/\/hilos\/product\/[1-9]\d*$/)
 
       return Number(new URL(page.url()).pathname.split('/').at(-1))
     })

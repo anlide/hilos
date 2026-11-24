@@ -48,7 +48,7 @@ use Throwable;
 
 /**
  * One product of the shop under the head of its administration section, addressed by its id
- * (`/hilos/app/product/{productId}`): the page carries the product's card and the categories and
+ * (`/hilos/product/{productId}`): the page carries the product's card and the categories and
  * warehouses lists the card's names are read from. Administrators can edit its catalog fields.
  *
  * @property ProductsLibraryAgent $agent

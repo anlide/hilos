@@ -8,6 +8,7 @@ import {
   clickSubmit,
   dismissToasts,
   expectDocumentUnchanged,
+  expectPageReady,
   gotoPage,
   grantAdminToSelf,
   markDocument,
@@ -15,6 +16,12 @@ import {
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
+import {
+  PAGE_ADMIN_CATEGORIES,
+  PAGE_ADMIN_PRODUCTS,
+  PAGE_ADMIN_VOUCHERS,
+  PAGE_ADMIN_WAREHOUSES,
+} from '../../../frontend/src/pages/keys.js'
 
 // spec-owner: demo — proves the shop's own warehouse actions on its Warehouses page.
 
@@ -24,7 +31,7 @@ import { createStandCommandChannel } from '../../../../../framework/frontend/scr
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-const WAREHOUSES_PATH = '/hilos/app/warehouses'
+const WAREHOUSES_PATH = '/hilos/warehouses'
 
 // EcommerceShopCommandConstants::WAREHOUSE_TEST_DELETE, request key `name`.
 const WAREHOUSE_DELETE_COMMAND = 'test:ecommerce-shop:warehouse-delete'
@@ -47,8 +54,27 @@ test('shop.warehouses-add: an admin adds, edits and deletes an empty warehouse a
       .locator(ROWS)
       .filter({ hasText: name })
 
-  await test.step('both tabs open the warehouses page', async () => {
-    await gotoPage(expect, page, WAREHOUSES_PATH)
+  await test.step('the first tab opens Warehouses from the dashboard', async () => {
+    await gotoPage(expect, page, '/hilos')
+    await expect(
+      page.getByTestId(`dashboard-card-${PAGE_ADMIN_WAREHOUSES}`),
+    ).toHaveAttribute('href', '/hilos/warehouses')
+    await expect(
+      page.getByTestId(`dashboard-card-${PAGE_ADMIN_CATEGORIES}`),
+    ).toHaveAttribute('href', '/hilos/categories')
+    await expect(
+      page.getByTestId(`dashboard-card-${PAGE_ADMIN_PRODUCTS}`),
+    ).toHaveAttribute('href', '/hilos/products')
+    await expect(
+      page.getByTestId(`dashboard-card-${PAGE_ADMIN_VOUCHERS}`),
+    ).toHaveAttribute('href', '/hilos/vouchers')
+    await page.getByTestId(`dashboard-card-${PAGE_ADMIN_WAREHOUSES}`).click()
+    await expect(page).toHaveURL(WAREHOUSES_PATH)
+    await expectPageReady(expect, page)
+    await expect(page.getByTestId('admin-warehouses-table')).toBeVisible()
+  })
+
+  await test.step('the second tab opens the warehouses page directly', async () => {
     await gotoPage(expect, second, WAREHOUSES_PATH)
     await expect(second.getByTestId('admin-warehouses-table')).toBeVisible()
   })
