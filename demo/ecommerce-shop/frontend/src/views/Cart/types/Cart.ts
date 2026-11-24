@@ -21,7 +21,24 @@ export const cartSnapshotSchema = z.object({
     }),
   ),
   itemsTotal: totalSchema,
+  // A switched-off voucher stays selected but takes nothing off.
+  voucher: z
+    .discriminatedUnion('active', [
+      z.object({
+        code: z.string().min(1),
+        active: z.literal(true),
+        discount: totalSchema,
+      }),
+      z.object({
+        code: z.string().min(1),
+        active: z.literal(false),
+        discount: z.literal('0'),
+      }),
+    ])
+    .nullable(),
+  total: totalSchema,
 })
 
 export type CartSnapshot = z.infer<typeof cartSnapshotSchema>
 export type CartLine = CartSnapshot['lines'][number]
+export type CartVoucher = NonNullable<CartSnapshot['voucher']>

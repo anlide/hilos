@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Pages;
 
+use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\SessionProductCart;
+use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\CartPageData;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -26,6 +29,7 @@ use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
@@ -43,12 +47,18 @@ final class CartPage extends AbstractPage
         PageAgentIndexKey::FALLBACK_AGENT_TYPE => AgentType::GUEST_CARTS_LIBRARY,
     ];
 
-    /** Sources for the snapshot and for matching changes while the cart owner restarts. */
+    /**
+     * Sources for the snapshot and for matching changes while the cart owner restarts.
+     * The voucher catalog is read here so its changes reach this worker even when the cart owner runs on another one.
+     */
     public const array READS_DB = [
         EcommerceShopDbContext::products,
         EcommerceShopDbContext::productWarehouseStocks,
         EcommerceShopDbContext::userProductCarts,
         EcommerceShopDbContext::sessionProductCarts,
+        EcommerceShopDbContext::sessionVoucherCarts,
+        EcommerceShopDbContext::userVoucherCarts,
+        EcommerceShopDbContext::vouchers,
     ];
 
     public const array READS_RT = [EcommerceShopRtContext::connections];
@@ -77,7 +87,8 @@ final class CartPage extends AbstractPage
      * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      * @throws InvalidArgumentException When a collection, stock total or picture variant is misconfigured
      * @throws LogicException When the collection classes are not configured or a monetary amount is invalid
-     * @throws DatabaseException When a cart, its products or its stock cannot be read
+     * @throws DatabaseException When a cart, its products, its stock or its voucher cannot be read
+     * @throws ItemNotFoundException When the saved voucher is missing or the binding disappears during its keyed read
      * @throws ObjectGetIdStringNotImplementedException When a matched row cannot provide a key
      * @throws CollectionNotManualException When a selection refuses a matched row
      * @throws HilosException When a configured data source refuses a read
@@ -110,7 +121,7 @@ final class CartPage extends AbstractPage
 
             $lines[] = CartPageData::line($product, $line->quantity, $stock->of($line->productId)->unitCount);
         }
-        $cart = new CartPageData($userId, $lines);
+        $cart = new CartPageData($userId, $lines, $this->cartVoucher($sessionId));
 
         $current = $this->requireConnection($acceptKey);
         if ($current->userId !== $userId || $current->sessionId !== $sessionId) {
@@ -118,6 +129,28 @@ final class CartPage extends AbstractPage
         }
 
         return new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
+    }
+
+    /**
+     * Asks the confirmed cart owner for its voucher, read by the saved ID so a switched-off voucher still comes back.
+     *
+     * @param ?int $sessionId Current session of the connection, which keys a guest's voucher
+     * @return ?Voucher Current catalog voucher, including an inactive one, or null when none is selected
+     * @throws PageConflictException When the serving agent cannot hold a cart
+     * @throws LogicException When a voucher collection is misconfigured
+     * @throws InvalidArgumentException When a loaded voucher does not match its collection
+     * @throws DatabaseException When the binding or catalog read fails
+     * @throws ItemNotFoundException When the saved voucher is missing or the binding disappears during its keyed read
+     */
+    private function cartVoucher(?int $sessionId): ?Voucher
+    {
+        $agent = $this->getAgent();
+
+        return match (true) {
+            $agent instanceof UserAgent => $agent->cartVoucher(),
+            $agent instanceof GuestCartsLibraryAgent && $sessionId !== null => $agent->cartVoucher($sessionId),
+            default => throw new PageConflictException('The cart owner is not available at this agent'),
+        };
     }
 
     /**

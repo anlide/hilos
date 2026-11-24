@@ -67,6 +67,34 @@ final class MoneyTest extends TestCase
         self::assertSame('9318390588416093184', Money::sumExact(...array_fill(0, 1024, '9099990809000091')));
     }
 
+    public function testExactDiscountRoundsHalfAKopeckUpOnce(): void
+    {
+        self::assertSame('251', Money::discountOfExact('1002', 25));
+        self::assertSame('1', Money::discountOfExact('2', 25));
+        self::assertSame('0', Money::discountOfExact('1', 49));
+        self::assertSame('1', Money::discountOfExact('1', 50));
+        self::assertSame('0', Money::discountOfExact('0', 100));
+        self::assertSame('0', Money::discountOfExact('99999999999999999999', 0));
+        self::assertSame('99999999999999999999', Money::discountOfExact('99999999999999999999', 100));
+        self::assertSame('1000000000000000000', Money::discountOfExact('99999999999999999999', 1));
+        self::assertSame('4611686018427387904', Money::discountOfExact('9223372036854775807', 50));
+    }
+
+    public function testExactTotalTakesTheDiscountOffTheItems(): void
+    {
+        self::assertSame('751', Money::totalAfterDiscountExact('1002', '251'));
+        self::assertSame('0', Money::totalAfterDiscountExact('0', '0'));
+        self::assertSame('0', Money::totalAfterDiscountExact('99999999999999999999', '99999999999999999999'));
+        self::assertSame('98999999999999999999', Money::totalAfterDiscountExact('99999999999999999999', '1000000000000000000'));
+        self::assertSame('9999999999999999999999', Money::totalAfterDiscountExact('10000000000000000000000', '1'));
+    }
+
+    public function testIntDiscountNoLongerOverflowsPastTheIntegerBoundary(): void
+    {
+        self::assertSame(PHP_INT_MAX, Money::discountOf(PHP_INT_MAX, 100));
+        self::assertSame(4611686018427387904, Money::discountOf(PHP_INT_MAX, 50));
+    }
+
     /**
      * @param int $items Amount of the items
      * @param int $percent Discount in percent
@@ -76,6 +104,7 @@ final class MoneyTest extends TestCase
     public function testDiscountOfRoundsHalfAKopeckUp(int $items, int $percent, int $expected): void
     {
         self::assertSame($expected, Money::discountOf($items, $percent));
+        self::assertSame((string) $expected, Money::discountOfExact((string) $items, $percent));
     }
 
     /**
@@ -87,6 +116,7 @@ final class MoneyTest extends TestCase
     public function testTotalAfterDiscountTakesTheDiscountOffTheItems(int $items, int $discount, int $expected): void
     {
         self::assertSame($expected, Money::totalAfterDiscount($items, $discount));
+        self::assertSame((string) $expected, Money::totalAfterDiscountExact((string) $items, (string) $discount));
     }
 
     /**
@@ -229,6 +259,15 @@ final class MoneyTest extends TestCase
             'an exact amount with trailing whitespace' => [static fn (): string => Money::sumExact("1\n")],
             'a discount over a hundred percent' => [static fn (): int => Money::discountOf(100, 101)],
             'a discount over the items' => [static fn (): int => Money::totalAfterDiscount(1, 2)],
+            'exact items with a leading zero' => [static fn (): string => Money::discountOfExact('01', 10)],
+            'exact items below zero' => [static fn (): string => Money::discountOfExact('-1', 10)],
+            'exact items with a fraction' => [static fn (): string => Money::discountOfExact('1.5', 10)],
+            'an exact discount over a hundred percent' => [static fn (): string => Money::discountOfExact('100', 101)],
+            'an exact discount below zero percent' => [static fn (): string => Money::discountOfExact('100', -1)],
+            'an exact discount longer than the items' => [static fn (): string => Money::totalAfterDiscountExact('99', '100')],
+            'an exact discount as long as the items and over them' => [static fn (): string => Money::totalAfterDiscountExact('10', '11')],
+            'an exact discount with a space' => [static fn (): string => Money::totalAfterDiscountExact('10', ' 1')],
+            'exact items with trailing whitespace' => [static fn (): string => Money::totalAfterDiscountExact("10\n", '1')],
         ];
     }
 

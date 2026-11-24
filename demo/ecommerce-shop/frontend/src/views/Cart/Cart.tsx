@@ -3,10 +3,10 @@ import { HilosLink, useSignal } from '@hilos/react/base'
 import { connection } from '../../bootstrap/connection.js'
 import { currentUserId, scopes } from '../../bootstrap/session.js'
 import { availabilityText } from '../../catalog/productAvailability.js'
-import { formatMoney } from '../../money/money.js'
+import { formatDeduction, formatMoney } from '../../money/money.js'
 import CartSkeleton from './CartSkeleton.js'
 import { createCartPageSignal } from './cartPage.js'
-import { type CartLine } from './types/Cart.js'
+import { type CartLine, type CartVoucher } from './types/Cart.js'
 
 const cartPage = createCartPageSignal(scopes, currentUserId, connection)
 
@@ -67,6 +67,28 @@ function CartItem({ line }: { line: CartLine }) {
   )
 }
 
+/** The selected voucher: what it takes off, or a muted line saying it is switched off. */
+function CartVoucherRow({ voucher }: { voucher: CartVoucher }) {
+  return (
+    <div
+      className={`d-flex justify-content-between gap-2 small mb-1${voucher.active ? '' : ' text-body-secondary'}`}
+      data-id="shop-cart-voucher"
+    >
+      <dt className="fw-normal">
+        Voucher <span className="font-monospace">{voucher.code}</span>
+        {!voucher.active && ' · Inactive'}
+      </dt>
+      {voucher.active ? (
+        <dd className="mb-0 text-success-emphasis">
+          {formatDeduction(voucher.discount)}
+        </dd>
+      ) : (
+        <dd className="mb-0">—</dd>
+      )}
+    </div>
+  )
+}
+
 /** The current owner's public storefront cart. */
 export default function Cart() {
   const cart = useSignal(cartPage)
@@ -80,8 +102,6 @@ export default function Cart() {
       </>
     )
   }
-
-  const itemsTotal = formatMoney(cart.itemsTotal)
 
   return (
     <>
@@ -119,12 +139,15 @@ export default function Cart() {
               <dl className="card-body mb-0">
                 <div className="d-flex justify-content-between gap-2 small mb-1">
                   <dt className="fw-normal">Items</dt>
-                  <dd className="mb-0">{itemsTotal}</dd>
+                  <dd className="mb-0">{formatMoney(cart.itemsTotal)}</dd>
                 </div>
+                {cart.voucher !== null && (
+                  <CartVoucherRow voucher={cart.voucher} />
+                )}
                 <div className="d-flex justify-content-between gap-2 fw-semibold">
                   <dt>Total</dt>
                   <dd className="mb-0" data-id="shop-cart-total">
-                    {itemsTotal}
+                    {formatMoney(cart.total)}
                   </dd>
                 </div>
               </dl>

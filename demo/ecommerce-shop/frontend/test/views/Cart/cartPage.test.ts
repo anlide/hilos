@@ -32,6 +32,20 @@ const guestCart: CartSnapshot = {
   userId: null,
   lines: [line],
   itemsTotal: '24000',
+  voucher: null,
+  total: '24000',
+}
+const emptyCart: CartSnapshot = {
+  userId: null,
+  lines: [],
+  itemsTotal: '0',
+  voucher: null,
+  total: '0',
+}
+const voucherCart: CartSnapshot = {
+  ...guestCart,
+  voucher: { code: 'SAVE25', active: true, discount: '6000' },
+  total: '18000',
 }
 
 /** Open the Cart scope with local session and connection events. */
@@ -104,9 +118,13 @@ describe('Cart page projection', () => {
     answer({ ...guestCart, itemsTotal: 0.5 })
     expect(snapshot.get()).toBeNull()
 
-    const empty = { userId: null, lines: [], itemsTotal: '0' }
-    answer(empty)
-    expect(snapshot.get()).toEqual(empty)
+    answer({ userId: null, lines: [], itemsTotal: '0', voucher: null })
+    expect(snapshot.get()).toBeNull()
+    answer({ userId: null, lines: [], itemsTotal: '0', total: '0' })
+    expect(snapshot.get()).toBeNull()
+
+    answer(emptyCart)
+    expect(snapshot.get()).toEqual(emptyCart)
   })
 
   it.each([
@@ -122,13 +140,50 @@ describe('Cart page projection', () => {
     ' 1',
     '1 ',
     '1\n',
-  ])('rejects %j for either required total', (invalid) => {
+  ])('rejects %j for every required amount', (invalid) => {
     const { snapshot, answer } = openCart()
 
     answer({ ...guestCart, itemsTotal: invalid })
     expect(snapshot.get()).toBeNull()
     answer({ ...guestCart, lines: [{ ...line, lineTotal: invalid }] })
     expect(snapshot.get()).toBeNull()
+    answer({ ...voucherCart, total: invalid })
+    expect(snapshot.get()).toBeNull()
+    answer({
+      ...voucherCart,
+      voucher: { ...voucherCart.voucher, discount: invalid },
+    })
+    expect(snapshot.get()).toBeNull()
+  })
+
+  it('takes an active, a switched-off and no voucher, and refuses one without its parts', () => {
+    const { snapshot, answer } = openCart()
+
+    answer(voucherCart)
+    expect(snapshot.get()).toEqual(voucherCart)
+
+    const switchedOff = {
+      ...guestCart,
+      voucher: { code: 'SAVE25', active: false, discount: '0' },
+    }
+    answer(switchedOff)
+    expect(snapshot.get()).toEqual(switchedOff)
+
+    answer(guestCart)
+    expect(snapshot.get()).toEqual(guestCart)
+
+    for (const voucher of [
+      { code: 'SAVE25', active: false, discount: '6000' },
+      { code: 'SAVE25', active: 'true', discount: '6000' },
+      { code: 'SAVE25', discount: '6000' },
+      { code: '', active: true, discount: '6000' },
+      { active: true, discount: '6000' },
+      { code: 'SAVE25', active: true },
+      undefined,
+    ]) {
+      answer({ ...voucherCart, voucher })
+      expect(snapshot.get()).toEqual(guestCart)
+    }
   })
 
   it('keeps every digit in the first and live answers', () => {
@@ -144,6 +199,8 @@ describe('Cart page projection', () => {
       ...guestCart,
       lines: [largeLine],
       itemsTotal: '9099990809000091',
+      voucher: { code: 'SAVE1', active: true, discount: '90999908090001' },
+      total: '9008990900910090',
     }
     answer(initial)
     expect(snapshot.get()).toEqual(initial)
@@ -157,6 +214,8 @@ describe('Cart page projection', () => {
         { ...largeLine, price: 99_999_998, lineTotal: '9099990718000182' },
       ],
       itemsTotal: '9099990718000182',
+      voucher: { code: 'SAVE1', active: false, discount: '0' },
+      total: '9099990718000182',
     }
     answer(live)
     expect(snapshot.get()).toEqual(live)
@@ -174,7 +233,12 @@ describe('Cart page projection', () => {
       availableQuantity: 1,
       lineTotal: '12000',
     }
-    const initial = { userId: null, lines: [line, unique], itemsTotal: '36000' }
+    const initial = {
+      ...emptyCart,
+      lines: [line, unique],
+      itemsTotal: '36000',
+      total: '36000',
+    }
     answer(initial)
     expect(snapshot.get()).toEqual(initial)
 
@@ -184,20 +248,19 @@ describe('Cart page projection', () => {
       price: 13000,
       lineTotal: '65000',
     }
-    answer({ userId: null, lines: [restocked], itemsTotal: '65000' })
-    expect(snapshot.get()).toEqual({
-      userId: null,
+    const live = {
+      ...emptyCart,
       lines: [restocked],
       itemsTotal: '65000',
-    })
+      total: '65000',
+    }
+    answer(live)
+    expect(snapshot.get()).toEqual(live)
 
     const unavailable = { ...restocked, availableQuantity: 0, lineTotal: '0' }
-    answer({ userId: null, lines: [unavailable], itemsTotal: '0' })
-    expect(snapshot.get()).toEqual({
-      userId: null,
-      lines: [unavailable],
-      itemsTotal: '0',
-    })
+    const sold = { ...emptyCart, lines: [unavailable] }
+    answer(sold)
+    expect(snapshot.get()).toEqual(sold)
   })
 
   it('only projects snapshots from the active Cart scope', () => {
@@ -217,13 +280,13 @@ describe('Cart page projection', () => {
 
   it('clears on owner changes in place and ignores late replies from a previous owner', () => {
     const { snapshot, person, answer } = openCart()
-    answer(guestCart)
-    expect(snapshot.get()).toEqual(guestCart)
+    answer(voucherCart)
+    expect(snapshot.get()).toEqual(voucherCart)
 
-    const accountCart = { userId: 9, lines: [], itemsTotal: '0' }
+    const accountCart = { ...emptyCart, userId: 9 }
     person.set(accountCart.userId)
     expect(snapshot.get()).toBeNull()
-    answer({ ...guestCart })
+    answer({ ...voucherCart })
     expect(snapshot.get()).toBeNull()
     answer(accountCart)
     expect(snapshot.get()).toEqual(accountCart)
@@ -234,7 +297,7 @@ describe('Cart page projection', () => {
     expect(snapshot.get()).toBeNull()
     answer({ ...accountCart })
     expect(snapshot.get()).toBeNull()
-    const nextGuest = { userId: null, lines: [], itemsTotal: '0' }
+    const nextGuest = { ...emptyCart }
     answer(nextGuest)
     expect(snapshot.get()).toEqual(nextGuest)
   })
@@ -258,7 +321,7 @@ describe('Cart page projection', () => {
     handshake()
     expect(snapshot.get()).toBeNull()
 
-    const nextGuest = { userId: null, lines: [], itemsTotal: '0' }
+    const nextGuest = { ...emptyCart }
     answer(nextGuest)
     expect(snapshot.get()).toEqual(nextGuest)
   })

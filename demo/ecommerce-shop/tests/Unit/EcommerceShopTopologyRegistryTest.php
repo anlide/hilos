@@ -1060,6 +1060,13 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(PageAccessLevel::PUBLIC, CartPage::ACCESS_LEVEL);
         self::assertSame(PageReach::ROUTE, CartPage::REACH);
         self::assertSame([], CartPage::ACTIONS);
+        foreach ([
+            EcommerceShopDbContext::sessionVoucherCarts,
+            EcommerceShopDbContext::userVoucherCarts,
+            EcommerceShopDbContext::vouchers,
+        ] as $collection) {
+            self::assertContains($collection, CartPage::READS_DB);
+        }
         self::assertSame(HilosAgentType::HILOS_USER, Hilos::getPageRoutes()[CartPage::PAGE]);
         self::assertSame('session_user_or_guest', $routes[CartPage::PAGE]->source->value);
         self::assertNull($routes[CartPage::PAGE]->param);

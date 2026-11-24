@@ -6,8 +6,11 @@ namespace Demo\EcommerceShop\Pages\DTO;
 
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
+use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
+use Demo\EcommerceShop\Database\Entity\Item\Voucher as EntityVoucher;
 use Demo\EcommerceShop\Database\View\Item\Product;
+use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Money\Money;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -21,6 +24,7 @@ use Hilos\Files\HilosFiles;
  *     productId: int, slug: string, name: string, kind: string, pictureUrl: string,
  *     price: int, quantity: int, availableQuantity: int, lineTotal: string
  * }
+ * @phpstan-type CartVoucher array{code: string, active: bool, discount: string}
  */
 final readonly class CartPageData
 {
@@ -32,12 +36,16 @@ final readonly class CartPageData
     private const string userId = 'userId';
     private const string lines = 'lines';
     private const string itemsTotal = 'itemsTotal';
+    private const string voucher = 'voucher';
+    private const string discount = 'discount';
+    private const string total = 'total';
 
     /**
      * @param ?int $userId The owning account, or null for a guest
      * @param list<CartLine> $lines Cart lines in insertion order
+     * @param ?Voucher $voucher The selected catalog voucher, including an inactive one, or null when none is selected
      */
-    public function __construct(private ?int $userId, private array $lines)
+    public function __construct(private ?int $userId, private array $lines, private ?Voucher $voucher)
     {
     }
 
@@ -69,15 +77,27 @@ final readonly class CartPageData
     }
 
     /**
-     * @return array{userId: ?int, lines: list<CartLine>, itemsTotal: string} Page data sent to the browser
-     * @throws LogicException When a line total is not a canonical decimal string
+     * The items are summed once; an inactive voucher takes nothing off, so the total is then the items.
+     *
+     * @return array{userId: ?int, lines: list<CartLine>, itemsTotal: string, voucher: ?CartVoucher, total: string}
+     *     Page data sent to the browser
+     * @throws LogicException When a line total is not a canonical decimal string or the discount is outside the items
      */
     public function toArray(): array
     {
+        $items = Money::sumExact(...array_column($this->lines, self::lineTotal));
+        $discount = Money::discountOfExact($items, CartVoucherRules::effectiveDiscountPercent($this->voucher));
+
         return [
             self::userId => $this->userId,
             self::lines => $this->lines,
-            self::itemsTotal => Money::sumExact(...array_column($this->lines, self::lineTotal)),
+            self::itemsTotal => $items,
+            self::voucher => $this->voucher === null ? null : [
+                EntityVoucher::code => $this->voucher->code,
+                EntityVoucher::active => $this->voucher->active,
+                self::discount => $discount,
+            ],
+            self::total => Money::totalAfterDiscountExact($items, $discount),
         ];
     }
 }

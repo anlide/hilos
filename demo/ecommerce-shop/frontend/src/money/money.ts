@@ -64,11 +64,11 @@ export function formatMoney(kopecks: number | string): string {
 /**
  * Prints an amount taken off a sum, such as a discount.
  *
- * @param kopecks - Amount taken off, in kopecks
+ * @param kopecks - Amount taken off, in kopecks as a safe integer or canonical decimal string
  * @returns The minus sign U+2212 before the printed amount: −₴250
- * @throws RangeError When the amount is not a whole number of kopecks from zero up
+ * @throws RangeError When the amount is not a nonnegative safe integer or canonical decimal string
  */
-export function formatDeduction(kopecks: number): string {
+export function formatDeduction(kopecks: number | string): string {
   return DEDUCTION_SIGN + formatMoney(kopecks)
 }
 

@@ -201,7 +201,7 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
-     * Reads the selected voucher by its saved ID for the cart calculation once that is wired.
+     * Reads the selected voucher by its saved ID for the cart snapshot.
      *
      * @return ?Voucher Current catalog voucher, including inactive vouchers, or null for an empty slot
      * @throws LogicException When a collection is misconfigured

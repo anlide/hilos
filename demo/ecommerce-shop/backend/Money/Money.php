@@ -25,6 +25,9 @@ final class Money
     private const int KOPECKS_IN_HRYVNIA = 100;
     private const int WHOLE_PERCENT = 100;
 
+    /** Digits a division by a whole percent drops off the end of decimal kopecks. */
+    private const int WHOLE_PERCENT_DIGITS = 2;
+
     /** Half of a whole percent: added before the division, it rounds half a kopeck up. */
     private const int HALF_KOPECK = 50;
 
@@ -36,6 +39,8 @@ final class Money
 
     private const int DECIMAL_BASE = 10;
     private const string EXACT_AMOUNT = '/^(?:0|[1-9][0-9]*)\z/';
+    private const string EXACT_ZERO = '0';
+    private const string LEADING_ZEROES = '0';
 
     /** Longest whole part a person may write; even the longest one stays far from an overflow. */
     private const int HRYVNIA_MAX_DIGITS = 15;
@@ -157,7 +162,7 @@ final class Money
             return (string) ($price * $quantity);
         }
 
-        $total = '0';
+        $total = self::EXACT_ZERO;
         $addend = (string) $price;
         // Each successive bit of the quantity contributes twice as much as the previous one.
         while ($quantity !== 0) {
@@ -178,15 +183,52 @@ final class Money
      */
     public static function sumExact(string ...$amounts): string
     {
-        $total = '0';
+        $total = self::EXACT_ZERO;
         foreach ($amounts as $amount) {
-            if (preg_match(self::EXACT_AMOUNT, $amount) !== 1) {
-                throw new LogicException('An exact amount must be written as nonnegative decimal kopecks');
-            }
+            self::requireExactAmount($amount, 'An exact amount');
             $total = self::addDecimal($total, $amount);
         }
 
         return $total;
+    }
+
+    /**
+     * Works out the discount on the items exactly, rounding once: floor((items × percent + 50) / 100).
+     *
+     * @param string $items Amount of the items, nonnegative decimal kopecks without leading zeroes
+     * @param int $percent Discount, in whole percent from 0 to 100
+     * @return string The share of the items, half a kopeck and more rounded up, as decimal kopecks
+     * @throws LogicException When the items are not a canonical decimal string or the percent is outside 0 to 100
+     */
+    public static function discountOfExact(string $items, int $percent): string
+    {
+        self::requireExactAmount($items, 'The items');
+        if ($percent < 0 || $percent > self::WHOLE_PERCENT) {
+            throw new LogicException("A discount of {$percent} percent is outside 0 to 100");
+        }
+        $hundredths = self::addDecimal(self::multiplyDecimal($items, $percent), (string) self::HALF_KOPECK);
+        $kopecks = substr($hundredths, 0, -self::WHOLE_PERCENT_DIGITS);
+
+        return $kopecks === '' ? self::EXACT_ZERO : $kopecks;
+    }
+
+    /**
+     * Works out exactly what is left to pay once the discount is taken off the items.
+     *
+     * @param string $items Amount of the items, nonnegative decimal kopecks without leading zeroes
+     * @param string $discount Discount, nonnegative decimal kopecks without leading zeroes
+     * @return string The items less the discount, as decimal kopecks
+     * @throws LogicException When an amount is not a canonical decimal string or the discount is over the items
+     */
+    public static function totalAfterDiscountExact(string $items, string $discount): string
+    {
+        self::requireExactAmount($items, 'The items');
+        self::requireExactAmount($discount, 'A discount');
+        if (self::exceeds($discount, $items)) {
+            throw new LogicException("A discount of {$discount} kopecks is outside 0 to the items of {$items}");
+        }
+
+        return self::subtractDecimal($items, $discount);
     }
 
     /**
@@ -200,11 +242,9 @@ final class Money
     public static function discountOf(int $items, int $percent): int
     {
         self::requireNotNegative($items, 'The items');
-        if ($percent < 0 || $percent > self::WHOLE_PERCENT) {
-            throw new LogicException("A discount of {$percent} percent is outside 0 to 100");
-        }
 
-        return intdiv($items * $percent + self::HALF_KOPECK, self::WHOLE_PERCENT);
+        // A share of at most a whole percent is no more than the items, so it fits an int as they do.
+        return (int) self::discountOfExact((string) $items, $percent);
     }
 
     /**
@@ -245,6 +285,77 @@ final class Money
         }
 
         return strrev($reversed);
+    }
+
+    /**
+     * @param string $amount Nonnegative decimal kopecks without leading zeroes
+     * @param int $factor Whole number from 0 to 100 to multiply by
+     * @return string Their exact product as decimal kopecks
+     */
+    private static function multiplyDecimal(string $amount, int $factor): string
+    {
+        if ($factor === 0) {
+            return self::EXACT_ZERO;
+        }
+        $position = strlen($amount) - 1;
+        $carry = 0;
+        $reversed = '';
+        // The carry stays below the factor, so every step is a small int.
+        while ($position >= 0 || $carry !== 0) {
+            $digits = $carry + ($position >= 0 ? (int) $amount[$position] * $factor : 0);
+            $reversed .= (string) ($digits % self::DECIMAL_BASE);
+            $carry = intdiv($digits, self::DECIMAL_BASE);
+            --$position;
+        }
+
+        return strrev($reversed);
+    }
+
+    /**
+     * @param string $amount Nonnegative decimal kopecks without leading zeroes
+     * @param string $subtrahend Nonnegative decimal kopecks without leading zeroes, at most the amount
+     * @return string Their exact difference as decimal kopecks
+     */
+    private static function subtractDecimal(string $amount, string $subtrahend): string
+    {
+        $left = strlen($amount) - 1;
+        $right = strlen($subtrahend) - 1;
+        $borrow = 0;
+        $reversed = '';
+        while ($left >= 0) {
+            $digits = (int) $amount[$left] - $borrow - ($right >= 0 ? (int) $subtrahend[$right] : 0);
+            $borrow = $digits < 0 ? 1 : 0;
+            $reversed .= (string) ($digits + $borrow * self::DECIMAL_BASE);
+            --$left;
+            --$right;
+        }
+        $difference = ltrim(strrev($reversed), self::LEADING_ZEROES);
+
+        return $difference === '' ? self::EXACT_ZERO : $difference;
+    }
+
+    /**
+     * @param string $amount Nonnegative decimal kopecks without leading zeroes
+     * @param string $limit Nonnegative decimal kopecks without leading zeroes
+     * @return bool Whether the amount is greater than the limit: the longer one is, and of two as long the later in order
+     */
+    private static function exceeds(string $amount, string $limit): bool
+    {
+        $lengths = strlen($amount) <=> strlen($limit);
+
+        return $lengths > 0 || ($lengths === 0 && strcmp($amount, $limit) > 0);
+    }
+
+    /**
+     * @param string $amount Amount that must be nonnegative decimal kopecks without leading zeroes
+     * @param string $what What the amount is, to start the message with
+     * @throws LogicException When the amount is not a canonical decimal string
+     */
+    private static function requireExactAmount(string $amount, string $what): void
+    {
+        if (preg_match(self::EXACT_AMOUNT, $amount) !== 1) {
+            throw new LogicException("{$what} must be written as nonnegative decimal kopecks");
+        }
     }
 
     /**

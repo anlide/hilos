@@ -48,7 +48,7 @@ final class CartVoucherRules
     }
 
     /**
-     * SCAFFOLD: The cart totals calculation will consume this percentage.
+     * The one activity rule shared by the cart totals: only an active voucher takes its percentage off.
      *
      * @param ?Voucher $voucher Current voucher read from the catalog by its saved ID, or null for an empty slot
      * @return int Current discount as a whole percent, or zero when no active voucher is selected

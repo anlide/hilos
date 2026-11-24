@@ -75,6 +75,18 @@ describe('money', () => {
     expect(formatDeduction(25000)).toBe('−₴250')
   })
 
+  it('prints an exact deduction to the last kopeck past the safe integers', () => {
+    expect(formatDeduction('9007199254740993')).toBe('−₴90,071,992,547,409.93')
+    expect(formatDeduction('0')).toBe('−₴0')
+  })
+
+  it.each(['01', '-1', '1.5'])(
+    'rejects a noncanonical deduction %j',
+    (kopecks) => {
+      expect(() => formatDeduction(kopecks)).toThrow(RangeError)
+    },
+  )
+
   it.each([
     [41000, '410'],
     [210000, '2 100'],

@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Closure;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
+use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Core\Daemon\EcommerceShopWorkerManager;
@@ -17,9 +18,12 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Product;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock as EntityProductWarehouseStock;
 use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart;
+use Demo\EcommerceShop\Database\Entity\Item\SessionVoucherCart;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
+use Demo\EcommerceShop\Database\Entity\Item\UserVoucherCart;
 use Demo\EcommerceShop\Database\Object\Item\UserProductCart as ObjectUserProductCart;
 use Demo\EcommerceShop\Database\View\Collection\ProductWarehouseStocks;
+use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\CartPage;
@@ -49,9 +53,12 @@ use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
@@ -247,7 +254,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame([5], array_column($account['lines'], 'quantity'));
 
         $this->subscribe($guest, self::EMPTY);
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0'], $this->cart(self::EMPTY));
+        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::EMPTY));
     }
 
     /** A fallback cannot guess the owner while identity is pending, missing a session, or already tied to an account. */
@@ -287,11 +294,20 @@ final class CartPageTest extends CartPageEnvironment
         $userId = self::person();
         self::guestLine(101, $guestProduct, 1);
         self::accountLine($userId, $accountProduct, 2);
+        $warehouse = self::warehouse();
+        self::stock($guestProduct, $warehouse, 5);
+        self::stock($accountProduct, $warehouse, 5);
+        $guestVoucher = $this->voucher('CARTGUEST10', 10);
+        self::guestVoucher(101, $guestVoucher->id);
+        self::accountVoucher($userId, $this->voucher('CARTOWNER20', 20)->id);
         self::connect(self::FIRST, null, 101);
         $guest = new GuestCartsLibraryAgent();
         $account = new UserAgent((string)$userId);
         $this->subscribe($guest, self::FIRST);
-        self::assertSame([$guestProduct], array_column($this->cart(self::FIRST)['lines'], 'productId'));
+        $cart = $this->cart(self::FIRST);
+        self::assertSame([$guestProduct], array_column($cart['lines'], 'productId'));
+        self::assertSame(['code' => 'CARTGUEST10', 'active' => true, 'discount' => '1200'], $cart['voucher']);
+        self::assertSame('10800', $cart['total']);
 
         self::bindFirstUser($userId);
         self::assertSame([], $this->flushCartFacts(self::productPriceFact($guestProduct, 8000), self::productPriceFact($accountProduct, 9000)));
@@ -300,7 +316,11 @@ final class CartPageTest extends CartPageEnvironment
         $cart = $this->cart(self::FIRST);
         self::assertSame($userId, $cart['userId']);
         self::assertSame([$accountProduct], array_column($cart['lines'], 'productId'));
+        self::assertSame(['code' => 'CARTOWNER20', 'active' => true, 'discount' => '3600'], $cart['voucher']);
+        self::assertSame('14400', $cart['total']);
         self::assertSame((string)$userId, Hilos::$sr->pageSubscription(self::FIRST)?->agentIndex);
+        self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $guestVoucher->actions->setActive(false))));
+        self::assertSame([], $this->takePageFrames());
 
         self::assertSame([], $this->flushCartFacts(self::productPriceFact($guestProduct, 10_000)));
         self::assertSame([], $this->takePageFrames());
@@ -314,6 +334,8 @@ final class CartPageTest extends CartPageEnvironment
         $cart = $this->cart(self::FIRST);
         self::assertNull($cart['userId']);
         self::assertSame([$guestProduct], array_column($cart['lines'], 'productId'));
+        self::assertSame(['code' => 'CARTGUEST10', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame($cart['itemsTotal'], $cart['total']);
         self::assertSame(AgentType::GUEST_CARTS_LIBRARY, Hilos::$sr->pageSubscription(self::FIRST)?->agentType);
 
         self::assertSame([], $this->flushCartFacts(self::productPriceFact($accountProduct, 13_000)));
@@ -387,6 +409,9 @@ final class CartPageTest extends CartPageEnvironment
                 EcommerceShopDbContext::productWarehouseStocks,
                 EcommerceShopDbContext::userProductCarts,
                 EcommerceShopDbContext::sessionProductCarts,
+                EcommerceShopDbContext::sessionVoucherCarts,
+                EcommerceShopDbContext::userVoucherCarts,
+                EcommerceShopDbContext::vouchers,
             ], SourceInterestRegistry::collectionsOfConsumer($consumer, SourceChange::KIND_DB));
 
             $this->deliverCartWorkerMessage(new DaemonAgentMessageDTO($owner->getId(), new SignalDTO(
@@ -427,7 +452,7 @@ final class CartPageTest extends CartPageEnvironment
         $this->applyCartConnectionFact(new RtSyncUpdatedSignalData(
             EcommerceShopRtContext::connections, self::FIRST, [StateHilosSessionConnection::sessionId => 102],
         ));
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0'], $this->cart(self::FIRST));
+        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::FIRST));
     }
 
     /** Grouped stock, price and quantity facts refresh only their owner's cart, with final values. */
@@ -492,7 +517,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(
             EcommerceShopDbContext::userProductCarts, (string) $accountLine, [ObjectUserProductCart::userId => $userId],
         ))));
-        self::assertSame(['userId' => $userId, 'lines' => [], 'itemsTotal' => '0'], $this->cart(self::ACCOUNT));
+        self::assertSame(['userId' => $userId, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::ACCOUNT));
 
         $lineId = self::accountLine($userId, $otherProduct, 3);
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData(
@@ -510,7 +535,7 @@ final class CartPageTest extends CartPageEnvironment
             [SessionProductCart::session_id => 105],
             previous: [SessionProductCart::session_id => 101],
         ))));
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0'], $this->cart(self::FIRST));
+        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::FIRST));
     }
 
     /** A clear affects the corresponding owner type, even when its current cart is already empty. */
@@ -533,7 +558,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
             new DbSyncClearedSignalData(EcommerceShopDbContext::sessionProductCarts),
         )));
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0'], $this->cart(self::FIRST));
+        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::FIRST));
 
         Database::sql('DELETE FROM product_warehouse_stock');
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
@@ -681,11 +706,15 @@ final class CartPageTest extends CartPageEnvironment
         self::guestLine(101, $secondProduct, 50_000_001);
         self::productPriceFact($firstProduct, ProductFields::PRICE_MAX);
         self::productPriceFact($secondProduct, ProductFields::PRICE_MAX);
+        $voucher = $this->voucher('CARTPAGE1', 1);
+        self::guestVoucher(101, $voucher->id);
         self::connect(self::FIRST, null, 101);
         $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
 
         $cart = $this->cart(self::FIRST);
         self::assertSame('9999999999999999', $cart['itemsTotal']);
+        self::assertSame(['code' => 'CARTPAGE1', 'active' => true, 'discount' => '100000000000000'], $cart['voucher']);
+        self::assertSame('9899999999999999', $cart['total']);
         self::assertSame(['4999999950000000', '5000000049999999'], array_column($cart['lines'], 'lineTotal'));
         self::assertSame([ProductFields::PRICE_MAX, ProductFields::PRICE_MAX], array_column($cart['lines'], 'price'));
 
@@ -694,6 +723,284 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame('9999999899999999', $cart['itemsTotal']);
         self::assertSame(['4999999850000000', '5000000049999999'], array_column($cart['lines'], 'lineTotal'));
         self::assertSame([99_999_997, ProductFields::PRICE_MAX], array_column($cart['lines'], 'price'));
+        self::assertSame('99999999000000', $cart['voucher']['discount'] ?? null);
+        self::assertSame('9899999900999999', $cart['total']);
+
+        self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $voucher->actions->setActive(false))));
+        $cart = $this->cart(self::FIRST);
+        self::assertSame(['code' => 'CARTPAGE1', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame('9999999899999999', $cart['total']);
+        self::assertSame($cart['itemsTotal'], $cart['total']);
+
+        self::assertSame([], $this->flushCartFacts(self::guestVoucherRemoved(101)));
+        $cart = $this->cart(self::FIRST);
+        self::assertNull($cart['voucher']);
+        self::assertSame('9999999899999999', $cart['total']);
+        self::assertSame($cart['itemsTotal'], $cart['total']);
+    }
+
+    /** Cold answers carry the selected voucher exactly: active, switched off, over a partial and over a zero remainder. */
+    public function testFirstAnswersCarryTheVoucherAndTheExactTotal(): void
+    {
+        $product = self::product(ProductKind::STOCK);
+        $unavailable = self::product(ProductKind::STOCK);
+        self::productPriceFact($product, 1002);
+        self::stock($product, self::warehouse(), 5);
+        $userId = self::person();
+        $active = $this->voucher('CARTPAGE25', 25);
+        $inactive = $this->voucher('CARTPAGEOFF10', 10);
+        $this->voucherFacts(static fn () => $inactive->actions->setActive(false));
+        self::guestLine(101, $product, 1);
+        self::guestVoucher(101, $active->id);
+        self::accountLine($userId, $product, 1);
+        self::accountVoucher($userId, $inactive->id);
+        self::guestLine(102, $product, 7);
+        self::guestVoucher(102, $active->id);
+        self::guestLine(104, $unavailable, 2);
+        self::guestVoucher(104, $active->id);
+        $guest = new GuestCartsLibraryAgent();
+
+        self::connect(self::FIRST, null, 101);
+        $this->subscribe($guest, self::FIRST);
+        $cart = $this->cart(self::FIRST);
+        self::assertSame('1002', $cart['itemsTotal']);
+        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '251'], $cart['voucher']);
+        self::assertSame('751', $cart['total']);
+
+        self::connect(self::ACCOUNT, $userId, 103);
+        $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
+        $cart = $this->cart(self::ACCOUNT);
+        self::assertSame(['code' => 'CARTPAGEOFF10', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame('1002', $cart['total']);
+
+        self::connect(self::SECOND, null, 102);
+        $this->subscribe($guest, self::SECOND);
+        $cart = $this->cart(self::SECOND);
+        self::assertSame([7], array_column($cart['lines'], 'quantity'));
+        self::assertSame('5010', $cart['itemsTotal']);
+        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '1253'], $cart['voucher']);
+        self::assertSame('3757', $cart['total']);
+
+        self::connect(self::EMPTY, null, 104);
+        $this->subscribe($guest, self::EMPTY);
+        $cart = $this->cart(self::EMPTY);
+        self::assertSame([0], array_column($cart['lines'], 'availableQuantity'));
+        self::assertSame('0', $cart['itemsTotal']);
+        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '0'], $cart['voucher']);
+        self::assertSame('0', $cart['total']);
+    }
+
+    /** The catalog writer's edits re-answer, once a flush, exactly the open carts holding that voucher. */
+    public function testVoucherCatalogChangesReanswerOnlyTheCartsHoldingIt(): void
+    {
+        $product = self::product(ProductKind::STOCK);
+        $otherProduct = self::product(ProductKind::STOCK);
+        $warehouse = self::warehouse();
+        self::stock($product, $warehouse, 5);
+        $stockId = Database::lastInsertId();
+        self::stock($otherProduct, $warehouse, 5);
+        $userId = self::person();
+        $shared = $this->voucher('CARTPAGE25', 25);
+        $other = $this->voucher('CARTPAGE10', 10);
+        self::guestLine(101, $product, 2);
+        self::guestVoucher(101, $shared->id);
+        self::accountLine($userId, $product, 2);
+        self::accountVoucher($userId, $shared->id);
+        self::guestLine(102, $otherProduct, 2);
+        self::guestVoucher(102, $other->id);
+        $guest = new GuestCartsLibraryAgent();
+        self::connect(self::FIRST, null, 101);
+        $this->subscribe($guest, self::FIRST);
+        self::assertSame('18000', $this->cart(self::FIRST)['total']);
+        self::connect(self::ACCOUNT, $userId, 103);
+        $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
+        self::assertSame('18000', $this->cart(self::ACCOUNT)['total']);
+        self::connect(self::SECOND, null, 102);
+        $this->subscribe($guest, self::SECOND);
+        self::assertSame('21600', $this->cart(self::SECOND)['total']);
+        self::assertContains(
+            EcommerceShopDbContext::vouchers,
+            SourceInterestRegistry::collectionsOfConsumer(SourceConsumer::page(self::FIRST), SourceChange::KIND_DB),
+        );
+
+        $facts = $this->voucherFacts(static fn () => $shared->actions->setActive(false));
+        $facts[] = self::productPriceFact($product, 10_000);
+        self::assertSame([], $this->flushCartFacts(...$facts));
+        foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
+            self::assertSame(['code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
+            self::assertSame('20000', $cart['itemsTotal']);
+            self::assertSame('20000', $cart['total']);
+        }
+
+        self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $shared->actions->setActive(true))));
+        foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
+            self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '5000'], $cart['voucher']);
+            self::assertSame('15000', $cart['total']);
+        }
+
+        $facts = $this->voucherFacts(static fn () => $shared->actions->update('CARTPAGE30', 30, true));
+        $facts[] = self::stockUnitsFact($stockId, 1);
+        self::assertSame([], $this->flushCartFacts(...$facts));
+        foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
+            self::assertSame([1], array_column($cart['lines'], 'availableQuantity'));
+            self::assertSame('10000', $cart['itemsTotal']);
+            self::assertSame(['code' => 'CARTPAGE30', 'active' => true, 'discount' => '3000'], $cart['voucher']);
+            self::assertSame('7000', $cart['total']);
+        }
+    }
+
+    /** A binding fact names its owner by key, so only that owner's cart is answered; a clear answers its whole kind. */
+    public function testVoucherBindingFactsAreAddressedToTheirOwner(): void
+    {
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 5);
+        $userId = self::person();
+        $first = $this->voucher('CARTPAGE25', 25);
+        $second = $this->voucher('CARTPAGE50', 50);
+        self::guestLine(101, $product, 1);
+        self::guestLine(102, $product, 1);
+        self::accountLine($userId, $product, 1);
+        $guest = new GuestCartsLibraryAgent();
+        self::connect(self::FIRST, null, 101);
+        $this->subscribe($guest, self::FIRST);
+        self::assertNull($this->cart(self::FIRST)['voucher']);
+        self::connect(self::SECOND, null, 102);
+        $this->subscribe($guest, self::SECOND);
+        self::assertNull($this->cart(self::SECOND)['voucher']);
+        self::connect(self::ACCOUNT, $userId, 103);
+        $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
+        self::assertSame('12000', $this->cart(self::ACCOUNT)['total']);
+
+        self::guestVoucher(102, $first->id);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData(
+            EcommerceShopDbContext::sessionVoucherCarts,
+            '102',
+            [SessionVoucherCart::session_id => 102, SessionVoucherCart::voucher_id => $first->id],
+        ))));
+        $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
+        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '3000'], $cart['voucher']);
+        self::assertSame('9000', $cart['total']);
+
+        self::accountVoucher($userId, $first->id);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData(
+            EcommerceShopDbContext::userVoucherCarts,
+            (string) $userId,
+            [UserVoucherCart::user_id => $userId, UserVoucherCart::voucher_id => $first->id],
+        ))));
+        self::assertSame('9000', $this->cartsByConnection([self::ACCOUNT])[self::ACCOUNT]['total']);
+
+        Database::sql('UPDATE user_voucher_cart SET voucher_id = ? WHERE user_id = ?', [$second->id, $userId]);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+            EcommerceShopDbContext::userVoucherCarts,
+            (string) $userId,
+            [UserVoucherCart::voucher_id => $second->id],
+            previous: [UserVoucherCart::voucher_id => $first->id],
+        ))));
+        $cart = $this->cartsByConnection([self::ACCOUNT])[self::ACCOUNT];
+        self::assertSame(['code' => 'CARTPAGE50', 'active' => true, 'discount' => '6000'], $cart['voucher']);
+        self::assertSame('6000', $cart['total']);
+
+        self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $first->actions->setActive(false))));
+        $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
+        self::assertSame(['code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
+
+        Database::sql('UPDATE session_voucher_cart SET voucher_id = ? WHERE session_id = ?', [$second->id, 102]);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+            EcommerceShopDbContext::sessionVoucherCarts,
+            '102',
+            [SessionVoucherCart::voucher_id => $second->id],
+            previous: [SessionVoucherCart::voucher_id => $first->id],
+        ))));
+        $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
+        self::assertSame(['code' => 'CARTPAGE50', 'active' => true, 'discount' => '6000'], $cart['voucher']);
+        self::assertSame('6000', $cart['total']);
+
+        self::assertSame([], $this->flushCartFacts(self::guestVoucherRemoved(102)));
+        $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
+        self::assertNull($cart['voucher']);
+        self::assertSame('12000', $cart['total']);
+
+        self::assertSame([], $this->flushCartFacts(self::accountVoucherRemoved($userId)));
+        $cart = $this->cartsByConnection([self::ACCOUNT])[self::ACCOUNT];
+        self::assertNull($cart['voucher']);
+        self::assertSame('12000', $cart['total']);
+
+        self::guestVoucher(101, $second->id);
+        Database::sql('DELETE FROM session_voucher_cart');
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
+            new DbSyncClearedSignalData(EcommerceShopDbContext::sessionVoucherCarts),
+        )));
+        foreach ($this->cartsByConnection([self::FIRST, self::SECOND]) as $cart) {
+            self::assertNull($cart['voucher']);
+            self::assertSame('12000', $cart['total']);
+        }
+    }
+
+    /** A catalog clear answers only the carts holding a voucher; a binding clear answers every cart of its kind, binding already gone. */
+    public function testVoucherClearsAnswerTheirCarts(): void
+    {
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 5);
+        $userId = self::person();
+        $voucher = $this->voucher('CARTPAGE25', 25);
+        self::guestLine(101, $product, 1);
+        self::guestVoucher(101, $voucher->id);
+        self::guestLine(102, $product, 1);
+        self::accountLine($userId, $product, 1);
+        self::accountVoucher($userId, $voucher->id);
+        $guest = new GuestCartsLibraryAgent();
+        self::connect(self::FIRST, null, 101);
+        $this->subscribe($guest, self::FIRST);
+        self::assertSame('9000', $this->cart(self::FIRST)['total']);
+        self::connect(self::SECOND, null, 102);
+        $this->subscribe($guest, self::SECOND);
+        self::assertNull($this->cart(self::SECOND)['voucher']);
+        self::connect(self::ACCOUNT, $userId, 103);
+        $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
+        self::assertSame('9000', $this->cart(self::ACCOUNT)['total']);
+
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
+            new DbSyncClearedSignalData(EcommerceShopDbContext::vouchers),
+        )));
+        foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
+            self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '3000'], $cart['voucher']);
+            self::assertSame('9000', $cart['total']);
+        }
+
+        Database::sql('DELETE FROM user_voucher_cart');
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
+            new DbSyncClearedSignalData(EcommerceShopDbContext::userVoucherCarts),
+        )));
+        $cart = $this->cartsByConnection([self::ACCOUNT])[self::ACCOUNT];
+        self::assertNull($cart['voucher']);
+        self::assertSame('12000', $cart['total']);
+    }
+
+    /** A voucher fact whose answer fails leaves the usual debt, and the next voucher fact pays it with the whole cart. */
+    public function testFailedVoucherAnswerRecoversOnItsNextFact(): void
+    {
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 2);
+        self::guestLine(101, $product, 2);
+        $voucher = $this->voucher('CARTPAGE25', 25);
+        self::guestVoucher(101, $voucher->id);
+        self::connect(self::FIRST, null, 101);
+        $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
+        self::assertSame('18000', $this->cart(self::FIRST)['total']);
+
+        self::assertSame([], $this->flushWithStockReadFailure(false, ...$this->voucherFacts(
+            static fn () => $voucher->actions->setActive(false),
+        )));
+        $error = $this->pageReply(self::FIRST);
+        self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
+        self::assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $error->httpCode);
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
+
+        self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $voucher->actions->setActive(true))));
+        $cart = $this->cart(self::FIRST);
+        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '6000'], $cart['voucher']);
+        self::assertSame('18000', $cart['total']);
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
     }
 
     /**
@@ -774,6 +1081,127 @@ final class CartPageTest extends CartPageEnvironment
         return new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
             EcommerceShopDbContext::productWarehouseStocks, (string) $stockId, [EntityProductWarehouseStock::units => $units],
         ));
+    }
+
+    /**
+     * @param int $sessionId Guest session whose cart holds the voucher
+     * @param int $voucherId Selected catalog voucher
+     */
+    private static function guestVoucher(int $sessionId, int $voucherId): void
+    {
+        Database::sql('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucherId]);
+    }
+
+    /**
+     * @param int $userId Account whose cart holds the voucher
+     * @param int $voucherId Selected catalog voucher
+     */
+    private static function accountVoucher(int $userId, int $voucherId): void
+    {
+        Database::sql('INSERT INTO user_voucher_cart (user_id, voucher_id) VALUES (?, ?)', [$userId, $voucherId]);
+    }
+
+    /**
+     * @param int $sessionId Guest session whose voucher is taken off
+     * @return WorkerDbSyncDeletedMessageDTO Removal as the cart owner announces it
+     */
+    private static function guestVoucherRemoved(int $sessionId): WorkerDbSyncDeletedMessageDTO
+    {
+        Database::sql('DELETE FROM session_voucher_cart WHERE session_id = ?', [$sessionId]);
+
+        return new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(EcommerceShopDbContext::sessionVoucherCarts, (string) $sessionId));
+    }
+
+    /**
+     * @param int $userId Account whose voucher is taken off
+     * @return WorkerDbSyncDeletedMessageDTO Removal as the cart owner announces it
+     */
+    private static function accountVoucherRemoved(int $userId): WorkerDbSyncDeletedMessageDTO
+    {
+        Database::sql('DELETE FROM user_voucher_cart WHERE user_id = ?', [$userId]);
+
+        return new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(EcommerceShopDbContext::userVoucherCarts, (string) $userId));
+    }
+
+    /**
+     * @param string $code Voucher code
+     * @param int $discountPercent Whole-percent discount
+     * @return Voucher Active voucher written by the catalog owner
+     */
+    private function voucher(string $code, int $discountPercent): Voucher
+    {
+        $voucher = null;
+        $this->voucherFacts(static function () use ($code, $discountPercent, &$voucher): void {
+            $voucher = Hilos::$db->vouchers->actions->create($code, $discountPercent, true);
+        });
+
+        return $voucher ?? self::fail('The voucher was not written');
+    }
+
+    /**
+     * Runs a write of the vouchers library and hands back what its ORM announced, as the daemon would deliver it.
+     *
+     * @param Closure(): mixed $write Catalog write under the library's claim
+     * @return list<WorkerDTO> DB facts for this worker
+     */
+    private function voucherFacts(Closure $write): array
+    {
+        $router = Hilos::$sr;
+        $announcements = new class extends SignalRouter {
+            /** @var list<DbSyncSignalDataInterface> Facts scheduled by the voucher ORM */
+            public array $facts = [];
+
+            /**
+             * @param string $signalName DB signal name
+             * @param DbSyncSignalDataInterface $signalData ORM announcement
+             * @param ?int $connectionIndex Connection holding the write
+             */
+            public function queueDbSyncSignal(string $signalName, DbSyncSignalDataInterface $signalData, ?int $connectionIndex = null): void
+            {
+                $this->facts[] = $signalData;
+            }
+        };
+        $library = new VouchersLibraryAgent();
+        Hilos::$sr = $announcements;
+        try {
+            OwnershipDeclaration::claimAll($library);
+            ExecutionContext::run(new ExecutionFrame(agentId: $library->getId()), $write);
+        } finally {
+            Hilos::$sr = $router;
+            TruthSourceRegistry::unregisterAgent($library->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($library->getId()));
+        }
+
+        $messages = [];
+        foreach ($announcements->facts as $fact) {
+            if ($fact->collectionKey === EcommerceShopDbContext::vouchers) {
+                $messages[] = match (true) {
+                    $fact instanceof DbSyncCreatedSignalData => new WorkerDbSyncCreatedMessageDTO(DbSyncCreatedSignalData::fromJson($fact->toJson())),
+                    $fact instanceof DbSyncUpdatedSignalData => new WorkerDbSyncUpdatedMessageDTO(DbSyncUpdatedSignalData::fromJson($fact->toJson())),
+                    default => self::fail('The voucher writer announced an unexpected ' . $fact::class),
+                };
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @param list<string> $acceptKeys Connections that each expect exactly one full cart from this flush
+     * @return array<string, array<string, mixed>> The wire cart of each connection
+     */
+    private function cartsByConnection(array $acceptKeys): array
+    {
+        $carts = [];
+        foreach ($this->takePageFrames() as $frame) {
+            self::assertInstanceOf(PageResponseSignalData::class, $frame->data);
+            self::assertArrayNotHasKey($frame->targetAcceptKey, $carts);
+            $wire = PageResponseSignalData::fromArray($frame->data->toArray())->payload->data;
+            $carts[$frame->targetAcceptKey] = $wire[CartPage::DATA_CART];
+        }
+        self::assertEqualsCanonicalizing($acceptKeys, array_keys($carts));
+
+        return $carts;
     }
 
     /** @param ?int $userId New identity on the existing connection */
@@ -879,7 +1307,10 @@ final class CartPageTest extends CartPageEnvironment
 
     /**
      * @param string $acceptKey Connection expecting a full cart
-     * @return array{userId: ?int, lines: list<array<string, mixed>>, itemsTotal: string} The wire cart
+     * @return array{
+     *     userId: ?int, lines: list<array<string, mixed>>, itemsTotal: string,
+     *     voucher: ?array{code: string, active: bool, discount: string}, total: string
+     * } The wire cart
      */
     private function cart(string $acceptKey): array
     {

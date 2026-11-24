@@ -252,7 +252,8 @@ final class EcommerceShopBrowserContext extends BrowserContext
     }
 
     /**
-     * Matches a cart line of the current owner or a catalog change affecting a product in that owner's cart.
+     * Matches a cart line or voucher binding of the current owner, or a catalog change affecting that owner's cart.
+     * A binding is keyed by its owner, so its fact names the owner; a voucher fact names the voucher the owner selected.
      *
      * @param string $page Page name from the subscription mirror
      * @param string $acceptKey Connection whose session and serving agent must agree
@@ -262,7 +263,7 @@ final class EcommerceShopBrowserContext extends BrowserContext
      * @throws HilosException When a configured source refuses a read
      * @throws LogicException When an ORM collection is misconfigured
      * @throws InvalidArgumentException When an ORM query or item is invalid
-     * @throws DatabaseException When a cart or stock row cannot be read
+     * @throws DatabaseException When a cart, stock or voucher binding row cannot be read
      */
     protected function observesOwnPageChange(string $page, string $acceptKey, SourceChange $change): bool
     {
@@ -271,6 +272,9 @@ final class EcommerceShopBrowserContext extends BrowserContext
             EcommerceShopDbContext::userProductCarts,
             EcommerceShopDbContext::products,
             EcommerceShopDbContext::productWarehouseStocks,
+            EcommerceShopDbContext::sessionVoucherCarts,
+            EcommerceShopDbContext::userVoucherCarts,
+            EcommerceShopDbContext::vouchers,
         ], true)) {
             return false;
         }
@@ -292,6 +296,20 @@ final class EcommerceShopBrowserContext extends BrowserContext
         }
         if ($change->sourceKey === EcommerceShopDbContext::userProductCarts) {
             return $userId !== null && $this->cartLineChangeMatchesOwner($change, $userId);
+        }
+        if ($change->sourceKey === EcommerceShopDbContext::sessionVoucherCarts) {
+            return $userId === null && ($change->mutationType === TableMutationType::Clear || (int) $change->sourceId === $sessionId);
+        }
+        if ($change->sourceKey === EcommerceShopDbContext::userVoucherCarts) {
+            return $userId !== null && ($change->mutationType === TableMutationType::Clear || (int) $change->sourceId === $userId);
+        }
+        if ($change->sourceKey === EcommerceShopDbContext::vouchers) {
+            $binding = $userId === null
+                ? Hilos::$db->sessionVoucherCarts[$sessionId] ?? null
+                : Hilos::$db->userVoucherCarts[$userId] ?? null;
+
+            return $binding !== null
+                && ($change->mutationType === TableMutationType::Clear || $binding->voucherId === (int) $change->sourceId);
         }
 
         $cartLines = $userId === null ? Hilos::$db->sessionProductCarts : Hilos::$db->userProductCarts;
