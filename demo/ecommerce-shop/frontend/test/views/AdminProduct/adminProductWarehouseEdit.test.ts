@@ -30,6 +30,7 @@ const ODESA = { id: 13, name: 'Odesa · Peresyp' }
 const PRODUCT: AdminProduct = {
   productId: 7,
   name: 'Blue vase',
+  slug: 'blue-vase',
   kind: 'unique',
   stock: { units: 0, warehouses: 0, warehouseId: null },
   price: 210000,

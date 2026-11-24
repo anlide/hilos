@@ -6,11 +6,11 @@ import {
   hilosAdminAccess,
   hilosTakeoverViewOnly,
 } from '@hilos/core/base'
-import { HilosRouterContext, useSignal } from '@hilos/react/base'
+import { HilosLink, HilosRouterContext, useSignal } from '@hilos/react/base'
 
 import { AdminProductHead } from '../../catalog/AdminProductHead.js'
 import { formatMoney } from '../../money/money.js'
-import { PAGE_ADMIN_PRODUCT } from '../../pages/keys.js'
+import { PAGE_ADMIN_PRODUCT, PAGE_PRODUCT } from '../../pages/keys.js'
 import { stockParts } from './adminProduct.js'
 import { createAdminProductEdit } from './adminProductEdit.js'
 import { createAdminProductSignals } from './adminProductPage.js'
@@ -77,6 +77,15 @@ function ProductCard({ productId }: { productId: number }) {
   const canOpenWarehouse = useSignal(warehouseEdit.canOpen)
   const warehouseOpened = useSignal(warehouseEdit.opened)
   const stock = product ? stockParts(product, warehouseName) : null
+  const shopPath =
+    product && product.slug !== ''
+      ? router.resolvePath(PAGE_PRODUCT, { slug: product.slug })
+      : undefined
+  const showShopLink =
+    Boolean(shopPath) &&
+    product !== null &&
+    product.slug !== '' &&
+    (product.kind !== 'unique' || product.stock.units > 0)
 
   return (
     <AdminProductHead
@@ -101,6 +110,18 @@ function ProductCard({ productId }: { productId: number }) {
       {product && stock && (
         <>
           <div className="d-flex flex-wrap justify-content-end gap-2 mb-3">
+            {showShopLink && shopPath && (
+              <HilosLink
+                to={shopPath}
+                className="btn btn-sm btn-outline-secondary"
+              >
+                <i
+                  className="bi bi-box-arrow-up-right me-1"
+                  aria-hidden="true"
+                />
+                See in the shop
+              </HilosLink>
+            )}
             {product.kind === 'unique' && (
               <button
                 type="button"

@@ -146,6 +146,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         self::assertSame([
             AdminProductBrowserData::productId => $this->bulbs,
             'name' => $this->bulbsName,
+            'slug' => Hilos::$db->products[$this->bulbs]->slug,
             'kind' => ProductKind::STOCK,
             'price' => 41000,
             'categoryId' => $this->categoryId,
@@ -327,11 +328,12 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
     {
         $this->subscribe(self::ADMIN_KEY, $this->bulbs);
 
-        Database::sql('UPDATE product SET name = ?, price = ? WHERE id = ?', ['Renamed bulbs', 52000, $this->bulbs]);
+        Database::sql('UPDATE product SET name = ?, price = ?, slug = ? WHERE id = ?', ['Renamed bulbs', 52000, 'renamed-bulbs', $this->bulbs]);
         self::deliverUpdate(EcommerceShopDbContext::products, 'product', $this->bulbs);
         $cards = $this->sentCards(self::ADMIN_KEY);
         self::assertCount(1, $cards);
         self::assertSame('Renamed bulbs', $cards[0]['name']);
+        self::assertSame('renamed-bulbs', $cards[0]['slug']);
         self::assertSame(52000, $cards[0]['price']);
 
         Database::sql('UPDATE warehouse SET name = ? WHERE id = ?', ['Renamed warehouse', $this->kyiv]);

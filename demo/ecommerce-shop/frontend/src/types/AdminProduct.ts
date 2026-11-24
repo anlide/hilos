@@ -4,6 +4,8 @@ export interface AdminProduct {
   readonly productId: number
   /** Product name. */
   readonly name: string
+  /** Product address slug on the shop front. */
+  readonly slug: string
   /** Whether this is a unique piece or a stock item. */
   readonly kind: string
   /** Price of one unit, in kopecks. */

@@ -51,6 +51,7 @@ const STALE_REASON =
 const PRODUCT: AdminProduct = {
   productId: 7,
   name: 'Blue vase',
+  slug: 'blue-vase',
   kind: 'unique',
   price: 210050,
   categoryId: 2,

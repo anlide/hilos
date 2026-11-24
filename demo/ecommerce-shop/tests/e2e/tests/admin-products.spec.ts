@@ -216,6 +216,8 @@ test('shop.products-add: both product kinds can be added with pictures and a sec
   await test.step('editing the price on Overview updates the same unique piece in the open list', async () => {
     await uniqueRow.getByRole('link', { name: `Open ${uniqueName}` }).click()
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(uniqueName)
+    const shopLink = page.getByRole('link', { name: 'See in the shop' })
+    await expect(shopLink).toHaveCount(0)
 
     await page.getByTestId('admin-product-edit-open').click()
     const edit = page.getByRole('dialog', { name: 'Edit product' })
@@ -234,6 +236,7 @@ test('shop.products-add: both product kinds can be added with pictures and a sec
       secondRow.getByRole('cell', { name: 'Unique piece', exact: true }),
     ).toBeVisible()
     await expectDocumentUnchanged(expect, second)
+
     await gotoPage(expect, page, PRODUCTS_PATH)
   })
 
@@ -264,6 +267,16 @@ test('shop.products-add: both product kinds can be added with pictures and a sec
     await expect(
       stockRow.getByRole('cell', { name: 'Out of stock', exact: true }),
     ).toBeVisible()
+
+    await stockRow.getByRole('link', { name: `Open ${stockName}` }).click()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(stockName)
+    const stockShopLink = page.getByRole('link', { name: 'See in the shop' })
+    await expect(stockShopLink).toBeVisible()
+    const href = await stockShopLink.getAttribute('href')
+    expect(href).toMatch(/^\/product\/[a-z0-9-]+$/)
+    await stockShopLink.click()
+    await expect(page).toHaveURL(href!)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(stockName)
   })
 })
 
@@ -300,6 +313,12 @@ test('shop.product-warehouse-place: moving a unique piece updates its open Overv
     await check(tab).toHaveURL(overviewPath)
     await check(tab.getByRole('heading', { level: 1 })).toHaveText(
       'White peonies, 15 stems',
+    )
+    const shopLink = tab.getByRole('link', { name: 'See in the shop' })
+    await check(shopLink).toBeVisible()
+    await check(shopLink).toHaveAttribute(
+      'href',
+      '/product/white-peonies-15-stems',
     )
   }
 

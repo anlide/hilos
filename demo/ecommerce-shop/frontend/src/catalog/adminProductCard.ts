@@ -22,6 +22,8 @@ export type AdminProductPageKey =
 const PRODUCT_ID_FIELD = 'productId'
 /** Card payload key of the product name. */
 const PRODUCT_NAME_FIELD = 'name'
+/** Card payload key of the product address slug. */
+const PRODUCT_SLUG_FIELD = 'slug'
 /** Card payload key of the product kind. */
 const PRODUCT_KIND_FIELD = 'kind'
 /** Card payload key of the product price in kopecks. */
@@ -74,6 +76,7 @@ export function resolveAdminProduct(raw: unknown): AdminProduct | null {
   return {
     productId: readNumber(card, PRODUCT_ID_FIELD),
     name: readString(card, PRODUCT_NAME_FIELD),
+    slug: readString(card, PRODUCT_SLUG_FIELD),
     kind: readString(card, PRODUCT_KIND_FIELD),
     price: readNumber(card, PRODUCT_PRICE_FIELD),
     categoryId: readNumber(card, PRODUCT_CATEGORY_ID_FIELD),

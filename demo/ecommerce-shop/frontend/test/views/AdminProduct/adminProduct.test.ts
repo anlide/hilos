@@ -48,6 +48,7 @@ function warehousesScope(): Scope {
 const pot: AdminProduct = {
   productId: 8,
   name: 'Ceramic pot',
+  slug: 'ceramic-pot',
   kind: 'stock',
   price: 41000,
   categoryId: 3,
@@ -61,6 +62,7 @@ const pot: AdminProduct = {
 const vase: AdminProduct = {
   productId: 7,
   name: 'Blue vase',
+  slug: 'blue-vase',
   kind: 'unique',
   price: 210000,
   categoryId: 2,
@@ -74,6 +76,20 @@ const vase: AdminProduct = {
 describe('one product admin page', () => {
   it('resolves the whole card', () => {
     expect(resolveAdminProduct(structuredClone(vase))).toEqual(vase)
+  })
+
+  it('reads the canonical slug and keeps the card valid when absent or not string', () => {
+    expect(resolveAdminProduct(structuredClone(vase))?.slug).toBe('blue-vase')
+
+    const withoutSlug = { ...structuredClone(vase) }
+    delete (withoutSlug as Record<string, unknown>).slug
+    expect(resolveAdminProduct(withoutSlug)).toEqual({ ...vase, slug: '' })
+
+    const withNonStringSlug = { ...structuredClone(vase), slug: 123 }
+    expect(resolveAdminProduct(withNonStringSlug)).toEqual({
+      ...vase,
+      slug: '',
+    })
   })
 
   it('resolves no card without a product id', () => {

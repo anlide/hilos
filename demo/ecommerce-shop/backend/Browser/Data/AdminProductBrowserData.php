@@ -68,7 +68,7 @@ final class AdminProductBrowserData
                 ],
                 BrowserDataFieldKey::FIELDS => [
                     ObjectProduct::id => self::productId,
-                    ObjectProduct::name, ObjectProduct::kind, ObjectProduct::price,
+                    ObjectProduct::name, ObjectProduct::slug, ObjectProduct::kind, ObjectProduct::price,
                     ObjectProduct::categoryId, ObjectProduct::description, ObjectProduct::pictureFileId,
                 ],
                 BrowserDataFieldKey::COMPUTED => [self::FIELD_PICTURE_URL, self::FIELD_EDIT_VERSION, self::FIELD_STOCK],

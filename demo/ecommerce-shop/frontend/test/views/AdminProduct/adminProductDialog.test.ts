@@ -88,6 +88,7 @@ const FIRST_VERSION = 'a'.repeat(64)
 const PRODUCT: Product = {
   productId: 7,
   name: 'Blue vase',
+  slug: 'blue-vase',
   kind: 'unique',
   price: 210050,
   categoryId: 2,
