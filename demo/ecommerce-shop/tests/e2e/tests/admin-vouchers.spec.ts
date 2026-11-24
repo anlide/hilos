@@ -1,24 +1,33 @@
 import { randomBytes } from 'node:crypto'
 
 import { test as base, expect } from '../test.js'
+import { moneyFieldLabel } from '../../../frontend/src/money/money.js'
+import { PAGE_ADMIN_PRODUCT_STOCK } from '../../../frontend/src/pages/keys.js'
 
 import {
+  PAGE_READY,
   ROWS,
   cleanupFixtures,
   clickSubmit,
   dismissToasts,
+  drawPhotoFixture,
   expectDocumentUnchanged,
+  expectPageReady,
   gotoPage,
   grantAdminToSelf,
   markDocument,
+  sessionToken,
   typeInto,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
-// spec-owner: demo — proves creation, editing and refusals on the shop's Vouchers page.
+// spec-owner: demo — the shop's Vouchers page and live voucher discounts in guest carts.
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
+
+// Browser traces can include the guest's session cookie.
+test.use({ colorScheme: 'light', trace: 'off' })
 
 const VOUCHERS_PATH = '/hilos/vouchers'
 const VOUCHER_GET_COMMAND = 'test:ecommerce-shop:voucher-fixture-get'
@@ -114,7 +123,9 @@ test('shop.vouchers-add: an admin corrects a refused discount, adds and edits a 
       editedRow.getByText(renamedCode, { exact: true }),
     ).toBeVisible()
     await expect(editedRow.getByText('35%', { exact: true })).toBeVisible()
-    await expect(editedRow.getByText('Active', { exact: true })).toBeVisible()
+    const activeToggle = editedRow.getByTestId('admin-vouchers-active-toggle')
+    await expect(activeToggle).toBeVisible()
+    await expect(activeToggle).toBeChecked()
     await expect(addedRow).toHaveCount(0)
     await expectDocumentUnchanged(expect, page)
   })
@@ -135,5 +146,233 @@ test('shop.vouchers-add: an admin corrects a refused discount, adds and edits a 
     await expect(active).not.toBeChecked()
     await expect(editedRow).toHaveCount(1)
     await expect(editedRow.getByText('35%', { exact: true })).toBeVisible()
+  })
+})
+
+test('shop.vouchers-toggle: an admin switches a discount off and back on in an open guest cart', async ({
+  browser,
+  page,
+  cleanup,
+}) => {
+  const code = `ZZE2EV${randomBytes(12).toString('hex').toUpperCase()}`
+  const name = `e2e product ${randomBytes(6).toString('hex')}`
+  const discountPercent = 25
+  const itemsAmount = '₴1,200'
+  const discountedTotal = '₴900'
+  const deduction = '−₴300'
+  const setCartQuantity = 'test:ecommerce-shop:guest-cart-set-quantity'
+  const setCartVoucher = 'test:ecommerce-shop:guest-cart-set-voucher'
+
+  const guestContext = await browser.newContext()
+  cleanup.defer(() => guestContext.close())
+  const guest = await guestContext.newPage()
+
+  await test.step('create the active voucher', async () => {
+    expect(await command(VOUCHER_GET_COMMAND, { code })).toEqual({
+      voucher: null,
+    })
+    cleanup.defer(() => command(VOUCHER_DELETE_COMMAND, { code }))
+    const voucher = { code, discountPercent, active: true }
+    expect(
+      await command('test:ecommerce-shop:voucher-fixture-create', voucher),
+    ).toMatchObject({ voucher })
+  })
+
+  await grantAdminToSelf(expect, page)
+  const productId =
+    await test.step('create a stock item priced at ₴400', async () => {
+      cleanup.defer(() =>
+        command('test:ecommerce-shop:product-delete', { name }),
+      )
+      await gotoPage(expect, page, '/hilos/products', PAGE_READY)
+      const products = page.getByTestId('admin-products-table')
+      await products.getByTestId('hilos-table-main-action').click()
+
+      const dialog = page.getByRole('dialog', {
+        name: 'Add product',
+        exact: true,
+      })
+      await typeInto(
+        dialog.getByRole('textbox', { name: 'Name', exact: true }),
+        name,
+      )
+      await dialog
+        .getByRole('combobox', { name: 'Category' })
+        .selectOption({ label: 'Pots & planters' })
+      await dialog
+        .getByRole('radio', { name: 'Unique piece' })
+        .press('ArrowRight')
+      await expect(
+        dialog.getByRole('radio', { name: 'Stock item' }),
+      ).toBeChecked()
+      await typeInto(
+        dialog.getByRole('textbox', { name: moneyFieldLabel('Price') }),
+        '400',
+      )
+      await typeInto(
+        dialog.getByRole('textbox', { name: 'Description' }),
+        'A ceramic planter carried in stock.',
+      )
+
+      const [chooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        dialog.getByTestId('admin-products-add-picture').click(),
+      ])
+      await chooser.setFiles({
+        name: 'planter.png',
+        mimeType: 'image/png',
+        buffer: await drawPhotoFixture(page, {
+          width: 320,
+          height: 240,
+          mimeType: 'image/png',
+          rectangles: [
+            { color: '#246ac4', x: 0, y: 0, width: 320, height: 240 },
+          ],
+        }),
+      })
+      await expect(
+        dialog.getByTestId('admin-products-add-preview'),
+      ).toBeVisible()
+      await clickSubmit(expect, dialog.getByTestId('admin-products-add-submit'))
+      await expect(dialog).toBeHidden()
+      await products.getByRole('link', { name, exact: true }).click()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(/\/hilos\/product\/[1-9]\d*$/)
+
+      return Number(new URL(page.url()).pathname.split('/').at(-1))
+    })
+
+  await test.step('set stock for the cart item', async () => {
+    await page.getByTestId(`hilos-page-tab-${PAGE_ADMIN_PRODUCT_STOCK}`).click()
+    await expectPageReady(expect, page)
+    const stockPath = new URL(page.url()).pathname
+    const warehouseRow = page
+      .getByTestId('admin-product-stock-table')
+      .getByRole('row')
+      .filter({
+        has: page.getByRole('cell', { name: 'Odesa · Peresyp', exact: true }),
+      })
+    const setStock = async (units: string) => {
+      const dialog = page.getByRole('dialog', {
+        name: 'Set stock',
+        exact: true,
+      })
+      await warehouseRow.getByTestId('admin-product-stock-edit-open').click()
+      await typeInto(
+        dialog.getByTestId('admin-product-stock-edit-units'),
+        units,
+      )
+      await clickSubmit(
+        expect,
+        dialog.getByTestId('admin-product-stock-edit-submit'),
+      )
+      await expect(dialog).toBeHidden()
+      await expect(
+        warehouseRow.getByRole('cell', { name: units, exact: true }),
+      ).toBeVisible()
+    }
+
+    const zero = warehouseRow.getByRole('cell', { name: '0', exact: true })
+    await expect(zero).toBeVisible()
+    cleanup.defer(async () => {
+      await gotoPage(expect, page, stockPath, PAGE_READY)
+      await expect(warehouseRow).toBeVisible()
+      if (!(await zero.isVisible())) await setStock('0')
+    })
+    await setStock('8')
+  })
+
+  const items = guest
+    .getByText('Items', { exact: true })
+    .locator('..')
+    .locator('dd')
+  const voucherRow = guest.getByTestId('shop-cart-voucher')
+  const voucherLabel = voucherRow.locator('dt')
+  const voucherAmount = voucherRow.locator('dd')
+  const total = guest.getByTestId('shop-cart-total')
+
+  await test.step('apply the discount to three units in the open guest cart', async () => {
+    await gotoPage(expect, guest, '/cart', PAGE_READY)
+    await expect(guest.getByTestId('shop-cart-empty')).toBeVisible()
+    await markDocument(guest)
+
+    const token = await sessionToken(guest)
+    cleanup.defer(() =>
+      command(setCartQuantity, {
+        sessionToken: token,
+        productId,
+        quantity: 0,
+      }),
+    )
+    await command(setCartQuantity, {
+      sessionToken: token,
+      productId,
+      quantity: 3,
+    })
+    cleanup.defer(async () => {
+      expect(
+        await command(setCartVoucher, {
+          sessionToken: token,
+          code,
+          applied: false,
+        }),
+      ).toEqual({ applied: false })
+    })
+    expect(
+      await command(setCartVoucher, {
+        sessionToken: token,
+        code,
+        applied: true,
+      }),
+    ).toEqual({ applied: true })
+
+    await expect(guest.getByTestId('shop-cart-product-link')).toHaveText(name)
+    await expect(voucherLabel).toHaveText(`Voucher ${code}`)
+    await expect(voucherAmount).toHaveText(deduction)
+    await expect(items).toHaveText(itemsAmount)
+    await expect(total).toHaveText(discountedTotal)
+    await expectDocumentUnchanged(expect, guest)
+  })
+
+  await gotoPage(expect, page, VOUCHERS_PATH, PAGE_READY)
+  await markDocument(page)
+  const table = page.getByTestId('admin-vouchers-table')
+  const row = table
+    .locator(ROWS)
+    .filter({ has: page.getByText(code, { exact: true }) })
+  const activeToggle = row.getByTestId('admin-vouchers-active-toggle')
+  await expect(
+    table.getByRole('button', { name: 'Active: Any', exact: true }),
+  ).toBeVisible()
+  await expect(activeToggle).toBeChecked()
+
+  await test.step('switch off the voucher and keep its code in the same cart', async () => {
+    await activeToggle.press('Space')
+    await expect(activeToggle).not.toHaveAttribute('aria-busy', 'true')
+    await expect(activeToggle).toBeEnabled()
+    await expect(activeToggle).not.toBeChecked()
+    await expect(activeToggle).toBeFocused()
+    await expect(row).toBeVisible()
+    await expectDocumentUnchanged(expect, page)
+
+    await expect(voucherLabel).toHaveText(`Voucher ${code} · Inactive`)
+    await expect(voucherAmount).toHaveText('—')
+    await expect(items).toHaveText(itemsAmount)
+    await expect(total).toHaveText(itemsAmount)
+    await expectDocumentUnchanged(expect, guest)
+  })
+
+  await test.step('switch on the voucher and restore the discount in place', async () => {
+    await activeToggle.click()
+    await expect(activeToggle).toBeEnabled()
+    await expect(activeToggle).toBeChecked()
+    await expect(row).toBeVisible()
+    await expectDocumentUnchanged(expect, page)
+
+    await expect(voucherLabel).toHaveText(`Voucher ${code}`)
+    await expect(voucherAmount).toHaveText(deduction)
+    await expect(items).toHaveText(itemsAmount)
+    await expect(total).toHaveText(discountedTotal)
+    await expectDocumentUnchanged(expect, guest)
   })
 })

@@ -65,6 +65,9 @@ final class EcommerceShopSignalConstants
     /** @var string Voucher update action name */
     public const string VOUCHER_UPDATE = 'voucher_update';
 
+    /** @var string Voucher active toggle action name */
+    public const string VOUCHER_TOGGLE_ACTIVE = 'voucher_toggle_active';
+
     /** @var string Product create action name */
     public const string PRODUCT_CREATE = 'product_create';
 

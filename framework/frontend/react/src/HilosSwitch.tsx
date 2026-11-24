@@ -24,6 +24,8 @@ export interface HilosSwitchProps extends Omit<
   checked: boolean
   /** Whether this switch's action is in flight. */
   busy?: boolean
+  /** Keep focus while busy, announce the lock with aria-disabled, and ignore activation. */
+  keepFocusWhileBusy?: boolean
   /** Disable the switch for a reason other than its own action. */
   disabled?: boolean
   /** The stable selector placed on the checkbox. */
@@ -49,6 +51,7 @@ export interface HilosSwitchProps extends Omit<
 export function HilosSwitch({
   checked,
   busy = false,
+  keepFocusWhileBusy = false,
   disabled = false,
   dataId,
   label,
@@ -72,10 +75,15 @@ export function HilosSwitch({
   useEffect(() => () => spinner.dispose(), [spinner])
 
   const lookOnly = useLookOnly()
-  const isDisabled = disabled || busy || lookOnly.locked
+  const nativeDisabled =
+    disabled || lookOnly.locked || (busy && !keepFocusWhileBusy)
 
   function onClick(event: MouseEvent<HTMLInputElement>): void {
     event.preventDefault()
+    if (busy || nativeDisabled) {
+      event.stopPropagation()
+      return
+    }
     onToggle(!checked)
   }
 
@@ -91,8 +99,9 @@ export function HilosSwitch({
         role="switch"
         checked={checked}
         readOnly
-        disabled={isDisabled}
+        disabled={nativeDisabled}
         aria-busy={busy || undefined}
+        aria-disabled={(busy && !nativeDisabled) || undefined}
         aria-label={ariaLabel}
         aria-describedby={joinDescribedBy(
           ariaDescribedby,

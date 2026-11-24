@@ -1,12 +1,15 @@
 // Vouchers under their shared administration section head. The SDK owns the
 // search, the Active filter, paging and narrow-screen cards; this view supplies
 // the cells. One heading comes from the section head, which also names the table.
-import { useLayoutEffect, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
 import {
   HilosAdminPage,
+  HilosSwitch,
   HilosViewportTable,
+  useLookOnly,
   useSignal,
+  useTrackedAction,
 } from '@hilos/react/base'
 
 import { PAGE_ADMIN_VOUCHERS } from '../../pages/keys.js'
@@ -15,6 +18,7 @@ import {
   VOUCHER_CODE_FIELD,
   VOUCHER_DISCOUNT_PERCENT_FIELD,
 } from './adminVouchers.js'
+import { sendVoucherToggleActive } from './adminVouchersActions.js'
 import { createVouchersTable, type VouchersTable } from './adminVouchersPage.js'
 import { type VoucherRow } from './types/tables/VoucherRow.js'
 import { VoucherAddModal } from './VoucherAddModal.js'
@@ -34,6 +38,24 @@ interface VouchersWorkspace {
 function VouchersTableView({ table, edit }: VouchersWorkspace) {
   const editing = useSignal(edit.opened)
   const [editKey, setEditKey] = useState(0)
+  const { locked } = useLookOnly()
+  const toggle = useTrackedAction()
+  const toggling = useRef(false)
+  const [pendingVoucherId, setPendingVoucherId] = useState<number | null>(null)
+
+  async function toggleActive(id: number): Promise<void> {
+    if (locked || toggling.current) return
+
+    // Dispatch sends before the tracked runner receives the handle.
+    toggling.current = true
+    setPendingVoucherId(id)
+    try {
+      await toggle.run(sendVoucherToggleActive(id))
+    } finally {
+      toggling.current = false
+      setPendingVoucherId(null)
+    }
+  }
 
   function openEdit(row: VoucherRow): void {
     if (edit.open(String(row.id))) {
@@ -51,7 +73,18 @@ function VouchersTableView({ table, edit }: VouchersWorkspace) {
             <span className="font-monospace fw-semibold">{row.code}</span>
           ),
           [VOUCHER_DISCOUNT_PERCENT_FIELD]: (row) => `${row.discountPercent}%`,
-          [VOUCHER_ACTIVE_FIELD]: (row) => (row.active ? 'Active' : 'Off'),
+          [VOUCHER_ACTIVE_FIELD]: (row) => (
+            <HilosSwitch
+              className="mb-0"
+              checked={row.active}
+              busy={pendingVoucherId === row.id}
+              keepFocusWhileBusy
+              disabled={toggle.busy && pendingVoucherId !== row.id}
+              aria-label={`Active · ${row.code}`}
+              dataId="admin-vouchers-active-toggle"
+              onToggle={() => void toggleActive(row.id)}
+            />
+          ),
           [HILOS_TABLE_ACTIONS_KEY]: (row) => (
             <button
               type="button"

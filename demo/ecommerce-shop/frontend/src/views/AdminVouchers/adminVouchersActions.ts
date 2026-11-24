@@ -7,6 +7,9 @@ import { type VoucherDraft } from './voucherEdit.js'
 /** Action name on the server (EcommerceShopSignalConstants::VOUCHER_UPDATE). */
 export const VOUCHER_UPDATE = 'voucher_update'
 
+/** Action name on the server (EcommerceShopSignalConstants::VOUCHER_TOGGLE_ACTIVE). */
+const VOUCHER_TOGGLE_ACTIVE = 'voucher_toggle_active'
+
 /**
  * Create a voucher through VoucherCreateActionDTO. The server checks the raw
  * fields and the new row arrives separately through the live table.
@@ -46,4 +49,13 @@ export function sendVoucherUpdate(
     expectedDiscountPercent: saved.discountPercent,
     expectedActive: saved.active,
   })
+}
+
+/**
+ * Toggle the voucher at its current server state.
+ *
+ * @param id The id of the voucher to toggle.
+ */
+export function sendVoucherToggleActive(id: number): ActionHandle {
+  return actions.dispatch(VOUCHER_TOGGLE_ACTIVE, { id })
 }

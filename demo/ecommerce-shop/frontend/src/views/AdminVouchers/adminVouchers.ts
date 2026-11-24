@@ -81,7 +81,7 @@ export const VOUCHERS_COLUMNS: HilosTableColumnOf<VoucherRow>[] = [
   {
     key: VOUCHER_ACTIVE_FIELD,
     label: 'Active',
-    card: 'badge',
+    card: 'field',
   },
   {
     key: HILOS_TABLE_ACTIONS_KEY,

@@ -15,6 +15,7 @@ final class EcommerceShopCommandConstants
     public const string CATEGORY_TEST_DELETE = 'test:ecommerce-shop:category-delete';
     public const string PRODUCT_TEST_DELETE = 'test:ecommerce-shop:product-delete';
     public const string GUEST_CART_SET_QUANTITY = 'test:ecommerce-shop:guest-cart-set-quantity';
+    public const string GUEST_CART_SET_VOUCHER = 'test:ecommerce-shop:guest-cart-set-voucher';
     public const string VOUCHER_FIXTURE_CREATE = 'test:ecommerce-shop:voucher-fixture-create';
     public const string VOUCHER_FIXTURE_GET = 'test:ecommerce-shop:voucher-fixture-get';
     public const string VOUCHER_FIXTURE_UPDATE = 'test:ecommerce-shop:voucher-fixture-update';
@@ -31,4 +32,5 @@ final class EcommerceShopCommandConstants
     public const string sessionToken = 'sessionToken';
     public const string productId = 'productId';
     public const string quantity = 'quantity';
+    public const string applied = 'applied';
 }

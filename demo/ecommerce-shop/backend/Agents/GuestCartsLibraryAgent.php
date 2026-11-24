@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Agents;
 
 use Demo\EcommerceShop\CLI\DTO\GuestCartSetQuantityCommandData;
+use Demo\EcommerceShop\CLI\DTO\GuestCartSetVoucherCommandData;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
@@ -22,6 +23,7 @@ use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Demo\EcommerceShop\Testing\VoucherFixture;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Constants\HilosSignalConstants;
@@ -122,6 +124,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
 
     public const array AGENT_COMMANDS = [
         EcommerceShopCommandConstants::GUEST_CART_SET_QUANTITY => GuestCartSetQuantityCommandData::class,
+        EcommerceShopCommandConstants::GUEST_CART_SET_VOUCHER => GuestCartSetVoucherCommandData::class,
     ];
 
     // The sweep frame is declared HERE and not in the sessions library, which is what routes it
@@ -433,7 +436,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Answers the stand's exact-quantity command under the guest carts library's ownership.
+     * Answers guest cart fixture commands under the library's ownership.
      * A zero is acknowledged only after storage confirms the line is absent following commit.
      *
      * @param CommandRequestDTO $data Topology-hydrated command
@@ -444,6 +447,10 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if ($data->command === EcommerceShopCommandConstants::GUEST_CART_SET_VOUCHER) {
+            $this->handleFixtureVoucherCommand($data);
+            return;
+        }
         if ($data->command !== EcommerceShopCommandConstants::GUEST_CART_SET_QUANTITY) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
             return;
@@ -485,6 +492,100 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Dispatches the test-only voucher fixture and replies with the resulting applied flag.
+     *
+     * @param CommandRequestDTO $data Topology-hydrated fixture command
+     * @throws AgentException When the fixture operation fails
+     * @throws InvalidArgumentException When the reply cannot be queued
+     */
+    private function handleFixtureVoucherCommand(CommandRequestDTO $data): void
+    {
+        if (!VoucherFixture::isAllowed()) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, VoucherFixture::ENVIRONMENT_REFUSAL));
+
+            return;
+        }
+        $query = $data->parsedPayload;
+        if (!$query instanceof GuestCartSetVoucherCommandData) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'The guest cart voucher fixture request is invalid'));
+
+            return;
+        }
+
+        try {
+            $this->setFixtureVoucher($query);
+            $reply = CommandReplyDTO::ok($data->correlationId, [EcommerceShopCommandConstants::applied => $query->applied]);
+        } catch (ValidationException $refusal) {
+            $reply = CommandReplyDTO::error($data->correlationId, $refusal->getMessage());
+        } catch (Throwable $failure) {
+            throw new AgentException('The guest cart voucher fixture could not be changed', previous: $failure);
+        }
+        $this->replyToCommand($reply);
+    }
+
+    /**
+     * Writes the fixture only when the slot is empty or already holds the requested code.
+     *
+     * @param GuestCartSetVoucherCommandData $query Voucher and desired association
+     * @throws ValidationException When the session, code or existing association refuses the change
+     * @throws EmptyValueException When the code is empty
+     * @throws ValueTooLongException When the code exceeds the catalog limit
+     * @throws LogicException When a collection is misconfigured or the catalog voucher lacks an ID
+     * @throws InvalidArgumentException When an object, query or sync signal is invalid
+     * @throws DatabaseException When a row cannot be read or written
+     * @throws ItemNotFoundException When a keyed read cannot resolve its target
+     * @throws ObjectGetIdStringNotImplementedException When a voucher or binding cannot be keyed
+     * @throws CollectionNotManualException When the selection cannot accept the matched voucher
+     * @throws ItemNotFoundForUpdateException When the binding is no longer persisted
+     * @throws WriteNotAllowedException When this process may not change the binding
+     * @throws CreateNotAllowedException When this process may not create the binding
+     * @throws ExternalWriterException When the binding collection has an external writer
+     * @throws ObjectCollectionNullException When the binding has no backing collection
+     * @throws SourceChangeSubscriberException When a binding change subscriber fails
+     * @throws DuplicateIdException When the collection already holds the binding key
+     * @throws TableNameUndeterminedException When the binding table is unknown
+     * @throws HilosException When a configured cart source refuses the operation
+     */
+    private function setFixtureVoucher(GuestCartSetVoucherCommandData $query): void
+    {
+        $sessionId = $this->fixtureGuestSessionId($query->sessionToken);
+        $code = VoucherFixture::code($query->code);
+        $current = $this->cartVoucher($sessionId);
+        if ($current !== null && $current->code !== $code) {
+            throw new ValidationException('This guest cart holds a different voucher');
+        }
+
+        if ($query->applied) {
+            $this->applyVoucher($sessionId, $code);
+        } elseif ($current !== null) {
+            $this->removeVoucher($sessionId);
+        }
+    }
+
+    /**
+     * Resolves a fixture's token and confirms the guest is still active in storage.
+     *
+     * @param string $sessionToken Existing guest session's cookie token
+     * @return int Active guest session ID
+     * @throws ValidationException When the session is no longer available as an active guest
+     * @throws LogicException When the session collection is misconfigured
+     * @throws InvalidArgumentException When a loaded object or session query is invalid
+     * @throws DatabaseException When the session cannot be read
+     */
+    private function fixtureGuestSessionId(string $sessionToken): int
+    {
+        $session = Hilos::$db->sessions->findByToken($sessionToken);
+        $sessionId = $session?->id;
+        if ($sessionId === null || $session->token !== $sessionToken || $session->userAtKeyboard() !== null
+            || !Hilos::$db->sessions->isStoredActiveGuest($sessionId)
+        ) {
+            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
+        }
+
+        return $sessionId;
+    }
+
+    /**
      * @param GuestCartSetQuantityCommandData $query Exact quantity to leave for an active guest
      * @return int Validated guest session ID even when the quantity was already reached
      * @throws ValidationException When the session or requested quantity is refused
@@ -500,14 +601,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      */
     private function setFixtureQuantity(GuestCartSetQuantityCommandData $query): int
     {
-        $session = Hilos::$db->sessions->findByToken($query->sessionToken);
-        $sessionId = $session?->id;
-        if ($sessionId === null || $session->token !== $query->sessionToken || $session->userAtKeyboard() !== null
-            || !Hilos::$db->sessions->isStoredActiveGuest($sessionId)
-        ) {
-            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
-        }
-
+        $sessionId = $this->fixtureGuestSessionId($query->sessionToken);
         $carts = Hilos::$db->sessionProductCarts;
         $line = $carts->whereColumnIs(SessionProductCart::sessionId, $sessionId)
             ->filter(static fn (CartLine $line): bool => $line->productId === $query->productId)

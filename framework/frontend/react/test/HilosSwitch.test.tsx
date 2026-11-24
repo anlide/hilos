@@ -74,6 +74,44 @@ describe('HilosSwitch', () => {
 
     expect(input().disabled).toBe(true)
     expect(input().getAttribute('aria-busy')).toBe('true')
+    expect(input().hasAttribute('aria-disabled')).toBe(false)
+  })
+
+  it('can keep focus while busy and refuse a second activation', () => {
+    const onToggle = vi.fn()
+    const props = {
+      checked: false,
+      keepFocusWhileBusy: true,
+      dataId: 'setting-toggle',
+      'aria-label': 'Enable setting',
+      onToggle,
+    }
+    const { rerender } = render(<HilosSwitch {...props} />)
+    const control = input()
+    control.focus()
+    fireEvent.click(control)
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith(true)
+
+    rerender(<HilosSwitch {...props} busy />)
+    expect(document.activeElement).toBe(control)
+    expect(control.disabled).toBe(false)
+    expect(control.getAttribute('aria-busy')).toBe('true')
+    expect(control.getAttribute('aria-disabled')).toBe('true')
+    expect(fireEvent.click(control)).toBe(false)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+
+    rerender(<HilosSwitch {...props} busy />)
+    expect(control.checked).toBe(false)
+
+    rerender(<HilosSwitch {...props} checked />)
+    expect(document.activeElement).toBe(control)
+    expect(control.checked).toBe(true)
+    expect(control.hasAttribute('aria-busy')).toBe(false)
+    expect(control.hasAttribute('aria-disabled')).toBe(false)
+
+    rerender(<HilosSwitch {...props} checked busy disabled />)
+    expect(control.disabled).toBe(true)
+    expect(control.checked).toBe(true)
   })
 
   it('shows the busy spinner only after the delay', () => {
@@ -220,6 +258,8 @@ describe('HilosSwitch in a takeover that only looks (HIL-1170)', () => {
       <HilosTakeoverViewOnlyContext.Provider value>
         <HilosSwitch
           checked
+          busy
+          keepFocusWhileBusy
           dataId="setting-toggle"
           aria-label="Enable setting"
           aria-describedby="setting-hint"

@@ -7,9 +7,12 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
+use Demo\EcommerceShop\CLI\DTO\GuestCartSetVoucherCommandData;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\ProductKind;
+use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
 use Demo\EcommerceShop\Database\Actions\VoucherFields;
@@ -20,6 +23,9 @@ use Demo\EcommerceShop\Hilos;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Constants\AppEnv;
+use Hilos\Constants\CommandConstants;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Agent\AbstractAgent;
@@ -42,8 +48,12 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Environment\EnvAccessor;
 use Hilos\HilosException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Testing\IntegrationTest;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 
 /**
@@ -306,6 +316,101 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertNull(self::storedVoucherId($sessionId));
         self::assertSame('AUTUMN20', Hilos::$db->vouchers[$second->id]->code);
         self::assertTrue(Hilos::$db->vouchers[$second->id]->active);
+    }
+
+    /** The command applies its fixture and can clear it twice even after it was disabled. */
+    public function testGuestVoucherFixtureAppliesAndIdempotentlyClearsAnInactiveVoucher(): void
+    {
+        $sessionId = self::guestSessionId();
+        $token = Hilos::$db->sessions[$sessionId]->token;
+        $voucher = self::createVoucher('ZZE2EV111111111111111111111111', 10, true);
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $reply = $this->voucherFixture($token, strtolower($voucher->code), true);
+            self::assertTrue($reply->isOk());
+            self::assertSame(['applied' => true], $reply->payload);
+            self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+        }
+
+        self::asOwner(new VouchersLibraryAgent(), static fn () => $voucher->actions->setActive(false));
+        $reply = $this->voucherFixture($token, $voucher->code, true);
+        self::assertFalse($reply->isOk());
+        self::assertSame([CommandConstants::FIELD_MESSAGE => 'This voucher is inactive'], $reply->payload);
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $reply = $this->voucherFixture($token, $voucher->code, false);
+            self::assertTrue($reply->isOk());
+            self::assertSame(['applied' => false], $reply->payload);
+            self::assertNull(self::storedVoucherId($sessionId));
+        }
+        self::assertFalse(Hilos::$db->vouchers[$voucher->id]->active);
+    }
+
+    /** @return array<string, array{string, bool, string}> Requested code, desired binding and refusal */
+    public static function guestVoucherFixtureRefusals(): array
+    {
+        return [
+            'replace another fixture' => ['ZZE2EV222222222222222222222222', true, 'This guest cart holds a different voucher'],
+            'remove another fixture' => ['ZZE2EV222222222222222222222222', false, 'This guest cart holds a different voucher'],
+            'apply outside the fixture space' => ['SUMMER25', true, 'A voucher fixture code must be ZZE2EV followed by 24 hexadecimal digits'],
+            'clear outside the fixture space' => ['SUMMER25', false, 'A voucher fixture code must be ZZE2EV followed by 24 hexadecimal digits'],
+        ];
+    }
+
+    /** A fixture command cannot replace a different binding or act on an ordinary voucher code. */
+    #[DataProvider('guestVoucherFixtureRefusals')]
+    public function testGuestVoucherFixtureRefusesOtherCodes(string $code, bool $applied, string $reason): void
+    {
+        $sessionId = self::guestSessionId();
+        $voucher = self::createVoucher('ZZE2EV111111111111111111111111', 10, true);
+        self::createVoucher($code, 15, true);
+        $this->carts()->applyVoucher($sessionId, $voucher->code);
+
+        $reply = $this->voucherFixture(Hilos::$db->sessions[$sessionId]->token, $code, $applied);
+        self::assertFalse($reply->isOk());
+        self::assertSame([CommandConstants::FIELD_MESSAGE => $reason], $reply->payload);
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+    }
+
+    /** @return array<string, array{bool, string}> Whether the node is in test and the expected refusal */
+    public static function guestVoucherFixtureAccessRefusals(): array
+    {
+        return [
+            'dev environment' => [false, 'Voucher fixtures require APP_ENV=test'],
+            'bound session before sync' => [true, 'This guest session is no longer available'],
+        ];
+    }
+
+    /** The command requires the test environment and a session that is still a guest in storage. */
+    #[DataProvider('guestVoucherFixtureAccessRefusals')]
+    public function testGuestVoucherFixtureRefusesOutsideTestOrAfterSignIn(bool $inTest, string $reason): void
+    {
+        $sessionId = self::guestSessionId();
+        $session = Hilos::$db->sessions[$sessionId];
+        $voucher = self::createVoucher('ZZE2EV111111111111111111111111', 10, true);
+        $this->carts()->applyVoucher($sessionId, $voucher->code);
+
+        $previousEnv = Hilos::$env;
+        if ($inTest) {
+            Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Signed-in shopper']);
+            Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [Database::lastInsertId(), $sessionId]);
+            self::assertNull($session->userId);
+        } else {
+            $env = $this->createPartialMock(EnvAccessor::class, ['effectiveValueFor']);
+            $env->method('effectiveValueFor')->with(EnvConstants::APP_ENV->name)->willReturn(AppEnv::DEV->value);
+            Hilos::$env = $env;
+        }
+        try {
+            foreach ([true, false] as $applied) {
+                $reply = $this->voucherFixture($session->token, $voucher->code, $applied);
+                self::assertFalse($reply->isOk());
+                self::assertSame([CommandConstants::FIELD_MESSAGE => $reason], $reply->payload);
+                self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+            }
+        } finally {
+            Hilos::$env = $previousEnv;
+        }
     }
 
     /** A cart keeps the voucher ID and uses the current catalog record for its discount. */
@@ -692,6 +797,38 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         );
 
         return $session->id ?? self::fail('The session was not persisted');
+    }
+
+    /**
+     * @param string $token Guest session's cookie token
+     * @param string $code Voucher fixture code
+     * @param bool $applied Desired association
+     * @return CommandReplyDTO The reply to the hydrated command
+     */
+    private function voucherFixture(string $token, string $code, bool $applied): CommandReplyDTO
+    {
+        $previousRouter = Hilos::$sr;
+        $router = new EcommerceShopSignalRouter();
+        Hilos::initSignalRouter($router);
+        try {
+            $name = EcommerceShopCommandConstants::GUEST_CART_SET_VOUCHER;
+            $query = new GuestCartSetVoucherCommandData($token, $code, $applied);
+            $request = new CommandRequestDTO('guest-voucher-fixture', $name, $query->toArray());
+            $this->carts()->onSignalCommand($router->createCommandPayloadDTO($name, $request), 'command', $name);
+
+            $replies = [];
+            while (($signal = $router->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof CommandReplyDTO) {
+                    $replies[] = $signal->data;
+                }
+            }
+        } finally {
+            Hilos::$sr = $previousRouter;
+        }
+        self::assertCount(1, $replies);
+        self::assertSame($request->correlationId, $replies[0]->correlationId);
+
+        return $replies[0];
     }
 
     /**

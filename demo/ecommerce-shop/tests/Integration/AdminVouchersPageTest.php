@@ -20,6 +20,7 @@ use Demo\EcommerceShop\Tables\Voucher\VouchersTable;
 use Demo\EcommerceShop\Tables\Voucher\VoucherTableRow;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -329,6 +330,58 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
         self::assertSame($stored, self::storedVouchers());
     }
 
+    /** Two presses on the same voucher each toggle its current flag, leaving every other field intact. */
+    public function testAnAdminTogglesOnlyTheVoucherActiveFlag(): void
+    {
+        $this->subscribe(self::ADMIN_KEY);
+        $before = array_column(self::storedVouchers(), null, EntityVoucher::id);
+        self::assertSame('1', $before[$this->activeId][EntityVoucher::active]);
+
+        $reply = $this->dispatchToggleActive(self::ADMIN_KEY, [ObjectVoucher::id => $this->activeId], 'req-turn-off');
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        $inactive = $before;
+        $inactive[$this->activeId][EntityVoucher::active] = '0';
+        self::assertSame($inactive, array_column(self::storedVouchers(), null, EntityVoucher::id));
+
+        $reply = $this->dispatchToggleActive(
+            self::ADMIN_KEY,
+            [SignalPayloadConstants::FIELD_DATA => [ObjectVoucher::id => $this->activeId]],
+            'req-turn-on',
+        );
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertSame($before, array_column(self::storedVouchers(), null, EntityVoucher::id));
+    }
+
+    /** Malformed IDs and a valid ID with no voucher cannot change the catalog. */
+    public function testVoucherToggleRequiresAnExistingPositiveIntegerId(): void
+    {
+        $stored = self::storedVouchers();
+        $cases = [
+            'absent' => [[], 'Payload carries no integer under key id'],
+            'string' => [[ObjectVoucher::id => (string)$this->activeId], 'Payload carries no integer under key id'],
+            'zero' => [[ObjectVoucher::id => 0], 'The voucher ID must be a positive integer.'],
+            'negative' => [[ObjectVoucher::id => -1], 'The voucher ID must be a positive integer.'],
+            'unknown' => [[ObjectVoucher::id => $this->inactiveId + 1], 'This voucher no longer exists'],
+        ];
+        foreach ($cases as $case => [$payload, $reason]) {
+            $reply = $this->dispatchToggleActive(self::ADMIN_KEY, $payload, "req-toggle-{$case}");
+            self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+            self::assertSame($reason, $reply->reason);
+            self::assertSame($stored, self::storedVouchers());
+        }
+    }
+
+    /** An open view-mode window lets a visitor see the flag but refuses a toggle. */
+    public function testViewModeRefusesVoucherToggle(): void
+    {
+        $this->subscribe(self::VISITOR_KEY);
+        $stored = self::storedVouchers();
+        $reply = $this->dispatchToggleActive(self::VISITOR_KEY, [ObjectVoucher::id => $this->activeId], 'req-toggle-viewer');
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+        self::assertSame(ActionViewModeException::ERROR_CODE, $reply->errorCode);
+        self::assertSame($stored, self::storedVouchers());
+    }
+
     /** A tracked edit keeps the voucher ID and redraws the same row in both open windows. */
     public function testAnAdminUpdatesAVoucherInBothOpenWindows(): void
     {
@@ -583,6 +636,29 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
         ));
         self::assertSame($requestId, $reply->requestId);
         self::assertSame(EcommerceShopSignalConstants::VOUCHER_UPDATE, $reply->action);
+
+        return $reply;
+    }
+
+    /**
+     * @param string $acceptKey Acting connection
+     * @param array<string, mixed> $payload Raw toggle request
+     * @param string $requestId Client-minted request id
+     * @return PageActionSuccessSignalData|PageActionErrorSignalData The correlated toggle acknowledgement
+     */
+    private function dispatchToggleActive(
+        string $acceptKey,
+        array $payload,
+        string $requestId,
+    ): PageActionSuccessSignalData|PageActionErrorSignalData {
+        $reply = $this->dispatchAction(new WebSocketActionSignalDTO(
+            $acceptKey,
+            EcommerceShopSignalConstants::VOUCHER_TOGGLE_ACTIVE,
+            $payload,
+            $requestId,
+        ));
+        self::assertSame($requestId, $reply->requestId);
+        self::assertSame(EcommerceShopSignalConstants::VOUCHER_TOGGLE_ACTIVE, $reply->action);
 
         return $reply;
     }

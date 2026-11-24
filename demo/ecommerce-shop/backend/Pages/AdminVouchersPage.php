@@ -11,6 +11,7 @@ use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Database\Actions\VoucherFields;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\VoucherCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\VoucherToggleActiveActionDTO;
 use Demo\EcommerceShop\Pages\DTO\VoucherUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -70,6 +71,7 @@ final class AdminVouchersPage extends AbstractPage
     public const array ACTIONS = [
         EcommerceShopSignalConstants::VOUCHER_CREATE => VoucherCreateActionDTO::class,
         EcommerceShopSignalConstants::VOUCHER_UPDATE => VoucherUpdateActionDTO::class,
+        EcommerceShopSignalConstants::VOUCHER_TOGGLE_ACTIVE => VoucherToggleActiveActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -121,6 +123,14 @@ final class AdminVouchersPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, VoucherUpdateActionDTO::class, $dto);
                 }
                 $this->handleUpdate($dto);
+
+                return null;
+
+            case EcommerceShopSignalConstants::VOUCHER_TOGGLE_ACTIVE:
+                if (!$dto instanceof VoucherToggleActiveActionDTO) {
+                    throw new InvalidActionPayloadException($action, VoucherToggleActiveActionDTO::class, $dto);
+                }
+                $this->handleToggleActive($dto);
 
                 return null;
 
@@ -200,5 +210,30 @@ final class AdminVouchersPage extends AbstractPage
             $dto->active,
         );
         $this->setActionSuccessMessage(sprintf('Voucher “%s” saved.', $voucher->code));
+    }
+
+    /**
+     * Toggles the flag from the current row in the vouchers library.
+     *
+     * @param VoucherToggleActiveActionDTO $dto Toggle action payload
+     * @throws ItemNotFoundForUpdateException When the voucher no longer exists or has no ID
+     * @throws ItemNotFoundException When the collection cannot resolve the target key
+     * @throws LogicException When the vouchers collection is not configured
+     * @throws InvalidArgumentException When a loaded object has the wrong type or the DB-sync signal cannot be named
+     * @throws WriteNotAllowedException When the write guard refuses the toggle
+     * @throws CreateNotAllowedException When the object is new and creating it is forbidden
+     * @throws DatabaseException When the write or collection loading fails
+     * @throws ObjectCollectionNullException When the voucher has no backing collection for the update
+     * @throws ObjectGetIdStringNotImplementedException When the object lacks a usable primary key
+     * @throws SourceChangeSubscriberException When a subscriber to the write announcement fails
+     */
+    private function handleToggleActive(VoucherToggleActiveActionDTO $dto): void
+    {
+        $voucher = Hilos::$db->vouchers[$dto->id] ?? null;
+        if ($voucher === null) {
+            throw new ItemNotFoundForUpdateException('This voucher no longer exists');
+        }
+
+        $voucher->actions->setActive(!$voucher->active);
     }
 }

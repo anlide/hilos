@@ -75,6 +75,7 @@ use Demo\EcommerceShop\Pages\DTO\ProductStockSetUnitsActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
 use Demo\EcommerceShop\Pages\DTO\VoucherCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\VoucherToggleActiveActionDTO;
 use Demo\EcommerceShop\Pages\DTO\VoucherUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseDeleteActionDTO;
@@ -205,6 +206,7 @@ use Demo\EcommerceShop\CLI\DTO\VoucherFixtureCreateCommandData;
 use Demo\EcommerceShop\CLI\DTO\VoucherFixtureSetActiveCommandData;
 use Demo\EcommerceShop\CLI\DTO\VoucherFixtureUpdateCommandData;
 use Demo\EcommerceShop\CLI\DTO\GuestCartSetQuantityCommandData;
+use Demo\EcommerceShop\CLI\DTO\GuestCartSetVoucherCommandData;
 use Demo\EcommerceShop\CLI\DTO\WarehouseDeleteCommandData;
 use Demo\EcommerceShop\CLI\EcommerceShopCliManager;
 use Hilos\Constants\AppEnv;
@@ -1454,11 +1456,23 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         $command = 'test:ecommerce-shop:guest-cart-set-quantity';
         self::assertSame(
-            [$command => GuestCartSetQuantityCommandData::class],
+            [
+                $command => GuestCartSetQuantityCommandData::class,
+                'test:ecommerce-shop:guest-cart-set-voucher' => GuestCartSetVoucherCommandData::class,
+            ],
             GuestCartsLibraryAgent::AGENT_COMMANDS,
         );
         self::assertSame(AgentType::GUEST_CARTS_LIBRARY, Hilos::getCommandAgentRoutes()[$command]);
         self::assertSame(GuestCartSetQuantityCommandData::class, Hilos::getCommandDtoRoutes()[$command]);
+    }
+
+    /** The voucher fixture has a direct socket route and no executable CLI entry. */
+    public function testGuestCartVoucherFixtureIsRoutedWithItsPayload(): void
+    {
+        $command = 'test:ecommerce-shop:guest-cart-set-voucher';
+        self::assertSame(AgentType::GUEST_CARTS_LIBRARY, Hilos::getCommandAgentRoutes()[$command]);
+        self::assertSame(GuestCartSetVoucherCommandData::class, Hilos::getCommandDtoRoutes()[$command]);
+        self::assertArrayNotHasKey($command, (new EcommerceShopCliManager(['cli.php']))->commandClasses());
     }
 
     /** The vouchers library runs once on the policy-selected node and gains Remove only in the test environment. */
@@ -1581,11 +1595,14 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame('subscription_page_admin_vouchers', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_VOUCHERS);
         $create = EcommerceShopSignalConstants::VOUCHER_CREATE;
         $update = EcommerceShopSignalConstants::VOUCHER_UPDATE;
+        $toggle = EcommerceShopSignalConstants::VOUCHER_TOGGLE_ACTIVE;
         self::assertSame('voucher_create', $create);
         self::assertSame('voucher_update', $update);
+        self::assertSame('voucher_toggle_active', $toggle);
         self::assertSame([
             $create => VoucherCreateActionDTO::class,
             $update => VoucherUpdateActionDTO::class,
+            $toggle => VoucherToggleActiveActionDTO::class,
         ], AdminVouchersPage::ACTIONS);
         self::assertSame('admin_vouchers', Hilos::getPageActionRoutes()[$create]);
         self::assertSame('vouchers_library', Hilos::getActionAgentRoutes()[$create]);
@@ -1593,6 +1610,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame('admin_vouchers', Hilos::getPageActionRoutes()[$update]);
         self::assertSame('vouchers_library', Hilos::getActionAgentRoutes()[$update]);
         self::assertSame(VoucherUpdateActionDTO::class, Hilos::getActionDtoRoutes()[$update]);
+        self::assertSame('admin_vouchers', Hilos::getPageActionRoutes()[$toggle]);
+        self::assertSame('vouchers_library', Hilos::getActionAgentRoutes()[$toggle]);
+        self::assertSame(VoucherToggleActiveActionDTO::class, Hilos::getActionDtoRoutes()[$toggle]);
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Vouchers',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Discount codes buyers enter in the cart.',
