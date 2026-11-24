@@ -13,6 +13,7 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\Database\DatabaseException;
@@ -26,6 +27,32 @@ use Hilos\HilosException;
  */
 final class UserProductCartActions extends DbActions
 {
+    /**
+     * Removes this saved line and drops its cached membership.
+     *
+     * @throws WriteNotAllowedException When this process may not remove the line from its owner's set
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
+     * @throws DatabaseException When the collection binding or delete fails
+     * @throws ObjectCollectionNullException When the backing collection is missing
+     * @throws ObjectGetIdStringNotImplementedException When the line has no usable key
+     * @throws SourceChangeSubscriberException When a change subscriber fails
+     * @throws InvalidArgumentException When the DB sync signal cannot be queued
+     */
+    public function remove(): void
+    {
+        $line = $this->object;
+        if (!$line->isRelated()) {
+            return;
+        }
+
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        $collection = $this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Cart line removal requires its owning collection');
+        $key = $line->getIdString();
+        $line->delete();
+        unset($collection[$key]);
+    }
+
     /**
      * Steps the saved quantity without changing the line's identity.
      *

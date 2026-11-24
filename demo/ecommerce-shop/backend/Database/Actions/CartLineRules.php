@@ -39,7 +39,7 @@ final class CartLineRules
     /** Fewest units a line keeps: below it the line is taken out, not kept empty. */
     public const int QUANTITY_MIN = 1;
 
-    /** Refusal for a cart line whose captured identity no longer grants access. */
+    /** Refusal shared by stale cart bindings and lines outside the current cart. */
     public const string LINE_UNAVAILABLE = 'This cart item is no longer available.';
 
     /**

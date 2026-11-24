@@ -101,6 +101,9 @@ final class EcommerceShopSignalConstants
     /** @var string Stock library → Stock page: the outcome of setting units */
     public const string ADMIN_PRODUCT_STOCK_SET_UNITS_DONE = 'admin_product_stock_set_units_done';
 
+    /** @var string Storefront action to remove one saved cart line */
+    public const string CART_REMOVE_LINE = 'cart_remove_line';
+
     /** @var string Browser action to step the quantity of a saved cart line */
     public const string CART_STEP_QUANTITY = 'cart_step_quantity';
 

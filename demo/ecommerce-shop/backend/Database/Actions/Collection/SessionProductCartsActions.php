@@ -16,10 +16,13 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 
@@ -64,7 +67,7 @@ final class SessionProductCartsActions extends DbActions
             $this->addLine($sessionId, $productId, $quantity);
             return;
         }
-        $this->changeQuantity($line, $quantity);
+        $this->changeQuantity($line->getObject(), $quantity);
     }
 
     /**
@@ -90,7 +93,7 @@ final class SessionProductCartsActions extends DbActions
         $line = $this->line($sessionId, $productId);
         $quantity = CartLineRules::stepped($productId, $line?->quantity, $step);
         if ($line !== null) {
-            $this->changeQuantity($line, $quantity);
+            $this->changeQuantity($line->getObject(), $quantity);
         }
     }
 
@@ -116,7 +119,7 @@ final class SessionProductCartsActions extends DbActions
         $line = $this->line($sessionId, $productId);
         $exact = CartLineRules::exact($productId, $line?->quantity, $quantity);
         if ($line !== null) {
-            $this->changeQuantity($line, $exact);
+            $this->changeQuantity($line->getObject(), $exact);
         }
     }
 
@@ -126,22 +129,21 @@ final class SessionProductCartsActions extends DbActions
      * @param int $sessionId Number of the browser session whose cart it is
      * @param int $productId Id of the product
      * @throws WriteNotAllowedException When this process may not remove a line
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
      * @throws LogicException When collection class constants are not configured
-     * @throws InvalidArgumentException When a loaded object does not match its collection
+     * @throws InvalidArgumentException When a loaded object does not match its collection or DB sync cannot be queued
      * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
      * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
      * @throws DatabaseException When the rows cannot be read, or the database refuses the delete
+     * @throws PropertyNotFoundException When the line does not expose its actions property
+     * @throws ActionsClassException When the line's actions cannot be resolved
+     * @throws ObjectCollectionNullException When the line has no owning collection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws HilosException When the right, the database or the collection refuses the delete
      */
     public function remove(int $sessionId, int $productId): void
     {
-        $line = $this->line($sessionId, $productId);
-        if ($line === null) {
-            return;
-        }
-        $this->ensureCanWrite(TruthSourceOperation::Remove);
-        $this->deleteLine($line);
+        $this->line($sessionId, $productId)?->actions->remove();
     }
 
     /**
@@ -208,18 +210,18 @@ final class SessionProductCartsActions extends DbActions
      *
      * @param int $sessionId Number of the browser session whose cart it is
      * @param int $productId Id of the product
-     * @return ?ObjectSessionProductCart The line, or null when the cart holds none of the product
+     * @return ?SessionProductCart The line, or null when the cart holds none of the product
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When a loaded object does not match its collection
      * @throws DatabaseException When the rows cannot be read
      * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
      * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
      */
-    private function line(int $sessionId, int $productId): ?ObjectSessionProductCart
+    private function line(int $sessionId, int $productId): ?SessionProductCart
     {
         foreach ($this->collection->whereColumnIs(ObjectSessionProductCart::sessionId, $sessionId) as $row) {
             if ($row->productId === $productId) {
-                return $row->getObject();
+                return $row;
             }
         }
 

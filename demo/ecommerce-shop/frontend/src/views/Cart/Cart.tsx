@@ -1,14 +1,20 @@
 import { HilosLink, useSignal } from '@hilos/react/base'
+import { Component, createRef } from 'react'
 
 import { connection } from '../../bootstrap/connection.js'
 import { currentUserId, scopes } from '../../bootstrap/session.js'
 import { availabilityText } from '../../catalog/productAvailability.js'
 import { formatDeduction, formatMoney } from '../../money/money.js'
 import { CartQuantityControls } from './CartQuantityControls.js'
+import { CartRemoveButton } from './CartRemoveButton.js'
 import CartSkeleton from './CartSkeleton.js'
 import { type CartOwnerKind } from './cartActions.js'
 import { createCartPageSignal } from './cartPage.js'
-import { type CartLine, type CartVoucher } from './types/Cart.js'
+import {
+  type CartLine,
+  type CartSnapshot,
+  type CartVoucher,
+} from './types/Cart.js'
 
 const cartPage = createCartPageSignal(scopes, currentUserId, connection)
 
@@ -75,6 +81,11 @@ function CartItem({
       >
         {formatMoney(line.lineTotal)}
       </span>
+      <CartRemoveButton
+        lineId={line.lineId}
+        ownerKind={ownerKind}
+        name={line.name}
+      />
     </li>
   )
 }
@@ -101,6 +112,11 @@ function CartVoucherRow({ voucher }: { voucher: CartVoucher }) {
   )
 }
 
+interface CartRowFocus {
+  readonly row: Element
+  readonly neighbors: readonly Element[]
+}
+
 /** The current owner's public storefront cart. */
 export default function Cart() {
   const cart = useSignal(cartPage)
@@ -115,64 +131,123 @@ export default function Cart() {
     )
   }
 
-  const ownerKind = cart.userId === null ? 'guest' : 'account'
+  return <CartContents cart={cart} />
+}
 
-  return (
-    <>
-      <h1 className="h4 mb-3">Cart</h1>
-      {cart.lines.length === 0 ? (
-        <div className="text-center py-5" data-id="shop-cart-empty">
-          <i
-            className="bi bi-cart fs-2 text-body-secondary mb-2 d-block"
-            aria-hidden="true"
-          />
-          <h2 className="h6 mb-1">Your cart is empty</h2>
-          <p className="small text-body-secondary mb-3">
-            Add something from the shop. It stays here
-            {cart.userId === null && ' for this browser session'}.
-          </p>
-          <HilosLink
-            to="/"
-            className="btn btn-sm btn-primary"
-            data-id="shop-cart-go-shopping"
+/** Render the accepted snapshot and return focus when it removes a focused row. */
+class CartContents extends Component<{ cart: CartSnapshot }> {
+  private readonly list = createRef<HTMLUListElement>()
+  private readonly empty = createRef<HTMLDivElement>()
+
+  getSnapshotBeforeUpdate(): CartRowFocus | null {
+    const list = this.list.current
+    if (!list) return null
+
+    // Read focus while the old DOM still exists, before React removes a row.
+    const active = list.ownerDocument.activeElement
+    if (!list.contains(active)) return null
+
+    const rows = Array.from(list.children)
+    const focusedIndex = rows.findIndex((row) => row.contains(active))
+    const row = rows[focusedIndex]
+    if (!row) return null
+
+    return {
+      row,
+      neighbors: [
+        ...rows.slice(focusedIndex + 1),
+        ...rows.slice(0, focusedIndex).reverse(),
+      ],
+    }
+  }
+
+  componentDidUpdate(
+    _previous: Readonly<{ cart: CartSnapshot }>,
+    _state: unknown,
+    focus: CartRowFocus | null,
+  ) {
+    if (!focus || focus.row.isConnected) return
+
+    const row = focus.neighbors.find((neighbor) => neighbor.isConnected)
+    const remove = (row ?? this.list.current)?.querySelector<HTMLButtonElement>(
+      '[data-id="shop-cart-remove-line"]',
+    )
+    const fallback = this.empty.current?.querySelector<HTMLAnchorElement>(
+      '[data-id="shop-cart-go-shopping"]',
+    )
+    const target = remove ?? fallback
+    target?.focus()
+  }
+
+  render() {
+    const { cart } = this.props
+    const ownerKind = cart.userId === null ? 'guest' : 'account'
+
+    return (
+      <>
+        <h1 className="h4 mb-3">Cart</h1>
+        {cart.lines.length === 0 ? (
+          <div
+            ref={this.empty}
+            className="text-center py-5"
+            data-id="shop-cart-empty"
           >
-            Go shopping
-          </HilosLink>
-        </div>
-      ) : (
-        <div className="row g-4">
-          <div className="col-lg-8">
-            <ul className="list-group list-group-flush" role="list">
-              {cart.lines.map((line) => (
-                <CartItem
-                  key={`${ownerKind}:${line.lineId}`}
-                  line={line}
-                  ownerKind={ownerKind}
-                />
-              ))}
-            </ul>
+            <i
+              className="bi bi-cart fs-2 text-body-secondary mb-2 d-block"
+              aria-hidden="true"
+            />
+            <h2 className="h6 mb-1">Your cart is empty</h2>
+            <p className="small text-body-secondary mb-3">
+              Add something from the shop. It stays here
+              {cart.userId === null && ' for this browser session'}.
+            </p>
+            <HilosLink
+              to="/"
+              className="btn btn-sm btn-primary"
+              data-id="shop-cart-go-shopping"
+            >
+              Go shopping
+            </HilosLink>
           </div>
-          <div className="col-lg-4">
-            <div className="card">
-              <dl className="card-body mb-0">
-                <div className="d-flex justify-content-between gap-2 small mb-1">
-                  <dt className="fw-normal">Items</dt>
-                  <dd className="mb-0">{formatMoney(cart.itemsTotal)}</dd>
-                </div>
-                {cart.voucher !== null && (
-                  <CartVoucherRow voucher={cart.voucher} />
-                )}
-                <div className="d-flex justify-content-between gap-2 fw-semibold">
-                  <dt>Total</dt>
-                  <dd className="mb-0" data-id="shop-cart-total">
-                    {formatMoney(cart.total)}
-                  </dd>
-                </div>
-              </dl>
+        ) : (
+          <div className="row g-4">
+            <div className="col-lg-8">
+              <ul
+                ref={this.list}
+                className="list-group list-group-flush"
+                role="list"
+              >
+                {cart.lines.map((line) => (
+                  <CartItem
+                    key={`${ownerKind}:${line.lineId}`}
+                    line={line}
+                    ownerKind={ownerKind}
+                  />
+                ))}
+              </ul>
+            </div>
+            <div className="col-lg-4">
+              <div className="card">
+                <dl className="card-body mb-0">
+                  <div className="d-flex justify-content-between gap-2 small mb-1">
+                    <dt className="fw-normal">Items</dt>
+                    <dd className="mb-0">{formatMoney(cart.itemsTotal)}</dd>
+                  </div>
+                  {cart.voucher !== null && (
+                    <CartVoucherRow voucher={cart.voucher} />
+                  )}
+                  <div className="d-flex justify-content-between gap-2 fw-semibold">
+                    <dt>Total</dt>
+                    <dd className="mb-0" data-id="shop-cart-total">
+                      {formatMoney(cart.total)}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </>
-  )
+        )}
+      </>
+    )
+  }
 }

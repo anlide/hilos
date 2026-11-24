@@ -18,7 +18,7 @@ import {
 } from '../../../src/views/Cart/types/Cart.js'
 
 const line: CartLine = {
-  lineId: 11,
+  lineId: 19,
   productId: 7,
   slug: 'pine-bark',
   name: 'Pine bark',
@@ -128,7 +128,26 @@ describe('Cart page projection', () => {
     expect(snapshot.get()).toEqual(emptyCart)
   })
 
-  it.each([undefined, null, 0, -1, 1.5, '11', true])(
+  it('requires a positive integer lineId on every line of the snapshot', () => {
+    const { snapshot, answer } = openCart()
+    const { lineId, ...withoutLineId } = line
+
+    answer({ ...guestCart, lines: [withoutLineId] })
+    expect(snapshot.get()).toBeNull()
+
+    answer(guestCart)
+    expect(snapshot.get()?.lines[0]?.lineId).toBe(lineId)
+
+    for (const invalidId of [null, '19', 0, -1, 1.5, true]) {
+      answer({
+        ...guestCart,
+        lines: [line, { ...line, productId: 8, lineId: invalidId }],
+      })
+      expect(snapshot.get()).toEqual(guestCart)
+    }
+  })
+
+  it.each([undefined, null, 0, -1, 1.5, '19', true])(
     'rejects %j for the required saved line ID',
     (lineId) => {
       const { snapshot, answer } = openCart()
@@ -239,7 +258,7 @@ describe('Cart page projection', () => {
     const { snapshot, answer } = openCart()
     const unique = {
       ...line,
-      lineId: 12,
+      lineId: 20,
       productId: 8,
       slug: 'morning-meadow',
       name: 'Morning meadow',

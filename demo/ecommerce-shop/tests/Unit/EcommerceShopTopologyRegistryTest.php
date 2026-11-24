@@ -61,6 +61,7 @@ use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
@@ -1110,15 +1111,29 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame('cart', CartPage::PAGE);
         self::assertSame(PageAccessLevel::PUBLIC, CartPage::ACCESS_LEVEL);
         self::assertSame(PageReach::ROUTE, CartPage::REACH);
+        $remove = EcommerceShopSignalConstants::CART_REMOVE_LINE;
+        self::assertSame('cart_remove_line', $remove);
+        self::assertSame(CartRemoveLineActionDTO::class, Hilos::getActionDtoRoutes()[$remove]);
+        self::assertSame(CartPage::PAGE, Hilos::getPageActionRoutes()[$remove]);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getActionAgentRoutes()[$remove]);
+        self::assertNotContains($remove, CartPage::READING_ACTIONS);
+        self::assertNotContains($remove, CartPage::AUTH_ACTIONS);
+        self::assertArrayNotHasKey($remove, Hilos::getAgentActionRoutes());
+        self::assertArrayNotHasKey($remove, Hilos::getAgentSignalRoutes());
+
         $cartStep = EcommerceShopSignalConstants::CART_STEP_QUANTITY;
         self::assertSame('cart_step_quantity', $cartStep);
-        self::assertSame([$cartStep => CartStepQuantityActionDTO::class], CartPage::ACTIONS);
         self::assertSame(CartPage::PAGE, Hilos::getPageActionRoutes()[$cartStep]);
         self::assertSame(CartStepQuantityActionDTO::class, Hilos::getActionDtoRoutes()[$cartStep]);
         self::assertSame(HilosAgentType::HILOS_USER, Hilos::getActionAgentRoutes()[$cartStep]);
         self::assertArrayNotHasKey($cartStep, Hilos::getAgentActionRoutes());
         self::assertArrayNotHasKey($cartStep, Hilos::getAgentActionDtoRoutes());
         self::assertArrayNotHasKey($cartStep, Hilos::getAgentSignalRoutes());
+
+        self::assertSame([
+            $remove => CartRemoveLineActionDTO::class,
+            $cartStep => CartStepQuantityActionDTO::class,
+        ], CartPage::ACTIONS);
         foreach ([
             EcommerceShopDbContext::sessionVoucherCarts,
             EcommerceShopDbContext::userVoucherCarts,

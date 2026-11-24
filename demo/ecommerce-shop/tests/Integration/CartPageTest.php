@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Core\Daemon\EcommerceShopWorkerManager;
 use Demo\EcommerceShop\Database\Actions\ProductFields;
@@ -27,7 +28,9 @@ use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\CartPage;
+use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentInterface;
@@ -38,8 +41,11 @@ use Hilos\Core\Daemon\PageHandoffIdentity;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -66,6 +72,7 @@ use Hilos\Files\HilosFiles;
 use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Runtime\State\Item\HilosSessionConnection as StateHilosSessionConnection;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
@@ -541,6 +548,196 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::FIRST));
     }
 
+    /** Guest Remove deletes the selected line without changing other lines or stock. */
+    public function testGuestRemovalDeletesOnlyTheSelectedLine(): void
+    {
+        $sessionId = self::storedSession();
+        $otherSessionId = self::storedSession();
+        $removedProduct = self::product(ProductKind::STOCK);
+        $remainingProduct = self::product(ProductKind::STOCK);
+        $warehouse = self::warehouse();
+        self::stock($removedProduct, $warehouse, 5);
+        self::stock($remainingProduct, $warehouse, 3);
+        $removed = self::guestLine($sessionId, $removedProduct, 2);
+        $remaining = self::guestLine($sessionId, $remainingProduct, 1);
+        $neighbor = self::guestLine($otherSessionId, $removedProduct, 3);
+
+        $guest = new GuestCartsLibraryAgent();
+        try {
+            OwnershipDeclaration::claimAll($guest);
+            self::connect(self::FIRST, null, $sessionId);
+            self::connect(self::SECOND, null, $otherSessionId);
+            $this->subscribe($guest, self::FIRST);
+            $cart = $this->cart(self::FIRST);
+            self::assertSame([$removed, $remaining], array_column($cart['lines'], 'lineId'));
+            self::assertSame('36000', $cart['itemsTotal']);
+            $this->subscribe($guest, self::SECOND);
+            self::assertSame([$neighbor], array_column($this->cart(self::SECOND)['lines'], 'lineId'));
+
+            $reply = $this->removeLine($guest, self::FIRST, $cart['lines'][0]['lineId'], 'guest');
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+            self::assertNull($reply->reply);
+            self::assertNull(Database::sql('SELECT id FROM session_product_cart WHERE id = ?', [$removed])->field('id'));
+            self::assertSame(1, (int)Database::sql('SELECT quantity FROM session_product_cart WHERE id = ?', [$remaining])->field('quantity'));
+            self::assertSame(3, (int)Database::sql('SELECT quantity FROM session_product_cart WHERE id = ?', [$neighbor])->field('quantity'));
+            self::assertSame(5, Hilos::$db->productWarehouseStocks->totalsOfProducts($removedProduct)->of($removedProduct)->unitCount);
+            self::assertNotNull(Hilos::$db->products[$removedProduct] ?? null);
+        } finally {
+            TruthSourceRegistry::unregisterAgent($guest->getId());
+        }
+    }
+
+    /** Account Remove deletes its unavailable line while another account keeps the same product. */
+    public function testAccountRemovalKeepsAnotherAccountsLine(): void
+    {
+        $userId = self::person();
+        $otherUserId = self::person();
+        $sessionId = self::storedSession($userId);
+        $otherSessionId = self::storedSession($otherUserId);
+        $product = self::product(ProductKind::STOCK);
+        $lineId = self::accountLine($userId, $product, 2);
+        $neighbor = self::accountLine($otherUserId, $product, 1);
+        $account = new UserAgent((string)$userId);
+        try {
+            OwnershipDeclaration::claimAll($account);
+            self::connect(self::ACCOUNT, $userId, $sessionId);
+            self::connect(self::SECOND, $otherUserId, $otherSessionId);
+            $this->subscribe(new UserAgent((string)$otherUserId), self::SECOND);
+            self::assertSame([$neighbor], array_column($this->cart(self::SECOND)['lines'], 'lineId'));
+            $this->subscribe($account, self::ACCOUNT);
+            $cart = $this->cart(self::ACCOUNT);
+            self::assertSame([$lineId], array_column($cart['lines'], 'lineId'));
+            self::assertSame([0], array_column($cart['lines'], 'availableQuantity'));
+
+            $reply = $this->removeLine($account, self::ACCOUNT, $cart['lines'][0]['lineId'], 'account');
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+            self::assertNull($reply->reply);
+            self::assertNull(Database::sql('SELECT id FROM user_product_cart WHERE id = ?', [$lineId])->field('id'));
+            self::assertSame(1, (int)Database::sql('SELECT quantity FROM user_product_cart WHERE id = ?', [$neighbor])->field('quantity'));
+            self::assertNotNull(Hilos::$db->products[$product] ?? null);
+        } finally {
+            TruthSourceRegistry::unregisterAgent($account->getId());
+        }
+    }
+
+    /** A saved sign-out takes effect before the connection and subscription hear about it. */
+    public function testAccountRemovalRefusesASessionAlreadyUnboundInStorage(): void
+    {
+        $userId = self::person();
+        $sessionId = self::storedSession($userId);
+        $product = self::product(ProductKind::STOCK);
+        $lineId = self::accountLine($userId, $product, 2);
+        $account = new UserAgent((string)$userId);
+        try {
+            OwnershipDeclaration::claimAll($account);
+            self::connect(self::FIRST, $userId, $sessionId);
+            $this->subscribe($account, self::FIRST);
+            self::assertSame([$lineId], array_column($this->cart(self::FIRST)['lines'], 'lineId'));
+            $subscription = Hilos::$sr->pageSubscription(self::FIRST);
+            self::assertNotNull($subscription);
+            self::assertSame($userId, Hilos::$db->sessions[$sessionId]->userId);
+
+            // Arrange the saved sign-out without delivering its sync to this worker.
+            Database::sql('UPDATE hilos_session SET user_id = NULL WHERE id = ?', [$sessionId]);
+            self::assertSame(
+                [['user_id' => null]],
+                Database::sql('SELECT user_id FROM hilos_session WHERE id = ?', [$sessionId])->rows(),
+            );
+            self::assertSame($userId, Hilos::$db->sessions[$sessionId]->userId);
+            self::assertSame($userId, Hilos::$rt->connections[self::FIRST]?->userId);
+            self::assertSame($sessionId, Hilos::$rt->connections[self::FIRST]?->sessionId);
+            self::assertSame($subscription, Hilos::$sr->pageSubscription(self::FIRST));
+
+            $this->assertRemovalRefused($account, $lineId, 'account');
+            self::assertSame(2, (int)Database::sql('SELECT quantity FROM user_product_cart WHERE id = ?', [$lineId])->field('quantity'));
+            self::assertSame([], $this->flushCartFacts());
+            self::assertSame([], $this->takePageFrames());
+        } finally {
+            TruthSourceRegistry::unregisterAgent($account->getId());
+        }
+    }
+
+    /** A stored expiry closes Remove while the connection and subscription still belong to the account. */
+    public function testAccountRemovalRefusesAnExpiredStoredSession(): void
+    {
+        $userId = self::person();
+        $sessionId = self::storedSession($userId);
+        $product = self::product(ProductKind::STOCK);
+        $lineId = self::accountLine($userId, $product, 2);
+        $account = new UserAgent((string)$userId);
+        try {
+            OwnershipDeclaration::claimAll($account);
+            self::connect(self::FIRST, $userId, $sessionId);
+            $this->subscribe($account, self::FIRST);
+            self::assertSame([$lineId], array_column($this->cart(self::FIRST)['lines'], 'lineId'));
+            $subscription = Hilos::$sr->pageSubscription(self::FIRST);
+            self::assertNotNull($subscription);
+            self::assertTrue(Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId));
+
+            $expiresAt = 2_000;
+            Database::sql('UPDATE hilos_session SET expires_at = ? WHERE id = ?', [$expiresAt, $sessionId]);
+            self::assertSame(
+                [['user_id' => (string)$userId, 'expires_at' => (string)$expiresAt]],
+                Database::sql('SELECT user_id, expires_at FROM hilos_session WHERE id = ?', [$sessionId])->rows(),
+            );
+            self::assertSame($userId, Hilos::$rt->connections[self::FIRST]?->userId);
+            self::assertSame($sessionId, Hilos::$rt->connections[self::FIRST]?->sessionId);
+            self::assertSame($subscription, Hilos::$sr->pageSubscription(self::FIRST));
+
+            $this->assertRemovalRefused($account, $lineId, CartRemoveLineActionDTO::ACCOUNT);
+            self::assertSame(2, (int)Database::sql('SELECT quantity FROM user_product_cart WHERE id = ?', [$lineId])->field('quantity'));
+            self::assertSame([], $this->flushCartFacts());
+            self::assertSame([], $this->takePageFrames());
+        } finally {
+            TruthSourceRegistry::unregisterAgent($account->getId());
+        }
+    }
+
+    /** Foreign and superseded line IDs and an old cart kind all receive the same refusal. */
+    public function testRemovalRefusesForeignStaleAndWrongKindTargets(): void
+    {
+        $sessionId = self::storedSession();
+        $userId = self::person();
+        $product = self::product(ProductKind::STOCK);
+        $oldLine = self::guestLine($sessionId, $product, 2);
+        $foreignLine = self::guestLine(self::storedSession(), $product, 4);
+        $accountLine = self::accountLine($userId, $product, 3);
+        $guest = new GuestCartsLibraryAgent();
+        $account = new UserAgent((string)$userId);
+        self::connect(self::FIRST, null, $sessionId);
+        self::assertSame([], Hilos::$sr->getDestinations(self::removeLineSignal(self::FIRST, $oldLine, 'guest')));
+        $this->subscribe($guest, self::FIRST);
+        self::assertSame([$oldLine], array_column($this->cart(self::FIRST)['lines'], 'lineId'));
+        $this->assertRemovalRefused($guest, $foreignLine, 'guest');
+
+        Database::sql('DELETE FROM session_product_cart WHERE id = ?', [$oldLine]);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(
+            EcommerceShopDbContext::sessionProductCarts, (string)$oldLine, [SessionProductCart::session_id => $sessionId],
+        ))));
+        self::assertSame([], $this->cart(self::FIRST)['lines']);
+        $this->assertRemovalRefused($guest, $oldLine, 'guest');
+        $replacement = self::guestLine($sessionId, $product, 5);
+        self::assertNotSame($oldLine, $replacement);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData(
+            EcommerceShopDbContext::sessionProductCarts,
+            (string)$replacement,
+            [SessionProductCart::id => $replacement, SessionProductCart::session_id => $sessionId,
+                SessionProductCart::product_id => $product, SessionProductCart::quantity => 5],
+        ))));
+        self::assertSame([$replacement], array_column($this->cart(self::FIRST)['lines'], 'lineId'));
+        $this->assertRemovalRefused($guest, $oldLine, 'guest');
+
+        self::bindFirstUser($userId);
+        $this->assertRemovalRefused($guest, $replacement, 'guest');
+        $this->handoff($guest, $account);
+        self::assertSame([$accountLine], array_column($this->cart(self::FIRST)['lines'], 'lineId'));
+        $this->assertRemovalRefused($account, $accountLine, 'guest');
+
+        self::assertSame(4, (int)Database::sql('SELECT quantity FROM session_product_cart WHERE id = ?', [$foreignLine])->field('quantity'));
+        self::assertSame(5, (int)Database::sql('SELECT quantity FROM session_product_cart WHERE id = ?', [$replacement])->field('quantity'));
+        self::assertSame(3, (int)Database::sql('SELECT quantity FROM user_product_cart WHERE id = ?', [$accountLine])->field('quantity'));
+    }
+
     /** A clear affects the corresponding owner type, even when its current cart is already empty. */
     public function testCartAndStockClearsAreScoped(): void
     {
@@ -641,7 +838,7 @@ final class CartPageTest extends CartPageEnvironment
         $firstStock = Database::lastInsertId();
         self::stock($stockProductId, $secondWarehouse, 2);
         $secondStock = Database::lastInsertId();
-        $lineId = self::guestLine(101, $stockProductId, 5);
+        $stockLine = self::guestLine(101, $stockProductId, 5);
         self::guestLine(101, $uniqueProductId, 1);
         self::connect(self::FIRST, null, 101);
         $guest = new GuestCartsLibraryAgent();
@@ -673,7 +870,7 @@ final class CartPageTest extends CartPageEnvironment
             self::assertCount(2, $cart['lines']);
             $product = Hilos::$db->products[$stockProductId];
             self::assertSame([
-                'lineId' => $lineId,
+                'lineId' => $stockLine,
                 'productId' => $stockProductId,
                 'slug' => $product->slug,
                 'name' => $product->name,
@@ -1028,6 +1225,20 @@ final class CartPageTest extends CartPageEnvironment
     }
 
     /**
+     * @param ?int $userId Account bound in storage, or null for a guest
+     * @return int Persisted session ID
+     */
+    private static function storedSession(?int $userId = null): int
+    {
+        Database::sql(
+            'INSERT INTO hilos_session (token, created_at, last_seen_at, user_id) VALUES (?, ?, ?, ?)',
+            [SessionToken::mint(), 1000, 1000, $userId],
+        );
+
+        return Database::lastInsertId();
+    }
+
+    /**
      * @param int $sessionId Guest session holding the line
      * @param int $productId Product in the cart
      * @param int $quantity Saved selection
@@ -1258,6 +1469,73 @@ final class CartPageTest extends CartPageEnvironment
         } finally {
             $views->setValue($db, $original);
         }
+    }
+
+    /**
+     * @param string $acceptKey Acting connection
+     * @param int $lineId Saved cart row
+     * @param string $ownerKind Cart kind the browser saw
+     * @return SignalDTO Incoming WebSocket action
+     */
+    private static function removeLineSignal(string $acceptKey, int $lineId, string $ownerKind): SignalDTO
+    {
+        $action = EcommerceShopSignalConstants::CART_REMOVE_LINE;
+
+        return new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName($action),
+            new WebSocketActionSignalDTO($acceptKey, $action, ['lineId' => $lineId, 'ownerKind' => $ownerKind], 'remove-' . $lineId),
+        );
+    }
+
+    /**
+     * @param AgentInterface $owner Agent serving the actual subscription
+     * @param string $acceptKey Acting connection
+     * @param int $lineId Saved cart row
+     * @param string $ownerKind Cart kind the browser saw
+     * @return PageActionSuccessSignalData|PageActionErrorSignalData Tracked action acknowledgement
+     */
+    private function removeLine(
+        AgentInterface $owner,
+        string $acceptKey,
+        int $lineId,
+        string $ownerKind,
+    ): PageActionSuccessSignalData|PageActionErrorSignalData {
+        $signal = self::removeLineSignal($acceptKey, $lineId, $ownerKind);
+        self::assertEquals([new AgentDestination($owner->getType(), $owner->getIndex())], Hilos::$sr->getDestinations($signal));
+        $this->deliverCartWorkerMessage(new DaemonAgentMessageDTO($owner->getId(), $signal));
+        $replies = [];
+        while (($queued = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotSame(SignalTypeConstants::DB_SYNC_DELETED, $queued->signalType->getType());
+            self::assertNotSame(EcommerceShopSignalConstants::CART_STATE, $queued->signalName->getName());
+            $frame = $queued->data;
+            if (!$frame instanceof WebSocketSignalData) {
+                continue;
+            }
+            self::assertNotInstanceOf(PageResponseSignalData::class, $frame->data);
+            if ($frame->data instanceof PageActionSuccessSignalData || $frame->data instanceof PageActionErrorSignalData) {
+                self::assertSame($acceptKey, $frame->targetAcceptKey);
+                $replies[] = $frame->data;
+            }
+        }
+        self::assertCount(1, $replies);
+        self::assertSame('remove-' . $lineId, $replies[0]->requestId);
+        self::assertSame(EcommerceShopSignalConstants::CART_REMOVE_LINE, $replies[0]->action);
+
+        return $replies[0];
+    }
+
+    /**
+     * @param AgentInterface $owner Agent addressed by the current subscription
+     * @param int $lineId Requested row
+     * @param string $ownerKind Cart kind the browser saw
+     */
+    private function assertRemovalRefused(AgentInterface $owner, int $lineId, string $ownerKind): void
+    {
+        $reply = $this->removeLine($owner, self::FIRST, $lineId, $ownerKind);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+        self::assertSame('This cart item is no longer available.', $reply->reason);
     }
 
     /**

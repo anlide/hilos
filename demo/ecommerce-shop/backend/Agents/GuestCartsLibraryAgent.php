@@ -64,8 +64,10 @@ use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Objects;
 use Hilos\Environment\NonProductionGate;
@@ -319,6 +321,40 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         }
 
         $binding->actions->remove();
+        $this->publishCart($sessionId);
+    }
+
+    /**
+     * Removes a line from the current guest cart inside the caller's journaled transaction.
+     *
+     * @param int $sessionId Browser session ID
+     * @param int $lineId Product line primary key
+     * @throws ValidationException When the session is no longer a guest or the line is unavailable to it
+     * @throws LogicException When the cart collection is misconfigured
+     * @throws InvalidArgumentException When a read uses an invalid object or a signal cannot be queued
+     * @throws DatabaseException When the session or line read or the delete fails
+     * @throws ItemNotFoundException When the line disappears during a keyed read
+     * @throws PropertyNotFoundException When the line does not expose a required property
+     * @throws ActionsClassException When the line's actions cannot be resolved
+     * @throws WriteNotAllowedException When this process may not remove the line
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
+     * @throws ObjectCollectionNullException When the line has no owning collection
+     * @throws ObjectGetIdStringNotImplementedException When the line has no usable key
+     * @throws SourceChangeSubscriberException When a change subscriber fails
+     * @throws HilosException When the cart snapshot cannot be read
+     */
+    public function removeProductLine(int $sessionId, int $lineId): void
+    {
+        if (!Hilos::$db->sessions->isStoredGuest($sessionId)) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        $line = Hilos::$db->sessionProductCarts[$lineId] ?? null;
+        if ($line === null || $line->sessionId !== $sessionId) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        $line->actions->remove();
         $this->publishCart($sessionId);
     }
 

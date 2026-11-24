@@ -10,12 +10,14 @@ use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
+use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\SessionProductCart;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\CartPageData;
+use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Runtime\View\Item\Connection;
@@ -37,6 +39,13 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
+use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\NamedDatabaseException;
+use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
+use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
+use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -57,6 +66,7 @@ final class CartPage extends AbstractPage
     ];
 
     public const array ACTIONS = [
+        EcommerceShopSignalConstants::CART_REMOVE_LINE => CartRemoveLineActionDTO::class,
         EcommerceShopSignalConstants::CART_STEP_QUANTITY => CartStepQuantityActionDTO::class,
     ];
 
@@ -79,6 +89,48 @@ final class CartPage extends AbstractPage
     public const string DATA_CART = 'cart';
 
     /**
+     * @param string $acceptKey Acting connection
+     * @param string $action Action from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
+     * @return ?ActionReplyDTO No result body on success
+     * @throws AgentUnknownActionException When the action does not belong to this page
+     * @throws InvalidActionPayloadException When the payload does not match the action
+     * @throws ValidationException When the owner binding, line or requested quantity is unavailable
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws NestedTransactionRefusedException When another application transaction is open
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
+     * @throws LogicException When the cart operation raises an unexpected error
+     * @throws HilosException When the runtime read or cart write fails
+     */
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
+    {
+        switch ($action) {
+            case EcommerceShopSignalConstants::CART_REMOVE_LINE:
+                if (!$dto instanceof CartRemoveLineActionDTO) {
+                    throw new InvalidActionPayloadException($action, CartRemoveLineActionDTO::class, $dto);
+                }
+                $this->handleRemoveLine($acceptKey, $dto);
+
+                return null;
+
+            case EcommerceShopSignalConstants::CART_STEP_QUANTITY:
+                if (!$dto instanceof CartStepQuantityActionDTO) {
+                    throw new InvalidActionPayloadException($action, CartStepQuantityActionDTO::class, $dto);
+                }
+                $this->handleStepQuantity($acceptKey, $dto);
+
+                return null;
+
+            default:
+                throw new AgentUnknownActionException(sprintf('Unknown action %s', $action));
+        }
+    }
+
+    /**
      * @param ?int $userId Account behind the connection, or null for a guest
      * @param ?int $sessionId Current session of the connection
      * @param ?string $agentType Serving or subscribed agent type
@@ -90,34 +142,6 @@ final class CartPage extends AbstractPage
         return $userId === null
             ? $sessionId > 0 && $agentType === AgentType::GUEST_CARTS_LIBRARY && $agentIndex === null
             : $userId > 0 && $agentType === HilosAgentType::HILOS_USER && $agentIndex === (string) $userId;
-    }
-
-    /**
-     * @param string $acceptKey Connection invoking the action
-     * @param string $action Action name from the WebSocket envelope
-     * @param ActionPayloadDTO $dto Parsed action fields
-     * @return ?ActionReplyDTO Null so the dispatcher sends the standard success reply
-     * @throws AgentUnknownActionException When the page does not own the action
-     * @throws InvalidActionPayloadException When the payload does not match the action
-     * @throws ValidationException When the cart owner changed or the line or quantity is unavailable
-     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
-     * @throws LogicException When the cart operation raises an unexpected failure
-     * @throws HilosException When the runtime, database or cart sources cannot complete the action
-     */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
-    {
-        switch ($action) {
-            case EcommerceShopSignalConstants::CART_STEP_QUANTITY:
-                if (!$dto instanceof CartStepQuantityActionDTO) {
-                    throw new InvalidActionPayloadException($action, CartStepQuantityActionDTO::class, $dto);
-                }
-                $this->handleStepQuantity($acceptKey, $dto);
-
-                return null;
-
-            default:
-                throw new AgentUnknownActionException("Unknown action: {$action}");
-        }
     }
 
     /**
@@ -175,6 +199,65 @@ final class CartPage extends AbstractPage
         }
 
         return new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
+    }
+
+    /**
+     * @param string $acceptKey Acting connection
+     * @param CartRemoveLineActionDTO $dto Saved line and kind of cart displayed
+     * @throws ValidationException When the owner binding or line is unavailable
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws NestedTransactionRefusedException When another application transaction is open
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
+     * @throws LogicException When the cart operation raises an unexpected error
+     * @throws HilosException When the runtime read or cart write fails
+     */
+    private function handleRemoveLine(string $acceptKey, CartRemoveLineActionDTO $dto): void
+    {
+        try {
+            $connection = $this->requireConnection($acceptKey);
+        } catch (PageConflictException $e) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $e);
+        }
+
+        $agent = $this->getAgent();
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        $sessionId = $connection->sessionId;
+        if ($subscription?->page !== self::PAGE
+            || $subscription->agentType !== $agent->getType()
+            || $subscription->agentIndex !== $agent->getIndex()
+            || !$subscription->admitsPageAnswer($acceptKey)
+            || $sessionId === null || $sessionId <= 0
+        ) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        $ownerKind = $connection->userId === null ? CartRemoveLineActionDTO::GUEST : CartRemoveLineActionDTO::ACCOUNT;
+        if ($dto->ownerKind !== $ownerKind) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, static function () use ($agent, $sessionId, $dto): void {
+                if ($agent instanceof GuestCartsLibraryAgent) {
+                    $agent->removeProductLine($sessionId, $dto->lineId);
+                } elseif ($agent instanceof UserAgent) {
+                    if (!Hilos::$db->sessions->isStoredActiveForUser($sessionId, (int)$agent->getIndex())) {
+                        throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+                    }
+                    $agent->removeProductLine($dto->lineId);
+                } else {
+                    throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+                }
+            });
+        } catch (HilosException $e) {
+            throw $e;
+        } catch (Throwable $e) {
+            throw new LogicException('Unexpected cart removal failure', previous: $e);
+        }
     }
 
     /**

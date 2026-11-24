@@ -50,8 +50,10 @@ use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 use Hilos\Runtime\RtStaleness;
@@ -276,6 +278,42 @@ final class UserAgent extends AbstractUserAgent
         }
 
         $binding->actions->remove();
+        $this->publishCart($userId);
+    }
+
+    /**
+     * Removes a line from this person's cart inside the caller's journaled transaction.
+     *
+     * @param int $lineId Product line primary key
+     * @throws ValidationException When the person is no longer addressable or the line is unavailable to them
+     * @throws LogicException When a collection is misconfigured
+     * @throws InvalidArgumentException When a loaded object does not match its collection or a signal cannot be queued
+     * @throws DatabaseException When a read or delete fails
+     * @throws ItemNotFoundException When the line disappears during a keyed read
+     * @throws PropertyNotFoundException When the line does not expose a required property
+     * @throws ActionsClassException When the line's actions cannot be resolved
+     * @throws WriteNotAllowedException When this process may not remove the line from its owner's set
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
+     * @throws ObjectCollectionNullException When the line has no owning collection
+     * @throws ObjectGetIdStringNotImplementedException When the line has no usable key
+     * @throws SourceChangeSubscriberException When a change subscriber fails
+     * @throws HilosException When the cart snapshot cannot be read
+     */
+    public function removeProductLine(int $lineId): void
+    {
+        $userId = (int)$this->getIndex();
+        try {
+            AddressablePerson::require($userId);
+        } catch (ValidationException $e) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $e);
+        }
+
+        $line = Hilos::$db->userProductCarts[$lineId] ?? null;
+        if ($line === null || $line->userId !== $userId) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        $line->actions->remove();
         $this->publishCart($userId);
     }
 

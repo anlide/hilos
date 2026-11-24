@@ -30,7 +30,7 @@ const cart: CartSnapshot = {
   userId: null,
   lines: [
     {
-      lineId: 11,
+      lineId: 19,
       productId: 7,
       slug: 'pine-bark',
       name: 'Pine bark',

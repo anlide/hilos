@@ -29,7 +29,7 @@ final class UserProductCart extends DbItem
      * Property getter (read-only access).
      *
      * @param string $name Property name
-     * @return mixed Line field or inherited item property
+     * @return mixed Cart line field or inherited item property
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
      * @throws HilosException Whatever the inherited getter raises

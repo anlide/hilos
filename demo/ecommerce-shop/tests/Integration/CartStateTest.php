@@ -20,10 +20,13 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock;
 use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
+use Demo\EcommerceShop\Database\Object\Item\SessionProductCart as ObjectSessionProductCart;
+use Demo\EcommerceShop\Database\Object\Item\UserProductCart as ObjectUserProductCart;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\CartPage;
+use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
@@ -42,10 +45,11 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
-use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -53,10 +57,12 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseNames;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -68,6 +74,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
+use ReflectionMethod;
 use ReflectionProperty;
 use RuntimeException;
 
@@ -647,10 +654,277 @@ final class CartStateTest extends IntegrationTestCase
         self::assertSame([], $this->cartStates());
     }
 
-    /** @param callable(): void $change Voucher change to roll back */
+    /** A committed line deletion answers the owner's page and group while preserving its voucher. */
+    public function testCommittedCartPageRemovalsRefreshOnlyTheirOwner(): void
+    {
+        $removedProduct = self::seededProduct('pine-bark-5-l');
+        $remainingProduct = self::seededProduct('ceramic-pot-18-cm-sand');
+        $outOfStockProduct = self::seededProduct('orchid-fertilizer-250-ml');
+        $session = Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint());
+        $sessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $this->guestSessionIds[] = $sessionId;
+        $neighborSession = Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint());
+        $neighborSessionId = $neighborSession->id ?? self::fail('The neighbor session was not persisted');
+        $this->guestSessionIds[] = $neighborSessionId;
+        $userId = $this->person('Cart removal shopper');
+        $voucher = $this->createVoucher('CART10', 10);
+        $guestLine = self::guestLine($sessionId, $removedProduct, 2);
+        $remainingLine = self::guestLine($sessionId, $remainingProduct, 1);
+        $neighborLine = self::guestLine($neighborSessionId, $removedProduct, 3);
+        $accountLine = self::accountLine($userId, $outOfStockProduct, 2);
+        $guest = $this->guestCarts();
+        $account = $this->personAgent($userId);
+        $this->underAgent($guest, static fn () => $guest->applyVoucher($sessionId, 'CART10'));
+        $this->underAgent($account, static fn () => $account->applyVoucher('CART10'));
+        $this->drainSignals();
+
+        $this->underAgent($guest, fn () => $this->assertRolledBackWithoutCart(
+            static fn () => $guest->removeProductLine($sessionId, $guestLine),
+        ));
+        [$before, $after, $states] = $this->removeThroughCartPage($guest, $sessionId, null, $guestLine, $guest, $neighborSessionId, $neighborLine);
+        self::assertSame([$guestLine, $remainingLine], array_column($before['lines'], 'lineId'));
+        self::assertSame('61000', $before['itemsTotal']);
+        self::assertSame('54900', $before['total']);
+        self::assertNull($after['userId']);
+        self::assertSame([$remainingLine], array_column($after['lines'], 'lineId'));
+        self::assertSame([$remainingProduct], array_column($after['lines'], 'productId'));
+        self::assertSame('32000', $after['itemsTotal']);
+        self::assertSame(['code' => 'CART10', 'active' => true, 'discount' => '3200'], $after['voucher']);
+        self::assertSame('28800', $after['total']);
+        self::assertSame([[CartGroup::forSession($sessionId), [
+            'userId' => null,
+            'lines' => [['productId' => $remainingProduct, 'quantity' => 1]],
+            'voucherId' => $voucher->id,
+        ]]], $states);
+        self::assertNull(Database::sql('SELECT id FROM session_product_cart WHERE id = ?', [$guestLine])->field('id'));
+        self::assertSame($voucher->id, Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId);
+
+        $neighborUserId = $this->person('Neighboring cart shopper');
+        $neighborAccountLine = self::accountLine($neighborUserId, $outOfStockProduct, 1);
+        $neighborAccount = $this->personAgent($neighborUserId);
+        $session->actions->bindUser($userId);
+        $neighborSession->actions->bindUser($neighborUserId);
+        [$before, $after, $states] = $this->removeThroughCartPage(
+            $account,
+            $sessionId,
+            $userId,
+            $accountLine,
+            $neighborAccount,
+            $neighborSessionId,
+            $neighborAccountLine,
+            $neighborUserId,
+        );
+        self::assertSame([$accountLine], array_column($before['lines'], 'lineId'));
+        self::assertSame([0], array_column($before['lines'], 'availableQuantity'));
+        self::assertSame([
+            'userId' => $userId,
+            'lines' => [],
+            'itemsTotal' => '0',
+            'voucher' => ['code' => 'CART10', 'active' => true, 'discount' => '0'],
+            'total' => '0',
+        ], $after);
+        self::assertSame([[CartGroup::forUser($userId), [
+            'userId' => $userId,
+            'lines' => [],
+            'voucherId' => $voucher->id,
+        ]]], $states);
+        self::assertNull(Database::sql('SELECT id FROM user_product_cart WHERE id = ?', [$accountLine])->field('id'));
+        self::assertSame($voucher->id, Hilos::$db->userVoucherCarts[$userId]->voucherId);
+        self::assertSame(3, (int)Database::sql('SELECT quantity FROM session_product_cart WHERE id = ?', [$neighborLine])->field('quantity'));
+        self::assertSame(1, (int)Database::sql('SELECT quantity FROM user_product_cart WHERE id = ?', [$neighborAccountLine])->field('quantity'));
+    }
+
+    /**
+     * @param AgentInterface $owner Owner of the current cart
+     * @param int $sessionId Session reported by the connection
+     * @param ?int $userId Person reported by the connection
+     * @param int $lineId Cart line read by the page
+     * @param AgentInterface $neighborOwner Owner of the neighboring cart
+     * @param int $neighborSessionId Session subscribed beside the acting connection
+     * @param int $neighborLineId Line in the neighboring cart
+     * @param ?int $neighborUserId Person on the neighboring connection, or null for a guest
+     * @return array{array<string, mixed>, array<string, mixed>, list<array{string, array<string, mixed>}>}
+     *     Initial cart page, refreshed cart page and emitted cart states
+     */
+    private function removeThroughCartPage(
+        AgentInterface $owner,
+        int $sessionId,
+        ?int $userId,
+        int $lineId,
+        AgentInterface $neighborOwner,
+        int $neighborSessionId,
+        int $neighborLineId,
+        ?int $neighborUserId = null,
+    ): array {
+        $acceptKey = 'cart-state-removal';
+        $neighborKey = 'cart-state-neighbor';
+        $previousBrowser = Hilos::$browser;
+        $previousRouter = Hilos::$sr;
+        Hilos::initBrowser();
+        $worker = new EcommerceShopWorkerManager(1);
+        Hilos::$browser->bindPageResender($worker);
+        $agents = new ReflectionProperty(WorkerManager::class, 'agentManager')->getValue($worker);
+        $agents->addAgent($owner->getId(), $owner);
+        $agents->addAgent($neighborOwner->getId(), $neighborOwner);
+        RtTruthSourceRegistry::register(EcommerceShopRtContext::connections, TruthSourceKeys::all(), $acceptKey);
+        try {
+            return ExecutionContext::run(new ExecutionFrame(), function () use (
+                $worker, $owner, $acceptKey, $sessionId, $userId, $lineId,
+                $neighborOwner, $neighborKey, $neighborSessionId, $neighborLineId, $neighborUserId,
+            ): array {
+                $before = $this->subscribeForRemoval($worker, $owner, $acceptKey, $sessionId, $userId);
+                $neighbor = $this->subscribeForRemoval($worker, $neighborOwner, $neighborKey, $neighborSessionId, $neighborUserId);
+                self::assertSame($neighborUserId, $neighbor['userId']);
+                self::assertSame([$neighborLineId], array_column($neighbor['lines'], 'lineId'));
+
+                $removal = new CartRemoveLineActionDTO(
+                    $lineId,
+                    $userId === null ? CartRemoveLineActionDTO::GUEST : CartRemoveLineActionDTO::ACCOUNT,
+                );
+                $send = static function (string $requestId) use ($worker, $owner, $acceptKey, $removal): void {
+                    $action = new SignalDTO(
+                        new SignalSource(SignalSource::WEBSOCKET),
+                        new SignalType(SignalTypeConstants::ACTION),
+                        new SignalName($removal->getAction()),
+                        new WebSocketActionSignalDTO($acceptKey, $removal->getAction(), $removal->toArray(), $requestId),
+                    );
+                    self::assertEquals([new AgentDestination($owner->getType(), $owner->getIndex())], Hilos::$sr->getDestinations($action));
+                    $worker->handleDaemonMessage(new DaemonAgentMessageDTO($owner->getId(), $action));
+                };
+                $requestId = 'remove';
+                $send($requestId);
+                [$deleted, $states] = $this->takeCommittedRemoval($acceptKey, $requestId);
+                self::assertSame(
+                    $userId === null ? EcommerceShopDbContext::sessionProductCarts : EcommerceShopDbContext::userProductCarts,
+                    $deleted->collectionKey,
+                );
+                self::assertSame((string)$lineId, $deleted->idString);
+                $ownerField = $userId === null ? ObjectSessionProductCart::sessionId : ObjectUserProductCart::userId;
+                self::assertSame($userId ?? $sessionId, $deleted->row[$ownerField] ?? null);
+
+                self::assertSame(CartPage::PAGE, Hilos::$sr->pageSubscription($acceptKey)?->page);
+                self::assertSame(CartPage::PAGE, Hilos::$sr->pageSubscription($neighborKey)?->page);
+                // Pass the queued delete to the same browser source entry used by the local worker drain.
+                new ReflectionMethod(WorkerManager::class, 'recordBrowserSourceChange')->invoke($worker, $deleted);
+                self::assertSame([], Hilos::$browser->flushToSignalRouter());
+                $after = $this->takeCartPage($acceptKey);
+
+                $send('try-again');
+                self::assertSame([], $this->cartStates());
+
+                return [$before, $after, $states];
+            });
+        } finally {
+            ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $neighborKey): void {
+                foreach ([$acceptKey, $neighborKey] as $connectionKey) {
+                    Hilos::$rt->connections[$connectionKey]?->actions->unregister();
+                    SourceInterestRegistry::releaseConsumer(SourceConsumer::page($connectionKey));
+                }
+            });
+            RtTruthSourceRegistry::unregisterAgent($acceptKey);
+            Hilos::$sr = $previousRouter;
+            if ($previousBrowser === null) {
+                Hilos::resetBrowser();
+            } else {
+                Hilos::initBrowser($previousBrowser);
+            }
+        }
+    }
+
+    /**
+     * @param WorkerManager $worker Worker serving the subscription
+     * @param AgentInterface $owner Cart owner
+     * @param string $acceptKey Connection subscribing to the cart
+     * @param int $sessionId Saved session on the connection
+     * @param ?int $userId Account on the connection, or null for a guest
+     * @return array<string, mixed> Cart snapshot delivered by the subscription
+     */
+    private function subscribeForRemoval(WorkerManager $worker, AgentInterface $owner, string $acceptKey, int $sessionId, ?int $userId): array
+    {
+        ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $userId, $sessionId): void {
+            Hilos::$rt->connections->actions->register($acceptKey, $userId, sessionId: $sessionId);
+        });
+        $worker->handleDaemonMessage(new DaemonAgentMessageDTO($owner->getId(), new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName(CartPage::PAGE),
+            new WebSocketPageSubscribeSignalDTO($acceptKey, CartPage::PAGE),
+        )));
+
+        return $this->takeCartPage($acceptKey);
+    }
+
+    /**
+     * @param string $acceptKey Only connection expecting a cart page frame
+     * @return array<string, mixed> Complete cart from that reply
+     */
+    private function takeCartPage(string $acceptKey): array
+    {
+        $pages = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotSame(EcommerceShopSignalConstants::CART_STATE, $signal->signalName->getName());
+            $frame = $signal->data;
+            if ($frame instanceof WebSocketSignalData
+                && ($frame->data instanceof PageResponseSignalData || $frame->data instanceof PageSubscriptionErrorSignalData)
+            ) {
+                self::assertSame($acceptKey, $frame->targetAcceptKey);
+                self::assertInstanceOf(PageResponseSignalData::class, $frame->data);
+                self::assertSame(CartPage::PAGE, $frame->data->pageKey);
+                $pages[] = $frame->data->payload->data[CartPage::DATA_CART];
+            }
+        }
+        self::assertCount(1, $pages);
+
+        return $pages[0];
+    }
+
+    /**
+     * @param string $acceptKey Connection that asked to remove the line
+     * @param string $requestId Request behind the committed write
+     * @return array{DbSyncDeletedSignalData, list<array{string, array<string, mixed>}>} The delete and group frames from the action
+     */
+    private function takeCommittedRemoval(string $acceptKey, string $requestId): array
+    {
+        $deletes = [];
+        $replies = [];
+        $states = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $frame = $signal->data;
+            if ($signal->signalType->getType() === SignalTypeConstants::DB_SYNC_DELETED) {
+                self::assertInstanceOf(DbSyncDeletedSignalData::class, $frame);
+                // The dispatcher can delete its empty change log receipt after the action.
+                if ($frame->collectionKey === HilosDbContext::changeLogReceipts) {
+                    continue;
+                }
+                self::assertSame($acceptKey, $frame->origin);
+                self::assertSame($requestId, $frame->originRequestId);
+                $deletes[] = $frame;
+            } elseif ($frame instanceof WebSocketSignalData) {
+                self::assertNotInstanceOf(PageResponseSignalData::class, $frame->data);
+                self::assertNotInstanceOf(PageSubscriptionErrorSignalData::class, $frame->data);
+                if ($signal->signalName->getName() === EcommerceShopSignalConstants::CART_STATE) {
+                    self::assertSame(SignalTypeConstants::WS_GROUP, $signal->signalType->getType());
+                    $states[] = self::cartState($frame);
+                } elseif ($frame->data instanceof PageActionSuccessSignalData || $frame->data instanceof PageActionErrorSignalData) {
+                    self::assertSame($acceptKey, $frame->targetAcceptKey);
+                    self::assertInstanceOf(PageActionSuccessSignalData::class, $frame->data);
+                    self::assertSame(EcommerceShopSignalConstants::CART_REMOVE_LINE, $frame->data->action);
+                    self::assertSame($requestId, $frame->data->requestId);
+                    self::assertNull($frame->data->reply);
+                    $replies[] = $frame;
+                }
+            }
+        }
+        self::assertCount(1, $deletes);
+        self::assertCount(1, $replies);
+
+        return [$deletes[0], $states];
+    }
+
+    /** @param callable(): void $change Cart change to roll back */
     private function assertRolledBackWithoutCart(callable $change): void
     {
-        $rollback = new RuntimeException('Roll back the voucher change');
+        $rollback = new RuntimeException('Roll back the cart change');
         try {
             Database::transaction(DatabaseNames::PRIMARY, function () use ($change, $rollback): void {
                 $change();
@@ -658,7 +932,7 @@ final class CartStateTest extends IntegrationTestCase
 
                 throw $rollback;
             });
-            self::fail('The voucher change committed');
+            self::fail('The cart change committed');
         } catch (RuntimeException $failure) {
             self::assertSame($rollback, $failure);
         }
@@ -803,27 +1077,6 @@ final class CartStateTest extends IntegrationTestCase
         ExecutionContext::run(new ExecutionFrame(), fn () => $this->cartWorker->handleDaemonMessage(
             new DaemonAgentMessageDTO($agent->getId(), $signal),
         ));
-    }
-
-    /**
-     * @param string $acceptKey Only tab owed a page response
-     * @return array{lines: list<array<string, mixed>>, itemsTotal: string} Cart data from that response
-     */
-    private function takeCartPage(string $acceptKey): array
-    {
-        $pages = [];
-        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            $frame = $signal->data;
-            if ($frame instanceof WebSocketSignalData && $frame->data instanceof PageResponseSignalData) {
-                $pages[] = $frame;
-            }
-        }
-        self::assertCount(1, $pages);
-        self::assertSame($acceptKey, $pages[0]->targetAcceptKey);
-        $response = $pages[0]->data;
-        self::assertSame(CartPage::PAGE, $response->pageKey);
-
-        return $response->payload->data[CartPage::DATA_CART];
     }
 
     /**
@@ -1121,7 +1374,7 @@ final class CartStateTest extends IntegrationTestCase
      * @param int $sessionId Row of the session whose cart it is
      * @param int $productId Product of the line
      * @param int $quantity Units the line holds, one at least
-     * @return int Persisted line PK
+     * @return int Saved line ID
      */
     private static function guestLine(int $sessionId, int $productId, int $quantity): int
     {
@@ -1139,7 +1392,7 @@ final class CartStateTest extends IntegrationTestCase
      * @param int $userId Person whose cart it is
      * @param int $productId Product of the line
      * @param int $quantity Units the line holds, one at least
-     * @return int Persisted line PK
+     * @return int Saved line ID
      */
     private static function accountLine(int $userId, int $productId, int $quantity): int
     {

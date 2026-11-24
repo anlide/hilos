@@ -16,9 +16,12 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 
@@ -65,7 +68,7 @@ final class UserProductCartsActions extends DbActions
             $this->addLine($userId, $productId, $quantity);
             return;
         }
-        $this->changeQuantity($line, $quantity);
+        $this->changeQuantity($line->getObject(), $quantity);
     }
 
     /**
@@ -91,7 +94,7 @@ final class UserProductCartsActions extends DbActions
         $line = $this->line($userId, $productId);
         $quantity = CartLineRules::stepped($productId, $line?->quantity, $step);
         if ($line !== null) {
-            $this->changeQuantity($line, $quantity);
+            $this->changeQuantity($line->getObject(), $quantity);
         }
     }
 
@@ -117,7 +120,7 @@ final class UserProductCartsActions extends DbActions
         $line = $this->line($userId, $productId);
         $exact = CartLineRules::exact($productId, $line?->quantity, $quantity);
         if ($line !== null) {
-            $this->changeQuantity($line, $exact);
+            $this->changeQuantity($line->getObject(), $exact);
         }
     }
 
@@ -127,22 +130,21 @@ final class UserProductCartsActions extends DbActions
      * @param int $userId Person whose cart it is
      * @param int $productId Id of the product
      * @throws WriteNotAllowedException When this process may not remove a line of the person's cart
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
      * @throws LogicException When collection class constants are not configured
-     * @throws InvalidArgumentException When a loaded object does not match its collection
+     * @throws InvalidArgumentException When a loaded object does not match its collection or DB sync cannot be queued
      * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
      * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
      * @throws DatabaseException When the rows cannot be read, or the database refuses the delete
+     * @throws PropertyNotFoundException When the line does not expose its actions property
+     * @throws ActionsClassException When the line's actions cannot be resolved
+     * @throws ObjectCollectionNullException When the line has no owning collection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws HilosException When the right, the database or the collection refuses the delete
      */
     public function remove(int $userId, int $productId): void
     {
-        $line = $this->line($userId, $productId);
-        if ($line === null) {
-            return;
-        }
-        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
-        $this->deleteLine($line);
+        $this->line($userId, $productId)?->actions->remove();
     }
 
     /**
@@ -185,18 +187,18 @@ final class UserProductCartsActions extends DbActions
      *
      * @param int $userId Person whose cart it is
      * @param int $productId Id of the product
-     * @return ?ObjectUserProductCart The line, or null when the cart holds none of the product
+     * @return ?UserProductCart The line, or null when the cart holds none of the product
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When a loaded object does not match its collection
      * @throws DatabaseException When the rows cannot be read
      * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
      * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
      */
-    private function line(int $userId, int $productId): ?ObjectUserProductCart
+    private function line(int $userId, int $productId): ?UserProductCart
     {
         foreach ($this->collection->whereColumnIs(ObjectUserProductCart::userId, $userId) as $row) {
             if ($row->productId === $productId) {
-                return $row->getObject();
+                return $row;
             }
         }
 

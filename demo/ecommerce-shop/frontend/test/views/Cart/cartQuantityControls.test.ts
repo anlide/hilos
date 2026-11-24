@@ -186,7 +186,10 @@ it('renders a unique line with its fixed quantity and no quantity controls', asy
   const row = document.querySelector('li')!
   expect(row.textContent).toContain('1 · one of a kind')
   expect(row.querySelector('[role="group"]')).toBeNull()
-  expect(row.querySelector('button')).toBeNull()
+  const buttonNames = Array.from(row.querySelectorAll('button'), (button) =>
+    button.getAttribute('aria-label'),
+  )
+  expect(buttonNames).toEqual([`Remove ${stockLine.name}`])
 })
 
 it('dispatches one guest step per row and keeps confirmed data through a refusal', async () => {
