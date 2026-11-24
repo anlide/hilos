@@ -38,6 +38,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\HilosException;
 use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
 use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
@@ -156,6 +157,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * @param PageAgentInterface $agent Index agent routing the page signal
      * @throws InvalidArgumentException When the subscription signal cannot be named or queued
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -209,6 +211,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
      * @param PageRouteParams $params Route parameters (unused)
      * @throws InvalidArgumentException When the subscription signal cannot be named or queued
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {

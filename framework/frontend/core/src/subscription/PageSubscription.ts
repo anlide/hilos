@@ -86,11 +86,14 @@ export type PageSubscribeParamsPreparer = (
   params: Readonly<Record<string, unknown>>,
 ) => Record<string, unknown>
 
-/** Decide whether a page payload answers the active params for its page key. */
+/**
+ * Decide whether a payload answers the active params. An accepted response
+ * can also omit individual data keys from scope ingestion.
+ */
 export type PageResponseMatcher = (
   params: Readonly<Record<string, unknown>>,
   payload: Readonly<ScopePayload>,
-) => boolean
+) => boolean | { readonly omitData: readonly string[] }
 
 /** Internal access to the active opening before connection listeners run. */
 export const capturePageDelivery = Symbol('capturePageDelivery')
@@ -626,19 +629,18 @@ export class PageSubscription {
     pageKey: string,
     payload: ScopePayload,
     matcher?: PageResponseMatcher,
-  ): (() => boolean) | false {
+  ): { isCurrent: () => boolean; omitData?: readonly string[] } | false {
     const current = this.current
     const isCurrent = this[capturePageDelivery](pageKey, { kind: 'response' })
     if (!current || isCurrent === false) return false
-    if (
-      matcher &&
-      (current.scope !== this.scopes.page() ||
-        !matcher(current.params, payload))
-    ) {
-      return false
-    }
+    if (matcher && current.scope !== this.scopes.page()) return false
 
-    return isCurrent() ? isCurrent : false
+    const match = matcher ? matcher(current.params, payload) : true
+    if (!match || !isCurrent()) return false
+
+    return typeof match === 'object'
+      ? { isCurrent, omitData: match.omitData }
+      : { isCurrent }
   }
 
   /**
@@ -680,7 +682,13 @@ export class PageSubscription {
 
     return (
       admission !== false &&
-      this[ingestAdmittedPageResponse](pageKey, payload, options, admission)
+      this[ingestAdmittedPageResponse](
+        pageKey,
+        payload,
+        options,
+        admission?.isCurrent,
+        admission?.omitData,
+      )
     )
   }
 
@@ -689,12 +697,14 @@ export class PageSubscription {
    * @param payload The page's scope-shaped payload.
    * @param options Binding-local entity-type overrides for this page's slots.
    * @param isCurrent Whether the admitted opening still owns the delivery.
+   * @param omitData Inline data keys to leave at their current values.
    */
   [ingestAdmittedPageResponse](
     pageKey: string,
     payload: ScopePayload,
     options: NormalizerOptions,
     isCurrent?: () => boolean,
+    omitData?: readonly string[],
   ): boolean {
     const scope = this.scopes.page()
     if (!scope || pageKey !== this.current?.pageKey) return false
@@ -703,7 +713,7 @@ export class PageSubscription {
       if (isCurrent && !isCurrent()) return false
       const revision = this.responseRevision
 
-      ingestWhileCurrent(scope, payload, options, isCurrent)
+      ingestWhileCurrent(scope, payload, options, isCurrent, omitData)
       if (isCurrent && !isCurrent()) return false
       if (this.responseRevision === revision && this.scopes.page() === scope) {
         this.answeredRevision = revision

@@ -10,6 +10,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 
 /**
  * Shared projection of one node's log figures, used by the window and the full overview header.
@@ -57,6 +58,7 @@ final class HilosLogNodesTableRow extends AbstractTableRow
      * @param ClusterLogNodeSlot $slot Node's place in the cluster mirror
      * @return self Node figures shared by both overview transports
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public static function fromNode(ClusterLogNodeSlot $slot): self
     {

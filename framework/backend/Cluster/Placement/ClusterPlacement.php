@@ -11,6 +11,7 @@ use WeakReference;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\ReadyWork;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Exception\PeerTransportException;
@@ -273,7 +274,11 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var array<string, PlacementRecord> Remote orders still on the sending stack */
     private array $issuingOrders = [];
 
-    /** @var array<string, array{host: string, target: string, placing: bool, order: ?PlacementId, direct: bool}> Pending POLICY moves */
+    /**
+     * @var array<string, array{
+     *     host: string, target: string, placing: bool, order: ?PlacementId, direct: bool, assignment: ?PlacementId
+     * }> Pending POLICY moves, with separate orders for the old stop and the replacement
+     */
     private array $restartsElsewhere = [];
 
     /** @var array<string, PlacementId|true> POLICY orders retained across their old stop report */
@@ -774,6 +779,9 @@ final class ClusterPlacement implements WorkerPlacement
             return;
         }
         $previous = $this->registry->get($agentId);
+        if ($this->isRestartAssignment($previous) || $this->isRestartAssignment($this->issuingOrders[$agentId] ?? null)) {
+            return;
+        }
         if ($previous?->state === PlacementState::Stopped) {
             if ($previous->nodeId !== null) {
                 $this->afterStopTargets[$agentId] = $nodeId;
@@ -837,6 +845,7 @@ final class ClusterPlacement implements WorkerPlacement
         $order = new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Placing, placementId: $placementId);
         // A synchronous reply can name the order before the transport confirms delivery.
         $this->issuingOrders[$agentId] = $order;
+        $this->trackRestartAssignment($order);
         try {
             $delivered = $this->mesh->sendToNode($nodeId, new PeerPlaceAgentDTO($agentType, $agentIndex, $placementId));
         } catch (EventLoopException $e) {
@@ -1193,7 +1202,7 @@ final class ClusterPlacement implements WorkerPlacement
         $order = $this->registry->get($agentId);
         $this->restartsElsewhere[$agentId] = [
             'host' => $hostNodeId, 'target' => $targetNodeId, 'placing' => false,
-            'order' => $order?->placementId, 'direct' => $direct,
+            'order' => $order?->placementId, 'direct' => $direct, 'assignment' => null,
         ];
         if ($direct && isset($this->offlineSince[$hostNodeId])) {
             return;
@@ -1269,6 +1278,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a native placement deadline cannot be armed
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function endInPlaceRestart(string $agentType, ?string $agentIndex, bool $running, string $reason): void
     {
@@ -1629,7 +1639,14 @@ final class ClusterPlacement implements WorkerPlacement
             }
             if ($this->isLeader) {
                 if ($record?->nodeId !== $this->selfNodeId || !$record->state->hostsAgent()
-                    || isset($this->restartsElsewhere[$agentId]) || $this->registry->get($agentId) !== $record) {
+                    || $this->registry->get($agentId) !== $record) {
+                    return;
+                }
+                if ($this->isRestartAssignment($record) && $record->placementId->equals($order->placementId)) {
+                    $this->loseRestartAssignment($record);
+                    return;
+                }
+                if (isset($this->restartsElsewhere[$agentId])) {
                     return;
                 }
                 $this->registry->forget($agentId);
@@ -1979,6 +1996,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function noteAgentStarted(
         string $agentType,
@@ -2015,6 +2033,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function noteAgentStartFailed(
         string $agentType,
@@ -2052,6 +2071,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws InvalidFormatException When waiting placement work cannot be addressed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the existing executor cannot arm a stop or restart deadline
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onPlaceAgent(string $fromNodeId, PeerPlaceAgentDTO $frame): void
     {
@@ -2259,6 +2279,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onAgentStatus(string $fromNodeId, PeerAgentStatusDTO $frame, ?PlacementVerdictSink $immediateVerdict = null): void
     {
@@ -2269,7 +2290,9 @@ final class ClusterPlacement implements WorkerPlacement
         $agentId = $this->agentId($frame->agentType, $frame->agentIndex);
         $existing = $this->registry->get($agentId);
         $issuing = $this->issuingOrders[$agentId] ?? null;
-        if ($issuing?->nodeId === $fromNodeId && ($frame->state === PlacementState::Started || $frame->state === PlacementState::Failed)
+        if ($issuing?->nodeId === $fromNodeId
+            && ($frame->state === PlacementState::Started || $frame->state === PlacementState::Failed
+                || ($frame->state === PlacementState::Stopped && $this->isRestartAssignment($issuing)))
             && !$issuing->placementId->equals($existing?->placementId)
             && $existing?->state !== PlacementState::Stopped && $existing?->state !== PlacementState::Refused) {
             $existing = $issuing;
@@ -2279,7 +2302,11 @@ final class ClusterPlacement implements WorkerPlacement
         }
         if ($frame->state === PlacementState::Stopped) {
             unset($this->peerStops[$agentId]);
-            $this->completeStoppedPlacement($fromNodeId, $frame->agentType, $frame->agentIndex, $existing);
+            if ($frame->stopId === null && $this->isRestartAssignment($existing)) {
+                $this->loseRestartAssignment($existing);
+            } else {
+                $this->completeStoppedPlacement($fromNodeId, $frame->agentType, $frame->agentIndex, $existing);
+            }
             return;
         }
         $restart = $this->restartsElsewhere[$agentId] ?? null;
@@ -2351,18 +2378,11 @@ final class ClusterPlacement implements WorkerPlacement
             unset($this->restartsElsewhere[$agentId]);
             $this->restartSink->onRestartNotPlaced($frame->agentType, $frame->agentIndex, $failure->reason);
         }
-        if ($restart !== null && $restart['placing'] && $fromNodeId === $restart['target']
-            && ($fromNodeId !== $this->selfNodeId || $frame->state !== PlacementState::Started || $frame->workerStarted)) {
-            unset($this->restartsElsewhere[$agentId]);
-            if ($frame->state === PlacementState::Started) {
-                $this->restartSink->onRestartPlaced($frame->agentType, $frame->agentIndex, $fromNodeId);
-            } elseif ($frame->state === PlacementState::Failed) {
-                $this->restartSink->onRestartNotPlaced(
-                    $frame->agentType,
-                    $frame->agentIndex,
-                    $frame->error ?? 'the node reported a failed placement',
-                );
-            }
+        $current = $this->registry->get($agentId);
+        if ($this->isRestartAssignment($existing) && $current?->nodeId === $fromNodeId
+            && $existing->placementId->equals($current->placementId)
+            && ($failure !== null || $current->workerStarted)) {
+            $this->finishRestartAssignment($existing, $failure?->reason);
         }
 
         $current = $this->registry->get($agentId);
@@ -2423,27 +2443,22 @@ final class ClusterPlacement implements WorkerPlacement
                 return;
             }
             $this->restartsElsewhere[$agentId]['placing'] = true;
-            $target = $restart['target'];
             try {
-                $this->placeAgentOnNode($agentType, $agentIndex, $target);
-                if ($this->registry->get($agentId)?->state === PlacementState::Failed) {
-                    throw new LogicException("Node {$target} could not receive the placement");
-                }
+                $this->placeAgentOnNode($agentType, $agentIndex, $restart['target']);
             } catch (Throwable) {
-                try {
-                    $target = $this->placeOnBestFitNode($agentType, $agentIndex);
-                } catch (Throwable) {
-                    $target = null;
-                }
+                // A local refusal before accepting the order leaves the move eligible for fallback.
             }
-            if ($this->registry->get($agentId)?->state === PlacementState::Failed) {
-                $target = null;
+            if (!$this->restartStillNeedsAssignment($agentId, $restart['order'])) {
+                return;
             }
-            if ($target === null) {
+            try {
+                $this->placeOnBestFitNode($agentType, $agentIndex);
+            } catch (Throwable) {
+                // The ordinary placement path retains the diagnosis.
+            }
+            if ($this->restartStillNeedsAssignment($agentId, $restart['order'])) {
                 unset($this->restartsElsewhere[$agentId]);
                 $this->restartSink->onRestartNotPlaced($agentType, $agentIndex, 'no capable node is available');
-            } else {
-                $this->restartsElsewhere[$agentId]['target'] = $target;
             }
             return;
         }
@@ -2458,6 +2473,119 @@ final class ClusterPlacement implements WorkerPlacement
         unset($this->lastPlacementRefusals[$agentId]);
         unset($this->placementVerdictWaiters[$agentId]);
         unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+    }
+
+    /**
+     * Pins the order before entering a port that can reply on the same stack.
+     *
+     * @param PlacementRecord $order Replacement about to be offered to its host
+     */
+    private function trackRestartAssignment(PlacementRecord $order): void
+    {
+        $agentId = $order->agentId();
+        if ($this->restartsElsewhere[$agentId]['placing'] ?? false) {
+            $this->restartsElsewhere[$agentId]['target'] = $order->nodeId;
+            $this->restartsElsewhere[$agentId]['assignment'] = $order->placementId;
+        }
+    }
+
+    /**
+     * @param string $agentId Agent whose old host stopped
+     * @param ?PlacementId $oldOrder Order under which the former host stopped
+     * @return bool Whether that move still awaits its first accepted assignment
+     */
+    private function restartStillNeedsAssignment(string $agentId, ?PlacementId $oldOrder): bool
+    {
+        $move = $this->restartsElsewhere[$agentId] ?? null;
+        return ($move['placing'] ?? false)
+            && ($move['order'] === $oldOrder || $oldOrder?->equals($move['order']))
+            && !$this->isRestartAssignment($this->registry->get($agentId));
+    }
+
+    /**
+     * @param ?PlacementRecord $record Assignment identified by an already-checked fact
+     * @return bool Whether the record is the operator's current replacement
+     */
+    private function isRestartAssignment(?PlacementRecord $record): bool
+    {
+        if ($record === null || !$record->state->hostsAgent()) {
+            return false;
+        }
+        $move = $this->restartsElsewhere[$record->agentId()] ?? null;
+        return ($move['placing'] ?? false) && $move['target'] === $record->nodeId
+            && ($move['assignment']?->equals($record->placementId) ?? false);
+    }
+
+    /**
+     * @param PlacementRecord $order Exact replacement whose outcome was established
+     * @param ?string $failure Diagnosis, or null after worker proof
+     * @throws EventLoopException When a live restart caller deadline cannot be canceled
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the restart reply cannot read the runtime roster
+     */
+    private function finishRestartAssignment(PlacementRecord $order, ?string $failure = null): void
+    {
+        $agentId = $order->agentId();
+        unset($this->restartsElsewhere[$agentId]);
+        if ($order->placementId->equals(($this->issuingOrders[$agentId] ?? null)?->placementId)) {
+            unset($this->issuingOrders[$agentId]);
+        }
+        if ($failure === null) {
+            $this->restartSink->onRestartPlaced($order->agentType, $order->agentIndex, $order->nodeId);
+        } else {
+            $this->restartSink->onRestartNotPlaced($order->agentType, $order->agentIndex, $failure);
+        }
+    }
+
+    /**
+     * Retires the replacement before the reply. A different hosted order first owes its stop.
+     *
+     * @param PlacementRecord $order Exact replacement that no longer has a worker
+     * @param ?PeerPlacedAgentEntry $remaining Different hosted order still requiring a stop
+     * @return PlacementRecord Failed or stop-pending record installed before answering the operator
+     * @throws EventLoopException When a placement or caller deadline cannot be updated
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the restart reply cannot read the runtime roster
+     */
+    private function loseRestartAssignment(PlacementRecord $order, ?PeerPlacedAgentEntry $remaining = null): PlacementRecord
+    {
+        $agentId = $order->agentId();
+        $reason = 'its worker was lost';
+        unset($this->placementAckDeadlines[$agentId]);
+        $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
+        if ($remaining === null) {
+            $this->recordFailure(
+                $order->nodeId,
+                new PlacementRefusalSnapshot($order->agentType, $order->agentIndex, $reason, []),
+                $order->placementId,
+            );
+        } else {
+            // New demand must wait for the old writer's exact stop, even inside the reply port.
+            $this->registry->put(new PlacementRecord(
+                $order->agentType, $order->agentIndex, $order->nodeId, PlacementState::Stopped,
+                placementId: $remaining->placementId,
+            ));
+            $this->afterStopTargets[$agentId] = null;
+        }
+        $retired = $this->registry->get($agentId);
+        $this->finishRestartAssignment($order, $reason);
+        return $retired;
+    }
+
+    /**
+     * @param PlacementRecord $record Current replacement on the responding peer
+     * @param ?string $queryId Echoed query, if any
+     * @param ?int $rejoinSequence Issuance watermark for a matched handshake query
+     * @return bool Whether the query covers this assignment
+     */
+    private function reportJudgesRestartAssignment(PlacementRecord $record, ?string $queryId, ?int $rejoinSequence): bool
+    {
+        if ($record->placementId->term !== $this->leaderTerm || $record->placementId->leaderNodeId !== $this->selfNodeId) {
+            return false;
+        }
+        $armed = $this->placementAckDeadlines[$record->agentId()] ?? null;
+        return ($queryId !== null && $queryId === $armed?->queryId && $armed->stop === null && $armed->matches($record))
+            || ($rejoinSequence !== null && $record->placementId->sequence <= $rejoinSequence);
     }
 
     /**
@@ -2482,7 +2610,7 @@ final class ClusterPlacement implements WorkerPlacement
             }
             return $current->nodeId === $nodeId && $current->state->hostsAgent()
                 && $frame->authorityTerm === $this->leaderTerm && $current->placementId->equals($frame->placementId)
-                && !isset($this->restartsElsewhere[$current->agentId()]);
+                && (!isset($this->restartsElsewhere[$current->agentId()]) || $this->isRestartAssignment($current));
         }
         if ($frame->state !== PlacementState::Started && $frame->state !== PlacementState::Failed) {
             return true;
@@ -2714,6 +2842,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the restart reply cannot read the runtime roster
      */
     public function onPlacementReport(string $fromNodeId, PeerPlacementReportDTO $frame): void
     {
@@ -2752,12 +2881,19 @@ final class ClusterPlacement implements WorkerPlacement
         if ($this->rebuildPending && !$rebuild && !$rejoin) {
             return;
         }
+        $reported = [];
         foreach ($frame->agents as $entry) {
             if (!$this->isLeader || $generation !== $this->authorityGeneration) {
                 return;
             }
             $agentId = $this->agentId($entry->agentType, $entry->agentIndex);
+            $reported[$agentId][] = $entry;
             $existing = $this->registry->get($agentId);
+            $issuing = $this->issuingOrders[$agentId] ?? null;
+            if ($this->isRestartAssignment($issuing)
+                && $existing?->state !== PlacementState::Stopped && $existing?->state !== PlacementState::Refused) {
+                $existing = $issuing;
+            }
             if ($entry->placementId !== null && $entry->placementId->term > $this->leaderTerm) {
                 continue;
             }
@@ -2803,6 +2939,10 @@ final class ClusterPlacement implements WorkerPlacement
             if ($entry->placementId !== null && $existing === null && !$rebuild && !$rejoin) {
                 continue;
             }
+            $restartAssignment = $this->isRestartAssignment($existing);
+            if ($restartAssignment && !$this->reportJudgesRestartAssignment($existing, $queryId, $rejoinSequence)) {
+                continue;
+            }
             $state = $entry->state ?? ($entry->placementId === null ? PlacementState::Started : PlacementState::Placing);
             $record = new PlacementRecord(
                 $entry->agentType, $entry->agentIndex, $fromNodeId, $state, placementId: $entry->placementId,
@@ -2812,17 +2952,18 @@ final class ClusterPlacement implements WorkerPlacement
             if ($state === PlacementState::Started) {
                 $this->placementStarted($agentId, $fromNodeId);
                 unset($this->lastPlacementRefusals[$agentId]);
-                if (!$this->rebuildPending && (!isset($this->restartsElsewhere[$agentId]) || $this->restartsElsewhere[$agentId]['placing'])) {
+                if ($restartAssignment && $record->workerStarted) {
+                    $this->finishRestartAssignment($record);
+                }
+                if (!$this->rebuildPending && $this->registry->get($agentId) === $record
+                    && (!isset($this->restartsElsewhere[$agentId]) || $this->restartsElsewhere[$agentId]['placing'])) {
                     $this->answerPlacementAskers($agentId, PeerPlacementVerdictDTO::placed($entry->agentType, $entry->agentIndex, $fromNodeId));
                 }
             }
         }
 
         if ($this->isLeader && $generation === $this->authorityGeneration) {
-            $this->reconcileMissingAgents($fromNodeId, array_map(
-                fn(PeerPlacedAgentEntry $entry): string => $this->agentId($entry->agentType, $entry->agentIndex),
-                $frame->agents,
-            ), $queryId, $rejoinSequence);
+            $this->reconcileMissingAgents($fromNodeId, $reported, $queryId, $rejoinSequence);
         }
         if ($ack) {
             foreach ($this->peerStops as $stop) {
@@ -4643,24 +4784,36 @@ final class ClusterPlacement implements WorkerPlacement
      * degrades one (HIL-447).
      *
      * @param string $fromNodeId Id of the node that reported
-     * @param list<string> $reportedIds Agent ids the report named
+     * @param array<string, list<PeerPlacedAgentEntry>> $reported Hosted entries by agent id
      * @param ?string $queryId Correlation of this report, absent for a spontaneous update
      * @param ?int $rejoinSequence Last issued placement sequence at the handshake query, when answered
      * @throws EventLoopException When placement of the replacement cannot arm a deadline
      */
-    private function reconcileMissingAgents(string $fromNodeId, array $reportedIds, ?string $queryId, ?int $rejoinSequence): void
+    private function reconcileMissingAgents(string $fromNodeId, array $reported, ?string $queryId, ?int $rejoinSequence): void
     {
         $generation = $this->authorityGeneration;
-        foreach ($this->registry->all() as $record) {
+        foreach (array_merge(array_values($this->issuingOrders), $this->registry->all()) as $record) {
             $agentId = $record->agentId();
             if (!$this->isLeader || !$this->isCurrentPass($generation)) {
                 return;
             }
-            if ($this->registry->get($agentId) !== $record || $record->nodeId !== $fromNodeId
-                || !$this->isJudgedByReport($record, $queryId, $rejoinSequence)
-                || in_array($agentId, $reportedIds, true)
-            ) {
+            $current = $this->registry->get($agentId);
+            $restart = $this->isRestartAssignment($record);
+            if ($current !== $record && (!$restart || ($this->issuingOrders[$agentId] ?? null) !== $record
+                || $current?->state === PlacementState::Stopped || $current?->state === PlacementState::Refused)) {
                 continue;
+            }
+            if ($record->nodeId !== $fromNodeId || !$this->isJudgedByReport($record, $queryId, $rejoinSequence)) {
+                continue;
+            }
+            $entries = $reported[$agentId] ?? [];
+            if (!$restart && $entries !== []) {
+                continue;
+            }
+            foreach ($entries as $entry) {
+                if ($record->placementId->equals($entry->placementId)) {
+                    continue 2;
+                }
             }
 
             if (($this->peerStops[$agentId] ?? null)?->matches($record)) {
@@ -4674,7 +4827,21 @@ final class ClusterPlacement implements WorkerPlacement
             }
 
             Logger::warning("Reconcile: node '{$fromNodeId}' no longer hosts '{$agentId}'; re-placing");
-            $this->registry->forget($agentId);
+            if ($restart) {
+                $retired = $this->loseRestartAssignment($record, $entries[0] ?? null);
+                if (!$this->isCurrentPass($generation) || $this->registry->get($agentId) !== $retired) {
+                    continue;
+                }
+                if ($retired->state === PlacementState::Stopped) {
+                    $this->revokeOnNode($record->agentType, $record->agentIndex, $fromNodeId);
+                    if ($this->isCurrentPass($generation) && $this->registry->get($agentId) === $retired) {
+                        $this->armFailover($agentId, $fromNodeId);
+                    }
+                    continue;
+                }
+            } else {
+                $this->registry->forget($agentId);
+            }
 
             try {
                 if ($this->placeOnBestFitNode($record->agentType, $record->agentIndex) !== null) {
@@ -4720,6 +4887,9 @@ final class ClusterPlacement implements WorkerPlacement
         }
         if (isset($this->restartsElsewhere[$agentId]) && !$this->restartsElsewhere[$agentId]['placing']) {
             return false;
+        }
+        if ($this->isRestartAssignment($record)) {
+            return $this->reportJudgesRestartAssignment($record, $queryId, $rejoinSequence);
         }
         if ($record->state === PlacementState::Started) {
             $id = $record->placementId;
@@ -5723,6 +5893,7 @@ final class ClusterPlacement implements WorkerPlacement
         if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
             return;
         }
+        $this->trackRestartAssignment($record);
         $this->hosted[$agentId] = $record;
         $this->trackedPlacementRecovery($agentId)?->noteLocalOrder($placementId);
         $this->registry->put($record);

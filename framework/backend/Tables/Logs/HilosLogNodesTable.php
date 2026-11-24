@@ -23,6 +23,7 @@ use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 
 /**
  * Cluster nodes projected from the page worker's log mirror into ordinary bounded windows.
@@ -100,6 +101,7 @@ final class HilosLogNodesTable extends TableDefinition implements ViewportTable
      * @throws TableSearchNotSupportedException When a search term is supplied to this unsearchable table
      * @throws TableSearchFieldUnknownException When a declared search field is absent from the rows
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

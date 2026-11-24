@@ -541,10 +541,13 @@ neighbors. Do not offer a worker restart: it takes down every agent on that work
 
 For a local restart, `WorkerServer::restartAgentHere()` prefers the instance's
 former worker when it is still suitable. If the old worker has not reported the
-stop, the start waits for that report or for the worker link to close. A POLICY
-restart to another node uses the leader's placement status to finish, including
-a best-fit retry if the selected target cannot take the agent. With cluster mode
-off, a POLICY agent restarts here.
+stop, the start waits for that report or for the worker link to close. For a POLICY
+move, the leader can try best fit again before a replacement order is accepted.
+Once issued, the replacement order identifies the run's target. Worker proof
+completes the run. An exact failure, a stop after the worker's RT writes, or a
+correlated report confirming absence refuses it. An ACK timeout only requests
+a report, and a preliminary address leaves the run open. With cluster mode off,
+a POLICY agent restarts here.
 
 The CLI speaks to its local daemon. A replica on another node is restarted by
 that node's master; a cluster-scoped agent is restarted through the leader that

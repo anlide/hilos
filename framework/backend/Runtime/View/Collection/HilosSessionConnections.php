@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Collection;
 
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateHilosSessionConnections;
 use Hilos\Runtime\View\Actions\Collection\HilosConnectionsActions;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
@@ -26,6 +27,7 @@ abstract class HilosSessionConnections extends HilosConnections
     /**
      * @return StateHilosSessionConnections Backing state collection
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosSessionConnections
     {
@@ -39,6 +41,7 @@ abstract class HilosSessionConnections extends HilosConnections
      * @param ?int $userId User id to summarize, or null for an empty summary
      * @return HilosUserPresenceSummary Presence, connection count and distinct non-null session count
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function summaryForUser(?int $userId): HilosUserPresenceSummary
     {
@@ -64,6 +67,7 @@ abstract class HilosSessionConnections extends HilosConnections
      * @param string $sessionToken Session cookie token
      * @return list<string> Accept keys of the token's live connections (empty for an unknown token)
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function acceptKeysForSessionToken(string $sessionToken): array
     {
@@ -93,6 +97,7 @@ abstract class HilosSessionConnections extends HilosConnections
      * @param string $sessionToken Session cookie token the frame is about
      * @return list<string> The named keys, then every other live socket of that session
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function acceptKeysForSessionFrame(array $acceptKeys, string $sessionToken): array
     {

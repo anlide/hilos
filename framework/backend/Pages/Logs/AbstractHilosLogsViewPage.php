@@ -37,6 +37,7 @@ use Hilos\Pages\Logs\DTO\LogsFollowStartActionDTO;
 use Hilos\Pages\Logs\DTO\LogsFollowStopActionDTO;
 use Hilos\Pages\Logs\DTO\LogsReadLinesActionDTO;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 
 /**
@@ -149,6 +150,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * @throws InvalidArgumentException When the catalog signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -194,6 +196,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      *     the master last saw offline
      * @throws RtActionsStateCollectionNullException When the cluster roster is unavailable
      * @throws InvalidArgumentException When the frame to the owner cannot be named
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -260,6 +263,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      * @throws InvalidArgumentException When the catalog signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {

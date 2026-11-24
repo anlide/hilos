@@ -514,13 +514,21 @@ carries the deadline fixed by the first check; opening the next image does not
 extend it.
 
 `ChatAgent` receives the shared verdict and owns the chat outcome and file
-publication. It publishes no message until every check is approved; with files,
-it waits for the registry's publication reply, writes the event, then clears the
-composer and marks the files bound. `MainPage` does not receive the verdict or
-publication reply. The six existing composer fields on
-`Connection` remain the browser-facing draft and status. The attempt queue and
-current stage are in the shared `hilosModerationChecks` RT collection, not in a
-session-held composer.
+publication. After the final attachment approval it records the hold, original
+deadline and author on the replicated `Connection` before removing the last
+check and sending publication. A timely reply for that exact wait writes the
+event and links and clears the composer together. Chat marks the files bound
+after commit. An older check can only clean up its own row and hold. A leftover
+check for the accepted hold is removed without repeating publication, and the
+wait still ends at its original deadline.
+
+The six composer fields remain the browser-facing draft and status. Chat
+rebuilds its local deadline work from the imported connections and its own
+check rows, and checks each address again before acting. It advances in bounded
+portions and retries deferred ordinary cleanup separately from a recorded
+terminal phase. Closing a connection still invokes mandatory unregister when
+ordinary check deletion is refused. A known closed socket, including a row
+awaiting roster removal, cannot accept a result.
 
 A content refusal uses the existing public reason and may send the existing
 best-effort message-rejected notification. A renderer refusal (`unreadable`)

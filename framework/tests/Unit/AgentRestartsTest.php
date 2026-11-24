@@ -526,7 +526,12 @@ final class AgentRestartsTest extends TestCase
 
         $placement->onAgentStatus('remote', $mesh->sent[0][1]->stoppedStatus());
         self::assertSame('target', $placement->registry()->get('policy')?->nodeId);
-        FakePlacementMesh::status($placement, 'target', PeerAgentStatusDTO::started('policy', null, 1));
+        $assignment = $placement->registry()->get('policy')?->placementId;
+        self::assertNotNull($assignment);
+        $placement->onAgentStatus('target', PeerAgentStatusDTO::started('policy', null, 1, $assignment, $assignment->term));
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal());
+        self::assertSame(['policy'], array_column($this->restarts->restartingAgents(), 'id'));
+        $placement->onAgentStatus('target', PeerAgentStatusDTO::started('policy', null, 1, $assignment, $assignment->term, workerStarted: true));
         $reply = $this->nextReply();
         self::assertSame(CommandConstants::STATUS_OK, $reply->status);
         self::assertSame('target', $reply->payload[CommandConstants::FIELD_NODE_ID]);

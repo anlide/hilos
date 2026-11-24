@@ -83,8 +83,13 @@ final class ChatRtContext extends RtContext
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
             /** @var StateConnections $connections */
             $connections = $this->_stateCollections[self::connections];
+            $acceptKey = ExecutionContext::currentAcceptKey();
+            $state = $connections->get($acceptKey);
+            if ($acceptKey !== null) {
+                self::assertReadable(self::connections, $acceptKey, $state);
+            }
 
-            return $connections->get(ExecutionContext::currentAcceptKey());
+            return $state;
         };
 
         $this->setRepresent(

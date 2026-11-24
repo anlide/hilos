@@ -7,8 +7,10 @@ namespace Demo\Chat\Runtime\View\Actions\Item;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
+use Hilos\Core\Group\GroupMembership;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
 use Hilos\HilosException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -48,6 +50,32 @@ final class ConnectionActions extends HilosConnectionActions
             StateConnection::outboundModerationPicture => null,
             StateConnection::outboundModerationReason => null,
             StateConnection::outboundModerationUpdatedAt => time(),
+            StateConnection::outboundPublicationHoldId => null,
+            StateConnection::outboundPublicationDeadlineAt => null,
+            StateConnection::outboundPublicationUserId => null,
+        ]);
+    }
+
+    /**
+     * Records the accepted publication on the live composer before handing off the uploads.
+     *
+     * @param string $uploadHoldId Accepted moderation attempt's upload hold
+     * @param int $deadlineAt Original moderation deadline in epoch milliseconds
+     * @param int $userId Person whose uploads were accepted
+     * @throws RtActionsCollectionNameNullException When the collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     */
+    public function awaitOutboundPublication(string $uploadHoldId, int $deadlineAt, int $userId): void
+    {
+        $this->ensureCanWrite();
+
+        $this->applyDiffWithSync([
+            StateConnection::outboundPublicationHoldId => $uploadHoldId,
+            StateConnection::outboundPublicationDeadlineAt => $deadlineAt,
+            StateConnection::outboundPublicationUserId => $userId,
         ]);
     }
 
@@ -73,29 +101,77 @@ final class ConnectionActions extends HilosConnectionActions
             StateConnection::outboundModerationReason => $reason,
             StateConnection::outboundModerationPicture => $picture,
             StateConnection::outboundModerationUpdatedAt => time(),
+            StateConnection::outboundPublicationHoldId => null,
+            StateConnection::outboundPublicationDeadlineAt => null,
+            StateConnection::outboundPublicationUserId => null,
         ]);
     }
 
     /**
-     * Clear current connection-local moderation state after approval.
+     * Clear current connection-local moderation state after approval or session replacement.
      *
+     * @param bool $mandatory A committed session change already invalidated the draft
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
-    public function clearOutboundModeration(): void
+    public function clearOutboundModeration(bool $mandatory = false): void
     {
         $this->ensureCanWrite();
 
-        $this->applyDiffWithSync([
+        $diff = [
             StateConnection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
             StateConnection::outboundModerationMessage => null,
             StateConnection::outboundModerationAttachments => [],
             StateConnection::outboundModerationPicture => null,
             StateConnection::outboundModerationReason => null,
             StateConnection::outboundModerationUpdatedAt => time(),
+            StateConnection::outboundPublicationHoldId => null,
+            StateConnection::outboundPublicationDeadlineAt => null,
+            StateConnection::outboundPublicationUserId => null,
+        ];
+        if ($mandatory) {
+            $this->applyDiffAsCleanup($diff);
+        } else {
+            $this->applyDiffWithSync($diff);
+        }
+    }
+
+    /**
+     * Applies the accepted session identity in one ordinary reservation.
+     *
+     * @param ?int $sessionId Current session row id
+     * @param ?int $userId Current browser user
+     * @param string $token Current session token
+     * @throws HilosException When the runtime write or a group announcement is refused
+     */
+    public function applySessionIdentity(?int $sessionId, ?int $userId, string $token): void
+    {
+        $this->ensureCanWrite();
+        $personChanged = $this->state->userId !== $userId;
+        $this->applyDiffWithSync([
+            StateConnection::sessionId => $sessionId,
+            StateConnection::sessionToken => $token,
+            StateConnection::userId => $userId,
         ]);
+        if ($personChanged) {
+            GroupMembership::leaveAll($this->state->acceptKey);
+        }
+    }
+
+    /**
+     * @param bool $probablyOffline Latest socket liveness observation
+     * @throws HilosException When the runtime write is refused
+     * @see HilosConnectionActions::setProbablyOffline()
+     */
+    public function setProbablyOffline(bool $probablyOffline): void
+    {
+        $collectionKey = $this->getRtCollection()->getCollectionName() ?? StateConnection::getRtCollectionKey();
+        if (!RtOrdinaryAdmission::owesUpdate($collectionKey, $this->state)
+            && !RtOrdinaryAdmission::owesRemoval($collectionKey, $this->state)) {
+            parent::setProbablyOffline($probablyOffline);
+        }
     }
 }

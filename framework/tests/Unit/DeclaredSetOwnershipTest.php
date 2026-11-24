@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
@@ -15,7 +16,14 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\State\Collection\HilosProbeNotes as StateHilosProbeNotes;
+use Hilos\Runtime\State\Item\HilosProbeNote as StateHilosProbeNote;
+use Hilos\Runtime\View\Actions\Collection\HilosProbeNotesActions;
+use Hilos\Runtime\View\Actions\Item\HilosProbeNoteActions;
+use Hilos\Runtime\View\Collection\HilosProbeNotes;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -213,7 +221,8 @@ final class DeclaredSetOwnershipTest extends TestCase
             ['42'],
             TruthSourceOperation::Update,
         );
-        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, DeclaredSetOwnershipTestRtAgent::COLLECTION));
+        $this->assertTrue(RtTruthSourceRegistry::canReadLocalClaim(DeclaredSetOwnershipTestRtAgent::COLLECTION, $agent->getId()));
+        $this->assertFalse(SourceInterestRegistry::isReady(SourceChange::KIND_RT, DeclaredSetOwnershipTestRtAgent::COLLECTION));
         $this->assertFalse(TruthSourceRegistry::hasTruthSource(DeclaredSetOwnershipTestRtAgent::COLLECTION));
 
         $this->expectException(RtTruthSourceWriteNotAllowedException::class);
@@ -238,6 +247,52 @@ final class DeclaredSetOwnershipTest extends TestCase
         );
         $this->assertSame([], OwnershipDeclaration::rtCollectionsOf(DeclaredSetOwnershipTestRtAgent::class));
         $this->assertSame([], OwnershipDeclaration::rtRowCollectionsOf(DeclaredSetOwnershipTestRtAgent::class));
+    }
+
+    /** Before the snapshot, membership in the held set must come from the addressed row. */
+    public function testRuntimeSetOwnerReadsOnlyItsOwnRowsBeforeTheSnapshot(): void
+    {
+        $agent = new DeclaredSetOwnershipTestRtAgent('42');
+        $collection = $agent::COLLECTION;
+        $states = StateHilosProbeNotes::init();
+        $states->add(StateHilosProbeNote::create('neighbor', '7', 'Other set'));
+        $states->add(StateHilosProbeNote::create('own', '42', 'Held set'));
+        $states->add(StateHilosProbeNote::create('temporary', '42', 'Held set'));
+        $rt = self::noteContext($collection, $states);
+        SourceInterestRegistry::readsWhatIsDelivered();
+        OwnershipDeclaration::claimRtSet($agent);
+
+        ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($rt, $states, $collection): void {
+            $rows = $rt->$collection;
+            self::assertTrue(isset($rows['own']));
+            self::assertSame('Held set', $rows['own']?->text);
+            $rows['own']->actions->rewrite('Updated');
+            $rows['temporary']->actions->erase();
+
+            foreach ([
+                'other set' => static fn () => $rows['neighbor'],
+                'other set existence' => static fn () => isset($rows['neighbor']),
+                'undelivered row' => static fn () => $rows['undelivered'],
+                'undelivered row existence' => static fn () => isset($rows['undelivered']),
+                'count' => static fn () => count($rows),
+                'iteration' => static fn () => iterator_to_array($rows),
+                'array conversion' => static fn () => $rows->toArray(),
+            ] as $read => $operation) {
+                try {
+                    $operation();
+                    self::fail("Read succeeded before the snapshot: {$read}");
+                } catch (RtCollectionNotReadableException $failure) {
+                    self::assertStringContainsString('its state has not arrived yet', $failure->getMessage());
+                }
+            }
+
+            $states->add(StateHilosProbeNote::create('undelivered', '7', 'From snapshot'));
+            SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+            self::assertSame('Updated', $rows['own']?->text);
+            self::assertSame('Other set', $rows['neighbor']?->text);
+            self::assertSame('From snapshot', $rows['undelivered']?->text);
+            self::assertCount(3, $rows);
+        });
     }
 
     /**
@@ -321,10 +376,55 @@ final class DeclaredSetOwnershipTest extends TestCase
             SourceChange::KIND_RT,
             DeclaredSetOwnershipTestBorrowerRtAgent::COLLECTION,
         ));
+        $this->assertFalse(RtTruthSourceRegistry::canReadLocalClaim(DeclaredSetOwnershipTestBorrowerRtAgent::COLLECTION, $agent->getId()));
         $this->assertFalse(SourceInterestRegistry::isReady(
             SourceChange::KIND_RT,
             DeclaredSetOwnershipTestBorrowerRtAgent::COLLECTION,
         ));
+
+        $collection = $agent::COLLECTION;
+        $states = StateHilosProbeNotes::init();
+        $states->add(StateHilosProbeNote::create('own', '42', 'Borrowed set'));
+        $rt = self::noteContext($collection, $states);
+        ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($rt, $collection): void {
+            try {
+                $rt->$collection['own'];
+                self::fail('A borrowed set was readable before the snapshot');
+            } catch (RtCollectionNotReadableException $failure) {
+                self::assertStringContainsString('its state has not arrived yet', $failure->getMessage());
+            }
+            SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+            self::assertSame('Borrowed set', $rt->$collection['own']?->text);
+        });
+    }
+
+    /**
+     * @param string $collection Runtime collection named by the test agent's set claim
+     * @param StateHilosProbeNotes $states Rows this worker holds
+     * @return RtContext Runtime context with the same note representation used by the set probe
+     */
+    private static function noteContext(string $collection, StateHilosProbeNotes $states): RtContext
+    {
+        $rt = new class ($collection, $states) extends RtContext {
+            /**
+             * @param string $collection Collection named by the set claim
+             * @param StateHilosProbeNotes $states Rows this worker holds
+             */
+            public function __construct(
+                private readonly string $collection,
+                private readonly StateHilosProbeNotes $states,
+            ) {
+            }
+
+            public function configure(): void
+            {
+                $this->_stateCollections[$this->collection] = $this->states;
+                $this->setRepresent($this->collection, HilosProbeNotes::class, HilosProbeNotesActions::class, HilosProbeNoteActions::class);
+            }
+        };
+        $rt->configure();
+
+        return $rt;
     }
 }
 

@@ -69,13 +69,14 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();
+        $this->forgetModerationSessions();
         parent::tearDown();
     }
 
     public function testRejectedMessageNotifiesItsAuthor(): void
     {
         $user = Hilos::$db->users->actions->createWithName('ModerationAuthor557');
-        Hilos::$rt->connections->actions->register('reject-notify-ak', $user->id);
+        $this->registerModerationConnection('reject-notify-ak', $user->id);
         Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
         Hilos::$rt->connections['reject-notify-ak']?->actions->startOutboundModeration('blocked message', []);
 
@@ -97,7 +98,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     public function testRejectedMessageWithCategoryNotifiesAuthorWithCategoryPhrase(): void
     {
         $user = Hilos::$db->users->actions->createWithName('SpamAuthor557');
-        Hilos::$rt->connections->actions->register('reject-spam-ak', $user->id);
+        $this->registerModerationConnection('reject-spam-ak', $user->id);
         Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
         Hilos::$rt->connections['reject-spam-ak']?->actions->startOutboundModeration('spam message', []);
 
@@ -119,7 +120,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
     public function testAnUnavailableModeratorNotifiesNobodyAboutTheMessage(): void
     {
         $user = Hilos::$db->users->actions->createWithName('ModerationAuthor557');
-        Hilos::$rt->connections->actions->register('unavailable-notify-ak', $user->id);
+        $this->registerModerationConnection('unavailable-notify-ak', $user->id);
         Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
         Hilos::$rt->connections['unavailable-notify-ak']?->actions->startOutboundModeration('pending message', []);
 
@@ -139,7 +140,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->createWithName('PictureAuthor557');
         $this->completeUpload('picture-notify-ak', (int)$user->id, 'doc-1', 'notes.pdf', 'application/pdf', 'pdf');
         $this->completeUpload('picture-notify-ak', (int)$user->id, 'pic-1', 'holiday.png', 'image/png', 'png');
-        Hilos::$rt->connections->actions->register('picture-notify-ak', $user->id);
+        $this->registerModerationConnection('picture-notify-ak', $user->id);
         Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
         Hilos::$rt->connections['picture-notify-ak']?->actions->startOutboundModeration(
             'hello',
@@ -164,7 +165,7 @@ final class ChatModerationNotificationTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
         $user = Hilos::$db->users->actions->createWithName('PictureAuthor557');
         $this->completeUpload('picture-unreadable-notify-ak', (int)$user->id, 'pic-1', 'broken.png', 'image/png', 'png');
-        Hilos::$rt->connections->actions->register('picture-unreadable-notify-ak', $user->id);
+        $this->registerModerationConnection('picture-unreadable-notify-ak', $user->id);
         Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
         Hilos::$rt->connections['picture-unreadable-notify-ak']?->actions->startOutboundModeration('hello', ['pic-1']);
 

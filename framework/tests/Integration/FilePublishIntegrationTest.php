@@ -384,8 +384,9 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
             Hilos::$rt->hilosUploads->find(self::SIGNED_IN, $id)->actions->hold(self::HOLD_TOKEN, $deadlineAt);
         }
         $answer = $this->publish(self::SIGNED_IN, ['u2', 'u1'], FilePublishTestHilos::HELD,
-            new UploadHoldSettleSignalData(self::SIGNED_IN, self::HOLD_TOKEN, UploadHoldOutcome::APPROVED));
+            new UploadHoldSettleSignalData(self::SIGNED_IN, self::HOLD_TOKEN, UploadHoldOutcome::APPROVED), self::HOLD_TOKEN);
         self::assertNull($answer->error);
+        self::assertSame(self::HOLD_TOKEN, $answer->uploadHoldId);
         self::assertSame(['u2', 'u1'], $answer->clientUploadIds);
         self::assertCount(2, $answer->fileIds);
         foreach ($answer->fileIds as $i => $fileId) {
@@ -399,7 +400,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
     /** @return iterable<string, array{string}> Owner states that must never reach the files library */
     public static function refusedHoldStates(): iterable
     {
-        foreach (['unheld', 'unapproved', 'expired', 'released', 'mixed-token', 'replacement'] as $state) {
+        foreach (['unheld', 'unapproved', 'expired', 'released', 'mixed-token', 'replacement', 'wrong-request'] as $state) {
             yield $state => [$state];
         }
     }
@@ -430,7 +431,10 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
             Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u2')->actions->forgetWithFile();
             $this->complete(self::SIGNED_IN, 'u2', 'replacement', FilePublishTestHilos::HELD);
         }
-        $this->assertRefusedAndUntouched(self::HOLD_REFUSAL, self::SIGNED_IN, ['u1', 'u2'], ['u1', 'u2'], FilePublishTestHilos::HELD);
+        $this->assertRefusedAndUntouched(
+            self::HOLD_REFUSAL, self::SIGNED_IN, ['u1', 'u2'], ['u1', 'u2'], FilePublishTestHilos::HELD,
+            $state === 'wrong-request' ? 'older-publication' : self::HOLD_TOKEN,
+        );
     }
 
     public function testAnUploadThatIsNotThereIsRefusedAsGone(): void
@@ -559,9 +563,11 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
 
     public function testAFailureOnTheSecondFileUndoesTheWholeRequest(): void
     {
-        $this->complete(self::SIGNED_IN, 'u1', 'first');
-        $this->complete(self::SIGNED_IN, 'u2', 'second');
-        $this->complete(self::SIGNED_IN, 'u3', 'third');
+        $deadline = TimeHelper::nowMs() + 60000;
+        foreach (['u1' => 'first', 'u2' => 'second', 'u3' => 'third'] as $id => $bytes) {
+            $this->complete(self::SIGNED_IN, $id, $bytes, FilePublishTestHilos::HELD);
+            Hilos::$rt->hilosUploads->find(self::SIGNED_IN, $id)->actions->hold(self::HOLD_TOKEN, $deadline);
+        }
         $tmp = [
             $this->tmpFile(self::SIGNED_IN, 'u1'),
             $this->tmpFile(self::SIGNED_IN, 'u2'),
@@ -569,8 +575,13 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         ];
         unlink($tmp[1]);
 
-        $answer = $this->publish(self::SIGNED_IN, ['u1', 'u2', 'u3']);
+        $answer = $this->publish(
+            self::SIGNED_IN, ['u1', 'u2', 'u3'], FilePublishTestHilos::HELD,
+            new UploadHoldSettleSignalData(self::SIGNED_IN, self::HOLD_TOKEN, UploadHoldOutcome::APPROVED), self::HOLD_TOKEN,
+        );
 
+        self::assertTrue($this->libraryAsked);
+        self::assertSame(self::HOLD_TOKEN, $answer->uploadHoldId);
         self::assertSame('Cannot keep the file', $answer->error);
         self::assertSame([], $answer->fileIds);
         self::assertSame(0, self::rowCount());
@@ -735,6 +746,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
      * @param list<string> $clientUploadIds Uploads to publish
      * @param list<string> $untouched Uploads expected to still hold their temporary files
      * @param string $target Target to publish for
+     * @param ?string $uploadHoldId Hold in the request whose refusal is checked
      * @throws HilosException When an agent fails to handle a frame
      */
     private function assertRefusedAndUntouched(
@@ -743,13 +755,15 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         array $clientUploadIds,
         array $untouched,
         string $target = FilePublishTestHilos::OPEN,
+        ?string $uploadHoldId = null,
     ): void {
         $tmp = array_map(fn(string $clientUploadId): string => $this->tmpFile($acceptKey, $clientUploadId), $untouched);
         $rows = self::rowCount();
 
-        $answer = $this->publish($acceptKey, $clientUploadIds, target: $target);
+        $answer = $this->publish($acceptKey, $clientUploadIds, target: $target, uploadHoldId: $uploadHoldId);
 
         self::assertSame($message, $answer->error);
+        self::assertSame($uploadHoldId, $answer->uploadHoldId);
         self::assertSame([], $answer->fileIds);
         self::assertSame($clientUploadIds, $answer->clientUploadIds);
         self::assertFalse($this->libraryAsked, 'Nothing reaches the library');
@@ -830,7 +844,8 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
      * @param string $acceptKey Connection the uploads belong to
      * @param list<string> $clientUploadIds Uploads to publish
      * @param string $target Target to publish for
-     * @param ?UploadHoldSettleSignalData $settlement Optional approval queued before the unchanged publication request
+     * @param ?UploadHoldSettleSignalData $settlement Optional approval queued before publication
+     * @param ?string $uploadHoldId Hold named on the publication request
      * @return FilesPublishedSignalData The answer under the asker's name
      * @throws HilosException When an agent fails to handle a frame
      */
@@ -839,6 +854,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
         array $clientUploadIds,
         string $target = FilePublishTestHilos::OPEN,
         ?UploadHoldSettleSignalData $settlement = null,
+        ?string $uploadHoldId = null,
     ): FilesPublishedSignalData {
         $this->goneFrames = [];
         $this->libraryAsked = false;
@@ -849,7 +865,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
             $consumer->sendToAgent(HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE, $settlement);
         }
         $consumer->sendToAgent(HilosSignalConstants::HILOS_UPLOAD_PUBLISH,
-            new UploadPublishSignalData($acceptKey, $target, $clientUploadIds, self::REPLY));
+            new UploadPublishSignalData($acceptKey, $target, $clientUploadIds, self::REPLY, $uploadHoldId));
 
         $answer = null;
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
@@ -873,7 +889,8 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
                     if ($this->libraryFs !== null) {
                         Hilos::$fs = $this->libraryFs;
                     }
-                    $this->library->onSignalAgent($signal->data, '', HilosSignalConstants::HILOS_FILE_PUBLISH);
+                    $this->library->onSignalAgent(new AgentSignalData(FilePublishSignalData::fromArray($signal->data->data->toArray())),
+                        '', HilosSignalConstants::HILOS_FILE_PUBLISH);
                 } finally {
                     Hilos::$fs = $uploadFs;
                     ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
@@ -881,7 +898,7 @@ final class FilePublishIntegrationTest extends FrameworkIntegrationTestCase
             } elseif ($name === self::REPLY && $signal->data instanceof AgentSignalData) {
                 self::assertNull($answer, 'The asker is answered once');
                 self::assertInstanceOf(FilesPublishedSignalData::class, $signal->data->data);
-                $answer = $signal->data->data;
+                $answer = FilesPublishedSignalData::fromArray($signal->data->data->toArray());
             }
         }
 

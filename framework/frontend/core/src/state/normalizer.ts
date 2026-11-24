@@ -151,12 +151,14 @@ export function ingest(
  * @param payload The raw scope-shaped payload.
  * @param options Binding-local entity-type overrides for the payload's slots.
  * @param isCurrent Whether the delivery can still write to the scope after each reactive write.
+ * @param omitData Inline data keys to leave at their current values.
  */
 export function ingestWhileCurrent(
   scope: Scope,
   payload: ScopePayload,
   options: NormalizerOptions,
   isCurrent?: () => boolean,
+  omitData?: readonly string[],
 ): void {
   const slots = payload.entities ?? {}
   const data = payload.data ?? {}
@@ -210,6 +212,7 @@ export function ingestWhileCurrent(
   }
   for (const [key, value] of Object.entries(data)) {
     if (isCurrent && !isCurrent()) return
+    if (omitData?.includes(key)) continue
     scope.data.set(key, value)
   }
   for (const [listKey, section] of Object.entries(lists)) {

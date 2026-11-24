@@ -6,6 +6,7 @@ namespace Hilos\Database\Object\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Collection\Sessions as EntitySessions;
@@ -46,9 +47,47 @@ class Sessions extends Objects
      */
     public function isStoredGuest(int $sessionId): bool
     {
+        return $this->matchesStoredIdentity($sessionId, null);
+    }
+
+    /**
+     * Checks one session's committed identity without relying on a worker's object mirror.
+     *
+     * @param int $sessionId Session primary key
+     * @param ?int $userId Person the session must act as, or null for a guest
+     * @param ?string $token Required for an incoming state frame; null when a token rotation is immaterial
+     * @return bool Whether the stored session matches
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function matchesStoredIdentity(int $sessionId, ?int $userId, ?string $token = null): bool
+    {
         $session = static::entityClass()::getById($sessionId);
 
-        return $session !== null && $session->user_id === null;
+        return $session !== null && $session->user_id === $userId && ($token === null || $session->token === $token);
+    }
+
+    /**
+     * Reads the current author under a shared row lock on the mounted connection.
+     * The caller's write transaction holds the lock until it ends.
+     *
+     * @param int $sessionId Session primary key
+     * @param int $userId Author whose write is being admitted
+     * @return bool Whether the current row exists and still belongs to the author
+     * @throws DatabaseException When the caller has no transaction on that connection, the lock is busy, or the read fails
+     */
+    public function lockStoredAuthor(int $sessionId, int $userId): bool
+    {
+        $index = static::entityClass()::getDatabase()->connectionIndex;
+        if (Database::runtimeTransactionLevel($index) === null) {
+            throw new DatabaseException('The session author lock requires the row connection transaction.');
+        }
+        $row = Database::sql(
+            'SELECT `user_id` FROM ' . static::entityClass()::getSqlTableName() . ' WHERE `id` = ? LOCK IN SHARE MODE NOWAIT',
+            [$sessionId], index: $index,
+        )->firstRow();
+
+        return $row !== null && $row['user_id'] !== null && (int)$row['user_id'] === $userId;
     }
 
     /**

@@ -12,6 +12,7 @@ use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 
 /**
  * Chat demo browser-facing context.
@@ -37,6 +38,7 @@ final class ChatBrowserContext extends BrowserContext
      * @return mixed Computed browser field value, or null when unavailable
      * @throws PageInternalErrorException When a computed field cannot be resolved
      * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function computeBrowserField(
         string $browserKey,

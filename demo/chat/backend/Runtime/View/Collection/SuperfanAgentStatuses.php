@@ -11,6 +11,7 @@ use Demo\Chat\Runtime\View\Item\SuperfanAgentStatus;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\HilosException;
@@ -25,6 +26,7 @@ final class SuperfanAgentStatuses extends RtCollection
 {
     /**
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateSuperfanAgentStatuses
     {
@@ -46,6 +48,7 @@ final class SuperfanAgentStatuses extends RtCollection
      * @param mixed $offset Superfan agent id
      * @return ?SuperfanAgentStatus Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?SuperfanAgentStatus
     {

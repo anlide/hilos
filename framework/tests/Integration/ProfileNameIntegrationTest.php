@@ -37,6 +37,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
@@ -79,6 +80,7 @@ use Hilos\Auth\Session\DTO\LogoutActionDTO;
 use Hilos\Auth\Session\DTO\ImpersonateStopActionDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosModerationCheck;
@@ -724,6 +726,87 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
         $this->assertChecking([true]);
         $this->verdict(true, ModerationReason::OK);
         $this->assertRenamedOnce('Grace');
+    }
+
+    public function testCheckingAlreadyReplicatedWithoutItsCreatedFactExpiresAtTheSessionHolder(): void
+    {
+        $this->dispatchName('Grace');
+        $this->deliverNameBegin($this->holdNameBegin());
+        $change = $this->change();
+        $continue = null;
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE) {
+                $continue = $signal;
+            }
+        }
+        self::assertNotNull($continue);
+        self::assertSame(StateHilosProfileNameChange::PHASE_CHECKING, $change->phase);
+
+        // The replica already has the row but the library was absent for its CREATED callback.
+        $worker = new ProfileModerationWorker($this->nameLibrary);
+        ExecutionContext::run(new ExecutionFrame(), fn () => $worker->handleDaemonMessage(
+            new DaemonAgentMessageDTO($this->nameLibrary->getId(), $continue),
+        ));
+        self::assertCount(0, Hilos::$rt->hilosModerationChecks);
+
+        RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(
+            StateHilosProfileNameChange::RT_COLLECTION, $change->sessionTokenHash,
+            [StateHilosProfileNameChange::deadlineAt => TimeHelper::nowMs() - 1],
+        ), false);
+        ExecutionContext::run(new ExecutionFrame(agentId: $this->holder->getId()), fn () => $this->holder->onTick());
+        $this->carry();
+
+        self::assertSame($change->requestId, $this->change()->requestId);
+        self::assertSame(StateHilosProfileNameChange::PHASE_REFUSED, $this->change()->phase);
+        self::assertCount(0, Hilos::$rt->hilosModerationChecks);
+        $this->assertUnchanged();
+    }
+
+    public function testEachNameVerdictSettlesOnlyItsOwnAttemptBeforeTheHolderAdvances(): void
+    {
+        $this->confirmStepUp(StepUpOperationKey::CHANGE_NAME, self::OTHER_SESSION_TOKEN);
+        $this->dispatchName('Grace');
+        $first = $this->check();
+        $this->dispatchName('Independent', self::OTHER_ACCEPT_KEY);
+        $second = $this->findCheck(self::OTHER_ACCEPT_KEY);
+        self::assertNotNull($second);
+        self::assertNotSame($first->requestId, $second->requestId);
+
+        $worker = new ProfileModerationWorker($this->nameLibrary);
+        $worker->deliverVerdict(new ModerationVerdictSignalData(
+            self::OTHER_ACCEPT_KEY, ModerationKindKey::PROFILE_NAME, $first->requestId, false, ModerationReason::SERVICE_UNAVAILABLE,
+        ));
+        self::assertSame(
+            $second->requestId,
+            Hilos::$rt->hilosModerationChecks->find(self::OTHER_ACCEPT_KEY, ModerationKindKey::PROFILE_NAME)?->requestId,
+        );
+        Hilos::$db->stepUps->actions->confirm(
+            ProtectedModeRuntime::hashSessionToken(self::OTHER_SESSION_TOKEN),
+            self::USER_ID,
+            StepUpOperationKey::CHANGE_NAME,
+            TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND,
+        );
+        $worker->deliverVerdict(new ModerationVerdictSignalData(
+            self::OTHER_ACCEPT_KEY, ModerationKindKey::PROFILE_NAME, $second->requestId, true, ModerationReason::OK,
+        ));
+        $approval = new ModerationVerdictSignalData(
+            self::ACCEPT_KEY, ModerationKindKey::PROFILE_NAME, $first->requestId, true, ModerationReason::OK,
+        );
+        $worker->deliverVerdict($approval);
+        self::assertSame(StateHilosProfileNameChange::PHASE_CHECKING, $this->change()->phase);
+        $this->inNameLibrary(fn () => $this->nameLibrary->onSignalAgent(new AgentSignalData(new ProfileNameContinueSignalData(
+            $this->change()->sessionTokenHash, $first->requestId,
+        )), 'holder', HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE));
+        $worker->deliverVerdict($approval);
+        $this->inNameLibrary(fn () => $this->nameLibrary->onTick());
+        self::assertCount(0, Hilos::$rt->hilosModerationChecks);
+
+        $this->carry();
+        $this->assertRenamedOnce('Grace');
+        self::assertSame(
+            StateHilosProfileNameChange::PHASE_REFUSED,
+            Hilos::$rt->hilosProfileNameChanges[ProtectedModeRuntime::hashSessionToken(self::OTHER_SESSION_TOKEN)]?->phase,
+        );
     }
 
     public function testPendingTabsJoinOneAttemptWhileAnotherBrowserHasItsOwn(): void

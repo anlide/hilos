@@ -18,6 +18,7 @@ use Hilos\Log\LogBatchSummary;
 use Hilos\Log\LogKeySummary;
 use Hilos\Pages\Logs\AbstractHilosLogsViewPage;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 
 /**
  * The catalog of readable sources for the log viewer (server → client, HIL-388).
@@ -102,6 +103,7 @@ final class HilosLogsViewCatalogSignalData extends BaseDTO implements SignalData
      * @param bool $clusterEnabled Whether this installation runs in cluster mode
      * @return self Catalog of every node in that picture
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public static function fromIndex(?ClusterLogIndex $index, bool $clusterEnabled): self
     {

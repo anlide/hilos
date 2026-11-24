@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\BackupHistories as StateBackupHistories;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\RtState;
@@ -32,6 +33,7 @@ final class BackupHistories extends RtCollection
     /**
      * @return StateBackupHistories Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateBackupHistories
     {
@@ -53,6 +55,7 @@ final class BackupHistories extends RtCollection
      * @param mixed $offset Backup id
      * @return ?BackupHistory Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?BackupHistory
     {

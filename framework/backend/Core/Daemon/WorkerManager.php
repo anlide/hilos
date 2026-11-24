@@ -42,6 +42,7 @@ use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Snapshot\RtWorkLane;
 use Hilos\Runtime\Snapshot\RtWorkScheduler;
+use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
@@ -82,6 +83,7 @@ use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageDeliveryReleaser;
 use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageSignalRouter;
@@ -230,7 +232,7 @@ use Hilos\Constants\CliCommands;
  * Owns the daemon connection, worker-local agents, page signal routers,
  * subscription mirrors, and browser flushing.
  */
-abstract class WorkerManager extends BaseManager implements PageResender
+abstract class WorkerManager extends BaseManager implements PageResender, PageDeliveryReleaser
 {
     /** The worker receives POSIX signals exclusively through its socket's event base. */
     protected const array SIGNAL_FUNCTIONS = ['pcntl_sigprocmask'];
@@ -1266,6 +1268,22 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
+     * @param string $page Page whose publication failed
+     * @param string $acceptKey Connection that was shown the error
+     * @throws FramePopOrderException When the page leaves the execution stack imbalanced
+     */
+    public function releaseFailedPageDelivery(string $page, string $acceptKey): void
+    {
+        $this->runForServingPage(
+            $page,
+            $acceptKey,
+            static function (PageSignalRouter $router) use ($page, $acceptKey): void {
+                $router->releaseFailedPageDelivery($page, $acceptKey);
+            },
+        );
+    }
+
+    /**
      * Refuses one live subscription because the row it was about has just been deleted.
      *
      * The walk is the re-send's. The subscription mirror names the agent, that agent is
@@ -1328,25 +1346,53 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
     {
-        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
-        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
-            return PageResendOutcome::Unserved;
+        return $this->runForServingPage(
+            $page,
+            $acceptKey,
+            static fn (PageSignalRouter $router): PageResendOutcome => $router->moveRenamedResource($page, $acceptKey, $targetParams),
+        ) ?? PageResendOutcome::Unserved;
+    }
+
+    /**
+     * @template T
+     * @param string $page Page currently served
+     * @param string $acceptKey Connection named by the worker mirror
+     * @param Closure(PageSignalRouter): T $run Work performed in the serving agent's frame
+     * @return T|null The result, or null if the subscription is not served here
+     * @throws FramePopOrderException When the page leaves the execution stack imbalanced
+     */
+    private function runForServingPage(string $page, string $acceptKey, Closure $run): mixed
+    {
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null
+            || !$subscription->admitsPageAnswer($acceptKey)) {
+            return null;
         }
 
         $agentId = $this->agentManager->buildAgentId($subscription->agentType, $subscription->agentIndex);
         $agent = $agentId === null ? null : $this->agentManager->getAgent($agentId);
         if ($agentId === null || $agent === null) {
-            return PageResendOutcome::Unserved;
+            return null;
+        }
+
+        $context = new PageSubscriptionContext($router, $acceptKey, $subscription);
+        $fanOut = Hilos::$browser?->activePageFanOut($acceptKey);
+        if ($fanOut !== null && ($fanOut->router !== $router || $fanOut->subscription !== $subscription)) {
+            return null;
         }
 
         try {
             return ExecutionContext::run(
                 new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
-                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)
-                    ->moveRenamedResource($page, $acceptKey, $targetParams),
+                fn () => $router->withPageAnswerAuthority(
+                    $context,
+                    fn () => $run($this->getPageSignalRouter($agentId, $agent)),
+                    $subscription->admittedIdentity,
+                ),
             );
         } catch (PageSignalRouterNotFoundException) {
-            return PageResendOutcome::Unserved;
+            return null;
         }
     }
 
@@ -1455,9 +1501,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // run without it: what the class says it reads is taken up here, and waited for, so
             // onStart() opens on a collection and not on the emptiness before one. A claim that may
             // not add is waited for beside the reads: its holder never wrote those rows, so their
-            // copy is on its way here exactly as a read's is.
+            // copy is on its way here exactly as a read's is. Moderation set claims wait here too,
+            // before the local claim can exclude a previous holder's checks from the import.
             $reads = [
-                SourceChange::KIND_RT => [...$this->agentReadsRt($agentType), ...$this->agentBorrowsRt($agentType)],
+                SourceChange::KIND_RT => [...$this->agentReadsRt($agentType), ...$this->agentClaimsWaitingForRt($agentType)],
                 SourceChange::KIND_DB => [...$this->agentReadsDb($agentType), ...$this->agentBorrowsDb($agentType)],
             ];
             $this->raiseSourceInterest(SourceConsumer::agent($agentId), $reads);
@@ -2059,11 +2106,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
         }
         if ($data instanceof RtSyncUpdatedSignalData) {
             yield from RtSyncApplicator::applyUpdatedInPortions($data, skipSelfBroadcastCheck: false);
+        } elseif ($data instanceof RtSyncDeletedSignalData) {
+            yield new RtWork();
+            // Snapshot deletes can arrive without values. Keep the worker's previous row for fan-out.
+            $data = RtSyncApplicator::applyDeleted($data, skipSelfBroadcastCheck: false);
         } else {
             yield new RtWork();
             match (true) {
                 $data instanceof RtSyncCreatedSignalData => RtSyncApplicator::applyCreated($data, skipSelfBroadcastCheck: false),
-                $data instanceof RtSyncDeletedSignalData => RtSyncApplicator::applyDeleted($data, skipSelfBroadcastCheck: false),
                 default => Logger::error('handleRtSyncMessage - unexpected payload: ' . get_class($data)),
             };
         }
@@ -4774,20 +4824,36 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Reads what one agent type claims of the runtime without the right to add, off the class (HIL-989).
+     * Names the RT claims that need a replica before their holder is created.
      *
-     * Waited for like a read, because it is one: the holder edits rows somebody else wrote, and
-     * holds no copy of them until a snapshot lands. An unregistered type borrows nothing, for the
-     * reason it reads nothing.
+     * Borrowed claims wait for rows somebody else wrote. Moderation set owners also wait for
+     * their predecessor's checks and, when they own connections, for the corresponding composers.
      *
      * @param string $agentType Agent type about to start here
-     * @return list<string> RT collections its class borrows, or none when the type is unknown
+     * @return list<string> RT claims that wait, or none when the type is unknown
      */
-    private function agentBorrowsRt(string $agentType): array
+    private function agentClaimsWaitingForRt(string $agentType): array
     {
         $workerClass = AgentRegistry::workerClass(Hilos::appClass()::AGENTS[$agentType] ?? null);
+        if ($workerClass === null) {
+            return [];
+        }
 
-        return $workerClass === null ? [] : OwnershipDeclaration::borrowedRtCollectionsOf($workerClass);
+        $borrowed = OwnershipDeclaration::borrowedRtCollectionsOf($workerClass);
+        if (Hilos::hasFeature(HilosFeature::MODERATION)
+            && (OwnershipDeclaration::rtSetCollectionsOf($workerClass)[HilosModerationCheck::RT_COLLECTION] ?? null)
+                ?->allows(TruthSourceOperation::Add)
+        ) {
+            $borrowed[] = HilosModerationCheck::RT_COLLECTION;
+            $connections = Hilos::$rt?->connectionsRegistry()?->getCollectionName();
+            if ($connections !== null && (OwnershipDeclaration::rtCollectionsOf($workerClass)[$connections] ?? null)
+                ?->allows(TruthSourceOperation::Add)
+            ) {
+                $borrowed[] = $connections;
+            }
+        }
+
+        return $borrowed;
     }
 
     /**

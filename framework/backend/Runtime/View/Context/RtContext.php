@@ -6,6 +6,7 @@ namespace Hilos\Runtime\View\Context;
 
 use Closure;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Exception\FeatureRuntimeOverwrittenException;
 use Hilos\Core\Feature\FeatureDefinition;
 use Hilos\Core\Feature\HilosFeature;
@@ -85,7 +86,7 @@ use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Runtime\View\Item\TableLagRuntime;
 use Hilos\Runtime\View\Item\TableRefusalRuntime;
-use OutOfBoundsException;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
  * RtContext - runtime context (transient application data).
@@ -829,12 +830,11 @@ abstract class RtContext
      * @return RtCollection|RtItem|null Runtime collection, item alias result, or null for a missing item alias
      * @throws RtCollectionNotFoundException When name is neither a collection nor an item alias
      * @throws RtCollectionNotReadableException When nothing here reads the collection, or its state is still on its way
-     * @throws OutOfBoundsException When a state collection searched for the alias's owner requires a key it does not hold
      */
     public function __get(string $name): RtCollection|RtItem|null
     {
         if (isset($this->_rtCollections[$name])) {
-            $this->assertReadable($name);
+            self::assertReadable($name, opening: true);
 
             return $this->_rtCollections[$name];
         }
@@ -858,12 +858,26 @@ abstract class RtContext
      * sources, a feature's mount) or one did and the master's snapshot has not landed yet. The
      * two are separate defects and the messages say which.
      *
+     * A narrow owner may open a view and address its own rows while the snapshot arrives.
+     * Each read checks the current frame, including reads from an already opened view.
+     *
+     * @internal Shared with the runtime views; synchronization uses the mounted stores directly.
      * @param string $name Mounted collection name being read
+     * @param ?string $key Exact key, or null for a whole-collection read
+     * @param ?RtState $state State found at that key, if any
+     * @param bool $opening Whether the caller is obtaining a view without reading its contents
      * @throws RtCollectionNotReadableException When nothing here reads it, or its state is still on its way
      */
-    private function assertReadable(string $name): void
+    public static function assertReadable(string $name, ?string $key = null, ?RtState $state = null, bool $opening = false): void
     {
         if (SourceInterestRegistry::isReady(SourceChange::KIND_RT, $name)) {
+            return;
+        }
+
+        $agentId = ExecutionContext::currentAgentId();
+        if ($agentId !== null && ($opening || $key !== null)
+            && RtTruthSourceRegistry::canReadLocalClaim($name, $agentId, $key, $state)
+        ) {
             return;
         }
 
@@ -878,6 +892,8 @@ abstract class RtContext
      * Check whether a runtime collection exists or an item alias currently resolves.
      *
      * @param string $name Collection or item alias name
+     * @return bool Whether the collection is mounted or the alias resolves
+     * @throws RtCollectionNotReadableException When a resolved alias belongs to an unreadable collection
      */
     public function __isset(string $name): bool
     {
@@ -885,7 +901,12 @@ abstract class RtContext
             return true;
         }
         if (isset($this->_rtItems[$name])) {
-            return $this->getStateItem($name) !== null;
+            $state = $this->getStateItem($name);
+            if ($state !== null) {
+                $this->getRtCollectionForStateItem($state);
+
+                return true;
+            }
         }
 
         return false;
@@ -909,6 +930,7 @@ abstract class RtContext
      *
      * @param string $name Context item alias name
      * @return ?RtItem Runtime view item or null when the state alias resolves to null
+     * @throws RtCollectionNotReadableException When the alias's collection is not ready for this row
      */
     private function getRtItem(string $name): ?RtItem
     {
@@ -917,10 +939,10 @@ abstract class RtContext
             return null;
         }
 
+        $rtCollection = $this->getRtCollectionForStateItem($stateItem);
         $itemConfig = $this->_rtItems[$name];
         $class = $itemConfig['itemClass'];
         $item = new $class($stateItem);
-        $rtCollection = $this->getRtCollectionForStateItem($stateItem);
         if ($rtCollection !== null) {
             $item->setCollection($rtCollection);
         }
@@ -934,15 +956,15 @@ abstract class RtContext
      *
      * @param RtState $stateItem Backing state row
      * @return ?RtCollection Parent runtime collection or null for standalone state items
+     * @throws RtCollectionNotReadableException When the alias's collection is not ready for this row
      */
     private function getRtCollectionForStateItem(RtState $stateItem): ?RtCollection
     {
         $stateId = $stateItem->getId();
         foreach ($this->_stateCollections as $name => $stateCollection) {
-            if (!isset($this->_rtCollections[$name], $stateCollection[$stateId])) {
-                continue;
-            }
-            if ($stateCollection[$stateId] === $stateItem) {
+            if (isset($this->_rtCollections[$name]) && $stateCollection->get($stateId) === $stateItem) {
+                self::assertReadable($name, $stateId, $stateItem);
+
                 return $this->_rtCollections[$name];
             }
         }
@@ -954,6 +976,7 @@ abstract class RtContext
      * Convert all collections to array.
      *
      * @return array<string, array<string|int, array<string, mixed>>> Collection name => items array
+     * @throws RtCollectionNotReadableException When this process cannot read a complete represented collection
      * @throws RtActionsStateCollectionNullException When a represented runtime collection has no backing state collection
      */
     public function toArray(): array
@@ -968,6 +991,7 @@ abstract class RtContext
      * Debug info for var_dump (returns all collections as array).
      *
      * @return array<string, array<string|int, array<string, mixed>>> Collection name => items array
+     * @throws RtCollectionNotReadableException When this process cannot read a complete represented collection
      * @throws RtActionsStateCollectionNullException When a represented runtime collection has no backing state collection
      */
     public function __debugInfo(): array

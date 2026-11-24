@@ -10,6 +10,7 @@ use Demo\EcommerceShop\Browser\EcommerceShopBrowserSource;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
 use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
 use Demo\EcommerceShop\Pages\DTO\AdminProductPageSubscribeParams;
+use Demo\EcommerceShop\Runtime\State\Item\ProductViewerCount;
 use Hilos\Core\Browser\Config\BrowserDataConfigKey;
 use Hilos\Core\Browser\Config\BrowserDataFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
@@ -18,9 +19,9 @@ use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
 
 /**
- * One product's card on its admin page and the stock rows that can change its computed total.
+ * One product's admin card, refreshed by changes to its product, stock and viewer count sources.
  *
- * The picture's address, edit version and stock total are computed by {@see EcommerceShopBrowserContext}.
+ * The picture's address, edit version, stock total and viewer count are computed by {@see EcommerceShopBrowserContext}.
  * The names of the product's category and of the warehouse keeping a unique product are not on
  * the card: the page reads them by number from its categories and warehouses lists, which keep
  * renames live.
@@ -32,6 +33,7 @@ final class AdminProductBrowserData
     public const string FIELD_PICTURE_URL = 'pictureUrl';
     public const string FIELD_EDIT_VERSION = 'editVersion';
     public const string FIELD_STOCK = 'stock';
+    public const string FIELD_VIEWER_COUNT = 'viewerCount';
     public const string STOCK_UNITS = 'units';
     public const string STOCK_WAREHOUSES = 'warehouses';
     public const string STOCK_WAREHOUSE_ID = 'warehouseId';
@@ -55,6 +57,7 @@ final class AdminProductBrowserData
         BrowserDataConfigKey::SOURCES => [
             EcommerceShopBrowserSource::DB_PRODUCTS,
             EcommerceShopBrowserSource::DB_PRODUCT_WAREHOUSE_STOCKS,
+            EcommerceShopBrowserSource::RT_PRODUCT_VIEWER_COUNTS,
         ],
         BrowserDataConfigKey::ROWS => [
             [
@@ -71,12 +74,22 @@ final class AdminProductBrowserData
                     ObjectProduct::name, ObjectProduct::slug, ObjectProduct::kind, ObjectProduct::price,
                     ObjectProduct::categoryId, ObjectProduct::description, ObjectProduct::pictureFileId,
                 ],
-                BrowserDataFieldKey::COMPUTED => [self::FIELD_PICTURE_URL, self::FIELD_EDIT_VERSION, self::FIELD_STOCK],
-                BrowserDataFieldKey::NOT_PERSONAL => [self::FIELD_PICTURE_URL, self::FIELD_EDIT_VERSION, self::FIELD_STOCK],
+                BrowserDataFieldKey::COMPUTED => [
+                    self::FIELD_PICTURE_URL, self::FIELD_EDIT_VERSION, self::FIELD_STOCK, self::FIELD_VIEWER_COUNT,
+                ],
+                BrowserDataFieldKey::NOT_PERSONAL => [
+                    self::FIELD_PICTURE_URL, self::FIELD_EDIT_VERSION, self::FIELD_STOCK, self::FIELD_VIEWER_COUNT,
+                ],
             ],
             [
                 BrowserDataFieldKey::SOURCE => EcommerceShopBrowserSource::DB_PRODUCT_WAREHOUSE_STOCKS,
                 BrowserDataFieldKey::ROW_KEY => ObjectProductWarehouseStock::productId,
+                BrowserDataFieldKey::MANY => true,
+                BrowserDataFieldKey::FIELDS => [],
+            ],
+            [
+                BrowserDataFieldKey::SOURCE => EcommerceShopBrowserSource::RT_PRODUCT_VIEWER_COUNTS,
+                BrowserDataFieldKey::ROW_KEY => ProductViewerCount::productId,
                 BrowserDataFieldKey::MANY => true,
                 BrowserDataFieldKey::FIELDS => [],
             ],

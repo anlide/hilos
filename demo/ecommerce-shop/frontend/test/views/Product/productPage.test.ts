@@ -16,7 +16,8 @@ import { PAGE_CATEGORY, PAGE_PRODUCT } from '../../../src/pages/keys.js'
 import { router } from '../../../src/pages/routes.js'
 import {
   createProductDetailsSignal,
-  matchesProductPageResponse,
+  createProductPageResponseMatcher,
+  createProductViewerCountSignal,
 } from '../../../src/views/Product/productPage.js'
 import { type ProductDetails } from '../../../src/views/Product/types/ProductDetails.js'
 
@@ -116,7 +117,7 @@ describe('product page navigation', () => {
     expect(details.get()).toEqual(next)
   })
 
-  function openProduct() {
+  function openProduct(otherViewerCount?: number) {
     const listeners = new Map<
       string,
       Parameters<WebSocketLike['addEventListener']>[1]
@@ -135,7 +136,7 @@ describe('product page navigation', () => {
     const scopes = new ScopeManager()
     const pages = bindPageScope(connection, scopes, {
       pageResponseMatchers: new Map([
-        [PAGE_PRODUCT, matchesProductPageResponse],
+        [PAGE_PRODUCT, createProductPageResponseMatcher(scopes)],
       ]),
     })
     const navigator = createHilosRouter(router, pages, {
@@ -145,20 +146,39 @@ describe('product page navigation', () => {
       onPopState: () => () => {},
     })
     const details = createProductDetailsSignal(scopes, navigator.currentRoute)
+    const viewers = createProductViewerCountSignal(scopes, details)
     const receive = (type: string, data: Record<string, unknown>) =>
       listeners.get('message')!({ data: JSON.stringify({ type, data }) })
-    const answer = (snapshot: Partial<ProductDetails>) =>
+    const pageData = (data: Record<string, unknown>) =>
       receive(SIGNAL_TYPE_PAGE_RESPONSE, {
         page: PAGE_PRODUCT,
-        payload: { data: { product: snapshot } },
+        payload: { data },
       })
+    const answer = (snapshot: Partial<ProductDetails>, count?: number) =>
+      pageData({
+        product: snapshot,
+        productViewers:
+          count === undefined
+            ? undefined
+            : { slug: snapshot.slug, otherViewerCount: count },
+      })
+    const viewerAnswer = (slug: string, otherViewerCount: unknown) =>
+      pageData({ productViewers: { slug, otherViewerCount } })
 
     connection.connect()
     navigator.start()
-    answer(product)
+    answer(product, otherViewerCount)
     expect(details.get()).toEqual(product)
 
-    return { navigator, details, receive, answer }
+    return {
+      navigator,
+      details,
+      viewers,
+      receive,
+      pageData,
+      answer,
+      viewerAnswer,
+    }
   }
 
   it('keeps the current answer and its readiness when a previous slug answers late', () => {
@@ -189,10 +209,84 @@ describe('product page navigation', () => {
     expect(details.get()).toEqual(updated)
   })
 
+  it('updates the current viewer count independently of product snapshots', () => {
+    const { details, viewers, answer, viewerAnswer } = openProduct(0)
+    expect(viewers.get()).toBe(0)
+
+    const updated = { ...product, price: 42000 }
+    answer(updated)
+    expect(viewers.get()).toBe(0)
+    viewerAnswer(product.slug, 3)
+    expect(viewers.get()).toBe(3)
+    expect(details.get()).toEqual(updated)
+
+    for (const invalid of [-1, 1.5, '3']) {
+      viewerAnswer(product.slug, invalid)
+      expect(viewers.get()).toBe(3)
+    }
+
+    const latest = { ...updated, units: 41 }
+    answer(latest)
+    expect(details.get()).toEqual(latest)
+    expect(viewers.get()).toBe(3)
+  })
+
+  it.each([
+    { slug: 'previous-product', otherViewerCount: 4 },
+    { slug: product.slug, otherViewerCount: 1.5 },
+    { slug: product.slug, otherViewerCount: -1 },
+  ])(
+    'keeps the last count when an updated card brings %j',
+    (productViewers) => {
+      const { navigator, details, viewers, pageData, viewerAnswer } =
+        openProduct(3)
+      const updated = { ...product, price: 42000 }
+
+      pageData({ product: updated, productViewers })
+      expect(details.get()).toEqual(updated)
+      expect(viewers.get()).toBe(3)
+      expect(navigator.pageLoading.get()).toBe(false)
+
+      viewerAnswer(product.slug, 4)
+      expect(viewers.get()).toBe(4)
+      expect(details.get()).toEqual(updated)
+    },
+  )
+
+  it('drops the old viewer count on navigation and waits for a full answer', () => {
+    const { navigator, details, viewers, pageData, viewerAnswer } =
+      openProduct(2)
+    const next = { ...product, id: 9, slug: 'clay-pot', name: 'Clay pot' }
+    expect(viewers.get()).toBe(2)
+
+    navigator.navigate(`/product/${next.slug}`)
+    viewerAnswer(next.slug, 3)
+    expect(viewers.get()).toBeUndefined()
+    expect(details.get()).toBeNull()
+    expect(navigator.pageLoading.get()).toBe(true)
+
+    pageData({
+      product: next,
+      productViewers: { slug: product.slug, otherViewerCount: 4 },
+    })
+    expect(details.get()).toEqual(next)
+    expect(viewers.get()).toBeUndefined()
+    expect(navigator.pageLoading.get()).toBe(false)
+
+    viewerAnswer(next.slug, 0)
+    expect(viewers.get()).toBe(0)
+    viewerAnswer(product.slug, 4)
+    expect(viewers.get()).toBe(0)
+  })
+
   it('keeps the current 404 after a previous slug answers until the current slug is served', () => {
-    const { navigator, details, receive, answer } = openProduct()
+    const { navigator, details, viewers, receive, answer, viewerAnswer } =
+      openProduct()
     const next = { ...product, id: 9, slug: 'clay-pot', name: 'Clay pot' }
     navigator.navigate(`/product/${next.slug}`)
+    answer(next, 3)
+    expect(viewers.get()).toBe(3)
+
     const refusal = {
       page: PAGE_PRODUCT,
       httpCode: 404,
@@ -207,13 +301,19 @@ describe('product page navigation', () => {
     expect(navigator.pageError.get()).toEqual(refusal)
     expect(navigator.pageLoading.get()).toBe(false)
     expect(details.get()).toBeNull()
+    expect(viewers.get()).toBeUndefined()
 
     answer({ slug: next.slug })
+    viewerAnswer(next.slug, 0)
     expect(navigator.pageError.get()).toEqual(refusal)
+    expect(viewers.get()).toBeUndefined()
 
-    answer(next)
+    answer(next, -1)
     expect(navigator.pageError.get()).toBeNull()
     expect(details.get()).toEqual(next)
+    expect(viewers.get()).toBeUndefined()
+    viewerAnswer(next.slug, 0)
+    expect(viewers.get()).toBe(0)
   })
 })
 

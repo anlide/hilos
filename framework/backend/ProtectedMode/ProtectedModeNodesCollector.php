@@ -7,6 +7,7 @@ namespace Hilos\ProtectedMode;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTableRow;
 
@@ -33,6 +34,7 @@ final class ProtectedModeNodesCollector
      * @param ?int $term Current consensus term, null without inspection
      * @return list<array<string, string|bool|null>> RT projection ordered by node name, then id
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public static function project(array $nodeIds, array $linkedNodeIds, array $reports, ?string $leaderNodeId, ?int $term): array
     {

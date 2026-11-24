@@ -7,6 +7,7 @@ namespace Hilos\Cluster;
 use Closure;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\Consensus\ClusterCoordinator;
@@ -1031,6 +1032,7 @@ final class ClusterContext
      * @throws InvalidFormatException When a pending page recovery address is malformed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function notifyNodeLeft(ClusterNode $node): void
     {

@@ -37,6 +37,9 @@ final class Connection extends HilosSessionConnection
     public const string outboundModerationUpdatedAt = 'outboundModerationUpdatedAt';
     public const string outboundModerationAttachments = 'outboundModerationAttachments';
     public const string outboundModerationPicture = 'outboundModerationPicture';
+    public const string outboundPublicationHoldId = 'outboundPublicationHoldId';
+    public const string outboundPublicationDeadlineAt = 'outboundPublicationDeadlineAt';
+    public const string outboundPublicationUserId = 'outboundPublicationUserId';
 
     protected const array OWN_FIELD_TYPES = [
         self::outboundModerationPhase => 'text',
@@ -45,6 +48,9 @@ final class Connection extends HilosSessionConnection
         self::outboundModerationUpdatedAt => 'int',
         self::outboundModerationAttachments => 'strings',
         self::outboundModerationPicture => '?text',
+        self::outboundPublicationHoldId => '?text',
+        self::outboundPublicationDeadlineAt => '?int',
+        self::outboundPublicationUserId => '?int',
     ];
 
     private const array OWN_FIELD_DEFAULTS = [
@@ -54,6 +60,9 @@ final class Connection extends HilosSessionConnection
         self::outboundModerationUpdatedAt => 0,
         self::outboundModerationAttachments => [],
         self::outboundModerationPicture => null,
+        self::outboundPublicationHoldId => null,
+        self::outboundPublicationDeadlineAt => null,
+        self::outboundPublicationUserId => null,
     ];
 
     /** Moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
@@ -116,6 +125,30 @@ final class Connection extends HilosSessionConnection
         get => ($this->rowValues()[self::outboundModerationPicture] ?? null)?->toNative();
         set {
             $this->setRowValue(self::outboundModerationPicture, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
+
+    /** Accepted upload hold awaiting publication, or null. */
+    public ?string $outboundPublicationHoldId {
+        get => ($this->rowValues()[self::outboundPublicationHoldId] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::outboundPublicationHoldId, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
+
+    /** Original moderation deadline in epoch milliseconds for the accepted publication. */
+    public ?int $outboundPublicationDeadlineAt {
+        get => $this->rowValues()[self::outboundPublicationDeadlineAt] ?? null;
+        set {
+            $this->setRowValue(self::outboundPublicationDeadlineAt, $value);
+        }
+    }
+
+    /** User whose accepted uploads are being published, or null outside publication. */
+    public ?int $outboundPublicationUserId {
+        get => $this->rowValues()[self::outboundPublicationUserId] ?? null;
+        set {
+            $this->setRowValue(self::outboundPublicationUserId, $value);
         }
     }
 

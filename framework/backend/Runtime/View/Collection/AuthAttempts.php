@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\AuthAttempts as StateAuthAttempts;
 use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\State\Item\RtState;
@@ -30,6 +31,7 @@ final class AuthAttempts extends RtCollection
     /**
      * @return StateAuthAttempts Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateAuthAttempts
     {
@@ -51,6 +53,7 @@ final class AuthAttempts extends RtCollection
      * @param mixed $offset Throttle key `scope|identity|action`
      * @return ?AuthAttempt Item or null when the key has no counter yet
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?AuthAttempt
     {

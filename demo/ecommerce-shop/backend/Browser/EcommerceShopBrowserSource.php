@@ -48,4 +48,9 @@ final class EcommerceShopBrowserSource
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => EcommerceShopRtContext::connections,
     ];
+
+    public const array RT_PRODUCT_VIEWER_COUNTS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::RT,
+        BrowserSourceKey::KEY => EcommerceShopRtContext::productViewerCounts,
+    ];
 }

@@ -22,6 +22,8 @@ export interface AdminProduct {
   readonly editVersion: string
   /** What the warehouses hold of the product. */
   readonly stock: AdminProductStock
+  /** Total number of storefront viewers, when the card carries a valid count. */
+  readonly viewerCount?: number
 }
 
 /** The product's stock total across the warehouses. */

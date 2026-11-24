@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RtState;
@@ -30,6 +31,7 @@ final class HilosCodeSendAttempts extends RtCollection
     /**
      * @return StateHilosCodeSendAttempts Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosCodeSendAttempts
     {
@@ -51,6 +53,7 @@ final class HilosCodeSendAttempts extends RtCollection
      * @param mixed $offset Hash of a session cookie token
      * @return ?HilosCodeSendAttempt Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosCodeSendAttempt
     {

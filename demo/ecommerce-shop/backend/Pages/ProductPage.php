@@ -32,13 +32,14 @@ use Hilos\Core\Page\PageResourceAnswer;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Files\HilosFiles;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * ProductPage - The storefront's product page, one per address (`/product/{slug}`).
  *
  * Served by the agent of its address: the slug names the {@see ProductAgent} instance, which
  * comes up with the first visitor. A subscription without a slug falls back to the shop's app
- * agent and is refused there. Guests and signed-in visitors get the same product card.
+ * agent and is refused there. The card is shared, with a personal count of its other viewers.
  *
  * @property ProductAgent|EcommerceShopAgent $agent The agent of the address, or the app agent a slug-less subscription falls back to
  */
@@ -60,11 +61,71 @@ final class ProductPage extends AbstractPage
 
     public const string DATA_PRODUCT = 'product';
 
+    public const string DATA_PRODUCT_VIEWERS = 'productViewers';
+
     private const string pictureUrl = 'pictureUrl';
     private const string units = 'units';
     private const string availability = 'availability';
     private const string categoryName = 'categoryName';
     private const string categorySlug = 'categorySlug';
+    private const string otherViewerCount = 'otherViewerCount';
+
+    /**
+     * @param string $acceptKey Connection whose current subscription is being checked
+     * @param string $slug Address of the serving product agent
+     * @return ?PageResource The product bound by a successful answer for that address
+     */
+    public static function viewerSubscriptionResource(string $acceptKey, string $slug): ?PageResource
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== self::PAGE
+            || $subscription->agentType !== self::SUBSCRIPTION_AGENT_TYPE || $subscription->agentIndex !== $slug
+            || Hilos::$sr->hasPageDeliveryFailure($acceptKey)
+            || !$subscription->paramEquals(ProductPageSubscribeParams::SLUG, $slug)
+        ) {
+            return null;
+        }
+
+        $resource = Hilos::$sr->pageResource($acceptKey);
+
+        return $resource?->collectionKey === EcommerceShopDbContext::products ? $resource : null;
+    }
+
+    /**
+     * Sends the current personal count through the browser's guarded publication path.
+     *
+     * @param ProductAgent $agent Serving product agent
+     * @param string $acceptKey Connection receiving the changed count
+     */
+    public static function publishViewers(ProductAgent $agent, string $acceptKey): void
+    {
+        $slug = $agent->address();
+        $resource = self::viewerSubscriptionResource($acceptKey, $slug);
+        if ($resource === null || $agent->publishedOtherViewers($acceptKey, $resource) === null) {
+            return;
+        }
+
+        Hilos::$browser?->publishPageData(self::PAGE, $acceptKey, static function () use ($agent, $acceptKey, $slug): PagePayload {
+            $current = self::viewerSubscriptionResource($acceptKey, $slug);
+            $other = $current === null ? null : $agent->publishedOtherViewers($acceptKey, $current);
+
+            return new PagePayload(data: $other === null ? [] : [
+                self::DATA_PRODUCT_VIEWERS => self::viewerData($slug, $other),
+            ]);
+        }, []);
+    }
+
+    /**
+     * @param string $acceptKey Connection leaving or refused by the page
+     * @throws RtActionsStateCollectionNullException When the viewer counts collection is unavailable
+     * @throws HilosException When runtime refuses to publish the remaining count
+     */
+    public function onUnsubscribe(string $acceptKey): void
+    {
+        if ($this->agent instanceof ProductAgent) {
+            $this->agent->productPageLeft($acceptKey);
+        }
+    }
 
     /**
      * Builds the card and the comparison basis from the reading that identifies its resource.
@@ -77,6 +138,7 @@ final class ProductPage extends AbstractPage
      * @throws PageResourceNotFoundException When the address names no visible product
      * @throws PageInternalErrorException When the resource or its address declaration is invalid
      * @throws InvalidArgumentException When the catalog picture variant is misconfigured
+     * @throws RtActionsStateCollectionNullException When the connections collection is unavailable
      * @throws HilosException When the catalog reading fails
      */
     protected function prepareResourceAnswer(string $acceptKey, PageRouteParams $params): PageResourceAnswer
@@ -86,6 +148,8 @@ final class ProductPage extends AbstractPage
         $resource = PageResource::db(EcommerceShopDbContext::products, $product->id)
             ->addressedBy(ProductPageSubscribeParams::SLUG, EntityProduct::slug);
         $basis = new ProductPageBasis($product->categoryId, $reading->fingerprint());
+        $agent = $this->agent instanceof ProductAgent ? $this->agent : null;
+        $audience = $agent?->prepareViewerAnswer($acceptKey, $product->id);
 
         $payload = new PagePayload(data: [
             self::DATA_PRODUCT => [
@@ -101,10 +165,14 @@ final class ProductPage extends AbstractPage
                 self::categoryName => $reading->category->name,
                 self::categorySlug => $reading->category->slug,
             ],
+            self::DATA_PRODUCT_VIEWERS => self::viewerData($product->slug, $audience?->otherViewers ?? 0),
         ]);
 
-        return new PageResourceAnswer($resource, $payload, static function () use ($resource, $basis): void {
+        return new PageResourceAnswer($resource, $payload, static function () use ($resource, $basis, $agent, $acceptKey, $audience): void {
             Hilos::$browser?->rememberProductPageBasis($resource, $basis);
+            if ($acceptKey !== '' && $agent !== null && $audience !== null) {
+                $agent->productPageAnswered($acceptKey, (int)$resource->idString, $audience);
+            }
         });
     }
 
@@ -130,5 +198,18 @@ final class ProductPage extends AbstractPage
         }
 
         return $reading;
+    }
+
+    /**
+     * @param string $slug Current product address
+     * @param int $otherViewerCount Number of other viewers
+     * @return array<string, int|string> Public viewer data for this card
+     */
+    private static function viewerData(string $slug, int $otherViewerCount): array
+    {
+        return [
+            EntityProduct::slug => $slug,
+            self::otherViewerCount => $otherViewerCount,
+        ];
     }
 }

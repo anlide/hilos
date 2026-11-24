@@ -2,68 +2,67 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Tests\Unit;
+namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
-use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Hilos;
+use Demo\Chat\Moderation\ChatModerationKindKey;
+use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\Feature\Definition\UploadsFeature;
-use Hilos\Core\Feature\Definition\ModerationFeature;
-use Hilos\Database\Settings\SettingsAccessor;
-use Hilos\Moderation\ModerationSettingsCatalog;
-use Hilos\Runtime\State\Item\HilosModerationCheck;
-use Demo\Chat\Constants\AgentType;
-use Demo\Chat\Moderation\ChatModerationKindKey;
-use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosUpload;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for main-page message validation: the session first, then the files the message
- * names - complete uploads of the connection for the chat's target, each once (HIL-144).
+ * Integration tests for main-page message validation against the saved session and uploaded files.
  */
-final class MainPageMessageValidationTest extends TestCase
+final class MainPageMessageValidationTest extends IntegrationTestCase
 {
-    private const string TEST_AGENT_ID = 'test-agent';
-
     private const string ACCEPT_KEY = 'message-ak';
 
-    private ?SettingsAccessor $previousSetting = null;
+    use ChatModerationFixture;
 
+    private int $userId;
+
+    /** Opens a saved session and prepares the chat moderation runtime for page actions. */
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->previousSetting = Hilos::$setting;
-        Hilos::$setting = new SettingsAccessor(ModerationSettingsCatalog::class);
-        $rt = new ChatRtContext();
-        $rt->mountFeatureRuntime([new UploadsFeature(), new ModerationFeature()]);
-        $rt->configure();
-        $rt->bindStateCollectionNames();
-        Hilos::$rt = $rt;
+        Hilos::initBrowser();
+        $this->claimChatChecks();
+        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), 'test-agent');
+        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), 'test-agent');
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        $this->forgetChatChecks();
+        Hilos::$db->events->actions->deleteAll();
+        $this->userId = (int)Hilos::$db->users->actions->createWithName('Message author')->id;
+        $this->registerModerationConnection(self::ACCEPT_KEY, $this->userId);
+        Hilos::$rt->userStates->actions->ensure($this->userId);
     }
 
+    /** Removes per-case messages, uploads, moderation checks, sessions and runtime rows. */
     protected function tearDown(): void
     {
-        RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         ExecutionContext::clear();
-        Hilos::$rt = null;
-        Hilos::$setting = $this->previousSetting;
-
+        $this->forgetChatChecks();
+        Hilos::$rt->hilosUploads->actions->clearAllWithFiles();
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        Hilos::$db->events->actions->deleteAll();
+        $this->forgetModerationSessions();
         parent::tearDown();
     }
 
@@ -97,9 +96,9 @@ final class MainPageMessageValidationTest extends TestCase
     #[DataProvider('attachmentsNotReady')]
     public function testRejectsAnAttachmentThatIsNotReady(string $clientUploadId): void
     {
-        $this->signIn();
+        $this->assertSignedIn();
         $this->openUpload('ready', ChatAttachmentUploadTarget::NAME, complete: false);
-        $this->openUpload('elsewhere', 'avatar', complete: true);
+        $this->openUpload('elsewhere', ProfilePhotoUploadTarget::NAME, complete: true);
 
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessage('Attachment is not ready');
@@ -121,7 +120,7 @@ final class MainPageMessageValidationTest extends TestCase
 
     public function testRejectsAnAttachmentListedTwice(): void
     {
-        $this->signIn();
+        $this->assertSignedIn();
         $this->openUpload('done', ChatAttachmentUploadTarget::NAME, complete: true);
 
         $this->expectException(ValidationException::class);
@@ -132,7 +131,7 @@ final class MainPageMessageValidationTest extends TestCase
 
     public function testRejectsAMessageWithNeitherTextNorFiles(): void
     {
-        $this->signIn();
+        $this->assertSignedIn();
 
         $this->expectException(EmptyValueException::class);
         $this->expectExceptionMessage('Message cannot be empty');
@@ -145,7 +144,7 @@ final class MainPageMessageValidationTest extends TestCase
      */
     public function testAFileOnlyMessageStartsModerationWithItsFiles(): void
     {
-        $this->signIn();
+        $this->assertSignedIn();
         $this->openUpload('done', ChatAttachmentUploadTarget::NAME, complete: true);
 
         $this->send(new MessageActionDTO('', ['done']));
@@ -161,23 +160,16 @@ final class MainPageMessageValidationTest extends TestCase
         self::assertSame(['done'], $check->clientUploadIds);
     }
 
-    /**
-     * Registers a signed-in connection the test agent writes for.
-     *
-     * @throws HilosException When the runtime rows cannot be written
-     */
-    private function signIn(): void
+    /** Confirms the fixture uses the person's persisted session. */
+    private function assertSignedIn(): void
     {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(ChatRtContext::userStates, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(HilosUpload::RT_COLLECTION, TruthSourceKeys::all(), self::TEST_AGENT_ID);
-
-        RtTruthSourceRegistry::register(HilosModerationCheck::RT_COLLECTION, TruthSourceKeys::set(AgentType::CHAT),
-            self::TEST_AGENT_ID, TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Remove));
-        ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
-        ExecutionContext::setCurrentAcceptKey(self::ACCEPT_KEY);
-        Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, 1);
-        Hilos::$rt->userStates->actions->ensure(1);
+        self::assertSame($this->userId, Hilos::$rt->connections[self::ACCEPT_KEY]?->userId);
+        $sessionId = Hilos::$rt->connections[self::ACCEPT_KEY]?->sessionId;
+        self::assertNotNull($sessionId);
+        self::assertTrue(Hilos::$db->sessions->matchesStoredIdentity(
+            $sessionId,
+            $this->userId,
+        ));
     }
 
     /**
@@ -190,15 +182,18 @@ final class MainPageMessageValidationTest extends TestCase
      */
     private function openUpload(string $clientUploadId, string $target, bool $complete): void
     {
+        $tmpIndex = Hilos::$fs?->getTmp()->create();
+        self::assertNotNull($tmpIndex);
+        Hilos::$fs?->getTmp()[$tmpIndex]->append('abc');
         $upload = Hilos::$rt->hilosUploads->actions->open(
             self::ACCEPT_KEY,
             $clientUploadId,
             $target,
-            1,
+            $this->userId,
             'a.txt',
             'text/plain',
             3,
-            md5($clientUploadId),
+            $tmpIndex,
         );
         if ($complete) {
             $upload->actions->inspect(hash('sha256', 'abc'), 'text/plain');
@@ -212,6 +207,11 @@ final class MainPageMessageValidationTest extends TestCase
      */
     private function send(MessageActionDTO $dto): void
     {
-        new MainPage(new ChatAgent())->onAction(self::ACCEPT_KEY, ChatSignalConstants::MESSAGE, $dto);
+        ExecutionContext::setCurrentAcceptKey(self::ACCEPT_KEY);
+        try {
+            new MainPage(new ChatAgent())->onAction(self::ACCEPT_KEY, ChatSignalConstants::MESSAGE, $dto);
+        } finally {
+            ExecutionContext::setCurrentAcceptKey(null);
+        }
     }
 }

@@ -357,9 +357,8 @@ final class OwnershipDeclaration
      * the live instance ({@see AbstractAgent::ownedRtRowKeys()}), and the same two refusals stand
      * in front of the registry for the same reasons.
      *
-     * Each claim is its own reader interest, and a ready one whatever operations it carries, for
-     * the reason the database half gives: the rows it names are this owner's own, and a writer
-     * holds the copy of what it writes.
+     * Each claim raises reader interest. The holder may use its own rows immediately. Readers of
+     * the collection wait for the replica because the claim covers only the keys this agent names.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
@@ -384,7 +383,6 @@ final class OwnershipDeclaration
             RtTruthSourceRegistry::register($collection, TruthSourceKeys::listed(...$keys), $agent->getId(), $operations);
 
             SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($agent->getId()));
-            SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
         }
     }
 
@@ -415,10 +413,9 @@ final class OwnershipDeclaration
      * this half, and a seam that names no set key, turned into a refusal that says which agent and
      * which collection.
      *
-     * Each claim is its own reader interest, ready at once only when it may add, as in
-     * {@see self::claimRt()}: a borrowed set claim ({@see self::isBorrowedClaim()}) edits rows
-     * somebody else brought into being, and {@see WorkerManager} waits for their state beside the
-     * reads.
+     * Each claim raises reader interest. A holder that may add can use its own set immediately,
+     * while readers of the collection wait for the replica. A borrowed set claim
+     * ({@see self::isBorrowedClaim()}) also waits because it edits rows somebody else created.
      *
      * A class that declares nothing registers nothing - the empty map never reaches a registry.
      *
@@ -445,9 +442,6 @@ final class OwnershipDeclaration
             RtTruthSourceRegistry::register($collection, $keys, $agent->getId(), $operations);
 
             SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, SourceConsumer::agent($agent->getId()));
-            if (!self::isBorrowedClaim($operations)) {
-                SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
-            }
         }
     }
 

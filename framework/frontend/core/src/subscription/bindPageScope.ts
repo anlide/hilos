@@ -55,7 +55,7 @@ export const PAGE_SIGNAL_SCHEMAS = {
 }
 
 export interface BindPageScopeOptions extends NormalizerOptions {
-  /** Optional checks for pages whose replies carry their subscribed identity. */
+  /** Optional admission and data-key filtering for each page's replies. */
   pageResponseMatchers?: ReadonlyMap<string, PageResponseMatcher>
 }
 
@@ -84,16 +84,15 @@ export function bindPageScope(
   pageDeliveryAdmissions.set(connection, {
     response: ({ page, payload }) => {
       const matcher = options.pageResponseMatchers?.get(page)
-      const isCurrent = pages[admitPageResponse](page, payload ?? {}, matcher)
-
-      if (matcher && isCurrent === false) return false
+      const admission = pages[admitPageResponse](page, payload ?? {}, matcher)
 
       // Ordinary responses enter the table presentation boundary even when their
       // page differs. Only the current opening can apply or remember the answer.
-      return {
-        isCurrent: isCurrent || (() => false),
-        matched: matcher !== undefined,
+      if (admission === false) {
+        return matcher ? false : { isCurrent: () => false, matched: false }
       }
+
+      return { ...admission, matched: matcher !== undefined }
     },
     refusal: (error) =>
       pages[capturePageDelivery](error.page, { kind: 'refusal', error }),
@@ -102,7 +101,8 @@ export function bindPageScope(
   })
   const stop = connection.on('projectSignal', (signal) => {
     if (pageSubscriptions.get(connection)?.pages !== pages) return
-    const isLive = admittedPageDeliveries.get(signal)?.isLive
+    const admission = admittedPageDeliveries.get(signal)
+    const isLive = admission?.isLive
     if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {
       // Validated against pageResponseSchema at the parse boundary; this cast
       // is the declared typed selector for that schema's output.
@@ -112,6 +112,7 @@ export function bindPageScope(
         response.payload ?? {},
         options,
         isLive,
+        admission?.omitData,
       )
     } else if (signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR) {
       // Validated against pageSubscriptionErrorSchema at the parse boundary;

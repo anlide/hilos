@@ -33,6 +33,7 @@ use Hilos\Files\Upload\DTO\UploadStateSignalData;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
@@ -116,6 +117,7 @@ final class UploadMemoryMaster implements UploadMemoryDeliverySink
      * @throws InvalidFormatException When an internally produced permission is invalid
      * @throws InvalidArgumentException When an internally queued credit signal cannot be named
      * @throws PeerTransportException When an ordered peer reservation is inconsistent
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function requestCredit(UploadCreditRequestSignalData $request): void
     {
@@ -205,6 +207,7 @@ final class UploadMemoryMaster implements UploadMemoryDeliverySink
      * @throws InvalidFormatException When an internally produced permission is invalid
      * @throws InvalidArgumentException When an internally queued credit signal cannot be named
      * @throws PeerTransportException When an ordered peer reservation is inconsistent
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function afterDispatch(): void
     {
@@ -257,6 +260,7 @@ final class UploadMemoryMaster implements UploadMemoryDeliverySink
      * @throws InvalidFormatException When an internally produced permission is invalid
      * @throws InvalidArgumentException When an internally queued credit signal cannot be named
      * @throws PeerTransportException When an ordered peer reservation is inconsistent
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onUploadSettings(WorkerClient $worker, int $memoryPoolBytes): void
     {
@@ -277,6 +281,7 @@ final class UploadMemoryMaster implements UploadMemoryDeliverySink
      * @throws InvalidFormatException When an internally produced permission is invalid
      * @throws InvalidArgumentException When an internally queued credit signal cannot be named
      * @throws PeerTransportException When an ordered peer reservation is inconsistent
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onUploadConsumed(WorkerClient $worker, array $receiptIds): void
     {

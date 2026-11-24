@@ -218,6 +218,40 @@ final class ProfilePhotoIntegrationTest extends ProfileIntegrationTestCase
         $this->assertCheckingFrames([]);
     }
 
+    public function testModeratedSetAndRemoveRefuseBeforeTheSnapshot(): void
+    {
+        ProfilePhotoModeratedTestHilos::initBrowser();
+        $this->seedCompleteUpload('u1');
+        $this->withColdModeration(function (): void {
+            foreach ([
+                HilosSignalConstants::PROFILE_PHOTO_SET => new ProfilePhotoSetActionDTO('u1'),
+                HilosSignalConstants::PROFILE_PHOTO_REMOVE => new ProfilePhotoRemoveActionDTO(),
+            ] as $action => $payload) {
+                try {
+                    $this->submit($action, $payload);
+                    self::fail('The action must refuse before inspecting the moderation queue');
+                } catch (ValidationException $refusal) {
+                    self::assertSame(self::PHOTO_UNAVAILABLE, $refusal->getMessage());
+                }
+            }
+            $this->assertCheckingFrames([]);
+            self::assertSame([], $this->signalsNamed(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+            self::assertSame([], $this->signalsNamed(HilosSignalConstants::HILOS_USER_PHOTO_REMOVE));
+        });
+        $this->submit(HilosSignalConstants::PROFILE_PHOTO_SET, new ProfilePhotoSetActionDTO('u1'));
+        $check = $this->photoCheck();
+        $this->assertCheckingFrames([true]);
+
+        $worker = new ProfileModerationWorker($this->library);
+        $verdict = new ModerationVerdictSignalData(
+            self::ACCEPT_KEY, ModerationKindKey::PROFILE_PHOTO, $check->requestId, true, ModerationReason::OK,
+        );
+        $worker->deliverVerdict($verdict);
+        $worker->deliverVerdict($verdict);
+        $this->assertCheckingFrames([false]);
+        self::assertCount(1, $this->signalsNamed(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+    }
+
     /**
      * A refusal about the photo notifies the person; an unavailable moderator only answers the tab.
      *

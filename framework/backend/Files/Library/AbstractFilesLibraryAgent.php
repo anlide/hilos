@@ -688,7 +688,9 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
                 $this->undoPublish($published, $storedNames[$index], array_slice($request->files, $index));
                 $this->sendToAgent(
                     $request->replySignal,
-                    FilesPublishedSignalData::refused($request->acceptKey, $request->clientUploadIds, self::MESSAGE_CANNOT_KEEP),
+                    FilesPublishedSignalData::refused(
+                        $request->acceptKey, $request->clientUploadIds, self::MESSAGE_CANNOT_KEEP, $request->uploadHoldId,
+                    ),
                 );
 
                 return;

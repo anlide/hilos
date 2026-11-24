@@ -17,7 +17,7 @@ import { pageEntityTypes } from '../pages/entityTypes.js'
 import { PAGE_PRODUCT } from '../pages/keys.js'
 import { appName, pageTitles } from '../pages/pageTitles.js'
 import { router } from '../pages/routes.js'
-import { matchesProductPageResponse } from '../views/Product/productPage.js'
+import { createProductPageResponseMatcher } from '../views/Product/productPage.js'
 import { bindCart } from './cart.js'
 import { actions, connection } from './connection.js'
 import { currentUserId, pendingAck, scopes } from './session.js'
@@ -33,7 +33,9 @@ const hilosRouter = bootHilos({
   scopes,
   router,
   pageEntityTypes,
-  pageResponseMatchers: new Map([[PAGE_PRODUCT, matchesProductPageResponse]]),
+  pageResponseMatchers: new Map([
+    [PAGE_PRODUCT, createProductPageResponseMatcher(scopes)],
+  ]),
   pageTitles,
   appName,
   // Register the notification center so the bell in the shell's user slot fills

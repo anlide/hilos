@@ -58,9 +58,15 @@ abstract class AdminProductsPageEnvironment extends ProductsTableEnvironment
              * @param string $target Upload target
              * @param list<string> $clientUploadIds Requested uploads
              * @param string $replySignal Publication answer name
+             * @param ?string $uploadHoldId Accepted hold for moderated uploads
              */
-            public function publishUploads(string $acceptKey, string $target, array $clientUploadIds, string $replySignal): void
-            {
+            public function publishUploads(
+                string $acceptKey,
+                string $target,
+                array $clientUploadIds,
+                string $replySignal,
+                ?string $uploadHoldId = null,
+            ): void {
                 $this->published[] = [$acceptKey, $target, $clientUploadIds, $replySignal];
             }
         };

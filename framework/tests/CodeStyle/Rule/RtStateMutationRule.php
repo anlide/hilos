@@ -40,8 +40,8 @@ final class RtStateMutationRule implements CodeStyleRule
      */
     private const array MUTATING_METHODS = ['add', 'remove', 'clear'];
 
-    /** Accessor that hands the backing collection out, on whatever receiver it is called. */
-    private const string STATE_ACCESSOR = 'getStateCollection';
+    /** Accessors that hand the backing collection out, on whatever receiver they are called. */
+    private const array STATE_ACCESSORS = ['getStateCollection', 'getBackingStateCollection'];
 
     /**
      * Magic properties that hand the backing collection out inside actions.
@@ -332,7 +332,7 @@ final class RtStateMutationRule implements CodeStyleRule
             return null;
         }
 
-        if ($token[1] === self::STATE_ACCESSOR && $this->isCall($tokens, $index)) {
+        if (in_array($token[1], self::STATE_ACCESSORS, true) && $this->isCall($tokens, $index)) {
             $parenthesis = $this->significantIndex($tokens, $index, 1);
 
             return $parenthesis === null ? null : $this->closingBracket($tokens, $parenthesis, '(', ')');

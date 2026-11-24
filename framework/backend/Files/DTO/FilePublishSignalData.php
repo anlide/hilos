@@ -27,6 +27,7 @@ final class FilePublishSignalData extends BaseDTO implements SignalDataInterface
     public const string visibility = 'visibility';
     public const string replySignal = 'replySignal';
     public const string files = 'files';
+    public const string uploadHoldId = UploadPublishSignalData::uploadHoldId;
 
     /**
      * @param string $acceptKey Accept key of the connection the uploads belonged to
@@ -34,6 +35,7 @@ final class FilePublishSignalData extends BaseDTO implements SignalDataInterface
      * @param string $visibility Who may be given the files, a {@see FileVisibility} value
      * @param string $replySignal Name of the agent signal the answer comes under
      * @param list<FilePublishItemData> $files The handed-over files, one for each id and in its order
+     * @param ?string $uploadHoldId Accepted hold the library echoes in its answer, if supplied
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -41,12 +43,13 @@ final class FilePublishSignalData extends BaseDTO implements SignalDataInterface
         public readonly string $visibility,
         public readonly string $replySignal,
         public readonly array $files,
+        public readonly ?string $uploadHoldId = null,
     ) {
     }
 
     /**
      * @return array{acceptKey: string, clientUploadIds: list<string>, visibility: string, replySignal: string,
-     *     files: list<array<string, mixed>>} DTO payload for transport
+     *     files: list<array<string, mixed>>, uploadHoldId?: string} DTO payload for transport
      */
     public function toArray(): array
     {
@@ -56,7 +59,7 @@ final class FilePublishSignalData extends BaseDTO implements SignalDataInterface
             self::visibility => $this->visibility,
             self::replySignal => $this->replySignal,
             self::files => array_map(static fn(FilePublishItemData $file): array => $file->toArray(), $this->files),
-        ];
+        ] + ($this->uploadHoldId === null ? [] : [self::uploadHoldId => $this->uploadHoldId]);
     }
 
     /**
@@ -86,6 +89,7 @@ final class FilePublishSignalData extends BaseDTO implements SignalDataInterface
             visibility: UploadPublishSignalData::requireVisibility($data, self::visibility),
             replySignal: UploadPublishSignalData::requireName($data, self::replySignal),
             files: $files,
+            uploadHoldId: self::optionalString($data, self::uploadHoldId),
         );
     }
 }

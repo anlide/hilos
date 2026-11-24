@@ -64,6 +64,7 @@ use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\Destination;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Core\Router\Destination\UnknownAgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
@@ -651,6 +652,47 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->drainQueue();
 
         $this->assertSame([], $manager->workerServer->deliveries);
+    }
+
+    public function testStartFailureDropsAParkedPublicationReplyWhileItsSocketStaysLive(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $agent = HeldAgentSignalTestRouter::COLD_AGENT;
+        $pair = [];
+        self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
+        $client = new HeldAgentSignalTestWebSocket($pair[0], self::ACCEPT_KEY);
+        $server = new HeldAgentSignalTestWebSocketServer('127.0.0.1', 0);
+        $server->attach($client);
+        $manager->registerServer($server);
+        try {
+            $reply = new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1'], [1], null, 'accepted-hold');
+            Hilos::$sr->queueSignal(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(HeldAgentSignalTestRouter::COLD_PUSH),
+                new AgentSignalData($reply),
+            );
+            $manager->drainQueue();
+            self::assertSame([$agent], $manager->workerServer->startedAgentTypes);
+            self::assertSame($reply, $manager->heldFrames()[0]->signal->data->data);
+            self::assertSame([], $manager->workerServer->deliveries);
+
+            $manager->reportStartFailed($agent);
+            $manager->drainQueue();
+            self::assertSame([], $manager->heldFrames());
+            self::assertSame($client, $server->clientTarget(self::ACCEPT_KEY)?->getClient());
+            self::assertSame([], $manager->pageErrorFrames());
+            self::assertSame([], $manager->workerServer->deliveries);
+
+            $this->queuePush(HeldAgentSignalTestRouter::COLD_FOLLOW_UP);
+            $manager->drainQueue();
+            $manager->reportStarted($agent);
+            $manager->drainQueue();
+            self::assertSame([HeldAgentSignalTestRouter::COLD_FOLLOW_UP . '@' . $agent], $manager->workerServer->deliveries);
+        } finally {
+            $client->close();
+            socket_close($pair[1]);
+        }
     }
 
     public function testAnAgentAlreadyUpIsDeliveredToStraightAway(): void

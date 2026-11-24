@@ -18,6 +18,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\RtWriteBackpressureException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
@@ -70,12 +71,13 @@ abstract class RtActions
      * @return RtStates Backing state collection
      *
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      * @throws InvalidArgumentException When property is unknown
      */
     public function __get(string $name): mixed
     {
         return match ($name) {
-            self::stateCollection => $this->getStateCollection(),
+            self::stateCollection => $this->collection->getStateCollection(),
             default => throw new InvalidArgumentException("Unknown property: {$name}"),
         };
     }
@@ -142,7 +144,7 @@ abstract class RtActions
      */
     protected function getStateCollection(): RtStates
     {
-        return $this->collection->getStateCollection();
+        return $this->collection->getBackingStateCollection();
     }
 
     /**

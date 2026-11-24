@@ -7,6 +7,7 @@ namespace Hilos\Runtime\View\Collection;
 use Hilos\Constants\TimeConstants;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\RtStaleness;
@@ -49,10 +50,12 @@ final class HilosSessionRotations extends RtCollection
      * @param string $ticket Ticket value presented on the handshake
      * @return ?HilosSessionRotation Live rotation, or null when the ticket is unknown, spent, or frozen
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the key must wait for the replica
      */
     public function claimable(string $ticket): ?HilosSessionRotation
     {
-        $state = $this->getStateCollection()->get($ticket);
+        /** @var ?StateHilosSessionRotation $state */
+        $state = $this->readStateForKey($ticket);
         if ($state === null || !$state->isLiveAt(microtime(true) * TimeConstants::MS_PER_SECOND)) {
             return null;
         }
@@ -73,6 +76,7 @@ final class HilosSessionRotations extends RtCollection
     /**
      * @return StateHilosSessionRotations Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosSessionRotations
     {
@@ -94,6 +98,7 @@ final class HilosSessionRotations extends RtCollection
      * @param mixed $offset One-time rotation ticket
      * @return ?HilosSessionRotation Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosSessionRotation
     {

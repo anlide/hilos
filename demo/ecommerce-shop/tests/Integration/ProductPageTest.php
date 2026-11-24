@@ -7,6 +7,8 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Closure;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\ProductAgent;
+use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
+use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Core\Daemon\EcommerceShopWorkerManager;
 use Demo\EcommerceShop\Database\DTO\ProductStockTotals;
@@ -21,9 +23,13 @@ use Demo\EcommerceShop\Database\View\Collection\ProductWarehouseStocks;
 use Demo\EcommerceShop\Database\View\Item\Product;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Pages\AdminProductPage;
+use Demo\EcommerceShop\Pages\AdminProductStockPage;
+use Demo\EcommerceShop\Pages\DTO\AdminProductPageSubscribeParams;
 use Demo\EcommerceShop\Pages\DTO\ProductPageSubscribeParams;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentManager;
@@ -32,8 +38,10 @@ use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\DTO\PageMovedSignalData;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageErrorMessages;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
@@ -43,15 +51,23 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
+use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Files\HilosFiles;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketTableRowFocusSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -66,6 +82,7 @@ abstract class ProductPageEnvironment extends StockLibraryEnvironment
 {
     protected const string GUEST = 'product-page-guest';
     protected const string VISITOR = 'product-page-visitor';
+    protected const string ADMIN = 'product-page-admin';
     private const string CONNECTIONS_OWNER = 'product-page-test';
 
     protected AgentManager $agents;
@@ -95,9 +112,17 @@ abstract class ProductPageEnvironment extends StockLibraryEnvironment
     protected function releaseIntegrationEnvironment(): void
     {
         try {
+            if (isset($this->agents)) {
+                foreach ($this->agents->getAgents() as $agent) {
+                    if ($agent instanceof ProductAgent) {
+                        RtTruthSourceRegistry::unregisterAgent($agent->getId());
+                        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
+                    }
+                }
+            }
             if ($this->claimedConnections) {
                 ExecutionContext::run(new ExecutionFrame(), static function (): void {
-                    foreach ([self::GUEST, self::VISITOR] as $acceptKey) {
+                    foreach ([self::GUEST, self::VISITOR, self::ADMIN] as $acceptKey) {
                         Hilos::$rt->connections[$acceptKey]?->actions->unregister();
                         SourceInterestRegistry::releaseConsumer(SourceConsumer::page($acceptKey));
                     }
@@ -157,13 +182,22 @@ abstract class ProductPageEnvironment extends StockLibraryEnvironment
      *
      * @param WorkerDbSyncUpdatedMessageDTO $message Applied stock update
      * @param bool $duringAddressLookup Whether to fail before the stock key can identify its product
+     * @param bool $structured Whether the page produces a structured subscription error
+     * @param int $containedFailures Failures caught by the browser publisher outside the page router
      */
-    protected function deliverWithStockReadFailure(WorkerDbSyncUpdatedMessageDTO $message, bool $duringAddressLookup = false): void
-    {
+    protected function deliverWithStockReadFailure(
+        WorkerDbSyncUpdatedMessageDTO $message,
+        bool $duringAddressLookup = false,
+        bool $structured = false,
+        int $containedFailures = 0,
+    ): void {
         $views = new ReflectionProperty(DbContext::class, '_dbItemCollections');
         $original = $views->getValue($this->reader);
-        $fail = function () use ($views, $original): never {
+        $fail = function () use ($views, $original, $structured): never {
             $views->setValue($this->reader, $original);
+            if ($structured) {
+                throw new PageInternalErrorException('Stock read failed while building the page answer');
+            }
             throw new DatabaseException('Stock read failed during live delivery');
         };
         $failingView = new class ($original[EcommerceShopDbContext::productWarehouseStocks], $fail, $duringAddressLookup) extends DbCollection {
@@ -189,7 +223,8 @@ abstract class ProductPageEnvironment extends StockLibraryEnvironment
         };
         $views->setValue($this->reader, array_replace($original, [EcommerceShopDbContext::productWarehouseStocks => $failingView]));
         try {
-            $this->deliver($message);
+            $this->flushReaderAfter(fn () => $this->worker->handleDaemonMessage($message), $containedFailures);
+            self::assertSame($original, $views->getValue($this->reader));
         } finally {
             $views->setValue($this->reader, $original);
         }
@@ -224,15 +259,18 @@ abstract class ProductPageEnvironment extends StockLibraryEnvironment
         }
     }
 
-    /** @param Closure $step Incoming worker work before the browser flush */
-    private function flushReaderAfter(Closure $step): void
+    /**
+     * @param Closure $step Incoming worker work before the browser flush
+     * @param int $containedFailures Failures contained by the browser publisher
+     */
+    private function flushReaderAfter(Closure $step, int $containedFailures = 0): void
     {
         $writer = Hilos::$db;
         Hilos::$db = $this->reader;
         try {
-            ExecutionContext::run(new ExecutionFrame(), static function () use ($step): void {
+            ExecutionContext::run(new ExecutionFrame(), static function () use ($step, $containedFailures): void {
                 $step();
-                self::assertSame([], Hilos::$browser->flushToSignalRouter());
+                self::assertCount($containedFailures, Hilos::$browser->flushToSignalRouter());
             });
         } finally {
             Hilos::$db = $writer;
@@ -529,7 +567,8 @@ final class ProductPageTest extends ProductPageEnvironment
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::VISITOR));
 
-        self::assertNull(Hilos::$sr->pageResource(self::GUEST));
+        self::assertSame((string)$this->stock->id, Hilos::$sr->pageResource(self::GUEST)?->idString);
+        self::assertNull(ProductPage::viewerSubscriptionResource(self::GUEST, $this->stock->slug));
         $this->deliver(self::renameCategory($this->stock->categoryId, 'Spring bulbs'));
         $card = $this->takeCard(self::GUEST);
         self::assertSame($this->stock->id, $card['id']);
@@ -538,22 +577,165 @@ final class ProductPageTest extends ProductPageEnvironment
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
     }
 
-    /** A category whose prior membership is known gets an addressed failure and one full recovery. */
-    public function testFailedCategoryLookupRefusesOnlyItsConfirmedAddress(): void
+    /** A failed live rebuild and a failed silent probe leave the former address able to move. */
+    public function testFailedProductDeliveryFollowsItsRenamedAddress(): void
     {
-        $this->subscribe(self::GUEST, $this->stock->slug);
+        self::stock($this->stock->id, $this->warehouse, 1);
+        $rowId = Database::lastInsertId();
+        $oldSlug = $this->stock->slug;
+        $newSlug = 'renamed-after-delivery-error';
+        $this->subscribe(self::GUEST, $oldSlug);
         $this->takeCard(self::GUEST);
         $this->subscribe(self::VISITOR, $this->other->slug);
         $this->takeCard(self::VISITOR);
+        self::assertSame(1, Hilos::$rt->productViewerCounts[$oldSlug]?->viewerCount);
+
+        $this->deliverWithStockReadFailure(self::updateStock($rowId));
+        $this->takeRefusal(self::GUEST, HttpConstants::HTTP_INTERNAL_ERROR);
+        self::assertNull(Hilos::$rt->productViewerCounts[$oldSlug]);
+        self::assertNull(ProductPage::viewerSubscriptionResource(self::GUEST, $oldSlug));
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
+
+        $this->deliverWithStockReadFailure(self::renameCategory($this->stock->categoryId, 'Spring bulbs'), structured: true);
+        self::assertSame([], $this->takeFrames());
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
+        self::assertNull(Hilos::$rt->productViewerCounts[$oldSlug]);
+
+        Database::sql('UPDATE product SET slug = ? WHERE id = ?', [$newSlug, $this->stock->id]);
+        $this->deliver(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+            EcommerceShopDbContext::products,
+            (string)$this->stock->id,
+            [EntityProduct::slug => $newSlug],
+            previous: [EntityProduct::slug => $oldSlug],
+        )));
+        $this->assertMove($oldSlug, $newSlug);
+        self::assertNull(Hilos::$sr->pageResource(self::GUEST));
+        self::assertNull(Hilos::$rt->productViewerCounts[$oldSlug]);
+
+        $this->openAdminPage(AdminProductPage::PAGE);
+        $overview = $this->takeFrame(self::ADMIN)->data;
+        self::assertInstanceOf(PageResponseSignalData::class, $overview);
+        self::assertSame(0, $overview->payload->data[AdminProductBrowserData::DATA][AdminProductBrowserData::FIELD_VIEWER_COUNT]);
+
+        $this->subscribe(self::GUEST, $newSlug);
+        $card = $this->takeFrame(self::GUEST);
+        self::assertInstanceOf(PageResponseSignalData::class, $card->data);
+        self::assertSame($newSlug, self::card($card)['slug']);
+        self::assertSame(2, self::card($card)['units']);
+        self::assertSame(
+            ['slug' => $newSlug, 'otherViewerCount' => 0],
+            $card->data->payload->data[ProductPage::DATA_PRODUCT_VIEWERS],
+        );
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
+        self::assertNull(Hilos::$rt->productViewerCounts[$oldSlug]);
+        $viewers = Hilos::$rt->productViewerCounts[$newSlug];
+        self::assertSame($this->stock->id, $viewers?->productId);
+        self::assertSame(1, $viewers->viewerCount);
+        self::assertSame(1, Hilos::$rt->productViewerCounts[$this->other->slug]?->viewerCount);
+        self::assertCount(2, Hilos::$rt->productViewerCounts);
+
+        // The rollback scope holds commit-time announcements. Supply the fact from the row the agent wrote.
+        Hilos::$browser->record(SourceChange::rtCreated(EcommerceShopRtContext::productViewerCounts, $newSlug, $viewers->toArray()));
+        $this->deliver();
+        $overview = $this->takeFrame(self::ADMIN)->data;
+        self::assertInstanceOf(PageResponseSignalData::class, $overview);
+        self::assertSame(AdminProductPage::PAGE, $overview->pageKey);
+        $adminCard = $overview->payload->data[AdminProductBrowserData::DATA];
+        self::assertSame($this->stock->id, $adminCard[AdminProductBrowserData::productId]);
+        self::assertSame(1, $adminCard[AdminProductBrowserData::FIELD_VIEWER_COUNT]);
+    }
+
+    /** The first browser 500 leaves a searched Stock window available to the next full answer. */
+    public function testFailedStockPublicationRecoversItsSearchedWindow(): void
+    {
+        $kyiv = self::warehouse('Kyiv');
+        $lviv = self::warehouse('Lviv');
+        self::stock($this->stock->id, $kyiv, 30);
+        $filter = [ProductStockTable::FILTER_PRODUCT => $this->stock->id, TableConstants::FILTER_KEY_SEARCH => 'Kyiv'];
+        $this->openAdminPage(AdminProductStockPage::PAGE, [ProductStockTable::TABLE => new TableWindowDescriptorDTO(
+            filter: $filter,
+            sort: Hilos::$table->productStock->defaultSort(),
+            limit: 1,
+        )]);
+        $initial = $this->takeFrame(self::ADMIN)->data;
+        self::assertInstanceOf(PageResponseSignalData::class, $initial);
+        $window = $initial->payload->windows[ProductStockTable::TABLE];
+        self::assertSame($filter, (array)$window[TableWindowDescriptorDTO::FILTER]);
+        self::assertSame([$kyiv], array_column($window[TableWindowSignalData::rows], PagePayload::rowKey));
+        $subscription = Hilos::$sr->pageSubscription(self::ADMIN);
+        Hilos::$sr->setTableFocus(self::ADMIN, ProductStockTable::TABLE, (string)$kyiv);
+
+        $this->deliverWithStockReadFailure(self::productPriceFact($this->stock->id, 700), containedFailures: 1);
+        $failure = $this->takeFrame(self::ADMIN)->data;
+        self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $failure);
+        self::assertSame(AdminProductStockPage::PAGE, $failure->page);
+        self::assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $failure->httpCode);
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::ADMIN));
+
+        $library = new ProductsLibraryAgent();
+        $focus = new DaemonAgentMessageDTO($library->getId(), new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::TABLE_ROW_FOCUS),
+            new SignalName(AdminProductStockPage::PAGE),
+            new WebSocketTableRowFocusSignalDTO(self::ADMIN, AdminProductStockPage::PAGE, ProductStockTable::TABLE, (string)$lviv),
+        ));
+        $this->deliver($focus);
+        self::assertSame([], $this->takeFrames(includeFocus: true));
+        self::assertSame((string)$lviv, Hilos::$sr->getTableFocus(self::ADMIN, ProductStockTable::TABLE));
+
+        $this->updateProduct($this->stock->id, 800);
+        $recovered = $this->takeFrame(self::ADMIN)->data;
+        self::assertInstanceOf(PageResponseSignalData::class, $recovered);
+        $recoveredWindow = $recovered->payload->windows[ProductStockTable::TABLE];
+        self::assertSame($filter, (array)$recoveredWindow[TableWindowDescriptorDTO::FILTER]);
+        self::assertSame(1, $recoveredWindow[TableWindowSignalData::limit]);
+        self::assertSame($window[TableWindowDescriptorDTO::SORT], $recoveredWindow[TableWindowDescriptorDTO::SORT]);
+        self::assertSame($window[TableWindowSignalData::rows], $recoveredWindow[TableWindowSignalData::rows]);
+        self::assertSame($subscription, Hilos::$sr->pageSubscription(self::ADMIN));
+        self::assertSame((string)$lviv, Hilos::$sr->getTableFocus(self::ADMIN, ProductStockTable::TABLE));
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::ADMIN));
+
+        $this->deliver($focus);
+        $frames = $this->takeFrames(includeFocus: true);
+        self::assertCount(1, $frames);
+        self::assertSame(self::ADMIN, $frames[0]->targetAcceptKey);
+        $delta = $frames[0]->data;
+        self::assertInstanceOf(TableViewportDeltaDTO::class, $delta);
+        self::assertSame(TableViewportDeltaDTO::KIND_ROW_REMOVED, $delta->kind);
+        self::assertSame(TableViewportDeltaDTO::REASON_LEFT_SET, $delta->reason);
+        self::assertSame((string)$lviv, (string)$delta->rowKey);
+
+        $this->deliver(new DaemonAgentMessageDTO($library->getId(), new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
+            new SignalName(AdminProductStockPage::PAGE),
+            new WebSocketPageUnsubscribeSignalDTO(self::ADMIN),
+        )));
+        self::assertNull(Hilos::$sr->getTableViewport(self::ADMIN, ProductStockTable::TABLE));
+        self::assertNull(Hilos::$sr->getTableFocus(self::ADMIN, ProductStockTable::TABLE));
+    }
+
+    /** A category whose prior membership is known gets an addressed failure and one full recovery. */
+    public function testFailedCategoryLookupRefusesOnlyItsConfirmedAddress(): void
+    {
+        $this->subscribe(self::GUEST, $this->other->slug);
+        $this->takeCard(self::GUEST);
+        $this->subscribe(self::VISITOR, $this->stock->slug);
+        $this->takeCard(self::VISITOR);
+        self::assertSame(1, Hilos::$rt->productViewerCounts[$this->stock->slug]?->viewerCount);
+        $subscription = Hilos::$sr->pageSubscription(self::VISITOR);
 
         $this->deliverWithProductLookupFailure(self::renameCategory($this->stock->categoryId, 'Spring bulbs'));
-        $this->takeRefusal(self::GUEST, HttpConstants::HTTP_INTERNAL_ERROR);
-        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
-        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::VISITOR));
+        $this->takeRefusal(self::VISITOR, HttpConstants::HTTP_INTERNAL_ERROR);
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::VISITOR));
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
+        self::assertSame($subscription, Hilos::$sr->pageSubscription(self::VISITOR));
+        self::assertNull(Hilos::$rt->productViewerCounts[$this->stock->slug]?->viewerCount);
 
         $this->deliverDatabaseRecovery(self::renameCategory($this->stock->categoryId, 'Summer bulbs'));
-        self::assertSame('Summer bulbs', $this->takeCard(self::GUEST)['categoryName']);
-        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
+        self::assertSame('Summer bulbs', $this->takeCard(self::VISITOR)['categoryName']);
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::VISITOR));
+        self::assertSame(1, Hilos::$rt->productViewerCounts[$this->stock->slug]?->viewerCount);
         $this->deliverDatabaseRecovery();
         self::assertSame([], $this->takeFrames());
     }
@@ -787,7 +969,7 @@ final class ProductPageTest extends ProductPageEnvironment
         Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Product visitor']);
         $visitorId = Database::lastInsertId();
         ExecutionContext::run(new ExecutionFrame(), static function () use ($visitorId): void {
-            Hilos::$rt->connections->actions->register(self::GUEST, null);
+            Hilos::$rt->connections->actions->register(self::GUEST, null, sessionId: 1);
             Hilos::$rt->connections->actions->register(self::VISITOR, $visitorId);
         });
     }
@@ -801,6 +983,9 @@ final class ProductPageTest extends ProductPageEnvironment
         $agent = $slug === null || $slug === '' ? new EcommerceShopAgent() : new ProductAgent($slug);
         $agentId = $agent->getId();
         if (!$this->agents->hasAgent($agentId)) {
+            if ($agent instanceof ProductAgent) {
+                OwnershipDeclaration::claimRtRows($agent);
+            }
             $this->agents->addAgent($agentId, $agent);
         }
         $params = $slug === null ? [] : [ProductPageSubscribeParams::SLUG => $slug];
@@ -809,6 +994,32 @@ final class ProductPageTest extends ProductPageEnvironment
             new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
             new SignalName(ProductPage::PAGE),
             new WebSocketPageSubscribeSignalDTO($acceptKey, ProductPage::PAGE, $params),
+        )));
+    }
+
+    /**
+     * @param string $page Admin page backed by the products library
+     * @param array<string, TableWindowDescriptorDTO> $windows Windows held by the browser
+     */
+    private function openAdminPage(string $page, array $windows = []): void
+    {
+        Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 1, 0)', ['Product admin']);
+        $adminId = Database::lastInsertId();
+        ExecutionContext::run(new ExecutionFrame(), static function () use ($adminId): void {
+            Hilos::$rt->connections->actions->register(self::ADMIN, $adminId);
+        });
+        $library = new ProductsLibraryAgent();
+        $this->agents->addAgent($library->getId(), $library);
+        $this->deliver(new DaemonAgentMessageDTO($library->getId(), new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName($page),
+            new WebSocketPageSubscribeSignalDTO(
+                self::ADMIN,
+                $page,
+                [AdminProductPageSubscribeParams::PRODUCT_ID => (string)$this->stock->id],
+                $windows,
+            ),
         )));
     }
 
@@ -938,15 +1149,20 @@ final class ProductPageTest extends ProductPageEnvironment
         return $frames[0];
     }
 
-    /** @return list<WebSocketSignalData> Page responses, refusals and moves for any local connection */
-    private function takeFrames(): array
+    /**
+     * @param bool $includeFocus Whether to collect table deltas as well as page frames
+     * @return list<WebSocketSignalData> Page responses, refusals and moves for any local connection
+     */
+    private function takeFrames(bool $includeFocus = false): array
     {
         $frames = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if (
                 $signal->data instanceof WebSocketSignalData
-                && ($signal->data->data instanceof PageResponseSignalData
+                && (($signal->data->data instanceof PageResponseSignalData
+                        && array_keys($signal->data->data->payload->data) !== [ProductPage::DATA_PRODUCT_VIEWERS])
                     || $signal->data->data instanceof PageSubscriptionErrorSignalData
+                    || ($includeFocus && $signal->data->data instanceof TableViewportDeltaDTO)
                     || $signal->data->data instanceof PageMovedSignalData)
             ) {
                 $frames[] = $signal->data;

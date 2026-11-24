@@ -60,6 +60,32 @@ class Sessions extends DbCollection
     }
 
     /**
+     * @param int $sessionId Session primary key
+     * @param ?int $userId Person the session must act as, or null for a guest
+     * @param ?string $token Required for a state frame; null when a token rotation is immaterial
+     * @return bool Whether the persisted session matches, independently of the worker's mirror
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function matchesStoredIdentity(int $sessionId, ?int $userId, ?string $token = null): bool
+    {
+        return $this->objectCollection->matchesStoredIdentity($sessionId, $userId, $token);
+    }
+
+    /**
+     * Locks the stored author for the caller's open write transaction.
+     *
+     * @param int $sessionId Session primary key
+     * @param int $userId Author whose write is being admitted
+     * @return bool Whether the stored session exists and belongs to the author
+     * @throws DatabaseException When there is no row-connection transaction, the lock is busy, or the read fails
+     */
+    public function lockStoredAuthor(int $sessionId, int $userId): bool
+    {
+        return $this->objectCollection->lockStoredAuthor($sessionId, $userId);
+    }
+
+    /**
      * Finds a session by its cookie token.
      *
      * @param string $token Session cookie token (empty string returns null)

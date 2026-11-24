@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent\Daemon;
 use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -34,6 +35,7 @@ interface AgentStartSink
      * @param string $agentId Id of the agent that started, in the `type` or `type:index` form
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onAgentStarted(string $agentId): void;
 

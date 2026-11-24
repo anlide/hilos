@@ -124,14 +124,29 @@ writes to the five trigger-written collections.
 ## Interest And Ownership Are One Fact
 
 A claim raises the reader interest of its owner
-(`SourceInterestRegistry::register()`, inside `OwnershipDeclaration::claimDb()`
-and `OwnershipDeclaration::claimRt()`), and a claim that may add marks that
-interest ready in the same movement (`SourceInterestRegistry::markReady()`).
+(`SourceInterestRegistry::register()`, inside `OwnershipDeclaration`). A DB
+claim that may add or an RT claim that may add to the whole collection marks
+that interest ready in the same movement (`SourceInterestRegistry::markReady()`).
 Ready at once, because nothing is on its way: a writer that brings rows into
 being holds the copy of what it writes, and on the database side the copy this
 process caches lives only under an interest — a cache with anything in it means
 a holder is registered and the frames are already coming, an empty one means
 the next read goes to the database.
+
+An RT claim over named rows, or a set whose owner may add, gives the owner
+immediate access through `RtContext` under its agent frame. Other readers wait
+for the worker's replica, which becomes ready when the worker publishes the
+initial snapshot. An owner can do its first read and write in `onStart()` even
+while that snapshot is on its way.
+
+When moderation is enabled, a worker waits for the whole moderation-check
+replica before it starts a holder of a set in that collection. A check opened by
+the previous holder can still be awaiting a verdict. The worker takes up the
+interest at the start, before the new claim can cause the import to leave that
+set out. If the same holder may add to the represented connections collection,
+its start waits for that process-wide replica too. The prior holder may have
+recorded an awaiting publication on a live composer. An empty snapshot also
+satisfies the wait. Both use the same deadline and refusal as a read.
 
 A claim that may not add is a **borrowed claim**, and it is not ready at once.
 Its holder only edits rows somebody else brought into being, so it holds no copy
@@ -185,9 +200,9 @@ claims; HIL-1999 retired the merge claims. The [Writer Map](account-operations.m
 assigns those terminal writes to the row owners. These moves do not change the
 borrowed wait, the initial RT snapshot or the DB reader-interest acknowledgement.
 
-The interest of a claim that may add is raised at the claim and not at the
-report that follows it. An agent writing its first row inside `onStart()` reads
-the collection before that report is built — the report goes out once the hook has returned
+An ordinary claim that may add raises interest at the claim. An agent writing
+its first row inside `onStart()` reads the collection before the ownership
+report is built — the report goes out once the hook has returned
 (`WorkerManager::handleAgentStart()`) — so an interest raised on the report
 would refuse the owner its own first read.
 
@@ -546,12 +561,12 @@ resulting reader interest, waits for the master's word that the state has landed
 and only then creates the agent.
 The wait parks the start, with the frames addressed to that agent, and the rest
 of the worker's link is served meanwhile (HIL-1012).
-So `onStart()` opens on a collection and not on the emptiness before one. The
-borrowed claims of the class are taken in the same breath
-(`WorkerManager::agentBorrowsRt()`, `WorkerManager::agentBorrowsDb()`) and
-waited for in the same wait. When the state does not arrive, nothing has been
-created yet and nothing has to be unwound but the interest: the worker releases
-it and refuses the start (`AgentCreationFailedException`).
+So `onStart()` opens on a collection and not on the emptiness before one.
+`WorkerManager::agentClaimsWaitingForRt()` includes borrowed RT claims and the
+[moderation set claim](#interest-and-ownership-are-one-fact).
+`WorkerManager::agentBorrowsDb()` adds borrowed DB claims to that same wait.
+When the state does not arrive, the worker releases its interest and refuses
+the start before creating an instance (`AgentCreationFailedException`).
 
 An unknown type reads nothing rather than raising. What a start does with a
 type the topology does not know is decided by the factory a moment later, and

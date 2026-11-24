@@ -42,7 +42,9 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Hilos;
 use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\Ordinary\RtOrdinaryQueue;
@@ -538,7 +540,9 @@ final class WorkerRtSyncStreamHoldTest extends TestCase
         $context->configure();
         $context->bindStateCollectionNames();
         Hilos::$rt = $context;
-        RtTruthSourceRegistry::register(HilosProbeFleetStatus::RT_COLLECTION, TruthSourceKeys::all(), $agent->getId());
+        // This observer keeps the projection mounted after its writer leaves.
+        SourceInterestRegistry::register(SourceChange::KIND_RT, HilosProbeFleetStatus::RT_COLLECTION, self::READER);
+        OwnershipDeclaration::claimRt($agent::class, $agent->getId());
         ExecutionContext::setCurrentAgentId($agent->getId());
         RtOrdinaryAdmission::bindSourceQueue(new RtOrdinaryQueue(RtRowArena::process(), maxCleanupOperations: 1));
         ExecutionContext::clear();
@@ -565,6 +569,7 @@ final class WorkerRtSyncStreamHoldTest extends TestCase
         } finally {
             $manager->unbindRtPass();
             RtTruthSourceRegistry::unregisterAgent($agent->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
             Hilos::$rt = null;
         }
 
@@ -1824,6 +1829,8 @@ final class WorkerRtSyncStreamHoldTestLeavingAgent extends AbstractAgent
 final class WorkerRtSyncStreamHoldTestIndebtedAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = 'unit_rt_stream_hold_indebted';
+
+    public const array OWNS_RT = [HilosProbeFleetStatus::RT_COLLECTION => TruthSourceOperation::BY_KIND];
 
     /** Asks to go, as an agent whose work is over does. */
     public function leave(): void

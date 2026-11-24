@@ -11,12 +11,14 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
+use Demo\Chat\Moderation\ChatModerationRefusal;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
@@ -24,10 +26,17 @@ use Hilos\Core\Page\PageReach;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\HilosException;
+use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
+use Hilos\WiringRefusal;
+use Throwable;
 
 /**
  * Validates chat message submissions and starts moderation in the owning agent's process.
@@ -108,7 +117,7 @@ final class MainPage extends AbstractPage
      * @param MessageActionDTO $dto Parsed message action payload
      * @throws EmptyValueException When message has no non-empty text and no attachments
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
-     * @throws ValidationException When the user is rate-limited or already moderating, or a file is not ready or named twice
+     * @throws ValidationException When admission fails or the moderation snapshot has not arrived
      * @throws HilosException When the uploads cannot be read or the runtime state cannot be written
      */
     private function handleMessage(MessageActionDTO $dto): void
@@ -118,6 +127,12 @@ final class MainPage extends AbstractPage
         }
         if (Hilos::$rt->selfConnection->userState === null) {
             throw new ItemNotFoundForUpdateException('User runtime state not found');
+        }
+        $sessionId = Hilos::$rt->selfConnection->sessionId;
+        if ($sessionId === null || Hilos::$rt->selfConnection->isPublicationClearOwed()
+            || $this->agent->isComposerIdentityChanging(Hilos::$rt->selfConnection)
+            || !Hilos::$db->sessions->matchesStoredIdentity($sessionId, Hilos::$rt->selfConnection->userId)) {
+            throw new ValidationException(ChatModerationRefusal::TEXT_MESSAGE_UNAVAILABLE);
         }
         if (
             Hilos::$rt->selfConnection->outboundModerationPhase
@@ -144,9 +159,21 @@ final class MainPage extends AbstractPage
         if (trim($dto->content) === '' && $dto->attachments === []) {
             throw new EmptyValueException('Message cannot be empty');
         }
+        if (!SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)
+            || Hilos::$rt->selfConnection->staleSince() !== null || Hilos::$rt->selfConnection->isUnregisterOwed()) {
+            throw new ValidationException(ChatModerationRefusal::TEXT_MESSAGE_UNAVAILABLE);
+        }
 
-        Hilos::$rt->selfConnection->userState->actions->recordOutboundSubmission();
-        Hilos::$rt->selfConnection->actions->startOutboundModeration($dto->content, $dto->attachments);
-        $this->agent->startMessageModeration(Hilos::$rt->selfConnection->acceptKey);
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, function () use ($dto): void {
+                Hilos::$rt->selfConnection->userState->actions->recordOutboundSubmission();
+                Hilos::$rt->selfConnection->actions->startOutboundModeration($dto->content, $dto->attachments);
+                $this->agent->startMessageModeration(Hilos::$rt->selfConnection->acceptKey);
+            });
+        } catch (WiringRefusal | HilosException $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new LogicException('Message moderation admission failed', previous: $failure);
+        }
     }
 }

@@ -67,6 +67,9 @@ final class RtResumableConnectionTest extends IntegrationTestCase
         $live = Connection::create('binding-ak', 7, 'token', 31);
         $live->outboundModerationMessage = str_repeat('message-Ж', 400);
         $live->outboundModerationAttachments = ['second', 'first'];
+        $live->outboundPublicationHoldId = 'accepted-hold';
+        $live->outboundPublicationDeadlineAt = 1_764_000_000_123;
+        $live->outboundPublicationUserId = 7;
         $live->markRtSyncBaseline();
         $baseline = $live->toArray();
         $draft = $live->draftRow();
@@ -113,7 +116,12 @@ final class RtResumableConnectionTest extends IntegrationTestCase
             $this->assertLessThanOrEqual(7, $budget->usedSteps());
             $this->assertLessThanOrEqual(29, $budget->usedBytes());
         }
-        $this->assertSame($baseline, $this->complete($out->finish())->toNative());
+        $exported = $this->complete($out->finish());
+        $this->assertSame($baseline, $exported->toNative());
+        $replica = $this->complete(Connection::fromValues($exported->reader()));
+        $this->assertSame('accepted-hold', $replica->outboundPublicationHoldId);
+        $this->assertSame(1_764_000_000_123, $replica->outboundPublicationDeadlineAt);
+        $this->assertSame(7, $replica->outboundPublicationUserId);
         $baselineOut = new RtRowWriter($arena);
         $this->complete($frozen->exportBaseline($baselineOut));
         $this->assertSame($baseline, $this->complete($baselineOut->finish())->toNative());

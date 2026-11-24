@@ -194,10 +194,19 @@ final class BrowserContextTableWindowTest extends TestCase
         Hilos::$table = new TableWindowUnitTableContext([]);
         Hilos::$table->configure();
 
-        $delivered = new TableWindowUnitBrowserContext()->sendTableWindow(
+        $browser = new TableWindowUnitBrowserContext();
+        $viewport = new TableViewportSubscription(tableKey: 'no_such_table');
+        Hilos::$sr->markPageDeliveryFailure('ak-1');
+        $this->assertFalse($browser->sendTableWindow(TableWindowUnitBrowserContext::PAGE, 'ak-1', $viewport, 'window-refused'));
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+        $this->assertFalse(Hilos::$sr->isTableWindowOwed('ak-1', $viewport->tableKey));
+        $this->assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+
+        Hilos::$sr->clearPageDeliveryFailure('ak-1');
+        $delivered = $browser->sendTableWindow(
             TableWindowUnitBrowserContext::PAGE,
             'ak-1',
-            new TableViewportSubscription(tableKey: 'no_such_table'),
+            $viewport,
             'window-refused',
         );
 
@@ -569,6 +578,30 @@ final class BrowserContextTableWindowTest extends TestCase
         $this->assertSame(1, $label[TableConstants::FACET_KEY_ANY]->count);
         $this->assertSame(1, $label[TableConstants::FACET_KEY_OPTIONS]['Alpha']->count);
         $this->assertSame(0, $label[TableConstants::FACET_KEY_OPTIONS]['Beta']->count);
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testDirectAndHeldFacetCountsWaitForTheFullPage(): void
+    {
+        $browser = $this->holdLabelCounts();
+        Hilos::$sr->markPageDeliveryFailure('ak-1');
+        $viewport = new TableViewportSubscription(tableKey: TableWindowUnitTable::TABLE, limit: 1);
+        Hilos::$sr->setTableViewport('ak-1', $viewport);
+        $this->setFacetLag(0);
+        $browser->releaseHeldFacetCounts(self::AGENT);
+        $browser->sendTableFacetCounts(TableWindowUnitBrowserContext::PAGE, 'ak-1', $viewport);
+
+        $this->assertFalse($browser->hasHeldFacetCounts(self::AGENT));
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+
+        Hilos::$sr->clearPageDeliveryFailure('ak-1');
+        $browser->sendTableFacetCounts(TableWindowUnitBrowserContext::PAGE, 'ak-1', $viewport);
+        $data = Hilos::$sr->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(WebSocketSignalData::class, $data);
+        $this->assertInstanceOf(TableFacetCountsSignalData::class, $data->data);
+        $label = $data->data->facets->filters[TableWindowUnitTable::FILTER_LABEL];
+        $this->assertSame(3, $label[TableConstants::FACET_KEY_ANY]->count);
+        $this->assertSame(2, $label[TableConstants::FACET_KEY_OPTIONS]['Beta']->count);
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 

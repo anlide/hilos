@@ -31,6 +31,7 @@ use Hilos\Log\ClusterLogNodeSlot;
 use Hilos\Log\LogKeySummary;
 use Hilos\Pages\Logs\AbstractHilosLogsKeysPage;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 
 /**
  * Framework log-keys table: the log streams of every node, one row per key on a node (HIL-385).
@@ -155,6 +156,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function facetCounts(TableQueryDTO $query, array $wanted): ?array
     {
@@ -183,6 +185,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -267,6 +270,7 @@ final class HilosLogKeysTable extends TableDefinition implements ViewportTable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

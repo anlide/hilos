@@ -11,6 +11,7 @@ use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
@@ -1460,6 +1461,7 @@ final class PeerLink extends AbstractClient
      * @param PeerPlacementReportDTO $frame Incoming placement-report frame
      * @throws PeerTransportException When the frame arrives before the handshake
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the restart reply cannot read the runtime roster
      */
     private function onPlacementReport(PeerPlacementReportDTO $frame): void
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
@@ -12,6 +13,7 @@ use Demo\EcommerceShop\Browser\EcommerceShopBrowserList;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Constants\ProductKind;
+use Demo\EcommerceShop\Core\Daemon\EcommerceShopWorkerManager;
 use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
@@ -25,6 +27,8 @@ use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminProductPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
+use Demo\EcommerceShop\Runtime\State\Item\ProductViewerCount;
+use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehouseTableRow;
@@ -34,6 +38,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -58,26 +63,42 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Files\HilosFiles;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Testing\IntegrationTest;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Utils\Helpers\RandomHelper;
+use ReflectionMethod;
+use ReflectionProperty;
 
 /** One product's admin page answers with its card, its stock total and the lists its names come from, and keeps them live. */
 #[IntegrationTest]
@@ -158,6 +179,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
             ),
             AdminProductBrowserData::FIELD_EDIT_VERSION => $this->bulbsEditVersion(),
             AdminProductBrowserData::FIELD_STOCK => self::stockField(42, 2, null),
+            AdminProductBrowserData::FIELD_VIEWER_COUNT => 0,
         ], $payload[PagePayload::data][AdminProductBrowserData::DATA]);
         self::assertStringContainsString(
             '"kind":"stock"',
@@ -295,6 +317,142 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         self::assertSame(self::stockField(42, 2, null), $card[AdminProductBrowserData::FIELD_STOCK]);
         foreach ($card as $field => $value) {
             self::assertFalse(HiddenValue::isMark($value), "field {$field} is a mark for the viewer");
+        }
+    }
+
+    /** The first answer includes the total already published for the product's storefront address. */
+    public function testTheFirstCardIncludesThePublishedViewerCount(): void
+    {
+        self::createViewerCount(Hilos::$db->products[$this->bulbs]->slug, $this->bulbs, 3);
+
+        $card = $this->cardOf($this->subscribe(self::ADMIN_KEY, $this->bulbs));
+        self::assertSame(3, $card[AdminProductBrowserData::FIELD_VIEWER_COUNT]);
+    }
+
+    /** The card follows the current address and product ID through RT create, update and delete. */
+    public function testViewerCountChangesRedrawOnlyTheMatchingProductCard(): void
+    {
+        $slug = Hilos::$db->products[$this->bulbs]->slug;
+        self::createViewerCount($slug . '-old', $this->bulbs, 7);
+        self::createViewerCount($slug, $this->seeds, 9);
+
+        $card = $this->cardOf($this->subscribe(self::ADMIN_KEY, $this->bulbs));
+        self::assertSame(0, $card[AdminProductBrowserData::FIELD_VIEWER_COUNT]);
+
+        self::deleteViewerCount($slug);
+        self::assertSame([], $this->sentCards(self::ADMIN_KEY));
+
+        self::createViewerCount($slug, $this->bulbs, 2);
+        $this->assertSentViewerCount(2);
+
+        self::createViewerCount(Hilos::$db->products[$this->seeds]->slug, $this->seeds, 5);
+        self::assertSame([], $this->sentCards(self::ADMIN_KEY));
+
+        $countDiff = [ProductViewerCount::viewerCount => 4];
+        RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(EcommerceShopRtContext::productViewerCounts, $slug, $countDiff));
+        self::deliver(SourceChange::rtUpdated(
+            EcommerceShopRtContext::productViewerCounts,
+            $slug,
+            $countDiff,
+            previous: [ProductViewerCount::viewerCount => 2],
+        ));
+        $this->assertSentViewerCount(4);
+
+        self::deleteViewerCount($slug);
+        $this->assertSentViewerCount(0);
+    }
+
+    /** The worker's scoped snapshot deletion sends zero to the card identified by the old RT row. */
+    public function testSnapshotDeleteRedrawsOnlyTheCardNamedByThePreviousRow(): void
+    {
+        $slug = Hilos::$db->products[$this->bulbs]->slug;
+        $neighbor = Hilos::$db->products[$this->seeds]->slug;
+        self::createViewerCount($slug, $this->bulbs, 1);
+        self::createViewerCount($neighbor, $this->seeds, 2);
+        $card = $this->cardOf($this->subscribe(self::ADMIN_KEY, $this->bulbs));
+        self::assertSame(1, $card[AdminProductBrowserData::FIELD_VIEWER_COUNT]);
+        $otherCard = $this->cardOf($this->subscribe(self::VISITOR_KEY, $this->seeds));
+        self::assertSame(2, $otherCard[AdminProductBrowserData::FIELD_VIEWER_COUNT]);
+
+        $router = Hilos::$sr;
+        $worker = new EcommerceShopWorkerManager(1);
+        Hilos::$sr = $router;
+        $apply = new ReflectionMethod(WorkerManager::class, 'handleRtSyncMessage');
+        RtWorkDriver::runSynchronously($apply->invoke($worker, new RtSyncDeletedSignalData(
+            EcommerceShopRtContext::productViewerCounts, $slug, RtRowValues::carried([]),
+        )));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        self::assertNull(Hilos::$rt->productViewerCounts[$slug]);
+        self::assertSame(2, Hilos::$rt->productViewerCounts[$neighbor]->viewerCount);
+
+        $counts = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData && $signal->data->data instanceof PageResponseSignalData) {
+                $counts[$signal->data->targetAcceptKey][] = $this->cardOf($signal->data->data)[AdminProductBrowserData::FIELD_VIEWER_COUNT];
+            }
+        }
+        self::assertSame([self::ADMIN_KEY => [0]], $counts);
+    }
+
+    /** A local claim of a different address cannot answer a cold Overview before the replica arrives. */
+    public function testColdOverviewWaitsForTheViewerCountReplicaAfterALocalClaim(): void
+    {
+        $worker = new EcommerceShopWorkerManager(1);
+        new ReflectionProperty(WorkerManager::class, 'daemonClient')->setValue($worker, new WorkerDaemonClient());
+        $library = new ProductsLibraryAgent();
+        $manager = new ReflectionProperty(WorkerManager::class, 'agentManager')->getValue($worker);
+        $manager->addAgent($library->getId(), $library);
+        $neighbor = new ProductAgent(Hilos::$db->products[$this->seeds]->slug);
+        $source = EcommerceShopRtContext::productViewerCounts;
+        $consumer = SourceConsumer::agent($library->getId());
+        $reads = new ReflectionMethod(WorkerManager::class, 'pageSourceReads')->invoke($worker, AdminProductPage::PAGE);
+        foreach ([...$reads[SourceChange::KIND_DB], ...Hilos::$db->processWideReadKeys()] as $collection) {
+            SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, $consumer);
+            SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+        }
+        foreach ($reads[SourceChange::KIND_RT] as $collection) {
+            if ($collection !== $source) {
+                SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, $consumer);
+                SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+            }
+        }
+        SourceInterestRegistry::register(SourceChange::KIND_RT, EcommerceShopRtContext::connections, $consumer);
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, EcommerceShopRtContext::connections);
+        $slug = Hilos::$db->products[$this->bulbs]->slug;
+
+        SourceInterestRegistry::readsWhatIsDelivered();
+        try {
+            OwnershipDeclaration::claimRtRows($neighbor);
+            $worker->handleDaemonMessage(new DaemonAgentMessageDTO($library->getId(), new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                new SignalName(AdminProductPage::PAGE),
+                new WebSocketPageSubscribeSignalDTO(self::ADMIN_KEY, AdminProductPage::PAGE, ['productId' => (string)$this->bulbs]),
+            )));
+            self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::ADMIN_KEY));
+            self::assertNull(Hilos::$sr->pageSubscription(self::ADMIN_KEY));
+            self::assertSame([], $this->sentCards(self::ADMIN_KEY));
+
+            // The worker publishes replica rows before marking the source ready. Use those two
+            // steps directly because the staged snapshot publisher cannot run in a rollback scope.
+            $apply = new ReflectionMethod(WorkerManager::class, 'handleRtSyncMessage');
+            RtWorkDriver::runSynchronously($apply->invoke($worker, new RtSyncCreatedSignalData($source, $slug, [
+                ProductViewerCount::slug => $slug,
+                ProductViewerCount::productId => $this->bulbs,
+                ProductViewerCount::viewerCount => 3,
+            ])));
+            new ReflectionMethod(WorkerManager::class, 'publishRtSnapshotMarks')->invoke($worker, $source, [], []);
+            self::releaseParkedWorkerFrames($worker);
+
+            $cards = $this->sentCards(self::ADMIN_KEY);
+            self::assertCount(1, $cards);
+            self::assertSame(3, $cards[0][AdminProductBrowserData::FIELD_VIEWER_COUNT]);
+        } finally {
+            SourceInterestRegistry::readsWhatItMounts();
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::page(self::ADMIN_KEY));
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($neighbor->getId()));
+            SourceInterestRegistry::releaseConsumer($consumer);
+            RtTruthSourceRegistry::unregisterAgent($neighbor->getId());
         }
     }
 
@@ -870,6 +1028,28 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
     }
 
     /**
+     * Runs a top-level worker pass and restores the test fixture's surrounding execution frame.
+     *
+     * @param WorkerManager $worker Worker with a parked subscription
+     */
+    private static function releaseParkedWorkerFrames(WorkerManager $worker): void
+    {
+        $executionState = [];
+        foreach (['frames', 'ambientFrame', 'nextFrameToken'] as $name) {
+            $property = new ReflectionProperty(ExecutionContext::class, $name);
+            $executionState[] = [$property, $property->getValue()];
+        }
+        ExecutionContext::clear();
+        try {
+            new ReflectionMethod(WorkerManager::class, 'releaseParkedFrames')->invoke($worker, microtime(true));
+        } finally {
+            foreach ($executionState as [$property, $value]) {
+                $property->setValue(null, $value);
+            }
+        }
+    }
+
+    /**
      * @param string $acceptKey Connection the answers are addressed to
      * @return list<PageResponseSignalData> Page answers queued for the connection since the last drain
      */
@@ -934,6 +1114,14 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
     private function cardOf(PageResponseSignalData $response): array
     {
         return $response->payload->toArray()[PagePayload::data][AdminProductBrowserData::DATA];
+    }
+
+    /** @param int $expected Total viewers in the single live card */
+    private function assertSentViewerCount(int $expected): void
+    {
+        $cards = $this->sentCards(self::ADMIN_KEY);
+        self::assertCount(1, $cards);
+        self::assertSame($expected, $cards[0][AdminProductBrowserData::FIELD_VIEWER_COUNT]);
     }
 
     /** @return string Version of the initial bulbs fixture from its stored catalog fields */
@@ -1008,6 +1196,36 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         $row = Database::sql("SELECT * FROM {$table} WHERE id = ?", [$id])->rows()[0];
         DbSyncApplicator::applyUpdated(new DbSyncUpdatedSignalData($collectionKey, (string)$id, $row));
         self::deliver(SourceChange::dbUpdated($collectionKey, (string)$id, $row));
+    }
+
+    /**
+     * Applies a new viewer count as a worker would, then hands its fact to the browser.
+     *
+     * @param string $slug Storefront address of the runtime row
+     * @param int $productId Product held by the row
+     * @param int $count Total viewers
+     */
+    private static function createViewerCount(string $slug, int $productId, int $count): void
+    {
+        $row = [
+            ProductViewerCount::slug => $slug,
+            ProductViewerCount::productId => $productId,
+            ProductViewerCount::viewerCount => $count,
+        ];
+        RtSyncApplicator::applyCreated(new RtSyncCreatedSignalData(EcommerceShopRtContext::productViewerCounts, $slug, $row));
+        self::deliver(SourceChange::rtCreated(EcommerceShopRtContext::productViewerCounts, $slug, $row));
+    }
+
+    /**
+     * Applies a viewer count deletion and delivers the fact with the removed row's product ID.
+     *
+     * @param string $slug Storefront address of the runtime row
+     */
+    private static function deleteViewerCount(string $slug): void
+    {
+        $row = Hilos::$rt->productViewerCounts[$slug]->toArray();
+        RtSyncApplicator::applyDeleted(new RtSyncDeletedSignalData(EcommerceShopRtContext::productViewerCounts, $slug, $row));
+        self::deliver(SourceChange::rtDeleted(EcommerceShopRtContext::productViewerCounts, $slug, $row));
     }
 
     /**

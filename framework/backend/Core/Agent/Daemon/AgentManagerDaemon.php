@@ -11,6 +11,7 @@ use Closure;
 use Generator;
 
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\Stream\RtSyncStreamSettle;
 use Hilos\Constants\AgentConstants;
@@ -520,6 +521,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @throws AgentDaemonNotRegisteredException When the roster does not name the agent reported
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function handleAgentStarted(WorkerAgentStartedDTO $dto, ?Closure $allowsStart = null): void
     {

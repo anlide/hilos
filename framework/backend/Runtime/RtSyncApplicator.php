@@ -198,24 +198,32 @@ final class RtSyncApplicator
      *
      * @param RtSyncDeletedSignalData $data Deleted state identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
+     * @return RtSyncDeletedSignalData Delete fact with the local previous row when the sender omitted it
      * @throws HilosException Whatever the applied write raises
      */
-    public static function applyDeleted(RtSyncDeletedSignalData $data, bool $skipSelfBroadcastCheck = true): void
-    {
+    public static function applyDeleted(
+        RtSyncDeletedSignalData $data, bool $skipSelfBroadcastCheck = true,
+    ): RtSyncDeletedSignalData {
         if (!self::shouldApplyRtSync($data->collectionKey, $data->stateId, $data->emitter, $skipSelfBroadcastCheck)) {
-            return;
+            return $data;
         }
 
         $stateCollection = Hilos::$rt?->getStateCollection($data->collectionKey);
-        if ($stateCollection === null) {
-            return;
+        $previous = $stateCollection?->get($data->stateId);
+        if ($previous === null) {
+            return $data;
         }
 
-        if ($stateCollection->has($data->stateId)) {
-            SourceChangeBus::whileApplyingRemote(static function () use ($stateCollection, $data): void {
-                $stateCollection->remove($data->stateId);
-            });
-        }
+        $carried = $data->carriedRow();
+        $missing = $carried instanceof RtRowValues ? $carried->isEmptyMap() : $carried === [];
+        $row = $missing ? $previous->carriedRow() : null;
+        SourceChangeBus::whileApplyingRemote(static function () use ($stateCollection, $data): void {
+            $stateCollection->remove($data->stateId);
+        });
+
+        return $row === null ? $data : new RtSyncDeletedSignalData(
+            $data->collectionKey, $data->stateId, $row, $data->origin, $data->originRequestId, $data->emitter,
+        );
     }
 
     /**

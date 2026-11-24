@@ -54,6 +54,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionMethod;
 
 /**
  * Real upload actions, chunks, RT ownership, moderation engine and Chat consumer. Only the
@@ -81,7 +82,7 @@ final class ChatUploadModerationTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         $this->forgetChatChecks();
         $this->userId = (int)Hilos::$db->users->actions->createWithName('Immutable sender')->id;
-        Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $this->userId);
+        $this->registerModerationConnection(self::ACCEPT_KEY, $this->userId);
         Hilos::$rt->userStates->actions->ensure($this->userId);
         $this->chat = new ChatAgent();
         $this->uploads = new UploadsAgent();
@@ -99,6 +100,7 @@ final class ChatUploadModerationTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();
+        $this->forgetModerationSessions();
         if ($this->files !== null) {
             $this->underAgent($this->files, fn () => $this->files->onSignalAgent(
                 new AgentSignalData(new FileRemoveSignalData($this->fileIds)), '', HilosSignalConstants::HILOS_FILE_REMOVE));
@@ -219,11 +221,12 @@ final class ChatUploadModerationTest extends IntegrationTestCase
         }
         if ($outcome === 'close') {
             $this->chat->onSignalConnectionClose(new WebSocketCloseSignalDTO(self::ACCEPT_KEY), '', '');
-            Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $this->userId);
+            $this->registerModerationConnection(self::ACCEPT_KEY, $this->userId);
         } elseif ($outcome === 'user-switch') {
             $other = (int)Hilos::$db->users->actions->createWithName('Next sender')->id;
+            $replacement = $this->openModerationSession($other);
             $this->chat->onSignalAgent(new AgentSignalData(new SessionStateSignalData(
-                sessionToken: 'replacement', sessionId: null, userId: $other, acceptKeys: [self::ACCEPT_KEY])),
+                sessionToken: $replacement->token, sessionId: $replacement->id, userId: $other, acceptKeys: [self::ACCEPT_KEY])),
                 '', HilosSignalConstants::HILOS_SESSION_STATE);
         } elseif ($outcome === 'unreadable') {
             $this->decideCheck($this->chat,
@@ -419,6 +422,64 @@ final class ChatUploadModerationTest extends IntegrationTestCase
         self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
     }
 
+    public function testLostPublicationReplyExpiresOnTheReadySuccessor(): void
+    {
+        $this->receive('first');
+        $this->submit(['first']);
+        $this->decideCheck($this->chat, Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
+        $check = $this->pictureCheck();
+        $this->decideCheck($this->chat, $check);
+        $lost = $this->publishOriginals(self::pictureBytes());
+        self::assertSame($check->uploadHoldId, $lost->uploadHoldId);
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE_PICTURE));
+        self::assertNull(Hilos::$rt->hilosUploads->find(self::ACCEPT_KEY, 'first'));
+        self::assertSame($this->userId, Hilos::$rt->connections[self::ACCEPT_KEY]->userId);
+
+        $this->chat->onStop();
+        $this->chat = new ChatAgent();
+        $this->chat->onStart();
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+
+        // Supply the original boundary to the same sweep that onTick invokes.
+        self::assertSame($check->deadlineAt, Hilos::$rt->connections[self::ACCEPT_KEY]->outboundPublicationDeadlineAt);
+        $sweep = new ReflectionMethod(ChatAgent::class, 'sweepMessageModeration');
+        $sweep->invoke($this->chat, $check->deadlineAt - 1);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        $sweep->invoke($this->chat, $check->deadlineAt);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame('held', Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationMessage);
+        self::assertSame([], Hilos::$db->eventAttachments->allFileIds());
+        self::assertCount(0, Hilos::$db->eventMessages->byAuthor($this->userId));
+        $this->applyUploadSettlement($this->take(HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE));
+
+        Hilos::$rt->userStates[$this->userId]->actions->endSendPause();
+        $this->receive('first', self::pictureBytes(2));
+        $this->submit(['first']);
+        $this->decideCheck($this->chat, Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
+        $this->decideCheck($this->chat, $this->pictureCheck());
+        $fresh = $this->publishOriginals(self::pictureBytes(2));
+        self::assertNotSame($lost->uploadHoldId, $fresh->uploadHoldId);
+        self::assertSame($lost->clientUploadIds, $fresh->clientUploadIds);
+
+        $this->deliverChatSignal($this->chat, ChatSignalConstants::ATTACHMENTS_PUBLISHED, $lost);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertCount(0, Hilos::$db->eventMessages->byAuthor($this->userId));
+        self::assertSame($lost->fileIds, $this->take(HilosSignalConstants::HILOS_FILE_REMOVE)->fileIds);
+
+        $this->deliverChatSignal($this->chat, ChatSignalConstants::ATTACHMENTS_PUBLISHED, $fresh);
+        $this->deliverChatSignal($this->chat, ChatSignalConstants::ATTACHMENTS_PUBLISHED, $fresh);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertCount(1, Hilos::$db->eventMessages->byAuthor($this->userId));
+        self::assertSame($fresh->fileIds, Hilos::$db->eventAttachments->allFileIds());
+        self::assertSame($fresh->fileIds, $this->take(HilosSignalConstants::HILOS_FILE_BIND)->fileIds);
+        self::assertSame(null, Hilos::$sr->getNextQueuedSignal());
+    }
+
     public function testOwnerCleanupCannotLetAHeldIdBeReintroducedThroughAnotherTarget(): void
     {
         $this->receive('first');
@@ -541,17 +602,33 @@ final class ChatUploadModerationTest extends IntegrationTestCase
 
     private function handOverOriginals(string $firstBytes): void
     {
+        $answer = $this->publishOriginals($firstBytes);
+        $this->deliverChatSignal($this->chat, ChatSignalConstants::ATTACHMENTS_PUBLISHED, $answer);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame($answer->fileIds, Hilos::$db->eventAttachments->allFileIds());
+        $bind = $this->take(HilosSignalConstants::HILOS_FILE_BIND);
+        $this->underAgent($this->files, fn () => $this->files->onSignalAgent(
+            new AgentSignalData($bind), '', HilosSignalConstants::HILOS_FILE_BIND));
+        $this->receive('first', self::pictureBytes(3));
+    }
+
+    private function publishOriginals(string $firstBytes): FilesPublishedSignalData
+    {
         $approval = $this->take(HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE);
         self::assertInstanceOf(UploadHoldSettleSignalData::class, $approval);
         self::assertSame(UploadHoldOutcome::APPROVED, $approval->outcome);
         $this->applyUploadSettlement($approval);
         $request = $this->take(HilosSignalConstants::HILOS_UPLOAD_PUBLISH);
         self::assertInstanceOf(UploadPublishSignalData::class, $request);
+        $request = UploadPublishSignalData::fromArray($request->toArray());
         $this->underAgent($this->uploads, fn () => $this->uploads->onSignalAgent(
             new AgentSignalData($request), SignalSource::AGENT, HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
         $published = $this->take(HilosSignalConstants::HILOS_FILE_PUBLISH);
         self::assertInstanceOf(FilePublishSignalData::class, $published);
+        $published = FilePublishSignalData::fromArray($published->toArray());
         self::assertSame($request->clientUploadIds, $published->clientUploadIds);
+        self::assertSame($request->uploadHoldId, $published->uploadHoldId);
         self::assertSame($firstBytes, FsPath::read(Hilos::$fs->getTmp()[$published->files[0]->tmpIndex]->getPath()));
         self::assertNull(Hilos::$rt->hilosUploads->find(self::ACCEPT_KEY, 'first'));
         foreach ($request->clientUploadIds as $uploadId) {
@@ -561,24 +638,22 @@ final class ChatUploadModerationTest extends IntegrationTestCase
         $this->chat->onTick();
         self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
             Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase, 'Normal handover keeps the registry reply admissible');
-        TruthSourceRegistry::unregister(HilosDbContext::files, 'test-agent');
-        $this->files = new FilesLibraryAgent();
-        OwnershipDeclaration::claimAll($this->files);
+        if ($this->files === null) {
+            TruthSourceRegistry::unregister(HilosDbContext::files, 'test-agent');
+            $this->files = new FilesLibraryAgent();
+            OwnershipDeclaration::claimAll($this->files);
+        }
         $this->underAgent($this->files, fn () => $this->files->onSignalAgent(
             new AgentSignalData($published), '', HilosSignalConstants::HILOS_FILE_PUBLISH));
         $answer = $this->take(ChatSignalConstants::ATTACHMENTS_PUBLISHED);
         self::assertInstanceOf(FilesPublishedSignalData::class, $answer);
+        $answer = FilesPublishedSignalData::fromArray($answer->toArray());
+        self::assertSame($request->uploadHoldId, $answer->uploadHoldId);
         self::assertNull($answer->error);
-        $this->fileIds = $answer->fileIds;
+        $this->fileIds = [...$this->fileIds, ...$answer->fileIds];
         self::assertSame($firstBytes, Hilos::$files->storage->read(Hilos::$db->files[$answer->fileIds[0]]->storedName));
-        $this->deliverChatSignal($this->chat, ChatSignalConstants::ATTACHMENTS_PUBLISHED, $answer);
-        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
-            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
-        self::assertSame($answer->fileIds, Hilos::$db->eventAttachments->allFileIds());
-        $bind = $this->take(HilosSignalConstants::HILOS_FILE_BIND);
-        $this->underAgent($this->files, fn () => $this->files->onSignalAgent(
-            new AgentSignalData($bind), '', HilosSignalConstants::HILOS_FILE_BIND));
-        $this->receive('first', self::pictureBytes(3));
+
+        return $answer;
     }
 
     private function take(string $name): mixed

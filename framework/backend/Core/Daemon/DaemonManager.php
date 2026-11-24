@@ -205,6 +205,7 @@ use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\Row\RtRowArena;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSnapshotBasis;
@@ -3744,6 +3745,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $agentId Id of the agent that started, in the `type` or `type:index` form
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the next restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onAgentStarted(string $agentId): void
     {
@@ -4673,6 +4675,17 @@ abstract class DaemonManager extends BaseManager implements
         $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
 
         $request = $signal->data;
+        if ($dispatch->placementRecoveryRelay
+            && (($signalType === SignalTypeConstants::PAGE_SUBSCRIBE && $request instanceof WebSocketPageSubscribeSignalDTO)
+                || ($signalType === SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION && $request instanceof WebSocketPageUpdateSubscriptionSignalDTO))
+            && $request->deliveryId !== null) {
+            // The socket's leave can already have reached this node. Only its owner can tell
+            // whether this relayed token still describes the page the browser wants.
+            $this->dispatchSourceWork(fn (SignalDispatch $effect): Generator => $this->returnRelayedPageDelivery(
+                $effect, $request->acceptKey, $request->page ?? $signalName, $request->params, $request->deliveryId,
+            ), $dispatch);
+            return;
+        }
         if ($signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS && $signal->signalSource->getSource() === SignalSource::DAEMON
             && (!$request instanceof WebSocketPageSubscribeSignalDTO || $request->deliveryId === null
                 || PageHandoffIdentity::fromMeta($signal->meta) === null)) {
@@ -12088,6 +12101,29 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * @param SignalDispatch $dispatch Original recovery relay lifetime
+     * @param string $acceptKey Socket that admitted the attempt
+     * @param string $page Original request page
+     * @param array<string, mixed> $params Original request parameters
+     * @param string $deliveryId Exact socket token from the relayed request
+     * @return Generator<int, void> Settlement at the socket owner, by local or addressed delivery
+     * @throws Throwable When the terminal recovery cannot be constructed, sent or settled
+     */
+    private function returnRelayedPageDelivery(
+        SignalDispatch $dispatch, string $acceptKey, string $page, array $params, string $deliveryId,
+    ): Generator {
+        yield from $this->resolveSignalEffectClient($dispatch, $acceptKey);
+        $client = $this->deliveryClient($dispatch, $acceptKey);
+        if ($client !== null) {
+            $this->acceptTerminalPageRecovery($dispatch, $client, $page, $params, $deliveryId);
+            return;
+        }
+        yield from $this->signalDispatcher()->terminalPageRecoveryDelivery(
+            $this->findPeerServer(), self::terminalPageRecoverySignal($acceptKey, $page, $params), $acceptKey, $deliveryId,
+        );
+    }
+
+    /**
      * @param string $acceptKey Connection that admitted the attempt
      * @param string $page Original request page
      * @param array<string, mixed> $params Original request params
@@ -14228,6 +14264,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidFormatException When the recovery page or params are malformed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the next restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onNodeLeft(ClusterNode $node): void
     {
@@ -14713,6 +14750,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $nodeId New host
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the next restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onRestartPlaced(string $agentType, ?string $agentIndex, string $nodeId): void
     {

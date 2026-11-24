@@ -679,6 +679,33 @@ final class WorkerServerStartAfterStopTest extends TestCase
         self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
     }
 
+    public function testReplacementWorkerCloseReportsItsOrderOnlyAfterStreamedWrites(): void
+    {
+        [, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        self::assertFalse($mesh->sent[0][1]->workerStarted);
+        $mesh->sent = [];
+        $this->queueOldWrite($manager, static function (bool $applied): void {
+            self::assertTrue($applied);
+        });
+
+        new ReflectionMethod(WorkerClient::class, 'onClose')->invoke($worker);
+        self::assertNull($manager->getAgent(self::AGENT_TYPE));
+        self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+        self::assertSame([], $mesh->sent);
+
+        $this->settleOldWrite();
+        self::assertCount(1, $mesh->sent);
+        [$leader, $stopped] = $mesh->sent[0];
+        self::assertSame('leader', $leader);
+        self::assertInstanceOf(PeerAgentStatusDTO::class, $stopped);
+        self::assertSame(PlacementState::Stopped, $stopped->state);
+        self::assertSame($order->term, $stopped->authorityTerm);
+        self::assertTrue($order->equals($stopped->placementId));
+        self::assertNull($stopped->stopId);
+        $worker->reportStarted();
+        self::assertCount(1, $mesh->sent);
+    }
+
     public function testRevokingAFrozenPolicyOrderCancelsItsReplayWithoutFailure(): void
     {
         [$server, , $worker, $placement, $mesh] = $this->managedAgent();

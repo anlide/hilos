@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Daemon\ChatWorkerManager;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\DTO\CompletePasswordResetActionDTO;
@@ -21,11 +23,17 @@ use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
+use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\Context\HilosDbContext;
@@ -38,8 +46,10 @@ use Hilos\Database\SqlParamCollection;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\HilosException;
 use Hilos\Legal\LegalConsentProjector;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -47,6 +57,8 @@ use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
+use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionMethod;
 
 /**
  * Integration tests for the success ack an auth flow leaves behind (HIL-422, HIL-875).
@@ -73,6 +85,8 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
  */
 final class SessionAckTest extends IntegrationTestCase
 {
+    use ChatModerationFixture;
+
     private const string TEST_AGENT_ID = 'test-agent';
     private const string PASSWORD = 'correct horse battery';
     private const string OLD_PASSWORD = 'old sun garden lamp';
@@ -479,6 +493,155 @@ final class SessionAckTest extends IntegrationTestCase
         } finally {
             $this->cleanUp();
         }
+    }
+
+    /** @return iterable<string, array{bool}> Whether the first initiator closes while its answer is pending */
+    public static function pendingDismissInitiator(): iterable
+    {
+        yield 'both tabs stay open' => [false];
+        yield 'the earlier initiator closes' => [true];
+    }
+
+    #[DataProvider('pendingDismissInitiator')]
+    public function testOverlappingDismissesKeepEachPendingAddressedReplyOnce(bool $closeFirst): void
+    {
+        $agent = $this->bootAgent();
+        $first = 'ack-waiting-a';
+        $second = 'ack-waiting-b';
+        $token = $this->openSession($agent, $first);
+        $this->openSession($agent, $second, $token);
+        $backlogUser = (int)Hilos::$db->users->actions->createWithName('Session backlog author')->id;
+        $backlogSession = $this->openModerationSession($backlogUser);
+        $backlog = [];
+        for ($index = 0; $index < 20; $index++) {
+            $backlog[] = 'ack-backlog-' . $index;
+            Hilos::$rt->connections->actions->register($backlog[$index], null, $backlogSession->token, $backlogSession->id);
+        }
+
+        try {
+            $this->sessionOf($first)->actions->holdPendingAck(SessionAck::SIGNED_IN);
+            $this->drainSignals();
+            $this->withSessionWorker(
+                $agent,
+                [$first, $second, ...$backlog],
+                function (ChatWorkerManager $worker, string $agentId) use ($first, $second, $backlog, $backlogSession, $closeFirst): void {
+                    $deliver = fn (AgentSignalData $frame) =>
+                        $this->sendWorkerSignal($worker, $agentId, HilosSignalConstants::HILOS_SESSION_STATE, $frame);
+                    $this->fillSessionWorkerOrdinaryQueue($agentId);
+                    $deliver(new AgentSignalData(new SessionStateSignalData(
+                        $backlogSession->token, $backlogSession->id, $backlogSession->userId, $backlog,
+                    )));
+
+                    $effects = [];
+                    [$untracked, $tracked] = $this->requestDismissFrames($first, 'dismiss-first', $effects);
+                    $deliver($untracked);
+                    $deliver($tracked);
+                    $deliver($tracked);
+
+                    [$untracked, $tracked] = $this->requestDismissFrames($second, 'dismiss-second', $effects);
+                    $deliver($untracked);
+                    $deliver($tracked);
+
+                    if ($closeFirst) {
+                        $this->sendWorkerSignal($worker, $agentId, SignalTypeConstants::CONNECTION_CLOSE, new WebSocketCloseSignalDTO($first),
+                            SignalTypeConstants::CONNECTION_CLOSE, SignalSource::WEBSOCKET);
+                    }
+                    $this->collectDismissEffects($effects);
+                    self::assertSame([], $effects);
+
+                    RtOrdinaryAdmission::consumeBy(null);
+                    RtOrdinaryAdmission::handOnCommitted();
+                    $tick = new ReflectionMethod(WorkerManager::class, 'tickAgents');
+                    for ($turn = 0; $turn < 4; $turn++) {
+                        $tick->invoke($worker);
+                    }
+
+                    $this->collectDismissEffects($effects);
+                    $dismissEffects = [];
+                    foreach ($effects as $signal) {
+                        $name = $signal->signalName->getName();
+                        $data = $signal->data;
+                        if ($data instanceof PageAccessReassessConnectionsSignalData) {
+                            $dismissEffects[] = [$name, ...$data->acceptKeys];
+                        } elseif ($data instanceof PageAccessReassessUserSignalData) {
+                            self::assertSame($backlogSession->userId, $data->userId);
+                        } elseif ($data->data instanceof PageActionSuccessSignalData || $data->data instanceof PageActionErrorSignalData) {
+                            $dismissEffects[] = [$name, $data->targetAcceptKey, $data->data->requestId];
+                        } elseif (in_array($data->targetAcceptKey, [$first, $second], true)) {
+                            $dismissEffects[] = [$name, $data->targetAcceptKey];
+                        }
+                    }
+                    $secondReply = [
+                        [SignalConstants::PAGE_ACCESS_REASSESS_CONNECTIONS, $second],
+                        [SignalConstants::ACTION_SUCCESS, $second, 'dismiss-second'],
+                    ];
+                    self::assertSame($closeFirst ? [
+                        [ChatSignalConstants::HANDSHAKE_RESPONSE, $second],
+                        ...$secondReply,
+                    ] : [
+                        [ChatSignalConstants::HANDSHAKE_RESPONSE, $second],
+                        [ChatSignalConstants::HANDSHAKE_RESPONSE, $first],
+                        [SignalConstants::PAGE_ACCESS_REASSESS_CONNECTIONS, $first],
+                        [SignalConstants::ACTION_SUCCESS, $first, 'dismiss-first'],
+                        ...$secondReply,
+                    ], $dismissEffects);
+                    if ($closeFirst) {
+                        self::assertFalse(isset(Hilos::$rt->connections[$first]));
+                    }
+                },
+            );
+        } finally {
+            $this->cleanUp();
+            $this->forgetModerationSessions();
+            Hilos::$db->users[$backlogUser]->actions->delete();
+        }
+    }
+
+    /**
+     * @param list<SignalDTO> $effects Chat output already in the queue when the library ran
+     * @return list<AgentSignalData> The library's sibling projection and tracked answer
+     */
+    private function requestDismissFrames(string $acceptKey, string $requestId, array &$effects): array
+    {
+        $library = $this->sessionsLibrary();
+        $this->underAgent($library, static function () use ($library, $acceptKey, $requestId): void {
+            $library->beginActionDispatch($requestId);
+            try {
+                $library->onAgentAction($acceptKey, HilosSignalConstants::HILOS_DISMISS_SESSION_ACK, new DismissSessionAckActionDTO());
+                self::assertTrue($library->actionReplyDeferred());
+            } finally {
+                $library->endActionDispatch();
+            }
+        });
+
+        $frames = $this->collectDismissEffects($effects);
+        self::assertCount(2, $frames);
+        self::assertNull($frames[0]->data->requestId);
+        self::assertSame($requestId, $frames[1]->data->requestId);
+        self::assertSame([$acceptKey], $frames[1]->data->acceptKeys);
+
+        return $frames;
+    }
+
+    /**
+     * @param list<SignalDTO> $effects Ordered handshake, reassessment and action responses
+     * @return list<AgentSignalData> SessionState frames still to deliver to Chat
+     */
+    private function collectDismissEffects(array &$effects): array
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if ($data instanceof AgentSignalData && $data->data instanceof SessionStateSignalData) {
+                $frames[] = $data;
+            } elseif ($data instanceof PageAccessReassessConnectionsSignalData || $data instanceof PageAccessReassessUserSignalData
+                || ($data instanceof WebSocketSignalData && ($data->data instanceof HandshakeResponseSignalData
+                    || $data->data instanceof PageActionSuccessSignalData || $data->data instanceof PageActionErrorSignalData))) {
+                $effects[] = $signal;
+            }
+        }
+
+        return $frames;
     }
 
     /**

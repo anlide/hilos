@@ -141,6 +141,15 @@ final class AdminProductStockPage extends AbstractPage
     }
 
     /**
+     * The next full answer uses the current viewport, facets and focus from the worker mirror.
+     *
+     * @param string $acceptKey Connection awaiting the Stock page again
+     */
+    public function onDeliveryFailure(string $acceptKey): void
+    {
+    }
+
+    /**
      * Routes the admin action to the stock writer through the page's handover.
      *
      * @param string $acceptKey Acting connection

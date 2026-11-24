@@ -52,14 +52,17 @@ use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\RtReplicaOfferBuild;
 use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -69,6 +72,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
@@ -78,6 +82,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\RtSnapshotRead;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Runtime\State\Collection\HilosSessionRotations;
 use Hilos\Runtime\State\Collection\RtStates;
@@ -1072,6 +1077,12 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             [],
             [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]],
         );
+        $delete = null;
+        $daemon->workerServer->worker()->onOperation = static function (RtSyncStreamOperation $operation) use (&$delete): void {
+            if ($operation->signalType === SignalTypeConstants::RT_SYNC_DELETED) {
+                $delete = $operation->signalData();
+            }
+        };
 
         $daemon->receiveSnapshot(
             DaemonManagerRtSyncPeerTestRtContext::ROWS,
@@ -1087,6 +1098,32 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             $daemon->workerServer->frameTypes(),
             'The workers hear about the scope only: one row dropped, one row written',
         );
+
+        $this->assertInstanceOf(RtSyncDeletedSignalData::class, $delete);
+        $this->assertSame('8', $delete->stateId);
+        $workerRuntime = new DaemonManagerRtSyncPeerTestRtContext();
+        $workerRuntime->configure();
+        Hilos::$rt = $workerRuntime;
+        $workerCopy = $workerRuntime->rows;
+        $workerCopy->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => '8', 'name' => 'stale']));
+        $workerCopy->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $worker = $this->createStub(WorkerManager::class);
+        new ReflectionProperty(WorkerManager::class, 'agentManager')->setValue($worker, $this->createStub(AgentManager::class));
+        $browser = $this->createMock(BrowserContext::class);
+        $browser->expects(self::once())->method('record')->with(self::callback(
+            static fn (SourceChange $change): bool => RtRowValues::nativeMap($change->carriedRow()) === ['id' => '8', 'name' => 'stale'],
+        ));
+        $previousBrowser = Hilos::$browser;
+        Hilos::$browser = $browser;
+        try {
+            $apply = new ReflectionMethod(WorkerManager::class, 'handleRtSyncMessage');
+            RtWorkDriver::runSynchronously($apply->invoke($worker, $delete));
+        } finally {
+            Hilos::$browser = $previousBrowser;
+        }
+
+        $this->assertFalse($workerCopy->has('8'));
+        $this->assertTrue($workerCopy->has(self::ROW_ID));
     }
 
     /**
@@ -5542,7 +5579,7 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
     /** @var string What {@see self::streamed()} names a snapshot by */
     public const string SNAPSHOT = 'snapshot';
 
-    /** @var ?Closure(): void Called once this end read each streamed operation, null for nothing */
+    /** @var ?Closure(RtSyncStreamOperation): void Called once this end read each streamed operation */
     public ?Closure $onOperation = null;
 
     /** @var list<string> Raw frames the daemon wrote to this link, in order */
@@ -5603,7 +5640,7 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
                     $this->streamed[] = [$operation->signalType, $operation->stateId];
                     $settled(true);
                     if ($this->onOperation !== null) {
-                        ($this->onOperation)();
+                        ($this->onOperation)($operation);
                     }
 
                     return null;

@@ -435,12 +435,11 @@ lifted off it.
 
 ### A refusal releases what the page holds
 
-An answer that is not the page — a refusal or a failure — on any of the four
-roads into that answer (subscribe, the re-decision of an open page, a silent
-`resendPage`, and a change of params) calls `AbstractPage::onUnsubscribe()`
-before the refusal frame. A silent resend sends no frame and still releases.
-A release that throws is logged, and the refusal is still sent when that road
-reports one.
+A domain refusal during subscribe, access reassessment, `resendPage`, or a
+change of params calls `AbstractPage::onUnsubscribe()` before any refusal
+frame. A silent resend still runs the release. The router logs a release
+failure and sends the refusal when that path reports one. A 401 follows the
+auth gate's resume path without setting page debt.
 
 Everything the page opened for that connection outside the page answer is
 released in `onUnsubscribe`: its subscriber set, a viewer count, a channel at
@@ -450,6 +449,16 @@ move.
 What stays is the subscription registration, and the debt a failed answer
 owes. A later admission does not revive what was released; the next
 `onSubscribe` registers it again.
+
+A temporary 500 when resending or reassessing the same subscription and
+params calls `AbstractPage::onDeliveryFailure()`, even on a silent probe.
+The first 500 from a browser publication also invokes that hook through the
+serving worker before sending the error. The default hook delegates to
+`onUnsubscribe`. The serving page can preserve recovery state such as a
+window descriptor. The subscription mirror and last resource link stay
+available so a later source fact can find the page and send it whole.
+Failures in the initial subscribe or the params-update handler use
+`onUnsubscribe`.
 
 A live refusal of a row deleted while the page was open uses this same
 release. `PageSignalRouter::refuseDeletedResource` calls

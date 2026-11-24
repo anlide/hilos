@@ -60,6 +60,7 @@ use Hilos\Core\Page\Exception\PageServiceUnavailableException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Page\PageAccessGate;
+use Hilos\Core\Page\PageDeliveryReleaser;
 use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageResource;
@@ -533,6 +534,7 @@ abstract class BrowserContext
      * @throws LogicException When a database collection is not configured with its class constants
      * @throws CollectionNotManualException When the collection built for a join refuses its own items
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function buildSubscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): PagePayload
     {
@@ -714,6 +716,10 @@ abstract class BrowserContext
 
         $table = $this->pageViewportTable($page, $viewport->tableKey);
         if ($table === null) {
+            if (Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
+                return false;
+            }
+
             $this->sendTableWindowRefusal(
                 $page,
                 $acceptKey,
@@ -884,7 +890,7 @@ abstract class BrowserContext
         ?array $only = null,
     ): void {
         $router = Hilos::$sr;
-        if ($router === null || !$this->isFanOutCurrent($acceptKey, $viewport)) {
+        if ($router === null || $router->hasPageDeliveryFailure($acceptKey) || !$this->isFanOutCurrent($acceptKey, $viewport)) {
             return;
         }
         $context = $this->activePageFanOut($acceptKey);
@@ -1002,7 +1008,10 @@ abstract class BrowserContext
         // second time on the next tick.
         $this->heldFacetCounts = $still;
         foreach ($due as $held) {
-            $viewport = Hilos::$sr?->getTableViewport($held->acceptKey, $held->tableKey);
+            if (Hilos::$sr?->pageSubscription($held->acceptKey)?->page !== $held->page) {
+                continue;
+            }
+            $viewport = Hilos::$sr->getTableViewport($held->acceptKey, $held->tableKey);
             if ($viewport === null) {
                 continue;
             }
@@ -1126,7 +1135,7 @@ abstract class BrowserContext
      */
     public function answerTableRowFocus(string $page, string $acceptKey, string $tableKey, string $rowKey): void
     {
-        if (Hilos::$sr === null || Hilos::$sr->isTableWindowOwed($acceptKey, $tableKey)) {
+        if (Hilos::$sr === null || Hilos::$sr->hasPageDeliveryFailure($acceptKey) || Hilos::$sr->isTableWindowOwed($acceptKey, $tableKey)) {
             return;
         }
 
@@ -3101,6 +3110,19 @@ abstract class BrowserContext
         }
 
         $page = $context->subscription->page;
+        $acceptKey = $context->acceptKey;
+        try {
+            if ($this->pageResender instanceof PageDeliveryReleaser) {
+                $this->pageResender->releaseFailedPageDelivery($page, $acceptKey);
+            }
+        } catch (Throwable $failure) {
+            Logger::error("Browser release after delivery failure failed: page={$page}, acceptKey={$acceptKey}, {$failure->getMessage()}");
+        }
+
+        if (!$context->isCurrent()) {
+            return;
+        }
+
         try {
             $this->queueAddressedTableSignal(
                 SignalConstants::SUBSCRIPTION_PAGE_ERROR,
@@ -3620,6 +3642,7 @@ abstract class BrowserContext
      * @return mixed Computed browser field value, or null when the field is unknown
      * @throws PageInternalErrorException When a computed field cannot be resolved
      * @throws RtActionsStateCollectionNullException When a project's runtime field source is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function computeBrowserField(
         string $browserKey,
@@ -6692,6 +6715,7 @@ abstract class BrowserContext
                 $subscriber = $context->acceptKey;
                 $page = $context->subscription->page;
                 if ($this->shouldSkipPageFanOut($context, $skippedSubscriptions)
+                    || $context->router->hasPageDeliveryFailure($subscriber)
                     || $this->windowSetAside($subscriber, $viewport)
                     || $context->router->isTableWindowOwed($subscriber, $tableKey)
                 ) {

@@ -8,6 +8,7 @@ use Hilos\Runtime\State\Collection\HilosProbeNotes as StateHilosProbeNotes;
 use Hilos\Runtime\State\Item\HilosProbeNote as StateHilosProbeNote;
 use Hilos\Runtime\View\Collection\HilosProbeNotes;
 use Hilos\Runtime\View\Item\HilosProbeNote as ViewHilosProbeNote;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
@@ -16,6 +17,7 @@ use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\RtWriteBackpressureException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 
 /**
  * Write API for the notes of the set probe.
@@ -28,10 +30,8 @@ final class HilosProbeNotesActions extends RtActions
     /**
      * Writes one note: creates it in the named set, or rewrites the text of the one standing.
      *
-     * No check of its own before either road, unlike a writer that knows it owns its row: the
-     * probe exists to show the truth-source door refusing, so each road goes straight through
-     * its door and the door judges the write by the set the row is in - the creation door by the
-     * set the new row is born in (HIL-1115), the row door by the set it stands in.
+     * A checked lookup can find a row in the caller's set while the replica is arriving.
+     * Creating a new row requires proof of absence, then Add rights on the named set.
      *
      * @param string $noteId Note id, and the row id
      * @param string $nodeId Node whose set a new note is born in; a standing note keeps its own
@@ -43,10 +43,12 @@ final class HilosProbeNotesActions extends RtActions
      * @throws RtActionsItemClassException When the runtime item class is missing or invalid
      * @throws RtTruthSourceWriteNotAllowedException When the caller does not hold the set the note is in
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws RtCollectionNotReadableException When the lookup must wait for the replica
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function write(string $noteId, string $nodeId, string $text): void
     {
-        $existing = $this->collection[$noteId] ?? null;
+        $existing = $this->collection[$noteId];
         if ($existing instanceof ViewHilosProbeNote) {
             $existing->actions->rewrite($text);
 
@@ -66,6 +68,7 @@ final class HilosProbeNotesActions extends RtActions
      * @throws RtItemParentCollectionNullException When the note is not attached to a collection
      * @throws RtTruthSourceWriteNotAllowedException When this node does not hold the note's set
      * @throws SourceChangeSubscriberException When a subscriber rejects the removal
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function erase(string $noteId): bool
     {

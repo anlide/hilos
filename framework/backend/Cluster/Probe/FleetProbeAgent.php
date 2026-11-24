@@ -7,6 +7,8 @@ namespace Hilos\Cluster\Probe;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -90,14 +92,13 @@ final class FleetProbeAgent extends AbstractAgent
     }
 
     /**
-     * Publishes this member's row and arms the report.
+     * Publishes this member's row when the fleet snapshot is ready.
      *
      * @throws HilosException When the first report cannot be written
      */
     public function onStart(): void
     {
-        $this->reportDueAt = microtime(true) + self::REPORT_INTERVAL_SEC;
-        $this->report();
+        $this->report(microtime(true));
 
         Logger::info("Worker {$this->getId()} started on this node: it is now carrying load");
     }
@@ -118,11 +119,7 @@ final class FleetProbeAgent extends AbstractAgent
             return;
         }
 
-        Logger::info("Worker {$this->getId()} finished {$this->jobsDone} job(s) in the last "
-            . self::REPORT_INTERVAL_SEC . 's');
-        $this->report();
-        $this->jobsDone = 0;
-        $this->reportDueAt = $now + self::REPORT_INTERVAL_SEC;
+        $this->report($now);
     }
 
     /**
@@ -141,17 +138,26 @@ final class FleetProbeAgent extends AbstractAgent
      * count taken here, in the worker, is the only thing that says the write reached the other
      * node's WORKERS - the processes an application actually reads runtime state from.
      *
-     * @throws HilosException When a subscriber to the collection's announcement raises
+     * @param float $now Microtime at which the report is attempted
+     * @throws HilosException When reading the fleet or writing the report fails
      */
-    private function report(): void
+    private function report(float $now): void
     {
-        // A project without a runtime context has no collection to report into; the member still
-        // carries its load, which is the half of its job that needs nothing mounted.
-        $statuses = Hilos::$rt?->hilosProbeFleetStatuses;
-        if ($statuses === null) {
+        if (!SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosProbeFleetStatus::RT_COLLECTION)) {
             return;
         }
 
-        $statuses->actions->report($this->agentIndex, $this->jobsDoneTotal, count($statuses));
+        // A project without a runtime context has no collection to report into; the member still
+        // carries its load, which is the half of its job that needs nothing mounted.
+        $statuses = Hilos::$rt?->hilosProbeFleetStatuses;
+        if ($statuses !== null) {
+            $statuses->actions->report($this->agentIndex, $this->jobsDoneTotal, count($statuses));
+        }
+
+        if ($this->jobsDone > 0) {
+            Logger::info("Worker {$this->getId()} finished {$this->jobsDone} job(s) since its previous report or start");
+        }
+        $this->jobsDone = 0;
+        $this->reportDueAt = $now + self::REPORT_INTERVAL_SEC;
     }
 }

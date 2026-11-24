@@ -141,6 +141,7 @@ use Hilos\ProtectedMode\ProtectedModeSyncScheduler;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\TruthSource\RtReplicaConfirmation;
 use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Snapshot\RtWork;
@@ -1678,6 +1679,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws InvalidFormatException When an abandoned start has an invalid stop completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the existing executor cannot arm an abandoned start stop deadline
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onPlaceAgentReceived(PeerLink $link, PeerPlaceAgentDTO $frame): void
     {
@@ -1711,6 +1713,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onAgentStatusReceived(PeerLink $link, PeerAgentStatusDTO $frame): void
     {
@@ -1800,6 +1803,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the restart reply cannot read the runtime roster
      */
     public function onPlacementReportReceived(PeerLink $link, PeerPlacementReportDTO $frame): void
     {

@@ -15,6 +15,11 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Moderation\ChatModerationKindKey;
 use Demo\Chat\Moderation\ChatModerationRefusal;
+use Demo\Chat\Moderation\MessageAuthorChangedException;
+use Demo\Chat\Moderation\MessageModerationDeadline;
+use Demo\Chat\Runtime\View\Item\Connection;
+use Generator;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\TimeConstants;
@@ -37,11 +42,17 @@ use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
+use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\View\Item\HilosModerationCheck as ModerationCheck;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\WiringRefusal;
 use Random\RandomException;
+use SplPriorityQueue;
 use Throwable;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
@@ -75,11 +86,12 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\RelayedActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\HilosException;
-use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -192,9 +204,33 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
 
     private const string IMAGE_MIME_PREFIX = 'image/';
     private const int CLEAR_ID_BYTES = 8;
+    private const int MODERATION_RECOVERY_ROWS_PER_TICK = 16;
+    private const int MODERATION_CANDIDATES_PER_TICK = 16;
+    private const int MODERATION_RETRY_MS = TimeConstants::MS_PER_SECOND;
+    private const array MESSAGE_CHECK_KINDS = [ChatModerationKindKey::MESSAGE, ChatModerationKindKey::MESSAGE_PICTURE];
+    private const int SESSION_STATE_VISITS_PER_TICK = 16;
 
-    /** @var int Next local sweep moment in epoch milliseconds; the checks themselves live in RT */
-    private int $nextModerationSweepAt = 0;
+    /** @var ?SplPriorityQueue<array{int, int}, array{MessageModerationDeadline, int}> Due work in deadline and insertion order */
+    private ?SplPriorityQueue $moderationDue = null;
+
+    /** @var array<string, array{MessageModerationDeadline, int}> Current scheduled candidate per RT address */
+    private array $moderationScheduled = [];
+
+    private int $moderationSequence = 0;
+
+    /** @var ?Generator<int, array{string, string}|null, void, void> Addresses from committed membership cuts */
+    private ?Generator $moderationRecovery = null;
+
+    private bool $moderationRecovered = false;
+
+    /** @var array<string, SessionStateTarget> One unfinished transition per address, in visit order */
+    private array $sessionStateTargets = [];
+
+    /** @var array<int, SessionStateApplication> Frames whose socket visits ended before their final effects */
+    private array $sessionStateReplies = [];
+
+    /** @var array<string, array<int|string, SessionStateApplication>> Pending replies per initiating address */
+    private array $sessionStateInitiators = [];
 
     /**
      * History clear waiting for unlink answers; lost on restart on purpose, the next cron starts
@@ -252,7 +288,9 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
         if (
             Hilos::$rt->connections[$acceptKey] === null
             || Hilos::$rt->connections[$acceptKey]->staleSince() !== null
+            || Hilos::$rt->connections[$acceptKey]->isUnregisterOwed()
             || Hilos::$rt->connections[$acceptKey]->userId === null
+            || Hilos::$rt->connections[$acceptKey]->outboundPublicationHoldId !== null
             || Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
                 !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
@@ -261,7 +299,12 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
 
         try {
             $this->assertMessageUploadsReady($acceptKey);
-            Hilos::$rt->hilosModerationChecks->actions->open(
+            $previous = Hilos::$rt->hilosModerationChecks->find($acceptKey, ChatModerationKindKey::MESSAGE);
+            if ($previous !== null && $previous->verdictTo === self::AGENT_TYPE) {
+                $this->watchMessageCheck($previous, TimeHelper::nowMs());
+                $this->forgetExactMessageCheck($previous);
+            }
+            $check = Hilos::$rt->hilosModerationChecks->actions->open(
                 $acceptKey,
                 Hilos::$rt->connections[$acceptKey]->userId,
                 ChatModerationKindKey::MESSAGE,
@@ -273,52 +316,27 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
                         Hilos::$rt->connections[$acceptKey]->outboundModerationAttachments,
                     ),
             );
+            Database::afterCommit(fn () => $this->watchMessageCheck($check, TimeHelper::nowMs()));
         } catch (WiringRefusal $failure) {
             $this->failMessageModeration($acceptKey);
             throw $failure;
         } catch (Throwable $failure) {
-            $this->forgetMessageChecks($acceptKey);
             $this->failMessageModeration($acceptKey);
             $this->logAgentError('Cannot start message moderation: ' . $failure->getMessage());
+            $this->forgetMessageChecks($acceptKey, Hilos::$rt->connections[$acceptKey]->userId);
         }
     }
 
     /**
-     * Checks outlive the worker; only this process's sweep cadence stays on the instance.
+     * Checks and accepted publications outlive the worker. Recovery and due work each
+     * advance in short portions, even when an ordinary RT write has to wait for room.
      *
-     * @throws HilosException When runtime cleanup fails
+     * @throws HilosException When an accepted session state cannot be read or announced
      */
     public function onTick(): void
     {
-        $now = TimeHelper::nowMs();
-        if ($now < $this->nextModerationSweepAt) {
-            return;
-        }
-        $this->nextModerationSweepAt = $now + TimeConstants::MS_PER_SECOND;
-        foreach (Hilos::$rt->hilosModerationChecks as $check) {
-            if ($check->verdictTo !== self::AGENT_TYPE || $check->staleSince() !== null) {
-                continue;
-            }
-            if (Hilos::$rt->connections->staleSince() !== null) {
-                continue;
-            }
-            if (Hilos::$rt->connections[$check->acceptKey] === null) {
-                $this->forgetMessageChecks($check->acceptKey);
-                continue;
-            }
-            if (Hilos::$rt->connections[$check->acceptKey]->staleSince() !== null) {
-                continue;
-            }
-            if (Hilos::$rt->connections[$check->acceptKey]->userId !== $check->userId) {
-                $this->forgetMessageChecks($check->acceptKey);
-                Hilos::$rt->connections[$check->acceptKey]->actions->clearOutboundModeration();
-            } elseif ($check->deadlineAt <= $now) {
-                $this->failMessageModeration($check->acceptKey);
-                $this->forgetMessageChecks($check->acceptKey);
-            } else {
-                $this->reconcileMessageUploads($check->acceptKey);
-            }
-        }
+        $this->sweepMessageModeration(TimeHelper::nowMs());
+        $this->continueSessionStates();
     }
 
     /**
@@ -347,7 +365,9 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      */
     public function onSignalRtSyncDeleted(RtSyncDeletedSignalData $data, string $source, string $name): void
     {
-        if ($data->collectionKey === HilosUpload::RT_COLLECTION) {
+        if ($data->collectionKey === HilosUpload::RT_COLLECTION
+            && SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)
+        ) {
             foreach (Hilos::$rt->hilosModerationChecks as $check) {
                 if ($check->verdictTo !== self::AGENT_TYPE) {
                     continue;
@@ -447,7 +467,6 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
             if ($connection->userId !== null) {
                 Hilos::$rt->userStates->actions->ensure($connection->userId);
             }
-            $this->reconcileMessageUploads($connection->acceptKey);
         }
     }
 
@@ -464,8 +483,24 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
-        $this->forgetMessageChecks($data->acceptKey);
-        Hilos::$rt->connections[$data->acceptKey]?->actions->unregister();
+        $this->invalidateSessionStateInitiator($data->acceptKey);
+        $this->cancelSessionStateTarget($data->acceptKey);
+        $connection = Hilos::$rt->connections[$data->acceptKey];
+        try {
+            $holdId = $connection?->outboundPublicationHoldId;
+            if (!$connection?->isPublicationClearOwed()) {
+                $this->settleMessageUploadHold($data->acceptKey, $holdId, UploadHoldOutcome::RELEASED);
+            }
+            if ($connection !== null) {
+                $this->forgetScheduledModeration($this->deadlineOfPublication($connection));
+            }
+            $this->forgetMessageChecks($data->acceptKey, publicationHoldId: $holdId);
+        } catch (Throwable $failure) {
+            $this->logAgentError('Cannot clean up moderation for a closed connection: ' . $failure->getMessage());
+            throw $failure;
+        } finally {
+            $connection?->actions->unregister();
+        }
     }
 
     /**
@@ -481,6 +516,10 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      */
     public function onStop(): void
     {
+        $this->moderationRecovery = null;
+        $this->sessionStateTargets = [];
+        $this->sessionStateReplies = [];
+        $this->sessionStateInitiators = [];
         Hilos::$db->events->actions->addChatStopped();
         Hilos::$rt->userStates->actions->clear();
     }
@@ -603,6 +642,272 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
         }
     }
 
+    /** @param int $now Current sweep moment in epoch milliseconds */
+    private function sweepMessageModeration(int $now): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::MODERATION)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, ChatRtContext::connections)
+        ) {
+            return;
+        }
+        $this->recoverModerationWork($now);
+        for ($visit = 0; $visit < self::MODERATION_CANDIDATES_PER_TICK && !($this->moderationDue?->isEmpty() ?? true); $visit++) {
+            [$candidate, $dueAt] = $this->moderationDue->top();
+            if ($dueAt > $now) {
+                break;
+            }
+            $this->moderationDue->extract();
+            $address = $candidate->address();
+            if (($this->moderationScheduled[$address] ?? null) !== [$candidate, $dueAt]) {
+                continue;
+            }
+
+            unset($this->moderationScheduled[$address]);
+            try {
+                $retryAt = $candidate->kind === null
+                    ? $this->visitPublication($candidate, $now)
+                    : $this->visitMessageCheck($candidate, $now);
+            } catch (Throwable $failure) {
+                $this->logAgentError('Cannot settle message moderation: ' . $failure->getMessage());
+                $retryAt = $now + self::MODERATION_RETRY_MS;
+            }
+            if ($retryAt !== null) {
+                $this->scheduleModeration($candidate, $retryAt);
+            }
+        }
+    }
+
+    /** @param int $now Moment the recovered work first becomes eligible */
+    private function recoverModerationWork(int $now): void
+    {
+        if ($this->moderationRecovered) {
+            return;
+        }
+
+        // The worker retains a Chat agent even if its optional start hook throws.
+        try {
+            $this->moderationRecovery ??= $this->restoredModerationWork();
+            for ($visited = 0; $visited < self::MODERATION_RECOVERY_ROWS_PER_TICK && $this->moderationRecovery->valid(); $visited++) {
+                $address = $this->moderationRecovery->current();
+                if ($address === null) {
+                    $this->moderationRecovery->next();
+                    return;
+                }
+                [$collection, $key] = $address;
+                if ($collection === HilosModerationCheck::RT_COLLECTION) {
+                    $check = Hilos::$rt->hilosModerationChecks[$key];
+                    $candidate = $check?->verdictTo === self::AGENT_TYPE ? $this->deadlineOfCheck($check) : null;
+                } else {
+                    $connection = Hilos::$rt->connections[$key];
+                    $candidate = $connection === null ? null : $this->deadlineOfPublication($connection);
+                }
+                if ($candidate !== null && !isset($this->moderationScheduled[$candidate->address()])) {
+                    $this->scheduleModeration($candidate, $now);
+                }
+                $this->moderationRecovery->next();
+            }
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError('Cannot read the runtime source during message moderation recovery: ' . $refusal->getMessage());
+            return;
+        } catch (Throwable $failure) {
+            // A point read leaves its address pending. A failed cut can be opened again.
+            if (!$this->moderationRecovery?->valid()) {
+                $this->moderationRecovery = null;
+            }
+            $this->logAgentError('Cannot recover message moderation: ' . $failure->getMessage());
+            return;
+        }
+        if (!$this->moderationRecovery->valid()) {
+            $this->moderationRecovery = null;
+            $this->moderationRecovered = true;
+        }
+    }
+
+    /**
+     * @return Generator<int, array{string, string}|null, void, void> Source and address per row, with a pause between portions
+     * @throws InvalidFormatException When a snapshot row identity is malformed
+     * @throws InvalidArgumentException When the snapshot work allowance is invalid
+     * @throws NativeLogicException When the snapshot cannot advance
+     */
+    private function restoredModerationWork(): Generator
+    {
+        foreach ([HilosModerationCheck::RT_COLLECTION, ChatRtContext::connections] as $collection) {
+            $snapshot = RtSnapshot::capture($collection, RtSnapshotScope::whole());
+            while (!$snapshot->isFinished()) {
+                $portion = $snapshot->advance(new RtWorkBudget());
+                foreach ($portion?->ids ?? [] as $key) {
+                    yield [$collection, $key];
+                }
+                if (!$snapshot->isFinished()) {
+                    yield null;
+                }
+            }
+        }
+    }
+
+    /**
+     * @param MessageModerationDeadline $candidate Scalar coordinates to reread when the work is due
+     * @param int $dueAt Next eligible visit, in epoch milliseconds
+     */
+    private function scheduleModeration(MessageModerationDeadline $candidate, int $dueAt): void
+    {
+        $address = $candidate->address();
+        $scheduled = $this->moderationScheduled[$address] ?? null;
+        if ($scheduled !== null && $scheduled[0] == $candidate && $scheduled[1] <= $dueAt) {
+            return;
+        }
+
+        $this->moderationScheduled[$address] = [$candidate, $dueAt];
+        $this->moderationDue ??= new SplPriorityQueue();
+        $this->moderationDue->insert([$candidate, $dueAt], [-$dueAt, -++$this->moderationSequence]);
+    }
+
+    /** @param ?MessageModerationDeadline $candidate Exact candidate whose work ended */
+    private function forgetScheduledModeration(?MessageModerationDeadline $candidate): void
+    {
+        if ($candidate !== null && ($this->moderationScheduled[$candidate->address()][0] ?? null) == $candidate) {
+            unset($this->moderationScheduled[$candidate->address()]);
+        }
+    }
+
+    /**
+     * @param ModerationCheck $check Current check whose source may need work
+     * @param int $dueAt Moment the check should be visited
+     * @throws HilosException When the check cannot be read
+     */
+    private function watchMessageCheck(ModerationCheck $check, int $dueAt): void
+    {
+        $this->scheduleModeration($this->deadlineOfCheck($check), $dueAt);
+    }
+
+    /**
+     * @param ModerationCheck $check Runtime check being scheduled
+     * @return MessageModerationDeadline Its exact correlation and original deadline
+     */
+    private function deadlineOfCheck(ModerationCheck $check): MessageModerationDeadline
+    {
+        return new MessageModerationDeadline($check->acceptKey, $check->kind, $check->requestId, $check->userId, $check->deadlineAt);
+    }
+
+    /**
+     * @param Connection $connection Connection whose publication may still be pending
+     * @param int $dueAt Next eligible visit
+     * @throws HilosException When the connection cannot be read
+     */
+    private function watchPublication(Connection $connection, int $dueAt): void
+    {
+        $candidate = $this->deadlineOfPublication($connection);
+        if ($candidate !== null) {
+            $this->scheduleModeration($candidate, $dueAt);
+        }
+    }
+
+    /**
+     * @param Connection $connection Connection holding the accepted publication
+     * @return ?MessageModerationDeadline Exact publication wait, if present
+     */
+    private function deadlineOfPublication(Connection $connection): ?MessageModerationDeadline
+    {
+        $holdId = $connection->outboundPublicationHoldId;
+        $deadlineAt = $connection->outboundPublicationDeadlineAt;
+        $author = $connection->outboundPublicationUserId;
+        if ($holdId === null || $deadlineAt === null || $author === null
+            || $connection->outboundModerationPhase !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+            || $connection->outboundModerationAttachments === []) {
+            return null;
+        }
+
+        return new MessageModerationDeadline($connection->acceptKey, null, $holdId, $author, $deadlineAt);
+    }
+
+    /**
+     * @param MessageModerationDeadline $candidate Accepted publication marked for a visit
+     * @param int $now Current sweep moment
+     * @return ?int Next visit, or null when the obligation is gone
+     * @throws HilosException When the exact publication cannot be read or settled
+     */
+    private function visitPublication(MessageModerationDeadline $candidate, int $now): ?int
+    {
+        $connection = Hilos::$rt->connections[$candidate->acceptKey];
+        if ($this->composerUnknown($connection)) {
+            return $now + self::MODERATION_RETRY_MS;
+        }
+        if ($connection === null) {
+            $this->settleMessageUploadHold($candidate->acceptKey, $candidate->token, UploadHoldOutcome::RELEASED);
+            return null;
+        }
+        $current = $this->deadlineOfPublication($connection);
+        if ($current != $candidate) {
+            if ($current !== null) {
+                $this->scheduleModeration($current, $now);
+            }
+            return null;
+        }
+        if ($connection->isUnregisterOwed()) {
+            $this->settleMessageUploadHold($candidate->acceptKey, $candidate->token, UploadHoldOutcome::RELEASED);
+            return null;
+        }
+        if ($connection->isPublicationClearOwed()) {
+            return $now + self::MODERATION_RETRY_MS;
+        }
+        if ($connection->userId !== $candidate->userId) {
+            $connection->actions->clearOutboundModeration();
+            $this->settleMessageUploadHold($candidate->acceptKey, $candidate->token, UploadHoldOutcome::RELEASED);
+            return null;
+        }
+        if ($candidate->deadlineAt > $now) {
+            return $candidate->deadlineAt;
+        }
+
+        $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
+        return null;
+    }
+
+    /**
+     * @param MessageModerationDeadline $candidate Check marked for a visit
+     * @param int $now Current sweep moment
+     * @return ?int Next visit, or null when the obligation is gone
+     * @throws HilosException When the exact check cannot be read or settled
+     */
+    private function visitMessageCheck(MessageModerationDeadline $candidate, int $now): ?int
+    {
+        $check = Hilos::$rt->hilosModerationChecks->find($candidate->acceptKey, $candidate->kind);
+        if ($check === null || $check->verdictTo !== self::AGENT_TYPE) {
+            return null;
+        }
+        $current = $this->deadlineOfCheck($check);
+        if ($current != $candidate) {
+            $this->scheduleModeration($current, $now);
+            return null;
+        }
+
+        $connection = Hilos::$rt->connections[$candidate->acceptKey];
+        if ($check->staleSince() !== null || $this->composerUnknown($connection)) {
+            return $now + self::MODERATION_RETRY_MS;
+        }
+        if ($connection === null || $connection->isUnregisterOwed()) {
+            $this->forgetExactMessageCheck($check, $connection?->outboundPublicationHoldId);
+            return null;
+        }
+        if (!$this->isCurrentMessageCheck($check, $connection)) {
+            if ($connection->userId === null && $this->checkMatchesDraft($check, $connection)) {
+                $connection->actions->clearOutboundModeration();
+            }
+            $this->forgetExactMessageCheck($check, $connection->outboundPublicationHoldId);
+            return null;
+        }
+        if ($candidate->deadlineAt <= $now || $this->checkLostAnUpload($check, $now)) {
+            $this->failMessageModeration($candidate->acceptKey);
+            $this->forgetExactMessageCheck($check);
+            return null;
+        }
+
+        return RtStaleness::staleRows(HilosUpload::RT_COLLECTION) === []
+            ? $candidate->deadlineAt
+            : min($candidate->deadlineAt, $now + self::MODERATION_RETRY_MS);
+    }
+
     /** Starts over from the remaining links; no answer to the old attempt can advance this one. */
     private function handleHistoryCleanup(): void
     {
@@ -667,117 +972,348 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     }
 
     /**
-     * Says out loud what the sessions library concluded about one session (HIL-710).
+     * Keeps an admitted identity change ahead of a new submission on the same live composer.
      *
-     * The project half of the seam, and the ONE handler behind every ending a session can
-     * reach: a handshake, a sign-in, a sign-out, an impersonation, an ack raised or
-     * dismissed. It replaces what used to be four hooks of the session-host trait
-     * (`onSignalHandshake`, `bindConnectionUser`, `markConnectionAck` and the response signal
-     * name), and it can be one handler precisely because the library states the session's
-     * whole state rather than the change it made.
-     *
-     * THE ORDER IS THE MECHANISM, not a sequence of chores:
-     * A frame with neither named nor locally known sockets ends before the steps below.
-     * 1. the connection rows are written first, because everything below is read against
-     *    them - the page re-decision judges "this connection belongs to N", and a browser
-     *    told who it is before the row said so would be judged as the person it no longer is;
-     * 2. every socket of the session is then handed the identity, stamped by the framework
-     *    with the clock and the registration step the frame carried - the ones the frame names
-     *    and the ones only this register knows of yet
-     *    ({@see HilosSessionConnections::acceptKeysForSessionFrame()});
-     * 3. a rotation ticket goes to the one socket that earned it, AFTER that identity, so the
-     *    browser reconnects knowing who it already is;
-     * 4. the pages are re-asked their access question once, not once per socket;
-     * 5. the action that was waiting is answered LAST - behind the identity it announces,
-     *    which is the rule the sign-in commands were split along (HIL-622).
-     *
-     * @param SessionStateSignalData $frame What the session is now, and whom to answer
-     * @throws InvalidArgumentException When a signal of the answer cannot be named
-     * @throws HilosException On database or runtime failure
+     * @param Connection $connection Current connection of the incoming page action
+     * @return bool Whether Chat is still applying a different session or author to this row
      */
-    private function applySessionState(SessionStateSignalData $frame): void
+    public function isComposerIdentityChanging(Connection $connection): bool
     {
-        $acceptKeys = Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken);
-        if ($acceptKeys === []) {
-            return;
-        }
+        $target = $this->sessionStateTargets[$connection->acceptKey] ?? null;
 
-        $userId = $frame->userId;
-        if ($userId !== null) {
-            Hilos::$rt->userStates->actions->ensure($userId);
-        }
-
-        // One identity for the whole frame: every socket it reaches belongs to the one session
-        // it is about, so the user, the name and the administrator behind them are the same
-        // for all of them.
-        $identity = $this->handshakeIdentity($frame);
-
-        foreach ($acceptKeys as $acceptKey) {
-            $this->settleConnection($acceptKey, $frame);
-            $this->sendHandshakeResponse(ChatSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
-        }
-
-        $this->handOverRotationTicket($frame);
-
-        // Whatever page these browsers had open was answered for whoever they were a moment
-        // ago (HIL-652, HIL-627). A sign-in can ask by user, because the identity has just
-        // appeared; a sign-out has to ask by connection, because the identity it would ask
-        // under is the one being erased.
-        if ($userId !== null) {
-            PageAccessReassessment::forUser($userId);
-        } else {
-            PageAccessReassessment::forConnections($frame->acceptKeys);
-        }
-
-        $this->answerLibraryAction($frame);
+        return $target !== null && $target->changesComposer() && $target->stillAddresses($connection);
     }
 
     /**
-     * Brings one live connection row to the state the frame states.
+     * Accepts a committed frame and invalidates all of its old composers before any ordinary write.
      *
-     * A socket the collection does not hold yet is a HANDSHAKE and nothing else: every other
-     * frame names sockets the library read out of this very collection. So the row is opened
-     * here, and the analytics identity is attached here, exactly where the handshake handler
-     * used to do both.
-     *
-     * Each write happens only where it changes something. That is not thrift but fidelity: a
-     * row written is a row synced to every reader of it, and a frame that merely restates an
-     * unchanged session - an ack dismissed, an action answered - has no business telling the
-     * rest of the node that the connections moved.
-     *
-     * @param string $acceptKey Accept key of the connection being brought up to date
-     * @param SessionStateSignalData $frame What the session is now
-     * @throws HilosException On runtime failure
-     * @throws InvalidArgumentException When the queued runtime-sync signal cannot be named
+     * @param SessionStateSignalData $frame Current identity and the original reply coordinates
+     * @throws HilosException When an owner read, cleanup or signal is refused
      */
-    private function settleConnection(string $acceptKey, SessionStateSignalData $frame): void
+    private function applySessionState(SessionStateSignalData $frame): void
     {
-        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        $connections = [];
+        $initiator = $frame->initiatorAcceptKey();
+        // The library's first handshake names one socket and never answers an action.
+        $couldBeFirstHandshake = count($frame->acceptKeys) === 1
+            && $frame->requestId === null && $frame->action === null && $frame->outcome === null;
+        $acceptKeys = Hilos::$rt->connections->acceptKeysForSessionFrame($frame->acceptKeys, $frame->sessionToken);
+        foreach ($acceptKeys as $acceptKey) {
+            $connection = Hilos::$rt->connections[$acceptKey];
+            if (($connection === null && (!$couldBeFirstHandshake || $acceptKey !== $initiator))
+                || $this->composerUnknown($connection) || $connection?->isUnregisterOwed()
+                || ($connection?->sessionId !== null
+                    && ($frame->sessionId === null || $frame->sessionId < $connection->sessionId))) {
+                continue;
+            }
+            $connections[$acceptKey] = $connection;
+        }
+        if ($connections === [] || !$this->sessionFrameIsCurrent($frame)) {
+            return;
+        }
+
+        $application = new SessionStateApplication($frame, count($connections));
+        $targets = [];
+        $checks = [];
+        foreach ($connections as $acceptKey => $connection) {
+            $pending = $this->sessionStateTargets[$acceptKey] ?? null;
+            $target = $pending?->canReplaceWith($frame, $connection)
+                ? new SessionStateTarget($application, $connection, $pending->visit)
+                : new SessionStateTarget($application, $connection);
+            $targets[$acceptKey] = $target;
+            if ($connection === null || !$target->changesComposer()) {
+                continue;
+            }
+            $holdId = $connection->outboundPublicationHoldId;
+            if ($connection->userId !== null && Hilos::hasFeature(HilosFeature::MODERATION)
+                && SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)) {
+                foreach (self::MESSAGE_CHECK_KINDS as $kind) {
+                    $check = Hilos::$rt->hilosModerationChecks->find($acceptKey, $kind);
+                    if ($check !== null && $check->verdictTo === self::AGENT_TYPE && $check->userId === $connection->userId) {
+                        $checks[] = [$check, $holdId];
+                    }
+                }
+            }
+        }
+        if ($frame->requestId !== null && $initiator !== null && isset($targets[$initiator])) {
+            $previous = $this->sessionStateInitiators[$initiator][$application->replyKey()] ?? null;
+            if ($previous !== null && $targets[$initiator]->servesReplyAt($previous->initiator)
+                && $previous->frame->toArray() === $frame->toArray()) {
+                return;
+            }
+        }
+
+        $releasedHolds = [];
+        foreach ($targets as $acceptKey => $target) {
+            $connection = $connections[$acceptKey];
+            if ($connection !== null && $target->changesComposer()) {
+                $releasedHolds[$acceptKey] = $this->invalidateMessageComposer($connection);
+            }
+        }
+        $firstVisit = null;
+        foreach ($targets as $acceptKey => $target) {
+            $connection = $connections[$acceptKey];
+            if ($connection === null) {
+                $firstVisit = $target;
+                continue;
+            }
+            $pending = $this->sessionStateTargets[$acceptKey] ?? null;
+            if ($pending !== null && $pending->visit === $target->visit) {
+                unset($this->sessionStateTargets[$acceptKey]);
+                $this->sessionStateTargetEnded($pending->application);
+            } elseif ($pending !== null || $target->changesIdentity()) {
+                $this->invalidateSessionStateInitiator((string)$acceptKey);
+                $this->cancelSessionStateTarget((string)$acceptKey);
+            }
+            if ((string)$acceptKey === $initiator) {
+                $this->rememberSessionStateInitiator($initiator, $target);
+            }
+            $this->sessionStateTargets[$acceptKey] = $target;
+        }
+        foreach ($releasedHolds as $acceptKey => $holdId) {
+            $this->settleMessageUploadHold((string)$acceptKey, $holdId, UploadHoldOutcome::RELEASED);
+        }
+        foreach ($checks as [$check, $holdId]) {
+            $this->watchMessageCheck($check, TimeHelper::nowMs());
+            try {
+                $this->forgetExactMessageCheck($check, $holdId);
+            } catch (RtWriteBackpressureException) {
+                // The bounded moderation sweep can remove this exact old request later.
+            }
+        }
+        $targetBudget = self::SESSION_STATE_VISITS_PER_TICK;
+        if ($firstVisit !== null && $initiator !== null) {
+            $this->rememberSessionStateInitiator($initiator, $firstVisit);
+            $this->trySessionStateVisit($initiator, $firstVisit, retry: false);
+            $targetBudget--;
+        }
+        $this->continueSessionStates($targetBudget);
+    }
+
+    /**
+     * @param SessionStateSignalData $frame Session reported by the library
+     * @return bool Whether its persisted author and token still match
+     * @throws HilosException When the session row cannot be read
+     */
+    private function sessionFrameIsCurrent(SessionStateSignalData $frame): bool
+    {
+        return $frame->sessionId === null ? $frame->userId === null
+            : Hilos::$db->sessions->matchesStoredIdentity($frame->sessionId, $frame->userId, $frame->sessionToken);
+    }
+
+    /** @param string $acceptKey Closed or superseded address */
+    private function cancelSessionStateTarget(string $acceptKey): void
+    {
+        $target = $this->sessionStateTargets[$acceptKey] ?? null;
+        if ($target !== null) {
+            unset($this->sessionStateTargets[$acceptKey]);
+            $target->visit->ended = true;
+            $this->sessionStateTargetEnded($target->application);
+        }
+    }
+
+    /** @param SessionStateApplication $application Frame whose socket visit ended */
+    private function sessionStateTargetEnded(SessionStateApplication $application): void
+    {
+        if (--$application->remaining !== 0) {
+            return;
+        }
+        if ($application->refused || ($application->applied === [] && $application->initiator === null)) {
+            $this->forgetSessionStateInitiator($application);
+            return;
+        }
+        $this->sessionStateReplies[spl_object_id($application)] = $application;
+    }
+
+    /**
+     * @param string $acceptKey Named initiator of the frame
+     * @param SessionStateTarget $target Exact handshake awaited by this reply
+     */
+    private function rememberSessionStateInitiator(string $acceptKey, SessionStateTarget $target): void
+    {
+        $application = $target->application;
+        $frame = $application->frame;
+        if ($frame->rotationTicket === null && $frame->requestId === null) {
+            return;
+        }
+        $key = $application->replyKey();
+        $waiting = ($this->sessionStateInitiators[$acceptKey][$key] ?? null)?->initiator;
+        if ($target->servesReplyAt($waiting)) {
+            return;
+        }
+        $application->initiator = $target->visit;
+        $this->sessionStateInitiators[$acceptKey][$key] = $application;
+    }
+
+    /** @param string $acceptKey Closed socket or socket that accepted a newer identity */
+    private function invalidateSessionStateInitiator(string $acceptKey): void
+    {
+        foreach ($this->sessionStateInitiators[$acceptKey] ?? [] as $application) {
+            $application->initiator = null;
+        }
+        unset($this->sessionStateInitiators[$acceptKey]);
+    }
+
+    /** @param SessionStateApplication $application Frame that no longer has pending reply work */
+    private function forgetSessionStateInitiator(SessionStateApplication $application): void
+    {
+        $acceptKey = $application->frame->initiatorAcceptKey();
+        if ($acceptKey !== null) {
+            $key = $application->replyKey();
+            if (($this->sessionStateInitiators[$acceptKey][$key] ?? null) !== $application) {
+                return;
+            }
+            unset($this->sessionStateInitiators[$acceptKey][$key]);
+            if (($this->sessionStateInitiators[$acceptKey] ?? []) === []) {
+                unset($this->sessionStateInitiators[$acceptKey]);
+            }
+        }
+    }
+
+    /**
+     * Visits only a portion of the owner's pending work. A visit that still needs space goes
+     * behind the other addresses, so a full FIFO cannot pin the tick on one socket.
+     *
+     * @param int $targetBudget Socket visits left after any first registration attempt
+     * @throws HilosException When a non-retryable owner read, write or reply fails
+     */
+    private function continueSessionStates(int $targetBudget = self::SESSION_STATE_VISITS_PER_TICK): void
+    {
+        $visits = min(count($this->sessionStateTargets), $targetBudget);
+        for ($visit = 0; $visit < $visits; $visit++) {
+            $acceptKey = array_key_first($this->sessionStateTargets);
+            $target = $this->sessionStateTargets[$acceptKey];
+            unset($this->sessionStateTargets[$acceptKey]);
+            $this->trySessionStateVisit((string)$acceptKey, $target, retry: true);
+        }
+
+        $replies = min(count($this->sessionStateReplies), self::SESSION_STATE_VISITS_PER_TICK);
+        for ($visit = 0; $visit < $replies; $visit++) {
+            $id = array_key_first($this->sessionStateReplies);
+            $application = $this->sessionStateReplies[$id];
+            unset($this->sessionStateReplies[$id]);
+            if ($application->initiator?->ended === false) {
+                $this->sessionStateReplies[$id] = $application;
+                continue;
+            }
+            $this->finishSessionState($application);
+        }
+    }
+
+    /**
+     * @param string $acceptKey Address being visited
+     * @param SessionStateTarget $target Original socket and pending frame
+     * @param bool $retry Whether this exact socket was already registered when the frame arrived
+     * @throws HilosException When a non-retryable read, write or handshake fails
+     */
+    private function trySessionStateVisit(string $acceptKey, SessionStateTarget $target, bool $retry): void
+    {
+        try {
+            $waiting = $this->visitSessionState($acceptKey, $target);
+        } catch (RtWriteBackpressureException) {
+            $waiting = $target;
+        } catch (Throwable $failure) {
+            $target->application->refused = true;
+            $target->visit->ended = true;
+            $this->sessionStateTargetEnded($target->application);
+            throw $failure;
+        }
+        // A singleton frame alone cannot prove an unregistered socket still exists after this handler.
+        if ($waiting !== null && $retry) {
+            $this->sessionStateTargets[$acceptKey] = $waiting;
+            return;
+        }
+        $target->visit->ended = true;
+        $this->sessionStateTargetEnded($target->application);
+    }
+
+    /**
+     * @param string $acceptKey Address being visited
+     * @param SessionStateTarget $target Original socket and pending frame
+     * @return ?SessionStateTarget Work still waiting for an eligible visit, if any
+     * @throws HilosException When an owner read, write or signal fails
+     */
+    private function visitSessionState(string $acceptKey, SessionStateTarget $target): ?SessionStateTarget
+    {
+        $application = $target->application;
+        $frame = $application->frame;
+        if ($application->refused || !$this->sessionFrameIsCurrent($frame)) {
+            $application->refused = true;
+            return null;
+        }
+        $connection = Hilos::$rt->connections[$acceptKey];
+        if (!$target->stillAddresses($connection) || $connection?->isUnregisterOwed()) {
+            return null;
+        }
+        if ($this->composerUnknown($connection) || $connection?->isPublicationClearOwed()) {
+            return $target;
+        }
+        if ($application->identity === null) {
+            if ($frame->userId !== null) {
+                Hilos::$rt->userStates->actions->ensure($frame->userId);
+            }
+            $identity = $this->handshakeIdentity($frame);
+            if ($identity->selfId !== $frame->userId) {
+                // The identity projection still uses a session mirror that can lag the committed row.
+                return $target;
+            }
+            $application->identity = $identity;
+        }
+
         if ($connection === null) {
-            Hilos::$rt->connections->actions->register(
-                $acceptKey,
-                $frame->userId,
-                $frame->sessionToken,
-                $frame->sessionId,
-            );
+            Hilos::$rt->connections->actions->register($acceptKey, $frame->userId, $frame->sessionToken, $frame->sessionId);
+            $connection = Hilos::$rt->connections[$acceptKey];
             if ($frame->userId !== null) {
                 Hilos::$ac?->identifyBrowserSessionUser($frame->sessionToken, $frame->userId);
             }
         } else {
-            if ($connection->sessionToken !== $frame->sessionToken || $connection->sessionId !== $frame->sessionId) {
-                // The session did not change, its secret name did: a login rotated the token
-                // out from under a value somebody may have planted (HIL-582).
-                Hilos::$rt->connections->actions->repointSessionToken(
-                    $acceptKey,
-                    $frame->sessionToken,
-                    $frame->sessionId,
-                );
-            }
-            if ($connection->userId !== $frame->userId) {
-                $this->forgetMessageChecks($acceptKey);
-                $connection->actions->clearOutboundModeration();
-                $connection->actions->bindUser($frame->userId);
-            }
+            $connection->actions->applySessionIdentity($frame->sessionId, $frame->userId, $frame->sessionToken);
+        }
+        $this->sendHandshakeResponse(ChatSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $application->identity, $frame);
+        $application->applied[$acceptKey] = true;
+        $target->visit->connection = $connection;
+
+        return null;
+    }
+
+    /**
+     * Sends the ordered effects of the frame after its applicable handshakes.
+     *
+     * @param SessionStateApplication $application Frame whose visits have finished
+     * @throws HilosException When a reply, reassessment or its current basis cannot be read or queued
+     */
+    private function finishSessionState(SessionStateApplication $application): void
+    {
+        $this->forgetSessionStateInitiator($application);
+        $frame = $application->frame;
+        if (($application->applied === [] && $application->initiator?->connection === null) || !$this->sessionFrameIsCurrent($frame)) {
+            return;
+        }
+
+        $initiator = $frame->initiatorAcceptKey();
+        $connection = Hilos::$rt->connections[$initiator];
+        $canAnswer = $connection !== null && $application->initiator?->connection?->sameIncarnation($connection)
+            && !$this->composerUnknown($connection) && !$connection->isUnregisterOwed()
+            && $connection->sessionId === $frame->sessionId && $connection->sessionToken === $frame->sessionToken
+            && $connection->userId === $frame->userId;
+        $applied = $application->applied;
+        if ($canAnswer) {
+            $applied[$initiator] = true;
+            $this->handOverRotationTicket($frame);
+        }
+        if ($applied === []) {
+            return;
+        }
+
+        // The guest no longer has the identity under which its page was last assessed.
+        if ($frame->userId !== null) {
+            PageAccessReassessment::forUser($frame->userId);
+        } else {
+            PageAccessReassessment::forConnections(array_values(array_intersect($frame->acceptKeys, array_keys($applied))));
+        }
+
+        if ($canAnswer) {
+            $this->answerLibraryAction($frame);
         }
     }
 
@@ -853,6 +1389,11 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
 
             return;
         }
+        if (!SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)) {
+            $this->replyToCommand(CommandReplyDTO::error($request->correlationId, 'Moderation state is not ready'));
+
+            return;
+        }
         $requestIds = [];
         foreach ([ChatModerationKindKey::MESSAGE, ChatModerationKindKey::MESSAGE_PICTURE] as $kind) {
             $check = Hilos::$rt->hilosModerationChecks->find($query->acceptKey, $kind);
@@ -893,38 +1434,30 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      */
     private function handleMessageModerationVerdict(ModerationVerdictSignalData $verdict): void
     {
-        if (!in_array($verdict->kind, [ChatModerationKindKey::MESSAGE, ChatModerationKindKey::MESSAGE_PICTURE], true)) {
+        if (!in_array($verdict->kind, self::MESSAGE_CHECK_KINDS, true)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, ChatRtContext::connections)) {
             return;
         }
         $check = Hilos::$rt->hilosModerationChecks->find($verdict->acceptKey, $verdict->kind);
+        $connection = Hilos::$rt->connections[$verdict->acceptKey];
         if (
             $check === null || $check->staleSince() !== null || $check->verdictTo !== self::AGENT_TYPE
-            || $check->requestId !== $verdict->requestId
-            || Hilos::$rt->connections->staleSince() !== null
-            || Hilos::$rt->connections[$verdict->acceptKey] === null
-            || Hilos::$rt->connections[$verdict->acceptKey]->staleSince() !== null
-            || Hilos::$rt->connections[$verdict->acceptKey]->userId !== $check->userId
-            || Hilos::$rt->connections[$verdict->acceptKey]->outboundModerationPhase
-                !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+            || $check->requestId !== $verdict->requestId || $connection === null
+            || $connection->staleSince() !== null || $connection->isUnregisterOwed()
+            || !$this->isCurrentMessageCheck($check, $connection)
         ) {
             return;
         }
-        if ($check->kind === ChatModerationKindKey::MESSAGE) {
-            if (
-                $check->text !== Hilos::$rt->connections[$verdict->acceptKey]->outboundModerationMessage
-                || $check->clientUploadIds !== Hilos::$rt->connections[$verdict->acceptKey]->outboundModerationAttachments
-            ) {
-                return;
-            }
-        } elseif (
-            !$check->imageCopy || $check->clientUploadId === null
-            || !in_array($check->clientUploadId, Hilos::$rt->connections[$verdict->acceptKey]->outboundModerationAttachments, true)
-        ) {
+        $this->watchMessageCheck($check, TimeHelper::nowMs());
+        if ($connection->sessionId === null || !Hilos::$db->sessions->matchesStoredIdentity($connection->sessionId, $check->userId)) {
+            $this->retireMessageComposer($connection);
+            $this->forgetExactMessageCheck($check);
             return;
         }
         if ($check->deadlineAt <= TimeHelper::nowMs()) {
             $this->failMessageModeration($verdict->acceptKey);
-            $this->forgetMessageChecks($verdict->acceptKey);
+            $this->forgetExactMessageCheck($check);
             return;
         }
         if (!$verdict->allow || $verdict->reason !== ModerationReason::OK) {
@@ -940,7 +1473,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
                 $reason,
                 $phase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED ? $check->clientUploadId : null,
             );
-            $this->forgetMessageChecks($verdict->acceptKey);
+            $this->forgetExactMessageCheck($check);
             if ($contentReason && ChatModerationRefusal::isAboutTheContent($reason)) {
                 $this->notifyMessageRejected(
                     $check->userId,
@@ -959,14 +1492,25 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
 
         try {
             $this->advanceMessageModeration($check);
-        } catch (WiringRefusal $failure) {
-            $this->forgetMessageChecks($check->acceptKey, $check);
-            $this->failMessageModeration($verdict->acceptKey);
+        } catch (MessageAuthorChangedException) {
+            $this->retireMessageComposer($connection);
+            $this->forgetExactMessageCheck($check);
+        } catch (AnnouncementFailedException $failure) {
+            // The stage or message already committed.
             throw $failure;
-        } catch (Throwable $failure) {
-            $this->forgetMessageChecks($verdict->acceptKey, $check);
-            $this->failMessageModeration($verdict->acceptKey);
+        } catch (RtWriteBackpressureException $failure) {
+            // The rolled-back stage keeps its exact check and original deadline.
             $this->logAgentError('Cannot continue message moderation: ' . $failure->getMessage());
+        } catch (Throwable $failure) {
+            $this->logAgentError('Cannot continue message moderation: ' . $failure->getMessage());
+            if ($this->isCurrentMessageCheck($check, $connection)) {
+                $this->failMessageModeration($verdict->acceptKey);
+                $this->forgetExactMessageCheck($check);
+                $this->forgetMessageChecks($check->acceptKey, $check->userId);
+            }
+            if ($failure instanceof WiringRefusal) {
+                throw $failure;
+            }
         }
     }
 
@@ -974,14 +1518,15 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      * No stage list is retained: the current image id and the held attachment order define the next stage.
      *
      * @param ModerationCheck $check Approved check, carrying the chain's fixed deadline
+     * @throws MessageAuthorChangedException When the stored session loses its author just before the write
      * @throws HilosException When uploads cannot be used or the next check/publication cannot start
+     * @throws LogicException When the approved attachment group has no hold or files door
      * @throws RandomException When a fresh check id cannot be drawn
      * @throws NativeLogicException When the check row cannot be constructed
      */
     private function advanceMessageModeration(ModerationCheck $check): void
     {
         $this->assertMessageUploadsReady($check->acceptKey, $check);
-        $check->actions->forget();
         $afterCurrent = $check->kind === ChatModerationKindKey::MESSAGE;
         foreach ($check->uploadSnapshots as $snapshot) {
             if (!$afterCurrent) {
@@ -990,16 +1535,28 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
             }
             $upload = Hilos::$rt->hilosUploads->find($check->acceptKey, $snapshot->clientUploadId);
             if (str_starts_with(UploadMime::normalize($upload->detectedMimeType ?? $upload->mimeType), self::IMAGE_MIME_PREFIX)) {
-                Hilos::$rt->hilosModerationChecks->actions->open(
-                    $check->acceptKey,
-                    $check->userId,
-                    ChatModerationKindKey::MESSAGE_PICTURE,
-                    clientUploadId: $snapshot->clientUploadId,
-                    deadlineAt: $check->deadlineAt,
-                    imageCopy: true,
-                    uploadSnapshots: $check->uploadSnapshots,
-                    uploadHoldId: $check->uploadHoldId,
-                );
+                Database::transaction(DatabaseNames::PRIMARY, function () use ($check, $snapshot): void {
+                    if ($check->kind === ChatModerationKindKey::MESSAGE) {
+                        $previousPicture = Hilos::$rt->hilosModerationChecks->find($check->acceptKey, ChatModerationKindKey::MESSAGE_PICTURE);
+                        if ($previousPicture !== null && $previousPicture->verdictTo === self::AGENT_TYPE
+                            && $previousPicture->uploadHoldId !== null && $previousPicture->uploadHoldId !== $check->uploadHoldId) {
+                            $this->watchMessageCheck($previousPicture, TimeHelper::nowMs());
+                            $this->forgetExactMessageCheck($previousPicture, $check->uploadHoldId);
+                        }
+                    }
+                    $check->actions->forget();
+                    $next = Hilos::$rt->hilosModerationChecks->actions->open(
+                        $check->acceptKey,
+                        $check->userId,
+                        ChatModerationKindKey::MESSAGE_PICTURE,
+                        clientUploadId: $snapshot->clientUploadId,
+                        deadlineAt: $check->deadlineAt,
+                        imageCopy: true,
+                        uploadSnapshots: $check->uploadSnapshots,
+                        uploadHoldId: $check->uploadHoldId,
+                    );
+                    Database::afterCommit(fn () => $this->watchMessageCheck($next, TimeHelper::nowMs()));
+                });
                 return;
             }
         }
@@ -1007,22 +1564,27 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
             throw new ValidationException('The message moderation deadline expired');
         }
         if ($this->messageAuthorUnavailable($check->userId)) {
-            $this->forgetMessageChecks($check->acceptKey, $check);
             $this->failMessageModeration($check->acceptKey);
+            $this->forgetExactMessageCheck($check);
             return;
         }
-        if (Hilos::$rt->connections[$check->acceptKey]->outboundModerationAttachments === []) {
-            $message = Hilos::$rt->connections[$check->acceptKey]->outboundModerationMessage;
-            Hilos::$db->events->actions->addMessage($message, userId: $check->userId);
-            Hilos::$rt->connections[$check->acceptKey]->actions->clearOutboundModeration();
+        $connection = Hilos::$rt->connections[$check->acceptKey];
+        if ($connection->outboundModerationAttachments === []) {
+            $this->persistModeratedMessage($connection, $check->userId);
+            $this->forgetExactMessageCheck($check);
             return;
         }
-        $this->settleMessageUploadHold($check->acceptKey, $check->uploadHoldId, UploadHoldOutcome::APPROVED);
+        $holdId = $check->uploadHoldId ?? throw new LogicException('An approved message with attachments has no upload hold');
+        $connection->actions->awaitOutboundPublication($holdId, $check->deadlineAt, $check->userId);
+        $this->watchPublication($connection, $check->deadlineAt);
+        $check->actions->forget();
+        $this->settleMessageUploadHold($check->acceptKey, $holdId, UploadHoldOutcome::APPROVED);
         (Hilos::$files ?? throw new LogicException('The files door is not created'))->publishUploads(
             $check->acceptKey,
             ChatAttachmentUploadTarget::NAME,
             Hilos::$rt->connections[$check->acceptKey]->outboundModerationAttachments,
             ChatSignalConstants::ATTACHMENTS_PUBLISHED,
+            $holdId,
         );
     }
 
@@ -1095,38 +1657,187 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     }
 
     /**
-     * @param string $acceptKey Connection whose chat checks ended
-     * @param ?ModerationCheck $ended Check already removed while advancing to the next stage
-     * @throws HilosException When runtime cleanup fails
+     * @param string $acceptKey Closed connection or connection whose author changed
+     * @param ?int $userId Former author, or null when the entire socket closed
+     * @param ?string $publicationHoldId Accepted hold already released by the caller
+     * @throws HilosException When a currently owned check cannot be read or removed
      */
-    private function forgetMessageChecks(string $acceptKey, ?ModerationCheck $ended = null): void
+    private function forgetMessageChecks(string $acceptKey, ?int $userId = null, ?string $publicationHoldId = null): void
     {
-        $tokens = $ended?->uploadHoldId === null ? [] : [$ended->uploadHoldId];
-        foreach ([ChatModerationKindKey::MESSAGE, ChatModerationKindKey::MESSAGE_PICTURE] as $kind) {
+        if (!Hilos::hasFeature(HilosFeature::MODERATION)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)) {
+            return;
+        }
+        $failure = null;
+        foreach (self::MESSAGE_CHECK_KINDS as $kind) {
             $check = Hilos::$rt->hilosModerationChecks->find($acceptKey, $kind);
-            if ($check === null) {
+            if ($check === null || $check->verdictTo !== self::AGENT_TYPE || ($userId !== null && $check->userId !== $userId)) {
                 continue;
             }
-            if ($check->uploadHoldId !== null) {
-                $tokens[] = $check->uploadHoldId;
+            $this->watchMessageCheck($check, TimeHelper::nowMs());
+            try {
+                $this->forgetExactMessageCheck($check, $publicationHoldId);
+            } catch (HilosException $refusal) {
+                $failure ??= $refusal;
             }
         }
-        if ($tokens === [] && Hilos::$rt->connections[$acceptKey] !== null) {
-            foreach (Hilos::$rt->connections[$acceptKey]->outboundModerationAttachments as $uploadId) {
-                $upload = Hilos::$rt->hilosUploads->find($acceptKey, $uploadId);
-                if ($upload !== null && $upload->staleSince() === null && $upload->target === ChatAttachmentUploadTarget::NAME
-                    && $upload->userId === Hilos::$rt->connections[$acceptKey]->userId && $upload->uploadHoldId !== null
-                ) {
-                    $tokens[] = $upload->uploadHoldId;
-                }
+        if ($failure !== null) {
+            throw $failure;
+        }
+    }
+
+    /**
+     * Cleans up only the captured check. The accepted publication, or another current stage
+     * with the same hold, continues to own that hold.
+     *
+     * @param ModerationCheck $check Check whose work ended
+     * @param ?string $publicationHoldId Accepted hold to leave to publication
+     * @throws HilosException When the check cannot be read, removed or settled
+     */
+    private function forgetExactMessageCheck(ModerationCheck $check, ?string $publicationHoldId = null): void
+    {
+        $current = Hilos::$rt->hilosModerationChecks->find($check->acceptKey, $check->kind);
+        $holdId = $check->uploadHoldId;
+        if ($current?->requestId === $check->requestId) {
+            if ($current->staleSince() !== null || $current->verdictTo !== self::AGENT_TYPE) {
+                return;
+            }
+            $current->actions->forget();
+        }
+        $candidate = $this->deadlineOfCheck($check);
+        Database::afterCommit(fn () => $this->forgetScheduledModeration($candidate));
+        if ($holdId === null || $holdId === $publicationHoldId
+            || ($current !== null && $current->requestId !== $check->requestId && $current->uploadHoldId === $holdId)) {
+            return;
+        }
+        $otherKind = $check->kind === ChatModerationKindKey::MESSAGE ? ChatModerationKindKey::MESSAGE_PICTURE : ChatModerationKindKey::MESSAGE;
+        if (Hilos::$rt->hilosModerationChecks->find($check->acceptKey, $otherKind)?->uploadHoldId !== $holdId) {
+            Database::afterCommit(fn () => $this->settleMessageUploadHold($check->acceptKey, $holdId, UploadHoldOutcome::RELEASED));
+        }
+    }
+
+    /**
+     * @param ?Connection $connection Row read for an irreversible decision, when present
+     * @return bool Whether the worker lacks a fresh fact about this connection
+     */
+    private function composerUnknown(?Connection $connection): bool
+    {
+        return !SourceInterestRegistry::isReady(SourceChange::KIND_RT, ChatRtContext::connections)
+            || ($connection === null ? RtStaleness::staleRows(ChatRtContext::connections) !== [] : $connection->staleSince() !== null);
+    }
+
+    /**
+     * @param ModerationCheck $check Check to compare to the draft
+     * @param Connection $connection Its fresh connection
+     * @return bool Whether this check still carries the draft's input and phase
+     * @throws HilosException When either runtime row cannot be read
+     */
+    private function checkMatchesDraft(ModerationCheck $check, Connection $connection): bool
+    {
+        if ($connection->isPublicationClearOwed()
+            || $connection->outboundModerationPhase !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+            || $connection->outboundPublicationHoldId !== null) {
+            return false;
+        }
+        if ($check->kind === ChatModerationKindKey::MESSAGE) {
+            return $check->text === $connection->outboundModerationMessage
+                && $check->clientUploadIds === $connection->outboundModerationAttachments;
+        }
+        $ids = [];
+        foreach ($check->uploadSnapshots as $snapshot) {
+            $ids[] = $snapshot->clientUploadId;
+        }
+        return $check->imageCopy && $check->clientUploadId !== null && in_array($check->clientUploadId, $ids, true)
+            && $ids === $connection->outboundModerationAttachments;
+    }
+
+    /**
+     * @param ModerationCheck $check Exact row already selected by kind and request id
+     * @param Connection $connection Its fresh, live connection
+     * @return bool Whether the check can advance this composer
+     * @throws HilosException When the current draft or competing stage cannot be read
+     */
+    private function isCurrentMessageCheck(ModerationCheck $check, Connection $connection): bool
+    {
+        if ($connection->userId !== $check->userId || !$this->checkMatchesDraft($check, $connection)) {
+            return false;
+        }
+        if ($check->kind === ChatModerationKindKey::MESSAGE) {
+            return true;
+        }
+        $text = Hilos::$rt->hilosModerationChecks->find($check->acceptKey, ChatModerationKindKey::MESSAGE);
+        return $text === null || $text->userId !== $check->userId || !$this->checkMatchesDraft($text, $connection);
+    }
+
+    /**
+     * @param ModerationCheck $check Exact current check
+     * @param int $now Comparison moment in epoch milliseconds
+     * @return bool Whether an authoritative upload fact ended this check
+     * @throws HilosException When the upload sources cannot be read
+     */
+    private function checkLostAnUpload(ModerationCheck $check, int $now): bool
+    {
+        if (RtStaleness::staleRows(HilosUpload::RT_COLLECTION) !== []) {
+            return false;
+        }
+        foreach ($check->uploadSnapshots as $snapshot) {
+            $upload = Hilos::$rt->hilosUploads->find($check->acceptKey, $snapshot->clientUploadId);
+            if ($upload === null || $upload->phase !== UploadPhase::COMPLETE || $upload->tmpIndex !== $snapshot->tmpIndex
+                || $upload->contentHash !== $snapshot->contentHash
+                || $upload->target !== ChatAttachmentUploadTarget::NAME || $upload->userId !== $check->userId
+                || ($upload->uploadHoldId === $check->uploadHoldId
+                    && ($upload->uploadHoldDeadlineAt !== $check->deadlineAt || $check->deadlineAt <= $now))) {
+                return true;
             }
         }
-        foreach (array_unique($tokens) as $token) {
-            $this->settleMessageUploadHold($acceptKey, $token, UploadHoldOutcome::RELEASED);
+
+        return false;
+    }
+
+    /**
+     * @param Connection $connection Exact live accepted publication
+     * @param string $reason Safe reason to return to the author
+     * @throws HilosException When the terminal phase or hold settlement cannot be written
+     */
+    private function endPublication(Connection $connection, string $reason): void
+    {
+        $publication = $this->deadlineOfPublication($connection);
+        $connection->actions->failOutboundModeration(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE, $reason);
+        $this->forgetScheduledModeration($publication);
+        $this->settleMessageUploadHold($connection->acceptKey, $publication?->token, UploadHoldOutcome::RELEASED);
+    }
+
+    /**
+     * Ends the old draft when its author has lost the socket's session.
+     *
+     * @param Connection $connection Exact connection owner row being invalidated
+     * @throws HilosException When the clear or release cannot be queued
+     */
+    private function retireMessageComposer(Connection $connection): void
+    {
+        $holdId = $this->invalidateMessageComposer($connection);
+        $this->settleMessageUploadHold($connection->acceptKey, $holdId, UploadHoldOutcome::RELEASED);
+    }
+
+    /**
+     * Records the mandatory clear and returns the old hold for release after invalidation.
+     *
+     * @param Connection $connection Exact connection owner row being invalidated
+     * @return ?string Hold of the retired publication, if any
+     * @throws HilosException When the terminal update cannot be prepared
+     */
+    private function invalidateMessageComposer(Connection $connection): ?string
+    {
+        if ($connection->isPublicationClearOwed()
+            || $connection->outboundModerationPhase === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE) {
+            return null;
         }
-        foreach ([ChatModerationKindKey::MESSAGE, ChatModerationKindKey::MESSAGE_PICTURE] as $kind) {
-            Hilos::$rt->hilosModerationChecks->find($acceptKey, $kind)?->actions->forget();
-        }
+        $publication = $this->deadlineOfPublication($connection);
+        $holdId = $connection->outboundPublicationHoldId;
+        $connection->actions->clearOutboundModeration(mandatory: true);
+        $this->forgetScheduledModeration($publication);
+
+        return $holdId;
     }
 
     /**
@@ -1149,51 +1860,55 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     }
 
     /**
-     * Unconfirmed initial marks may arrive separately. A known source loss or a released matching
-     * token ends the wait; absent rows after the last check are the normal publication handover.
+     * An upload event is a wake-up. The current check or publication and the live upload
+     * owner facts determine what this connection is still waiting for.
      *
-     * @param string $acceptKey Connection whose current owner facts changed
+     * @param string $acceptKey Connection whose upload facts changed
      * @throws HilosException When runtime reads, cleanup or settlement fail
      */
     private function reconcileMessageUploads(string $acceptKey): void
     {
-        if (Hilos::$rt->connections->staleSince() !== null || Hilos::$rt->hilosUploads->staleSince() !== null
-            || Hilos::$rt->hilosModerationChecks->staleSince() !== null || Hilos::$rt->connections[$acceptKey] === null
-            || Hilos::$rt->connections[$acceptKey]->staleSince() !== null
-            || Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
-                !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
-        ) {
+        if (!SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, ChatRtContext::connections)) {
             return;
         }
-        $check = Hilos::$rt->hilosModerationChecks->find($acceptKey, ChatModerationKindKey::MESSAGE)
-            ?? Hilos::$rt->hilosModerationChecks->find($acceptKey, ChatModerationKindKey::MESSAGE_PICTURE);
-        if ($check !== null && ($check->staleSince() !== null || $check->userId !== Hilos::$rt->connections[$acceptKey]->userId)) {
+        $connection = Hilos::$rt->connections[$acceptKey];
+        if ($connection === null || $this->composerUnknown($connection) || $connection->isUnregisterOwed()
+            || $connection->isPublicationClearOwed()) {
             return;
         }
-        if ($check !== null) {
-            foreach ($check->uploadSnapshots as $snapshot) {
-                $upload = Hilos::$rt->hilosUploads->find($acceptKey, $snapshot->clientUploadId);
-                if ($upload === null || $upload->phase !== UploadPhase::COMPLETE
-                    || $upload->tmpIndex !== $snapshot->tmpIndex || $upload->contentHash !== $snapshot->contentHash
-                    || $upload->target !== ChatAttachmentUploadTarget::NAME || $upload->userId !== $check->userId
-                    || ($upload->uploadHoldId === $check->uploadHoldId
-                        && ($upload->uploadHoldDeadlineAt !== $check->deadlineAt || $check->deadlineAt <= TimeHelper::nowMs()))
-                ) {
-                    $this->failMessageModeration($acceptKey);
-                    $this->forgetMessageChecks($acceptKey);
-                    return;
-                }
+
+        $now = TimeHelper::nowMs();
+        $publication = $this->deadlineOfPublication($connection);
+        $unfinishedHandover = false;
+        foreach (self::MESSAGE_CHECK_KINDS as $kind) {
+            $check = Hilos::$rt->hilosModerationChecks->find($acceptKey, $kind);
+            if ($check === null || $check->verdictTo !== self::AGENT_TYPE) {
+                continue;
             }
+            $this->watchMessageCheck($check, $now);
+            if ($publication !== null && $check->userId === $publication->userId && $check->uploadHoldId === $publication->token) {
+                $unfinishedHandover = true;
+            }
+            if ($check->staleSince() === null && $this->isCurrentMessageCheck($check, $connection)
+                && ($check->deadlineAt <= $now || $this->checkLostAnUpload($check, $now))) {
+                $this->failMessageModeration($acceptKey);
+                $this->forgetExactMessageCheck($check);
+                return;
+            }
+        }
+
+        if ($publication === null || $publication->userId !== $connection->userId || $unfinishedHandover
+            || Hilos::$rt->hilosUploads->staleSince() !== null) {
             return;
         }
-        foreach (Hilos::$rt->connections[$acceptKey]->outboundModerationAttachments as $uploadId) {
+        foreach ($connection->outboundModerationAttachments as $uploadId) {
             $upload = Hilos::$rt->hilosUploads->find($acceptKey, $uploadId);
             if ($upload !== null && $upload->target === ChatAttachmentUploadTarget::NAME
-                && $upload->userId === Hilos::$rt->connections[$acceptKey]->userId && $upload->uploadHoldId !== null
-                && ($upload->uploadHoldDeadlineAt === null || $upload->uploadHoldDeadlineAt <= TimeHelper::nowMs())
-            ) {
-                $this->failMessageModeration($acceptKey);
-                $this->forgetMessageChecks($acceptKey);
+                && $upload->userId === $publication->userId && $upload->uploadHoldId === $publication->token
+                && ($upload->uploadHoldDeadlineAt === null || $upload->uploadHoldDeadlineAt <= $now)) {
+                $this->watchPublication($connection, $now);
+                $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
                 return;
             }
         }
@@ -1208,103 +1923,159 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      */
     private function handleAttachmentsPublished(FilesPublishedSignalData $published): void
     {
-        $files = Hilos::$files ?? throw new LogicException('The files door is not created');
-        if (
-            Hilos::$rt->connections[$published->acceptKey]?->staleSince() !== null
-            || (Hilos::$rt->connections[$published->acceptKey] === null && Hilos::$rt->connections->staleSince() !== null)
-        ) {
+        if ($published->uploadHoldId === null
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, ChatRtContext::connections)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, HilosModerationCheck::RT_COLLECTION)) {
             return;
         }
+        $connection = Hilos::$rt->connections[$published->acceptKey];
+        if ($this->composerUnknown($connection)) {
+            return;
+        }
+        $publication = $connection === null ? null : $this->deadlineOfPublication($connection);
         if (
-            Hilos::$rt->connections[$published->acceptKey] === null
-            || Hilos::$rt->connections[$published->acceptKey]->userId === null
-            || Hilos::$rt->connections[$published->acceptKey]->outboundModerationPhase
-                !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
-            || Hilos::$rt->connections[$published->acceptKey]->outboundModerationAttachments !== $published->clientUploadIds
-            || Hilos::$rt->hilosModerationChecks->find($published->acceptKey, ChatModerationKindKey::MESSAGE) !== null
-            || Hilos::$rt->hilosModerationChecks->find($published->acceptKey, ChatModerationKindKey::MESSAGE_PICTURE) !== null
+            $publication === null || $connection->isUnregisterOwed() || $publication->userId !== $connection->userId
+            || $connection->outboundModerationAttachments !== $published->clientUploadIds
+            || $publication->token !== $published->uploadHoldId
         ) {
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             return;
         }
-        if ($published->error !== null) {
-            Hilos::$rt->connections[$published->acceptKey]->actions->failOutboundModeration(
-                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
-                $published->error,
-            );
-            $this->forgetMessageChecks($published->acceptKey);
+        if ($connection->isPublicationClearOwed()) {
+            $this->removeUnlinkedPublicationFiles($published->fileIds, $publication->userId);
             return;
         }
+        if ($connection->sessionId === null || !Hilos::$db->sessions->matchesStoredIdentity($connection->sessionId, $publication->userId)) {
+            try {
+                $this->retireMessageComposer($connection);
+            } finally {
+                $this->removeUnlinkedPublicationFiles($published->fileIds, $publication->userId);
+            }
+            return;
+        }
+        $now = TimeHelper::nowMs();
+        $this->watchPublication($connection, $publication->deadlineAt);
+        if ($publication->deadlineAt <= $now) {
+            try {
+                $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
+            } finally {
+                $this->removeUnlinkedPublicationFiles($published->fileIds, $publication->userId);
+            }
+            return;
+        }
+        foreach (self::MESSAGE_CHECK_KINDS as $kind) {
+            $checkId = HilosModerationCheck::keyFor($published->acceptKey, $kind);
+            $check = Hilos::$rt->hilosModerationChecks[$checkId];
+            if ($check === null && RtStaleness::staleSince(HilosModerationCheck::RT_COLLECTION, $checkId) !== null) {
+                return;
+            }
+            if ($check !== null && $check->userId === $publication->userId && $check->uploadHoldId === $publication->token) {
+                $this->watchMessageCheck($check, $now);
+                return;
+            }
+        }
+        if ($published->error !== null) {
+            $this->endPublication($connection, $published->error);
+            return;
+        }
+        $files = Hilos::$files ?? throw new LogicException('The files door is not created');
         if (count($published->fileIds) !== count($published->clientUploadIds) || $published->fileIds === []) {
-            $this->failMessageModeration($published->acceptKey);
-            $this->forgetMessageChecks($published->acceptKey);
+            $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             return;
         }
         foreach ($published->fileIds as $fileId) {
             if (!isset(Hilos::$db->files[$fileId])) {
-                $this->failMessageModeration($published->acceptKey);
+                $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
                 $this->removeUnlinkedPublicationFiles($published->fileIds);
                 return;
             }
             if (
-                Hilos::$db->files[$fileId]->ownerUserId !== Hilos::$rt->connections[$published->acceptKey]->userId
+                Hilos::$db->files[$fileId]->ownerUserId !== $publication->userId
                 || Hilos::$db->eventAttachments->forFileId($fileId) !== null
             ) {
-                $this->removeUnlinkedPublicationFiles($published->fileIds);
+                $this->removeUnlinkedPublicationFiles($published->fileIds, $publication->userId);
                 return;
             }
         }
-        if (Hilos::$rt->hilosUploads->staleSince() !== null || Hilos::$rt->hilosModerationChecks->staleSince() !== null) {
-            $this->failMessageModeration($published->acceptKey);
+        if (Hilos::$rt->hilosUploads->staleSince() !== null) {
+            $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             return;
         }
-        if ($this->messageAuthorUnavailable(Hilos::$rt->connections[$published->acceptKey]->userId)) {
-            $this->failMessageModeration($published->acceptKey);
+        if ($this->messageAuthorUnavailable($publication->userId)) {
+            $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             return;
         }
-        $message = Hilos::$rt->connections[$published->acceptKey]->outboundModerationMessage
-            ?? throw new LogicException('A message under moderation carries no text');
         try {
-            Database::transaction(DatabaseNames::PRIMARY, static function () use ($message, $published): void {
-                Hilos::$db->events->actions->addMessage(
-                    $message,
-                    userId: Hilos::$rt->connections[$published->acceptKey]->userId,
-                    fileIds: $published->fileIds,
-                );
-                Hilos::$rt->connections[$published->acceptKey]->actions->clearOutboundModeration();
-            });
+            $this->persistModeratedMessage($connection, $publication->userId, $published->fileIds);
+        } catch (MessageAuthorChangedException) {
+            try {
+                $this->retireMessageComposer($connection);
+            } finally {
+                $this->removeUnlinkedPublicationFiles($published->fileIds, $publication->userId);
+            }
+            return;
         } catch (AnnouncementFailedException $failure) {
             // Outside a worker handler the commit reports this here; the message still stands.
+            $this->forgetScheduledModeration($publication);
             $files->markBound($published->fileIds);
             throw $failure;
         } catch (WiringRefusal $failure) {
-            $this->failMessageModeration($published->acceptKey);
+            $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             throw $failure;
         } catch (Throwable $failure) {
-            $this->failMessageModeration($published->acceptKey);
+            $this->endPublication($connection, ModerationReason::SERVICE_UNAVAILABLE);
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             $this->logAgentError('Cannot persist published message: ' . $failure->getMessage());
             return;
         }
+        $this->forgetScheduledModeration($publication);
         $files->markBound($published->fileIds);
+    }
+
+    /**
+     * Admits both moderated writes against the current session author in the event transaction.
+     *
+     * @param Connection $connection Fresh composer already matched to the check or publication
+     * @param int $userId Author of the admitted draft
+     * @param list<int> $fileIds Published files in the original attachment order
+     * @throws MessageAuthorChangedException When the session disappeared or belongs to a different author
+     * @throws HilosException When the author lock, event or composer write fails
+     * @throws LogicException When the composer has no message
+     */
+    private function persistModeratedMessage(Connection $connection, int $userId, array $fileIds = []): void
+    {
+        $sessionId = $connection->sessionId;
+        $message = $connection->outboundModerationMessage
+            ?? throw new LogicException('A message under moderation carries no text');
+
+        Database::transaction(DatabaseNames::PRIMARY, static function () use ($connection, $sessionId, $userId, $message, $fileIds): void {
+            if ($sessionId === null || !Hilos::$db->sessions->lockStoredAuthor($sessionId, $userId)) {
+                throw new MessageAuthorChangedException('The stored session no longer authorizes this message');
+            }
+            Hilos::$db->events->actions->addMessage($message, userId: $userId, fileIds: $fileIds);
+            $connection->actions->clearOutboundModeration();
+        });
     }
 
     /**
      * Duplicate replies may name files whose event already committed. Cleanup never removes those.
      *
      * @param list<int> $fileIds Published registry ids without a current consumer
+     * @param ?int $ownerUserId Expected owner when checking a reply to the current attempt
      * @throws HilosException When collection wiring refuses the read
      */
-    private function removeUnlinkedPublicationFiles(array $fileIds): void
+    private function removeUnlinkedPublicationFiles(array $fileIds, ?int $ownerUserId = null): void
     {
         try {
             $orphans = [];
             foreach ($fileIds as $fileId) {
-                if (Hilos::$db->eventAttachments->forFileId($fileId) === null) {
+                if (isset(Hilos::$db->files[$fileId]) && !Hilos::$db->files[$fileId]->bound
+                    && ($ownerUserId === null || Hilos::$db->files[$fileId]->ownerUserId === $ownerUserId)
+                    && Hilos::$db->eventAttachments->forFileId($fileId) === null) {
                     $orphans[] = $fileId;
                 }
             }

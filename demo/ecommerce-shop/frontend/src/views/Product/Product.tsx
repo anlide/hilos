@@ -6,6 +6,7 @@ import {
 } from '@hilos/react/base'
 
 import { scopes } from '../../bootstrap/session.js'
+import { ProductViewerCount } from '../../catalog/ProductViewerCount.js'
 import { kindText } from '../../catalog/catalog.js'
 import {
   availabilityText,
@@ -14,9 +15,12 @@ import {
 import { formatMoney } from '../../money/money.js'
 import { PAGE_CATEGORY, PAGE_MAIN, PAGE_PRODUCT } from '../../pages/keys.js'
 import ProductSkeleton from './ProductSkeleton.js'
-import { createProductDetailsSignal } from './productPage.js'
+import {
+  createProductDetailsSignal,
+  createProductViewerCountSignal,
+} from './productPage.js'
 
-/** The public storefront product and its live availability. */
+/** The public storefront product, live availability, and other viewers. */
 export default function Product() {
   const router = useContext(HilosRouterContext)
   if (!router) throw new Error('Product requires a provided Hilos router.')
@@ -25,7 +29,12 @@ export default function Product() {
     () => createProductDetailsSignal(scopes, router.currentRoute),
     [router],
   )
+  const viewers = useMemo(
+    () => createProductViewerCountSignal(scopes, details),
+    [details],
+  )
   const product = useSignal(details)
+  const otherViewerCount = useSignal(viewers)
   if (product === null) return <ProductSkeleton />
 
   const unique = product.kind === 'unique'
@@ -86,6 +95,11 @@ export default function Product() {
           <p className="text-body-secondary text-break">
             {product.description}
           </p>
+          <ProductViewerCount
+            count={otherViewerCount}
+            surface="shop"
+            visible={product.availability !== 'out_of_stock'}
+          />
         </div>
       </div>
     </>

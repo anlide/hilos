@@ -882,15 +882,16 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * Keeps a file in the files directory and registers it bound, as a published attachment is.
+     * Keeps a registry file in its storage, optionally already bound by its consumer.
      *
      * @param int $ownerUserId Person who sent it
      * @param string $filename Name the person gave it
      * @param string $content Its bytes
+     * @param bool $bound Whether the consumer has already bound the file
      * @return File The registry row
      * @throws HilosException When the file or the row cannot be written
      */
-    protected function keepRegistryFile(int $ownerUserId, string $filename, string $content): File
+    protected function keepRegistryFile(int $ownerUserId, string $filename, string $content, bool $bound = true): File
     {
         $storedName = RandomHelper::hex(16) . '.txt';
         (Hilos::$fs ?? throw new LogicException('The FS context is not configured'))->files->create($storedName)->append($content);
@@ -903,7 +904,9 @@ abstract class IntegrationTestCase extends TestCase
             $ownerUserId,
             FileVisibility::AUTHENTICATED,
         );
-        $file->actions->markBound();
+        if ($bound) {
+            $file->actions->markBound();
+        }
 
         return $file;
     }

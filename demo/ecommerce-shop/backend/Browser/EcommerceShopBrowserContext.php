@@ -41,6 +41,7 @@ use Hilos\Files\HilosFiles;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use JsonException;
@@ -52,7 +53,7 @@ use WeakMap;
  * Says who is behind a socket - the admin pages ask it through the page access gate - and
  * computes the two fields of the home page: the address of a category's tile picture and whether
  * a product is on the shop front; and the fields of the product card on the admin_product page:
- * the picture's address, the edit version, and what the warehouses keep of it. A person's presence and
+ * the picture's address, the edit version, the stock total and the storefront viewer count. A person's presence and
  * session count, the password fields and the scheduled deletion's date are the framework's,
  * computed for its card of one person (HIL-1254), and the other admin tables go out through the
  * framework self-snapshot path.
@@ -133,6 +134,7 @@ final class EcommerceShopBrowserContext extends BrowserContext
      * @return mixed Computed browser field value, or null when the field is unknown
      * @throws PageInternalErrorException When a computed field cannot be resolved
      * @throws RtActionsStateCollectionNullException When a project's runtime field source is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function computeBrowserField(
         string $browserKey,
@@ -190,6 +192,12 @@ final class EcommerceShopBrowserContext extends BrowserContext
                         AdminProductBrowserData::STOCK_WAREHOUSES => $totals->warehouseCount,
                         AdminProductBrowserData::STOCK_WAREHOUSE_ID => $product->kind === ProductKind::UNIQUE ? $totals->warehouseId : null,
                     ];
+                }
+
+                if ($field === AdminProductBrowserData::FIELD_VIEWER_COUNT) {
+                    $viewers = Hilos::$rt->productViewerCounts[$product->slug];
+
+                    return $viewers !== null && $viewers->productId === $product->id ? $viewers->viewerCount : 0;
                 }
             } catch (
                 DatabaseException

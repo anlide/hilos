@@ -22,7 +22,7 @@ final class RtStateReachRule implements CodeStyleRule
     private const string DOC = 'docs/agents/runtime/rt-state.md';
 
     /** Backing-state accessors, wherever they are called from and on whatever receiver. */
-    private const array STATE_METHODS = ['getStateCollection', 'getStateItem'];
+    private const array STATE_METHODS = ['getStateCollection', 'getBackingStateCollection', 'getStateItem'];
 
     /** Magic property that hands the backing collection out inside actions. */
     private const string STATE_PROPERTY = 'stateCollection';

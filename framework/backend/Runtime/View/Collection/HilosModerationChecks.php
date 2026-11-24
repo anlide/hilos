@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\HilosModerationChecks as StateHilosModerationChecks;
 use Hilos\Runtime\State\Item\HilosModerationCheck as StateHilosModerationCheck;
 use Hilos\Runtime\State\Item\RtState;
@@ -28,6 +29,7 @@ final class HilosModerationChecks extends RtCollection
     /**
      * @return StateHilosModerationChecks Backing state collection
      * @throws RtActionsStateCollectionNullException When the runtime collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosModerationChecks
     {
@@ -40,6 +42,7 @@ final class HilosModerationChecks extends RtCollection
      * @param string $kind Moderation kind key
      * @return ?HilosModerationCheck The check, or null when the connection waits on none of that kind
      * @throws RtActionsStateCollectionNullException When the runtime collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function find(string $acceptKey, string $kind): ?HilosModerationCheck
     {
@@ -60,6 +63,7 @@ final class HilosModerationChecks extends RtCollection
      * @param mixed $offset Row id `acceptKey|kind`
      * @return ?HilosModerationCheck Check or null
      * @throws RtActionsStateCollectionNullException When the runtime collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosModerationCheck
     {

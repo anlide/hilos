@@ -652,6 +652,7 @@ final class UploadsAgent extends AbstractAgent
                 if ($upload->phase !== UploadPhase::COMPLETE || $upload->uploadHoldId === null || $upload->uploadHoldId === ''
                     || $upload->uploadHoldDeadlineAt === null || $upload->uploadHoldDeadlineAt <= TimeHelper::nowMs()
                     || !$upload->uploadHoldApproved || ($holdId !== null && $upload->uploadHoldId !== $holdId)
+                    || ($request->uploadHoldId !== null && $request->uploadHoldId !== $upload->uploadHoldId)
                 ) {
                     $this->refuseHandOver($request, self::MESSAGE_NOT_APPROVED);
 
@@ -684,6 +685,7 @@ final class UploadsAgent extends AbstractAgent
             visibility: $this->targets[$request->target]->visibility()->value,
             replySignal: $request->replySignal,
             files: $files,
+            uploadHoldId: $request->uploadHoldId,
         ));
     }
 
@@ -696,7 +698,9 @@ final class UploadsAgent extends AbstractAgent
      */
     private function refuseHandOver(UploadPublishSignalData $request, string $error): void
     {
-        $this->sendToAgent($request->replySignal, FilesPublishedSignalData::refused($request->acceptKey, $request->clientUploadIds, $error));
+        $this->sendToAgent($request->replySignal, FilesPublishedSignalData::refused(
+            $request->acceptKey, $request->clientUploadIds, $error, $request->uploadHoldId,
+        ));
     }
 
     /**

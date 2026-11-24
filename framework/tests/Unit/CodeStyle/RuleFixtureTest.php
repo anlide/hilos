@@ -630,6 +630,8 @@ final class RuleFixtureTest extends TestCase
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'RT-STATE-REACH Bad/RtStateReach.php:25 — $this->stateCollection reaches backing RT state '
                     . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
+                'RT-STATE-REACH Bad/RtStateReach.php:26 — getBackingStateCollection() reaches backing RT state '
+                    . 'outside Database/ and Runtime/ (see docs/agents/runtime/rt-state.md)',
                 'COLLECTION-ITEM-NARROWING Bad/Runtime/State/Collection/CollectionItemNarrowingSamples.php:21 — get() '
                     . 'does not name the state AuthAttempt; declare it as a method: get(?string $id): ?AuthAttempt, '
                     . 'offsetGet(mixed $offset): AuthAttempt that throws when the row is missing '

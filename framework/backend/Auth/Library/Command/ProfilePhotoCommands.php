@@ -27,6 +27,9 @@ use Hilos\Moderation\ModerationReason;
 use Hilos\Notification\NotificationDraft;
 use Hilos\Notification\NotificationSeverity;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Runtime\State\Item\HilosModerationCheck as StateHilosModerationCheck;
 use Hilos\Runtime\View\Item\HilosModerationCheck;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
@@ -85,6 +88,7 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
 
             return;
         }
+        $this->requireModerationReady();
         if (Hilos::$rt->hilosModerationChecks->find($acceptKey, ModerationKindKey::PROFILE_PHOTO) !== null) {
             throw new ValidationException(ProfilePhotoRefusal::STILL_CHECKING);
         }
@@ -249,7 +253,7 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
      * The row is the agent's, and a person with no photo is answered once the agent says so.
      *
      * @param string $acceptKey Connection that submitted
-     * @throws ValidationException When photos are not enabled, or the person was erased or merged
+     * @throws ValidationException When admission, account standing or moderation readiness refuses the removal
      * @throws ItemNotFoundForUpdateException When the acting connection has no session or is anonymous
      * @throws HilosException When state or a frame cannot be queued
      * @throws LogicException When no action is being dispatched, or a collection's class constants are not configured
@@ -260,12 +264,13 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
     {
         $this->requireFeature();
         $acting = $this->actingUser($acceptKey);
-        $check = Hilos::hasFeature(HilosFeature::MODERATION)
-            ? Hilos::$rt->hilosModerationChecks->find($acceptKey, ModerationKindKey::PROFILE_PHOTO)
-            : null;
-        if ($check !== null) {
-            $check->actions->forget();
-            $this->tellChecking($acceptKey, false);
+        if (Hilos::hasFeature(HilosFeature::MODERATION)) {
+            $this->requireModerationReady();
+            $check = Hilos::$rt->hilosModerationChecks->find($acceptKey, ModerationKindKey::PROFILE_PHOTO);
+            if ($check !== null) {
+                $check->actions->forget();
+                $this->tellChecking($acceptKey, false);
+            }
         }
 
         $this->library->askPersonAgent(
@@ -322,13 +327,12 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
     public function sweepChecks(): void
     {
         $now = microtime(true);
-        if ($now - $this->lastSweepAt < self::SWEEP_INTERVAL_SECONDS) {
+        if ($now - $this->lastSweepAt < self::SWEEP_INTERVAL_SECONDS || !Hilos::hasFeature(HilosFeature::MODERATION)
+            || !SourceInterestRegistry::isReady(SourceChange::KIND_RT, StateHilosModerationCheck::RT_COLLECTION)
+        ) {
             return;
         }
         $this->lastSweepAt = $now;
-        if (!Hilos::hasFeature(HilosFeature::MODERATION)) {
-            return;
-        }
 
         $nowMs = TimeHelper::nowMs();
         foreach (Hilos::$rt->hilosModerationChecks as $check) {
@@ -340,6 +344,16 @@ final class ProfilePhotoCommands extends AbstractLibraryCommands
             } elseif ($nowMs >= $check->deadlineAt) {
                 $this->finish($check, false, ModerationReason::SERVICE_UNAVAILABLE);
             }
+        }
+    }
+
+    /**
+     * @throws ValidationException When the worker has not received the moderation snapshot
+     */
+    private function requireModerationReady(): void
+    {
+        if (!SourceInterestRegistry::isReady(SourceChange::KIND_RT, StateHilosModerationCheck::RT_COLLECTION)) {
+            throw new ValidationException(ProfilePhotoRefusal::forReason(ModerationReason::SERVICE_UNAVAILABLE));
         }
     }
 

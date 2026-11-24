@@ -32,6 +32,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\DaemonSection\DaemonRestartingAgent;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\HilosException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -487,6 +488,7 @@ final class AgentRestarts
      * @param string $nodeId New host
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onRestartPlaced(string $type, ?string $index, string $nodeId): void
     {
@@ -608,6 +610,7 @@ final class AgentRestarts
      * @param string $agentId Agent reported started by its worker
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onAgentStarted(string $agentId): void
     {
@@ -658,16 +661,8 @@ final class AgentRestarts
     {
         $run = $this->runs[$agentId] ?? null;
         return function () use ($agentId, $run): void {
-            if ($run === null || ($this->runs[$agentId] ?? null) !== $run) {
-                return;
-            }
-            if ($run?->placementMove) {
-                Hilos::$cluster?->placement()?->noteAgentStartFailed($run->type, $run->index, 'its worker was lost');
-                if (isset($this->runs[$agentId])) {
-                    $this->finish($agentId, CommandReplyDTO::error('', sprintf(
-                        'Agent %s did not start again: its worker was lost', $agentId,
-                    )), $run);
-                }
+            // Placement settles a POLICY move after the exact assignment's stop-write barrier.
+            if ($run === null || $run->placementMove || ($this->runs[$agentId] ?? null) !== $run) {
                 return;
             }
             $this->finish($agentId, CommandReplyDTO::error('', sprintf(
@@ -698,6 +693,7 @@ final class AgentRestarts
      * @param string $nodeId Node that left the mesh
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the nearest live caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onNodeLeft(string $nodeId): void
     {

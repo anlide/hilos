@@ -96,6 +96,34 @@ describe('one product admin page', () => {
     expect(resolveAdminProduct({ ...pot, productId: undefined })).toBeNull()
   })
 
+  it('reads the live viewer total from the same card and accepts a missing total', () => {
+    const scopes = new ScopeManager()
+    const route = createSignal<PageRouteMatch>({
+      page: PAGE_ADMIN_PRODUCT,
+      params: { productId: String(pot.productId) },
+      admin: true,
+    })
+    const overview = createAdminProductCardSignals(
+      scopes,
+      route,
+      PAGE_ADMIN_PRODUCT,
+    )
+    const scope = scopes.openPage(PAGE_ADMIN_PRODUCT)
+
+    for (const viewerCount of [3, 0]) {
+      const card = { ...pot, viewerCount }
+      ingest(scope, { data: { [ADMIN_PRODUCT_DATA]: card } })
+      expect(overview.product.get()).toEqual(card)
+    }
+
+    ingest(scope, { data: { [ADMIN_PRODUCT_DATA]: pot } })
+    expect(overview.product.get()).toEqual(pot)
+    for (const viewerCount of [-1, 1.5, '3']) {
+      ingest(scope, { data: { [ADMIN_PRODUCT_DATA]: { ...pot, viewerCount } } })
+      expect(overview.product.get()).toEqual(pot)
+    }
+  })
+
   it('shares the card only when its scope, page and product address match', () => {
     const scopes = new ScopeManager()
     const route = createSignal<PageRouteMatch>({

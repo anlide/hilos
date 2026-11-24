@@ -15,11 +15,13 @@ use Hilos\Runtime\Exception\Collection\RtCollectionDirectSetException;
 use Hilos\Runtime\Exception\Collection\RtCollectionDirectUnsetException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\Exception\Collection\RtCollectionUnserializeException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
 use IteratorAggregate;
 
@@ -192,12 +194,27 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
     }
 
     /**
-     * Get backing state collection.
+     * Get the complete state collection for a read.
      *
      * @return RtStates State collection instance
      * @throws RtActionsStateCollectionNullException When state collection not set
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function getStateCollection(): RtStates
+    {
+        if ($this->_collectionName !== null) {
+            RtContext::assertReadable($this->_collectionName);
+        }
+
+        return $this->getBackingStateCollection();
+    }
+
+    /**
+     * @internal Exact reads check their key separately; action writes use the truth-source write guard.
+     * @return RtStates Backing store of this view
+     * @throws RtActionsStateCollectionNullException When the backing store is not set
+     */
+    final public function getBackingStateCollection(): RtStates
     {
         if ($this->_stateCollection === null) {
             throw new RtActionsStateCollectionNullException(
@@ -216,22 +233,37 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
     abstract protected function createRtItem(RtState $state): RtItem;
 
     /**
+     * @param string $key Exact runtime row key
+     * @return ?RtState Readable state or null when the key is known to be absent
+     * @throws RtActionsStateCollectionNullException When the state collection is unavailable
+     * @throws RtCollectionNotReadableException When the key must wait for the replica
+     */
+    final protected function readStateForKey(string $key): ?RtState
+    {
+        $state = $this->getBackingStateCollection()->get($key);
+        if ($this->_collectionName !== null) {
+            RtContext::assertReadable($this->_collectionName, $key, $state);
+        }
+
+        return $state;
+    }
+
+    /**
      * Get RtItem for state key (cached or created).
      *
      * @param string $key State ID
      * @return ?TItem RtItem instance or null if state not found
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the key must wait for the replica
      */
     protected function getRtItemForKey(string $key): ?RtItem
     {
-        if (isset($this->items[$key])) {
-            return $this->items[$key];
-        }
-
-        $stateCollection = $this->getStateCollection();
-        $state = $stateCollection[$key] ?? null;
+        $state = $this->readStateForKey($key);
         if ($state === null) {
             return null;
+        }
+        if (isset($this->items[$key])) {
+            return $this->items[$key];
         }
 
         $item = $this->createRtItem($state);
@@ -247,6 +279,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param bool $idAsIndex Use state ID as array index
      * @return array<string|int, array<string, mixed>> Items as associative array
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function toArray(bool $idAsIndex = true): array
     {
@@ -273,6 +306,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @return ?TItem First item or null if empty
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function first(): ?RtItem
     {
@@ -289,6 +323,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @return ?TItem Last item or null if empty
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function last(): ?RtItem
     {
@@ -350,6 +385,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @return array<string|int, array<string, mixed>> Collection as array
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function __debugInfo(): array
     {
@@ -362,14 +398,15 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return bool True if exists
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the key must wait for the replica
      */
     public function offsetExists(mixed $offset): bool
     {
         if ($offset === null) {
             return false;
         }
-        $stateCollection = $this->getStateCollection();
-        return isset($stateCollection[$offset]);
+
+        return $this->readStateForKey((string)$offset) !== null;
     }
 
     /**
@@ -378,6 +415,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return ?TItem Item or null if not found
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the key must wait for the replica
      */
     public function offsetGet(mixed $offset): ?RtItem
     {
@@ -420,6 +458,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @return int Item count
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function count(): int
     {
@@ -438,10 +477,16 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @return ?float Microtime the oldest frozen copy here stopped being kept up to date, or
      *     null when all of it is current
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function staleSince(): ?float
     {
-        return $this->_collectionName === null ? null : RtStaleness::staleSince($this->_collectionName);
+        if ($this->_collectionName === null) {
+            return null;
+        }
+        RtContext::assertReadable($this->_collectionName);
+
+        return RtStaleness::staleSince($this->_collectionName);
     }
 
     /**
@@ -454,6 +499,7 @@ abstract class RtCollection implements ArrayAccess, Countable, IteratorAggregate
      *
      * @return Generator<string, TItem> State ID => RtItem
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the whole collection is not ready
      */
     public function getIterator(): Generator
     {

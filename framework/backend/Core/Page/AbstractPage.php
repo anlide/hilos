@@ -681,7 +681,7 @@ abstract class AbstractPage implements ActionHostInterface
      * Stops serving one connection.
      *
      * The connection left the page, closed its socket, or the server answered it with something
-     * other than the page - a refusal or a failure. Everything the page opened for that connection
+     * other than the page. Everything the page opened for that connection
      * outside the page answer (its subscriber set, a viewer count, a channel at another agent) is
      * released here. A call for a connection the page was not serving must be a no-op.
      *
@@ -690,6 +690,20 @@ abstract class AbstractPage implements ActionHostInterface
      */
     public function onUnsubscribe(string $acceptKey): void
     {
+    }
+
+    /**
+     * Releases live bookkeeping when a temporary delivery failure leaves this subscription owed whole.
+     *
+     * Pages that keep recovery descriptors can release only their live work here. The full
+     * unsubscribe still runs when the subscription leaves or receives a domain refusal.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @throws HilosException Whatever the concrete page's cleanup raises
+     */
+    public function onDeliveryFailure(string $acceptKey): void
+    {
+        $this->onUnsubscribe($acceptKey);
     }
 
     /**

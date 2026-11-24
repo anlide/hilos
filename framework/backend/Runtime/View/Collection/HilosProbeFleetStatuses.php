@@ -11,6 +11,7 @@ use Hilos\Runtime\View\Item\HilosProbeFleetStatus;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\RtState;
 
@@ -24,6 +25,7 @@ final class HilosProbeFleetStatuses extends RtCollection
 {
     /**
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosProbeFleetStatuses
     {
@@ -45,6 +47,7 @@ final class HilosProbeFleetStatuses extends RtCollection
      * @param mixed $offset Fleet member index
      * @return ?HilosProbeFleetStatus Item or null
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosProbeFleetStatus
     {

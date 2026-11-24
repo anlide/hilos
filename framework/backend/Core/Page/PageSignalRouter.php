@@ -234,8 +234,8 @@ class PageSignalRouter
      * subscription error the same verdict would have produced at subscribe - one path, one
      * shape on the wire, and nothing new for the client to receive.
      *
-     * An answer that is not the page releases what the page holds for the connection
-     * ({@see AbstractPage::onUnsubscribe()}); the subscription registration stays.
+     * A refused verdict releases what the page holds for the connection. A temporary
+     * delivery failure leaves the current subscription's recovery state in place.
      *
      * The connection keeps its subscription. An existing owner reuses its mirror and a
      * new owner can answer before the worker registers its mirror. Both omit a page visit.
@@ -326,6 +326,20 @@ class PageSignalRouter
         }
 
         return $outcome;
+    }
+
+    /**
+     * Releases the page's live bookkeeping while its last resource identifies what can recover it.
+     *
+     * @param string $page Page whose publication failed
+     * @param string $acceptKey Connection that was shown the error
+     */
+    public function releaseFailedPageDelivery(string $page, string $acceptKey): void
+    {
+        $pageInstance = $this->resolvePage($page, false);
+        if ($pageInstance !== null) {
+            $this->releaseUnservedConnection($pageInstance, $acceptKey, keepRecovery: true);
+        }
     }
 
     /**
@@ -426,17 +440,21 @@ class PageSignalRouter
             return PageResendOutcome::Unserved;
         }
 
-        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
         if ($subscription === null || $subscription->page !== $page) {
             return PageResendOutcome::Unserved;
         }
 
         $pageInstance = $this->resolvePage($page, false);
-        if ($pageInstance === null) {
+        if ($pageInstance === null || !$router->isPageAnswerCurrent($acceptKey)) {
             return PageResendOutcome::Unserved;
         }
 
         $this->releaseUnservedConnection($pageInstance, $acceptKey);
+        if (!$router->isPageAnswerCurrent($acceptKey)) {
+            return PageResendOutcome::Unserved;
+        }
         $this->sendPageMoved(
             $pageInstance->getAgent()->getAgentSignalSource(),
             $page,
@@ -486,8 +504,9 @@ class PageSignalRouter
      * Once its complete answer pays the debt, an after-response domain failure preserves that
      * answer and its resource binding.
      *
-     * An answer that is not the page releases what the page holds for the connection
-     * ({@see AbstractPage::onUnsubscribe()}); the subscription registration stays.
+     * A temporary 500 during a rebuild of the current subscription releases live
+     * bookkeeping and keeps the resource and window descriptors for recovery. Other
+     * refusals release the page in full, with the subscription registration still held.
      *
      * A page that lives at another address ({@see PageMovedException}) is answered with a
      * page_moved frame under the same switches as a refusal, and it sets no debt. A move to
@@ -541,6 +560,9 @@ class PageSignalRouter
                 return PageResendOutcome::Refused;
             }
 
+            $current = $recordVisit ? null : Hilos::$sr?->pageSubscription($data->acceptKey);
+            $keepRecovery = $current?->page === $page
+                && ($current->params === $data->params || $current->stringParams() === $data->params);
             try {
                 // The whole verdict is reached BEFORE onSubscribe — the declared access
                 // level, then the freeze, the route params and the page's browser guards.
@@ -568,37 +590,30 @@ class PageSignalRouter
                 }
 
                 return PageResendOutcome::Answered;
-            } catch (PageInternalErrorException $e) {
-                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
-                    return PageResendOutcome::Unserved;
-                }
-                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
-                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
-                    return PageResendOutcome::Unserved;
-                }
-                if (!$reportFailure) {
-                    return PageResendOutcome::Failed;
-                }
-                // Ahead of its own base class, because it is not the same event. Every other species
-                // below is a verdict about the resource or the rights, reached on purpose and worth
-                // an info line and public status wording to the subscriber. This one says the node is
-                // wrong about itself: error, because nobody comes to fix an info line, and the
-                // internal-error sentence, because the text names the inside of the node and the
-                // subscriber can act on none of it. The frame it sends is the internal-error frame either way — the species
-                // already carries 500 and `internal_error`.
-                Logger::error("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
-                $this->sendSubscriptionError(
-                    $pageInstance->getAgent()->getAgentSignalSource(),
-                    $page,
-                    $data->acceptKey,
-                    $e->httpCode,
-                    $e->errorCode,
-                );
-
-                return PageResendOutcome::Failed;
             } catch (PageSubscriptionException $e) {
                 if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
                     return PageResendOutcome::Unserved;
+                }
+                if ($e->httpCode === HttpConstants::HTTP_INTERNAL_ERROR) {
+                    $this->releaseUnservedConnection($pageInstance, $data->acceptKey, $keepRecovery);
+                    if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                        return PageResendOutcome::Unserved;
+                    }
+                    if (!$reportFailure) {
+                        return PageResendOutcome::Failed;
+                    }
+                    Logger::error(
+                        "Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}",
+                    );
+                    $this->sendSubscriptionError(
+                        $pageInstance->getAgent()->getAgentSignalSource(),
+                        $page,
+                        $data->acceptKey,
+                        $e->httpCode,
+                        $e->errorCode,
+                    );
+
+                    return PageResendOutcome::Failed;
                 }
                 if ($e instanceof PageMovedException && !$this->movesElsewhere($page, $data->params, $e)) {
                     // A move that names no address or the very address it was judged at is a
@@ -682,7 +697,7 @@ class PageSignalRouter
                 if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
                     return PageResendOutcome::Unserved;
                 }
-                $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                $this->releaseUnservedConnection($pageInstance, $data->acceptKey, $keepRecovery);
                 if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
                     return PageResendOutcome::Unserved;
                 }
@@ -2842,30 +2857,35 @@ class PageSignalRouter
     }
 
     /**
-     * Releases what a page holds for a connection answered with something other than the page.
+     * Releases the page's live work before an error or move reaches the connection.
      *
-     * Called before the refusal frame, so a channel's stop is queued before the browser hears
-     * the refusal. The DB row the last answer bound is dropped too, including on a silent
-     * failed probe; the subscription registration stays, so a refused subscription can still
-     * be promoted. A failure of the page's own release is logged and swallowed: the browser's
-     * refusal matters more than that cleanup, and an exception here would take the worker
-     * down with every connection it serves.
+     * A temporary failure can keep the last resource for address moves and recovery facts.
+     * A terminal refusal or move drops it. Either cleanup can fail without suppressing the frame.
      *
      * @param AbstractPage $page Page that was judged
      * @param string $acceptKey Connection the answer is addressed to
+     * @param bool $keepRecovery Whether a temporary failure keeps the current subscription's recovery state
      */
-    private function releaseUnservedConnection(AbstractPage $page, string $acceptKey): void
+    private function releaseUnservedConnection(AbstractPage $page, string $acceptKey, bool $keepRecovery = false): void
     {
         $router = Hilos::$sr;
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return;
+        }
+
         try {
-            $page->onUnsubscribe($acceptKey);
+            if ($keepRecovery) {
+                $page->onDeliveryFailure($acceptKey);
+            } else {
+                $page->onUnsubscribe($acceptKey);
+            }
         } catch (Throwable $e) {
             Logger::error(
                 "Page release after a refusal failed: page={$page->getPageName()}, acceptKey={$acceptKey}, {$e->getMessage()}",
             );
         }
 
-        if ($router?->isPageAnswerCurrent($acceptKey) !== false) {
+        if (!$keepRecovery && $router?->isPageAnswerCurrent($acceptKey) !== false) {
             $router?->clearPageResource($acceptKey);
         }
     }

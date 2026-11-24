@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
@@ -13,6 +15,14 @@ use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
+use Hilos\Runtime\State\Collection\HilosProbeFleetStatuses as StateHilosProbeFleetStatuses;
+use Hilos\Runtime\State\Item\HilosProbeFleetStatus as StateHilosProbeFleetStatus;
+use Hilos\Runtime\View\Actions\Collection\HilosProbeFleetStatusesActions;
+use Hilos\Runtime\View\Actions\Item\HilosProbeFleetStatusActions;
+use Hilos\Runtime\View\Collection\HilosProbeFleetStatuses;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\HilosProbeFleetStatus;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -66,10 +76,96 @@ final class DeclaredRowOwnershipTest extends TestCase
             $agent->getId(),
             TruthSourceOperation::Update,
         ));
-        $this->assertTrue(SourceInterestRegistry::isReady(
+        $this->assertTrue(RtTruthSourceRegistry::canReadLocalClaim(
+            DeclaredRowOwnershipTestRtAgent::COLLECTION,
+            $agent->getId(),
+        ));
+        $this->assertFalse(SourceInterestRegistry::isReady(
             SourceChange::KIND_RT,
             DeclaredRowOwnershipTestRtAgent::COLLECTION,
         ));
+    }
+
+    /** An open handle may answer only the held row until the replica has been published. */
+    public function testReadsBeforeTheSnapshotAreLimitedToTheClaimedRow(): void
+    {
+        $agent = new DeclaredRowOwnershipTestRtAgent('7');
+        $collection = DeclaredRowOwnershipTestRtAgent::COLLECTION;
+        $states = StateHilosProbeFleetStatuses::init();
+        $states->add(StateHilosProbeFleetStatus::create('8'));
+        $rt = new class ($states) extends RtContext {
+            /** @param StateHilosProbeFleetStatuses $states Rows this worker holds */
+            public function __construct(private readonly StateHilosProbeFleetStatuses $states)
+            {
+            }
+
+            public function configure(): void
+            {
+                $collection = DeclaredRowOwnershipTestRtAgent::COLLECTION;
+                $this->_stateCollections[$collection] = $this->states;
+                $this->setRepresent(
+                    $collection,
+                    HilosProbeFleetStatuses::class,
+                    HilosProbeFleetStatusesActions::class,
+                    HilosProbeFleetStatusActions::class,
+                );
+                $this->_stateItems['neighbor'] = fn () => $this->states->get('8');
+                $this->setRepresentItem('neighbor', HilosProbeFleetStatus::class);
+            }
+        };
+        $rt->configure();
+        $before = $rt->$collection;
+        self::assertNotNull($before['8']);
+        SourceInterestRegistry::readsWhatIsDelivered();
+        OwnershipDeclaration::claimRtRows($agent);
+
+        ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($rt, $states, $collection, $before): void {
+            $rows = $rt->$collection;
+            self::assertSame($before, $rows);
+            self::assertFalse(isset($rows['7']));
+            self::assertNull($rows['7']);
+            $rows->actions->report('7', 1, 2);
+            self::assertTrue(isset($rows['7']));
+            self::assertSame(1, $rows['7']?->jobsDone);
+            $rows['7']->actions->report(2, 3);
+            self::assertSame(2, $rows['7']?->jobsDone);
+
+            foreach ([
+                'cached neighbor' => static fn () => $rows['8'],
+                'local neighbor existence' => static fn () => isset($rows['8']),
+                'undelivered row' => static fn () => $rows['9'],
+                'undelivered row existence' => static fn () => isset($rows['9']),
+                'item alias' => static fn () => $rt->neighbor,
+                'item alias existence' => static fn () => isset($rt->neighbor),
+                'retained handle outside the owner frame' => static fn () => ExecutionContext::run(
+                    new ExecutionFrame(),
+                    static fn () => $rows['7'],
+                ),
+                'first row' => static fn () => $rows->first(),
+                'last row' => static fn () => $rows->last(),
+                'count' => static fn () => count($rows),
+                'iteration' => static fn () => iterator_to_array($rows),
+                'array conversion' => static fn () => $rows->toArray(),
+                'action state accessor' => static fn () => $rows->actions->stateCollection,
+                'collection freshness' => static fn () => $rows->staleSince(),
+            ] as $read => $operation) {
+                try {
+                    $operation();
+                    self::fail("Read succeeded before the snapshot: {$read}");
+                } catch (RtCollectionNotReadableException $failure) {
+                    self::assertStringContainsString('its state has not arrived yet', $failure->getMessage());
+                }
+            }
+
+            $states->add(StateHilosProbeFleetStatus::create('9'));
+            SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+            self::assertTrue(isset($rows['8'], $rows['9'], $rt->neighbor));
+            self::assertSame('8', $rt->neighbor->workerIndex);
+            self::assertSame(2, $rows['7']?->jobsDone);
+            self::assertSame('8', $rows['8']?->workerIndex);
+            self::assertSame('9', $rows['9']?->workerIndex);
+            self::assertCount(3, $rows);
+        });
     }
 
     /**
@@ -171,7 +267,7 @@ final class DeclaredRowOwnershipTestRtAgent extends AbstractAgent
     public const string AGENT_TYPE = 'unit_declared_row_ownership_rt';
     public const string COLLECTION = 'unit_declared_row_ownership_rt_rows';
 
-    public const array OWNS_RT_ROWS = [self::COLLECTION => [TruthSourceOperation::Update]];
+    public const array OWNS_RT_ROWS = [self::COLLECTION => [TruthSourceOperation::Add, TruthSourceOperation::Update]];
 
     /**
      * @param string $agentIndex Row this instance holds

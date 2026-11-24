@@ -17,6 +17,7 @@ import {
   clickSubmit,
   deliveryObject,
   drawPhotoFixture,
+  emulateSystemTheme,
   expectDocumentUnchanged,
   expectPageReady,
   gotoPage,
@@ -484,5 +485,90 @@ test('a guest sees live price and stock changes on a product and a server refusa
     await expect(error).toHaveAttribute('data-error-code', '404')
     await expect(error.getByText(title, { exact: true })).toBeVisible()
     await expect(error.getByText(message, { exact: true })).toBeVisible()
+  })
+})
+
+test('shop.product-viewers: Overview and shop tabs see viewers join and leave live', async ({
+  browser,
+  page,
+  cleanup,
+}) => {
+  const productName = 'Morning meadow'
+  const shopPath = '/product/morning-meadow'
+  const nobodyElse = 'Nobody else is looking at it now'
+  const oneOther = '1 other is looking at it now'
+  const nobody = 'Nobody is looking at it now'
+  const onePerson = '1 person is looking at it now'
+  const viewers = (tab: Page) =>
+    tab.getByTestId('product-viewer-count').filter({ visible: true })
+
+  await emulateSystemTheme(page, 'light')
+  await grantAdminToSelf(expect, page)
+  await test.step('open Overview before anyone views the product', async () => {
+    await gotoPage(expect, page, '/hilos/app/product/1', PAGE_READY)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      productName,
+    )
+    await expect(viewers(page)).toHaveText(nobody)
+    await markDocument(page)
+  })
+
+  const guestContext = await browser.newContext({ colorScheme: 'light' })
+  cleanup.defer(() => guestContext.close())
+  const guest = await guestContext.newPage()
+  await test.step('count the first guest in the open Overview', async () => {
+    await gotoPage(expect, guest, shopPath, PAGE_READY)
+    await expect(guest.getByRole('heading', { level: 1 })).toHaveText(
+      productName,
+    )
+    await expect(viewers(guest)).toHaveText(nobodyElse)
+    await markDocument(guest)
+    await expect(viewers(page)).toHaveText(onePerson)
+    await expectDocumentUnchanged(expect, page)
+  })
+
+  const guestSecondTab = await guestContext.newPage()
+  await test.step('count two tabs in the guest session as one viewer', async () => {
+    await gotoPage(expect, guestSecondTab, shopPath, PAGE_READY)
+    await expect(guestSecondTab.getByRole('heading', { level: 1 })).toHaveText(
+      productName,
+    )
+    await expect(viewers(guestSecondTab)).toHaveText(nobodyElse)
+    await markDocument(guestSecondTab)
+    await expect(viewers(guest)).toHaveText(nobodyElse)
+    await expect(viewers(page)).toHaveText(onePerson)
+  })
+
+  const adminShop = await page.context().newPage()
+  await test.step('join as a second viewer and update the open tabs', async () => {
+    await emulateSystemTheme(adminShop, 'light')
+    await gotoPage(expect, adminShop, shopPath, PAGE_READY)
+    await expect(adminShop.getByRole('heading', { level: 1 })).toHaveText(
+      productName,
+    )
+    await expect(viewers(adminShop)).toHaveText(oneOther)
+    await markDocument(adminShop)
+
+    await expect(viewers(guest)).toHaveText(oneOther)
+    await expect(viewers(guestSecondTab)).toHaveText(oneOther)
+    await expect(viewers(page)).toHaveText('2 people are looking at it now')
+    await expectDocumentUnchanged(expect, guest)
+    await expectDocumentUnchanged(expect, guestSecondTab)
+    await expectDocumentUnchanged(expect, page)
+  })
+
+  await test.step('close both guest tabs and see the remaining viewer', async () => {
+    await guest.close()
+    await guestSecondTab.close()
+    await expect(viewers(page)).toHaveText(onePerson)
+    await expect(viewers(adminShop)).toHaveText(nobodyElse)
+    await expectDocumentUnchanged(expect, page)
+    await expectDocumentUnchanged(expect, adminShop)
+  })
+
+  await test.step('close the last shop tab and see zero viewers in Overview', async () => {
+    await adminShop.close()
+    await expect(viewers(page)).toHaveText(nobody)
+    await expectDocumentUnchanged(expect, page)
   })
 })

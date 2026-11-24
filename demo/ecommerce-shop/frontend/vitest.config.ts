@@ -9,6 +9,6 @@ export default defineConfig({
   test: {
     name: 'ecommerce-shop',
     environment: 'node',
-    include: ['test/**/*.test.ts'],
+    include: ['test/**/*.test.{ts,tsx}'],
   },
 })

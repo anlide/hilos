@@ -30,18 +30,21 @@ final class FilesPublishedSignalData extends BaseDTO implements SignalDataInterf
     public const string clientUploadIds = 'clientUploadIds';
     public const string fileIds = 'fileIds';
     public const string error = 'error';
+    public const string uploadHoldId = UploadPublishSignalData::uploadHoldId;
 
     /**
      * @param string $acceptKey Accept key of the connection the uploads came from
      * @param list<string> $clientUploadIds Ids the client gave the uploads, as the request named them
      * @param list<int> $fileIds Registry ids in the order of the upload ids; empty when refused
      * @param ?string $error Sentence for the person, or null when the files are published
+     * @param ?string $uploadHoldId Accepted hold from the publication request, if supplied
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly array $clientUploadIds,
         public readonly array $fileIds,
         public readonly ?string $error,
+        public readonly ?string $uploadHoldId = null,
     ) {
     }
 
@@ -54,7 +57,7 @@ final class FilesPublishedSignalData extends BaseDTO implements SignalDataInterf
      */
     public static function published(FilePublishSignalData $request, array $fileIds): self
     {
-        return new self($request->acceptKey, $request->clientUploadIds, $fileIds, null);
+        return new self($request->acceptKey, $request->clientUploadIds, $fileIds, null, $request->uploadHoldId);
     }
 
     /**
@@ -63,11 +66,12 @@ final class FilesPublishedSignalData extends BaseDTO implements SignalDataInterf
      * @param string $acceptKey Accept key of the connection the uploads came from
      * @param list<string> $clientUploadIds Ids the client gave the uploads, as the request named them
      * @param string $error Sentence for the person
+     * @param ?string $uploadHoldId Accepted hold from the publication request, if supplied
      * @return self Refused answer
      */
-    public static function refused(string $acceptKey, array $clientUploadIds, string $error): self
+    public static function refused(string $acceptKey, array $clientUploadIds, string $error, ?string $uploadHoldId = null): self
     {
-        return new self($acceptKey, $clientUploadIds, [], $error);
+        return new self($acceptKey, $clientUploadIds, [], $error, $uploadHoldId);
     }
 
     /**
@@ -79,7 +83,8 @@ final class FilesPublishedSignalData extends BaseDTO implements SignalDataInterf
     }
 
     /**
-     * @return array{acceptKey: string, clientUploadIds: list<string>, fileIds: list<int>, error: ?string} DTO payload for transport
+     * @return array{acceptKey: string, clientUploadIds: list<string>, fileIds: list<int>, error: ?string,
+     *     uploadHoldId?: string} DTO payload for transport
      */
     public function toArray(): array
     {
@@ -88,7 +93,7 @@ final class FilesPublishedSignalData extends BaseDTO implements SignalDataInterf
             self::clientUploadIds => $this->clientUploadIds,
             self::fileIds => $this->fileIds,
             self::error => $this->error,
-        ];
+        ] + ($this->uploadHoldId === null ? [] : [self::uploadHoldId => $this->uploadHoldId]);
     }
 
     /**
@@ -123,6 +128,7 @@ final class FilesPublishedSignalData extends BaseDTO implements SignalDataInterf
             clientUploadIds: $clientUploadIds,
             fileIds: $fileIds,
             error: $error,
+            uploadHoldId: self::optionalString($data, self::uploadHoldId),
         );
     }
 }

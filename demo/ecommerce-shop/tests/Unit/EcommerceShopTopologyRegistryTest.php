@@ -208,6 +208,7 @@ use Hilos\Core\CLI\Commands\CommandExecutionSite;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
+use Demo\EcommerceShop\Runtime\View\Collection\ProductViewerCounts;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
@@ -1132,8 +1133,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         );
     }
 
-    /** The agent of a product page address reads its catalog sources and owns nothing. */
-    public function testProductAgentHasTheIndexedPolicyRegistryEntryAndOwnsNothing(): void
+    /** The agent of a product address reads the catalog and connections and owns that address's viewer count. */
+    public function testProductAgentHasTheIndexedPolicyRegistryEntryAndOwnsItsViewerCount(): void
     {
         $entry = Hilos::AGENTS[AgentType::PRODUCT];
 
@@ -1156,7 +1157,19 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame([], ProductAgent::OWNS_DB_ROWS);
         $this->assertSame([], ProductAgent::OWNS_DB_SET);
         $this->assertSame([], ProductAgent::OWNS_RT);
-        $this->assertSame([], ProductAgent::OWNS_RT_ROWS);
+        $this->assertSame([EcommerceShopRtContext::connections], ProductAgent::READS_RT);
+        $this->assertSame([EcommerceShopRtContext::productViewerCounts => TruthSourceOperation::BY_KIND], ProductAgent::OWNS_RT_ROWS);
+        $agent = new ProductAgent('morning-meadow');
+        $this->assertSame(['morning-meadow'], $agent->ownedRtRowKeys(EcommerceShopRtContext::productViewerCounts));
+        $this->assertSame([], $agent->ownedRtRowKeys(EcommerceShopRtContext::connections));
+    }
+
+    public function testProductViewerCountsIsMountedUnderItsRuntimeKey(): void
+    {
+        $context = new EcommerceShopRtContext();
+        $context->configure();
+
+        self::assertInstanceOf(ProductViewerCounts::class, $context->getRtCollection(EcommerceShopRtContext::productViewerCounts));
     }
 
     public function testAgentRegistryEntriesAreConcreteAndConsistent(): void
@@ -1792,6 +1805,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         ] as $source) {
             self::assertContains($source, $sources);
         }
+        self::assertSame([EcommerceShopRtContext::productViewerCounts], $browser->rtSourceKeysOfPage(AdminProductPage::PAGE));
     }
 
     /** The products library serves the Stock tab with the product card and the warehouse stock window. */
@@ -1832,6 +1846,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             EcommerceShopDbContext::warehouses,
             EcommerceShopDbContext::productWarehouseStocks,
         ], $browser->dbSourceKeysOfPage(AdminProductStockPage::PAGE));
+        self::assertSame([EcommerceShopRtContext::productViewerCounts], $browser->rtSourceKeysOfPage(AdminProductStockPage::PAGE));
     }
 
     /** The stock table of one product is registered under its key, for the page that binds it. */

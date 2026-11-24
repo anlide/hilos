@@ -155,6 +155,7 @@ class HilosFiles
      * @param string $target Upload target the uploads must have been declared for
      * @param list<string> $clientUploadIds Ids the client gave the uploads
      * @param string $replySignal Name of the agent signal the answer comes under
+     * @param ?string $uploadHoldId Accepted hold to hand over and echo in the answer, if supplied
      * @throws FeatureNotDeclaredException When the project did not declare HilosFeature::FILES or HilosFeature::UPLOADS
      * @throws InvalidFormatException When the request is malformed - no id, an id twice, an id the wire does not allow,
      *     an empty target or reply name
@@ -165,6 +166,7 @@ class HilosFiles
         string $target,
         array $clientUploadIds,
         string $replySignal,
+        ?string $uploadHoldId = null,
     ): void {
         if (!Hilos::hasFeature(HilosFeature::FILES)) {
             throw FeatureNotDeclaredException::forFeature(HilosFeature::FILES);
@@ -178,6 +180,7 @@ class HilosFiles
             UploadPublishSignalData::target => $target,
             UploadPublishSignalData::clientUploadIds => $clientUploadIds,
             UploadPublishSignalData::replySignal => $replySignal,
+            UploadPublishSignalData::uploadHoldId => $uploadHoldId,
         ]);
 
         Hilos::$sr?->queueSignal(

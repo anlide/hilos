@@ -11,6 +11,7 @@ use Hilos\Runtime\View\Item\HilosStatusComponent;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\RtState;
 
@@ -25,6 +26,7 @@ final class HilosStatusComponents extends RtCollection
     /**
      * @return StateHilosStatusComponents Backing component counts
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosStatusComponents
     {
@@ -36,6 +38,7 @@ final class HilosStatusComponents extends RtCollection
      * @param mixed $offset Component key
      * @return ?HilosStatusComponent Item or null
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosStatusComponent
     {

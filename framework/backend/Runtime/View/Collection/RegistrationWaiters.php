@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\RegistrationWaiters as StateRegistrationWaiters;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\State\Item\RtState;
@@ -36,6 +37,7 @@ final class RegistrationWaiters extends RtCollection
      * @param string $identifier Normalized identifier (lowercased email)
      * @return list<RegistrationWaiter> Waiting sessions (empty when nobody waits)
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function forIdentifier(string $identifier): array
     {
@@ -53,6 +55,7 @@ final class RegistrationWaiters extends RtCollection
     /**
      * @return StateRegistrationWaiters Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateRegistrationWaiters
     {
@@ -74,6 +77,7 @@ final class RegistrationWaiters extends RtCollection
      * @param mixed $offset Waiting connection accept key
      * @return ?RegistrationWaiter Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?RegistrationWaiter
     {

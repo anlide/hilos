@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\RtState;
@@ -35,6 +36,7 @@ final class HilosProfileFlows extends RtCollection
      * @param string $sessionTokenHash Hash of the session cookie token
      * @return list<HilosProfileFlow> Flows of the session (empty when it has none)
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function forSessionTokenHash(string $sessionTokenHash): array
     {
@@ -56,6 +58,7 @@ final class HilosProfileFlows extends RtCollection
     /**
      * @return StateHilosProfileFlows Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosProfileFlows
     {
@@ -77,6 +80,7 @@ final class HilosProfileFlows extends RtCollection
      * @param mixed $offset Row id ({@see StateHilosProfileFlow::idFor()})
      * @return ?HilosProfileFlow Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosProfileFlow
     {

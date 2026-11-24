@@ -23,6 +23,7 @@ final class RtStateReach
             $context->getStateItem('userStates', 'u-1'),
             RtContext::getStateItem('userStates', 'u-2'),
             $this->stateCollection['u-1'],
+            $context->getBackingStateCollection(),
         ];
     }
 }

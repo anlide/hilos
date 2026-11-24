@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\RecoveryWaiters as StateRecoveryWaiters;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RtState;
@@ -37,6 +38,7 @@ final class RecoveryWaiters extends RtCollection
      * @param string $identifier Normalized identifier (lowercased email)
      * @return list<RecoveryWaiter> Waiting sessions (empty when nobody waits)
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function forIdentifier(string $identifier): array
     {
@@ -62,6 +64,7 @@ final class RecoveryWaiters extends RtCollection
      * @param string $sessionToken Session token whose parked connections are wanted
      * @return list<RecoveryWaiter> Parked connections of the session (empty when it parked none)
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function forSessionToken(string $sessionToken): array
     {
@@ -79,6 +82,7 @@ final class RecoveryWaiters extends RtCollection
     /**
      * @return StateRecoveryWaiters Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateRecoveryWaiters
     {
@@ -100,6 +104,7 @@ final class RecoveryWaiters extends RtCollection
      * @param mixed $offset Waiting connection accept key
      * @return ?RecoveryWaiter Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?RecoveryWaiter
     {

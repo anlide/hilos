@@ -6,6 +6,7 @@ namespace Hilos\Cluster;
 
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Core\Exception\InvalidFormatException;
 
 use Hilos\Core\Daemon\DaemonManager;
@@ -35,6 +36,7 @@ interface MembershipObserver
      * @throws InvalidFormatException When a pending page recovery address is malformed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function onNodeLeft(ClusterNode $node): void;
 }

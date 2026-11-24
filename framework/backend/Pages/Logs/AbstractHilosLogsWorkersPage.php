@@ -27,6 +27,7 @@ use Hilos\Log\ClusterLogIndexMirror;
 use Hilos\Log\LogWorkerSummary;
 use Hilos\Pages\Logs\DTO\HilosLogsWorkersSignalData;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogWorkersTable;
 use JsonException;
@@ -177,6 +178,7 @@ abstract class AbstractHilosLogsWorkersPage extends AbstractHilosPage
      * @throws InvalidArgumentException When the header signal cannot be named
      * @throws EnvException When the cluster mode flag cannot be read
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {

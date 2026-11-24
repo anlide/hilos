@@ -229,14 +229,17 @@ final class ProfileNameCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Reclaims orphan checks; an unreachable source is unknown, not absent.
+     * Reclaims orphaned or expired moderation checks.
      *
      * @throws HilosException When state or a frame fails
      */
     public function sweepChecks(): void
     {
+        if (!Hilos::hasFeature(HilosFeature::MODERATION)) {
+            return;
+        }
         $now = microtime(true);
-        if ($now - $this->lastSweepAt < self::SWEEP_INTERVAL_SECONDS || !Hilos::hasFeature(HilosFeature::MODERATION)) {
+        if ($now - $this->lastSweepAt < self::SWEEP_INTERVAL_SECONDS) {
             return;
         }
         $this->lastSweepAt = $now;

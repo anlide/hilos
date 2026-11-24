@@ -40,6 +40,8 @@ const PRODUCT_PICTURE_FILE_ID_FIELD = 'pictureFileId'
 const PRODUCT_EDIT_VERSION_FIELD = 'editVersion'
 /** Card payload key of the stock total record. */
 const PRODUCT_STOCK_FIELD = 'stock'
+/** Card payload key of the total number of storefront viewers. */
+const PRODUCT_VIEWER_COUNT_FIELD = 'viewerCount'
 /** Stock payload key of the units in all warehouses. */
 const STOCK_UNITS_FIELD = 'units'
 /** Stock payload key of the warehouses holding a unit. */
@@ -72,6 +74,7 @@ export function resolveAdminProduct(raw: unknown): AdminProduct | null {
   if (card === null || typeof card[PRODUCT_ID_FIELD] !== 'number') return null
   const stock = recordOrNull(card[PRODUCT_STOCK_FIELD])
   if (stock === null) return null
+  const viewerCount = readNumberOrNull(card, PRODUCT_VIEWER_COUNT_FIELD)
 
   return {
     productId: readNumber(card, PRODUCT_ID_FIELD),
@@ -89,6 +92,11 @@ export function resolveAdminProduct(raw: unknown): AdminProduct | null {
       warehouses: readNumber(stock, STOCK_WAREHOUSES_FIELD),
       warehouseId: readNumberOrNull(stock, STOCK_WAREHOUSE_ID_FIELD),
     },
+    ...(viewerCount !== null &&
+    Number.isInteger(viewerCount) &&
+    viewerCount >= 0
+      ? { viewerCount }
+      : {}),
   }
 }
 

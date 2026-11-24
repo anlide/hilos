@@ -17,6 +17,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\HilosUploads as StateHilosUploads;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\State\Item\RtState;
@@ -37,6 +38,7 @@ final class HilosUploads extends RtCollection
     /**
      * @return StateHilosUploads Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosUploads
     {
@@ -49,6 +51,7 @@ final class HilosUploads extends RtCollection
      * @param string $clientUploadId Id the client gave the upload
      * @return ?HilosUpload The upload, or null when the connection has none under that id
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function find(string $acceptKey, string $clientUploadId): ?HilosUpload
     {
@@ -66,6 +69,7 @@ final class HilosUploads extends RtCollection
      * @throws InvalidStateException When an upload is absent, stale, incomplete or has no received file identity
      * @throws InvalidFormatException When a received file identity is malformed
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function snapshotForConnection(string $acceptKey, array $clientUploadIds): UploadSnapshotCollection
     {
@@ -196,6 +200,7 @@ final class HilosUploads extends RtCollection
      * @param mixed $offset Row id `acceptKey|clientUploadId`
      * @return ?HilosUpload Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosUpload
     {

@@ -24,6 +24,7 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
@@ -45,6 +46,7 @@ use Hilos\Moderation\ModerationReason;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionProperty;
 use RuntimeException;
 
 /**
@@ -72,6 +74,8 @@ final class EventAttachmentsTest extends IntegrationTestCase
 
     private int $userId;
 
+    private ?string $lastPublicationHold = null;
+
     /**
      * Gives the case a sender whose message with two files is under moderation.
      *
@@ -87,7 +91,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         $this->userId = (int)Hilos::$db->users->actions->createWithName('Attaching')->id;
-        Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $this->userId);
+        $this->registerModerationConnection(self::ACCEPT_KEY, $this->userId);
         Hilos::$rt->userStates->actions->ensure($this->userId)->actions->recordOutboundSubmission();
         $this->completeUpload(self::ACCEPT_KEY, $this->userId, 'u1', 'first.txt', 'text/plain', 'first bytes');
         $this->completeUpload(self::ACCEPT_KEY, $this->userId, 'u2', 'second.txt', 'text/plain', 'second bytes');
@@ -109,6 +113,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
         Hilos::$db->events->actions->deleteAll();
+        $this->forgetModerationSessions();
         foreach ($this->fileIds as $fileId) {
             if (isset(Hilos::$db->files[$fileId])) {
                 $storedName = Hilos::$db->files[$fileId]->storedName;
@@ -130,6 +135,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
             UploadPublishSignalData::target => ChatAttachmentUploadTarget::NAME,
             UploadPublishSignalData::clientUploadIds => ['u1', 'u2'],
             UploadPublishSignalData::replySignal => ChatSignalConstants::ATTACHMENTS_PUBLISHED,
+            UploadPublishSignalData::uploadHoldId => Hilos::$rt->connections[self::ACCEPT_KEY]->outboundPublicationHoldId,
         ], $publish->toArray());
         self::assertSame(
             ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
@@ -182,6 +188,39 @@ final class EventAttachmentsTest extends IntegrationTestCase
         self::assertSame(0, $this->messagesWritten());
     }
 
+    public function testAnOldRefusalCannotEndANewPublicationThatReusesTheClientIds(): void
+    {
+        $check = Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE);
+        self::assertNotNull($check);
+        self::assertNotNull($check->uploadHoldId);
+        $old = FilesPublishedSignalData::refused(self::ACCEPT_KEY, ['u1', 'u2'], 'This file is gone; upload it again', $check->uploadHoldId);
+        $this->deliverPublished($old);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+
+        foreach (['u1', 'u2'] as $id) {
+            $this->completeUpload(self::ACCEPT_KEY, $this->userId, $id, $id . '.txt', 'text/plain', 'retry bytes');
+        }
+        Hilos::$rt->userStates[$this->userId]->actions->endSendPause();
+        ExecutionContext::setCurrentAcceptKey(self::ACCEPT_KEY);
+        try {
+            new MainPage(new ChatAgent())->onAction(self::ACCEPT_KEY, ChatSignalConstants::MESSAGE,
+                new MessageActionDTO('new draft', ['u1', 'u2']));
+        } finally {
+            ExecutionContext::setCurrentAcceptKey(null);
+        }
+        $check = Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE);
+        self::assertNotNull($check);
+        $this->acknowledgeChatUploads($check);
+        $this->approveMessage();
+        $this->deliverChatSignal(new ChatAgent(), ChatSignalConstants::ATTACHMENTS_PUBLISHED, $old);
+
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame('new draft', Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationMessage);
+        self::assertSame(0, $this->messagesWritten());
+    }
+
     /**
      * Files published for a message nobody waits for are removed at once, not left for a day.
      *
@@ -190,6 +229,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
     public function testAnAnswerNobodyWaitsForRemovesTheFilesItPublished(): void
     {
         $orphan = $this->registryFile('orphan.txt');
+        $this->approveMessage();
         Hilos::$rt->connections[self::ACCEPT_KEY]?->actions->clearOutboundModeration();
 
         $this->deliverPublished(new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1'], [$orphan], null));
@@ -299,11 +339,25 @@ final class EventAttachmentsTest extends IntegrationTestCase
         $check = Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE);
         self::assertNotNull($check);
         $this->deliverChatSignal(new ChatAgent(), ChatSignalConstants::ATTACHMENTS_PUBLISHED,
-            new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1', 'u2'], [$file, $second], null));
+            new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1', 'u2'], [$file, $second], null, $check->uploadHoldId));
         self::assertSame([$file, $second], $this->onlyQueued(HilosSignalConstants::HILOS_FILE_REMOVE)->fileIds);
         self::assertSame($check->requestId,
             Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE)->requestId);
         self::assertSame(0, $this->messagesWritten());
+    }
+
+    public function testAReplyWithoutTheHoldCannotSettleOrRemoveFiles(): void
+    {
+        $first = $this->registryFile('no-hold-1.txt');
+        $second = $this->registryFile('no-hold-2.txt');
+        $this->approveMessage();
+        $before = Hilos::$rt->connections[self::ACCEPT_KEY]->toArray();
+        $this->deliverChatSignal(new ChatAgent(), ChatSignalConstants::ATTACHMENTS_PUBLISHED,
+            new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1', 'u2'], [$first, $second], null));
+
+        self::assertSame($before, Hilos::$rt->connections[self::ACCEPT_KEY]->toArray());
+        self::assertSame(0, $this->messagesWritten());
+        $this->assertNoFileMutationQueued();
     }
 
     public function testReorderedUploadIdsAreAnOrphanAnswer(): void
@@ -386,7 +440,10 @@ final class EventAttachmentsTest extends IntegrationTestCase
         RtStaleness::mark(ChatRtContext::connections, [self::ACCEPT_KEY], microtime(true));
         $before = Hilos::$rt->connections[self::ACCEPT_KEY]->toArray();
         $this->deliverChatSignal(new ChatAgent(), ChatSignalConstants::ATTACHMENTS_PUBLISHED,
-            new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1', 'u2'], [$first, $second], null));
+            new FilesPublishedSignalData(
+                self::ACCEPT_KEY, ['u1', 'u2'], [$first, $second], null,
+                $this->publicationHoldFromRequest(),
+            ));
         self::assertSame($before, Hilos::$rt->connections[self::ACCEPT_KEY]->toArray());
         self::assertSame(0, $this->messagesWritten());
         $this->assertNoFileMutationQueued();
@@ -430,9 +487,16 @@ final class EventAttachmentsTest extends IntegrationTestCase
     {
         Hilos::$db->users->actions->createWithName('Publication reader');
         $this->forgetChatChecks();
+        foreach (['u1', 'u2'] as $uploadId) {
+            Hilos::$rt->hilosUploads->find(self::ACCEPT_KEY, $uploadId)->actions->forgetWithFile();
+            $this->completeUpload(self::ACCEPT_KEY, $this->userId, $uploadId, $uploadId . '.txt', 'text/plain', 'mention ' . $uploadId);
+        }
         $text = 'with files @Publication reader';
         Hilos::$rt->connections[self::ACCEPT_KEY]->actions->startOutboundModeration($text, ['u1', 'u2']);
         new ChatAgent()->startMessageModeration(self::ACCEPT_KEY);
+        $check = Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE);
+        self::assertNotNull($check);
+        $this->acknowledgeChatUploads($check);
         $first = $this->registryFile('mention-1.txt');
         $second = $this->registryFile('mention-2.txt');
         Database::sqlRun('CREATE TRIGGER `' . self::FAILURE_TRIGGER . '` BEFORE INSERT ON `event_attachment` '
@@ -653,12 +717,12 @@ final class EventAttachmentsTest extends IntegrationTestCase
 
     /**
      * @param string $filename Name the sender gave the file
-     * @return int Id of a bound registry row the case removes when it ends
+     * @return int Id of an unbound registry row the case removes when it ends
      * @throws HilosException When the file or the row cannot be written
      */
     private function registryFile(string $filename): int
     {
-        $fileId = (int)$this->keepRegistryFile($this->userId, $filename, 'bytes of ' . $filename)->id;
+        $fileId = (int)$this->keepRegistryFile($this->userId, $filename, 'bytes of ' . $filename, bound: false)->id;
         $this->fileIds[] = $fileId;
 
         return $fileId;
@@ -682,7 +746,28 @@ final class EventAttachmentsTest extends IntegrationTestCase
                 }
             }
         }
-        $this->deliverChatSignal(new ChatAgent(), ChatSignalConstants::ATTACHMENTS_PUBLISHED, $answer);
+        $this->deliverChatSignal(new ChatAgent(), ChatSignalConstants::ATTACHMENTS_PUBLISHED, new FilesPublishedSignalData(
+            $answer->acceptKey,
+            $answer->clientUploadIds,
+            $answer->fileIds,
+            $answer->error,
+            $answer->uploadHoldId ?? $this->publicationHoldFromRequest(),
+        ));
+    }
+
+    private function publicationHoldFromRequest(): string
+    {
+        // Read the fixture's outbound queue without consuming frames that later assertions inspect.
+        $signals = new ReflectionProperty(SignalRouter::class, 'queuedSignals')->getValue(Hilos::$sr);
+        foreach ($signals as $signal) {
+            if ($signal instanceof SignalDTO && $signal->data instanceof AgentSignalData
+                && $signal->data->data instanceof UploadPublishSignalData) {
+                $this->lastPublicationHold = $signal->data->data->uploadHoldId;
+            }
+        }
+
+        self::assertNotNull($this->lastPublicationHold);
+        return $this->lastPublicationHold;
     }
 
     private function approveMessage(): void
@@ -703,6 +788,10 @@ final class EventAttachmentsTest extends IntegrationTestCase
     {
         $found = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal instanceof SignalDTO && $signal->data instanceof AgentSignalData
+                && $signal->data->data instanceof UploadPublishSignalData) {
+                $this->lastPublicationHold = $signal->data->data->uploadHoldId;
+            }
             if ($signal instanceof SignalDTO && $signal->signalName->getName() === $name) {
                 self::assertInstanceOf(AgentSignalData::class, $signal->data);
                 $found[] = $signal->data->data;

@@ -16,16 +16,31 @@ use Hilos\Auth\StepUp\StepUpSettingsCatalog;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Catalog\CatalogProviderInterface;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -40,6 +55,8 @@ use Hilos\HilosException;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\ModerationAgent;
 use Hilos\Runtime\RtRowReader;
 use Hilos\Runtime\RtRowWriter;
 use Hilos\Runtime\Snapshot\RtWork;
@@ -48,6 +65,7 @@ use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
 use Hilos\Runtime\State\Collection\HilosProfileNameChanges as StateHilosProfileNameChanges;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
@@ -62,9 +80,11 @@ use Hilos\Runtime\View\Collection\HilosProfileNameChanges;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 use Hilos\Sms\HilosSmsSender;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AdminAudience;
 use Hilos\Utils\Helpers\TimeHelper;
+use ReflectionProperty;
 
 /**
  * Base of the profile's sign-in-method and email-change cases (HIL-1137).
@@ -282,6 +302,33 @@ abstract class ProfileIntegrationTestCase extends HilosSessionIntegrationTestCas
         }
 
         return $reply;
+    }
+
+    /** @param callable(): void $scenario Worker scenario that controls when the moderation snapshot lands */
+    protected function withColdModeration(callable $scenario): void
+    {
+        $states = new ReflectionProperty(SourceInterestRegistry::class, 'states');
+        $previousStates = $states->getValue();
+        $states->setValue(null, []);
+        $consumer = SourceConsumer::feature('profile-integration');
+        SourceInterestRegistry::readsWhatIsDelivered();
+        try {
+            foreach (Hilos::$rt->collectionKeys() as $key) {
+                SourceInterestRegistry::register(SourceChange::KIND_RT, $key, $consumer);
+                if ($key !== HilosModerationCheck::RT_COLLECTION) {
+                    SourceInterestRegistry::markReady(SourceChange::KIND_RT, $key);
+                }
+            }
+            foreach (Hilos::$db->getObjectCollectionClasses() as $collection) {
+                SourceInterestRegistry::register(SourceChange::KIND_DB, $collection::COLLECTION_KEY, $consumer);
+                SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection::COLLECTION_KEY);
+            }
+            $scenario();
+        } finally {
+            SourceInterestRegistry::readsWhatItMounts();
+            SourceInterestRegistry::releaseConsumer($consumer);
+            $states->setValue(null, $previousStates);
+        }
     }
 
     /**
@@ -664,6 +711,48 @@ final class ProfileIntegrationLibrary extends AbstractUsersLibraryAgent
     protected function buildOAuthService(): ?OAuthService
     {
         return $this->oauthService;
+    }
+}
+
+/** Delivers the moderator's result through the worker hosting the profile library. */
+final class ProfileModerationWorker extends WorkerManager
+{
+    public function __construct(private readonly AbstractUsersLibraryAgent $library)
+    {
+        parent::__construct(1);
+        $this->agentManager->addAgent($library->getId(), $library);
+    }
+
+    public function deliverVerdict(ModerationVerdictSignalData $verdict): void
+    {
+        ExecutionContext::run(new ExecutionFrame(), fn () => $this->handleDaemonMessage(
+            new DaemonAgentMessageDTO($this->library->getId(), new SignalDTO(
+                new SignalSource(SignalSource::AGENT, ModerationAgent::AGENT_TYPE),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(HilosSignalConstants::HILOS_MODERATION_VERDICT),
+                new AgentSignalData($verdict),
+            )),
+        ));
+    }
+
+    protected function createSignalRouter(): SignalRouter
+    {
+        return Hilos::$sr ?? new SignalRouter();
+    }
+
+    protected function createAgentManager(): AgentManager
+    {
+        return new class extends AgentManager {
+            protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
+            {
+                throw new LogicException('The profile library is already registered');
+            }
+        };
+    }
+
+    protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
+    {
+        return new PageSignalRouter(new HilosPageFactory($this->library, Hilos::appClass()), new ActionRouteConfig());
     }
 }
 

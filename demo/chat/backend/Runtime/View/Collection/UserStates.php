@@ -11,6 +11,7 @@ use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\HilosException;
@@ -25,6 +26,7 @@ final class UserStates extends RtCollection
 {
     /**
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateUserStates
     {
@@ -46,6 +48,7 @@ final class UserStates extends RtCollection
      * @param mixed $offset User ID as string or int
      * @return ?ChatUserState Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?ChatUserState
     {
@@ -58,6 +61,7 @@ final class UserStates extends RtCollection
     /**
      * @return ?ChatUserState First item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function first(): ?ChatUserState
     {
@@ -70,6 +74,7 @@ final class UserStates extends RtCollection
     /**
      * @return ?ChatUserState Last item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function last(): ?ChatUserState
     {
@@ -83,6 +88,7 @@ final class UserStates extends RtCollection
      * @param string $key User ID as string
      * @return ?ChatUserState Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function getRtItemForKey(string $key): ?ChatUserState
     {

@@ -314,6 +314,30 @@ final class RtOrdinaryAdmission
     }
 
     /**
+     * Reads a deferred removal without flushing or allocating the current source's FIFO.
+     *
+     * @param string $collection Collection of the row
+     * @param RtState $row Exact row that may already have a mandatory removal
+     * @return bool Whether this source owes removal of this incarnation
+     */
+    public static function owesRemoval(string $collection, RtState $row): bool
+    {
+        $cleanup = self::owedCleanup($collection, $row);
+
+        return $cleanup !== null && $cleanup->transition === null;
+    }
+
+    /**
+     * @param string $collection Collection of the row
+     * @param RtState $row Exact row whose mandatory terminal transition may be deferred
+     * @return bool Whether this source owes a terminal update of this incarnation
+     */
+    public static function owesUpdate(string $collection, RtState $row): bool
+    {
+        return self::owedCleanup($collection, $row)?->transition !== null;
+    }
+
+    /**
      * @internal Removals the current source still owes, for tests.
      *
      * @return int Owed removals, one per row
@@ -424,6 +448,20 @@ final class RtOrdinaryAdmission
         self::$retrying = false;
         self::$consumer = null;
         self::$waitingForRoom = false;
+    }
+
+    /**
+     * @param string $collection Collection of the row
+     * @param RtState $row Exact row to ask about
+     * @return ?RtOrdinaryCleanup Cleanup debt of this incarnation in the current source's FIFO
+     */
+    private static function owedCleanup(string $collection, RtState $row): ?RtOrdinaryCleanup
+    {
+        $agentId = ExecutionContext::currentAgentId();
+        $queue = $agentId === null ? self::$unattendedQueue : self::$agentQueues[$agentId] ?? null;
+        $cleanup = $queue === null ? null : self::$owedCleanups[$queue][$collection][$row->getId()] ?? null;
+
+        return $cleanup?->row() === $row ? $cleanup : null;
     }
 
     /**

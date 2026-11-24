@@ -16,9 +16,8 @@ use Hilos\WiringRefusal;
  * still on its way. Both are cured by wiring, not by retrying the read, and the two messages
  * say which wiring is missing.
  *
- * Raised by the read guard in {@see RtContext::__get()}, which is the one place a collection is
- * handed out to application code; the delivery paths reach their collections by their own
- * accessors and are not judged by it.
+ * Raised by the read guard shared by the context and its collection views
+ * ({@see RtContext::assertReadable()}). Snapshot delivery uses the backing stores.
  *
  * Stays inside the Rt family and carries {@see WiringRefusal} on top of it: the marker is what
  * lets a caller and the WIRING-REFUSAL-SWALLOWED guard name this failure together with its

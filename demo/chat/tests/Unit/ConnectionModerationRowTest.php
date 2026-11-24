@@ -85,6 +85,30 @@ final class ConnectionModerationRowTest extends TestCase
         $this->assertNull(Connection::fromRow(self::row([]))->outboundModerationPicture);
     }
 
+    public function testAcceptedPublicationSurvivesTheRowAndAnUnrelatedPatch(): void
+    {
+        $accepted = [
+            Connection::outboundPublicationHoldId => 'accepted-hold',
+            Connection::outboundPublicationDeadlineAt => 1_764_000_000_123,
+            Connection::outboundPublicationUserId => 7,
+        ];
+        $owner = Connection::fromRow(self::row([]));
+        $owner->applyDiff($accepted);
+        $successor = Connection::fromRow($owner->toArray());
+
+        foreach ($accepted as $key => $value) {
+            self::assertSame($value, $successor->toArray()[$key]);
+        }
+        $successor->applyDiff([Connection::probablyOffline => true]);
+        foreach ($accepted as $key => $value) {
+            self::assertSame($value, $successor->toArray()[$key]);
+        }
+        $successor->applyDiff(array_fill_keys(array_keys($accepted), null));
+        foreach ($accepted as $key => $value) {
+            self::assertNull($successor->toArray()[$key]);
+        }
+    }
+
     public function testARowCarryingNoMessageReadsAsNone(): void
     {
         $connection = Connection::fromRow(self::row([Connection::outboundModerationMessage => null]));

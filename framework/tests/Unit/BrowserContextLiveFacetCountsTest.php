@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -15,8 +16,16 @@ use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\AbstractPageFactory;
+use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageResendOutcome;
+use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
@@ -82,6 +91,73 @@ final class BrowserContextLiveFacetCountsTest extends TestCase
         self::assertSame(1, $facets->facets->filters['status'][TableConstants::FACET_KEY_OPTIONS]['sent']->count);
         self::assertSame([], $context->flushToSignalRouter());
         self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testARecountMarkedBeforeARouterFailureIsDiscarded(): void
+    {
+        $viewport = $this->viewport([new LiveFacetUnitRow('1', 'pending')]);
+        $table = new LiveFacetUnitTable([new LiveFacetUnitRow('1', 'pending')]);
+        $context = $this->boot($viewport, $table);
+        $this->declareFacets();
+        $agent = $this->createStub(PageAgentInterface::class);
+        $agent->method('getAgentSignalSource')->willReturn(new SignalSource(SignalSource::AGENT, 'live-facet-unit'));
+        $page = new class ($agent) extends AbstractPage {
+            public const string PAGE = LiveFacetUnitContext::PAGE;
+
+            public bool $broken = true;
+
+            protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+            {
+                if ($this->broken) {
+                    throw new RuntimeException('simulated page failure');
+                }
+
+                return new PagePayload();
+            }
+        };
+        $factory = $this->createStub(AbstractPageFactory::class);
+        $factory->method('hasPage')->willReturn(true);
+        $factory->method('getPage')->willReturn($page);
+        $router = new PageSignalRouter($factory, new ActionRouteConfig());
+        $previousBrowser = Hilos::$browser;
+        Hilos::initBrowser($context);
+        try {
+            $row = new LiveFacetUnitRow('2', 'sent');
+            $table->rows[] = $row;
+            $context->publishTableMutations(LiveFacetUnitContext::PAGE, 'ak-1', LiveFacetUnitTable::TABLE,
+                static fn (): array => [new TableRowMutationDTO(TableMutationType::Create, $row->key, $row)]);
+            self::assertSame(PageResendOutcome::Failed, $router->resendPage(LiveFacetUnitContext::PAGE, 'ak-1', []));
+            self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+            self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+            self::assertSame([], $context->flushToSignalRouter());
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+            self::assertSame(1, $viewport->totalCount());
+
+            $page->broken = false;
+            self::assertSame(PageResendOutcome::Answered, $router->resendPage(LiveFacetUnitContext::PAGE, 'ak-1', []));
+            self::assertSame(SignalTypeConstants::PAGE_RESPONSE, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+            $facets = $this->nextFacetCountsSignal();
+            self::assertNotNull($facets);
+            self::assertSame(2, $facets->facets->filters[LiveFacetUnitTable::FILTER_STATUS][TableConstants::FACET_KEY_ANY]->count);
+            self::assertSame([], $context->flushToSignalRouter());
+            self::assertNull(Hilos::$sr->getNextQueuedSignal());
+
+            $row = new LiveFacetUnitRow('3', 'pending');
+            $table->rows[] = $row;
+            $context->publishTableMutations(LiveFacetUnitContext::PAGE, 'ak-1', LiveFacetUnitTable::TABLE,
+                static fn (): array => [new TableRowMutationDTO(TableMutationType::Create, $row->key, $row)]);
+            self::assertSame([], $context->flushToSignalRouter());
+            $facets = $this->nextFacetCountsSignal();
+            self::assertNotNull($facets);
+            self::assertSame(3, $facets->facets->filters[LiveFacetUnitTable::FILTER_STATUS][TableConstants::FACET_KEY_ANY]->count);
+            self::assertSame(3, Hilos::$sr->getTableViewport('ak-1', LiveFacetUnitTable::TABLE)?->totalCount());
+        } finally {
+            if ($previousBrowser === null) {
+                Hilos::resetBrowser();
+            } else {
+                Hilos::initBrowser($previousBrowser);
+            }
+        }
     }
 
     public function testLateFacetGuardCannotSendTheCountOfAReplacedSubscription(): void

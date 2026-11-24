@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
+use Generator;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
@@ -16,6 +19,8 @@ use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Feature\Definition\ModerationFeature;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -32,14 +37,33 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Hilos;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
+use Hilos\Moderation\ModerationKindKey;
+use Hilos\Moderation\ModerationReason;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\State\Collection\HilosConnections as StateConnections;
+use Hilos\Runtime\State\Item\HilosConnection as StateConnection;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
+use Hilos\Runtime\View\Actions\Collection\HilosConnectionsActions;
+use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
+use Hilos\Runtime\View\Collection\HilosConnections;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\HilosConnection;
 use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
+use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
@@ -47,8 +71,11 @@ use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -67,7 +94,7 @@ use ReflectionProperty;
  */
 final class WorkerParkedFrameTest extends TestCase
 {
-    private const string ACCEPT_KEY = 'ak-parked';
+    public const string ACCEPT_KEY = 'ak-parked';
 
     private const string BOOTSTRAP_CONSUMER = 'test-bootstrap';
 
@@ -412,6 +439,201 @@ final class WorkerParkedFrameTest extends TestCase
         $this->assertFalse(SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION));
     }
 
+    public function testAModerationOwnerWaitsForItsPredecessorsRowsBeforeTakingTheClaim(): void
+    {
+        $states = new ReflectionProperty(SourceInterestRegistry::class, 'states');
+        $previousStates = $states->getValue();
+        $previousRt = Hilos::$rt;
+        $agentId = WorkerParkedModerationTestOwner::AGENT_TYPE;
+        $collection = HilosModerationCheck::RT_COLLECTION;
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, WorkerParkedModerationTestHilos::class);
+        try {
+            Hilos::$rt = new WorkerParkedModerationTestRuntime();
+            Hilos::$rt->configure();
+            $check = HilosModerationCheck::create(
+                self::ACCEPT_KEY, 1, ModerationKindKey::PROFILE_PHOTO, 'previous-request', $agentId,
+                null, null, 100, 200,
+            );
+            RtSyncApplicator::applyCreated(new RtSyncCreatedSignalData($collection, $check->getId(), $check->toArray()), false);
+            $cut = Hilos::$rt;
+
+            $cold = $previousStates;
+            unset($cold[SourceChange::KIND_RT][$collection]);
+            $states->setValue(null, $cold);
+            Hilos::$rt = new WorkerParkedModerationTestRuntime();
+            Hilos::$rt->configure();
+            $this->manager->handleDaemonMessage(new AgentStartDTO($agentId));
+            $this->manager->handleDaemonMessage($this->systemSignal($agentId, $check->getId()));
+
+            $this->assertNull($this->manager->agent($agentId));
+            $this->assertSame([], RtTruthSourceRegistry::setKeyByCollectionOf($agentId));
+            $this->assertSame([], array_keys(
+                array_filter($this->manager->client->sent, static fn (WorkerDTO|array $frame): bool =>
+                    is_array($frame) && $frame[WorkerDTO::TYPE] === WorkerConstants::MESSAGE_AGENT_STARTED),
+            ));
+
+            $this->streamSnapshotOf($collection, $cut);
+            $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, $collection));
+            $this->manager->handleDaemonMessage($this->systemSignal($agentId, 'after-snapshot'));
+            $this->assertNull($this->manager->agent($agentId));
+
+            $this->manager->pass(microtime(true));
+            $owner = $this->manager->agent($agentId);
+            $this->assertInstanceOf(WorkerParkedModerationTestOwner::class, $owner);
+            $this->assertSame(['previous-request'], $owner->checksAtStart);
+            $this->assertSame([$check->getId(), 'after-snapshot'], $owner->heard);
+            $this->assertSame([$collection => $agentId], RtTruthSourceRegistry::setKeyByCollectionOf($agentId));
+            $this->assertCount(1, array_keys(
+                array_filter($this->manager->client->sent, static fn (WorkerDTO|array $frame): bool =>
+                    is_array($frame) && $frame[WorkerDTO::TYPE] === WorkerConstants::MESSAGE_AGENT_STARTED),
+            ));
+
+            $this->manager->handleDaemonMessage(new AgentStopDTO($agentId));
+            $this->assertNull($this->manager->agent($agentId));
+            $this->assertSame([], RtTruthSourceRegistry::setKeyByCollectionOf($agentId));
+            $this->manager->handleDaemonMessage(new AgentStartDTO($agentId));
+            $successor = $this->manager->agent($agentId);
+            $this->assertInstanceOf(WorkerParkedModerationTestOwner::class, $successor);
+            $this->assertNotSame($owner, $successor);
+            $this->assertSame(['previous-request'], $successor->checksAtStart);
+            $this->assertSame([], $successor->heard);
+            $this->manager->handleDaemonMessage(new DaemonAgentMessageDTO($agentId, new SignalDTO(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(HilosSignalConstants::HILOS_MODERATION_VERDICT),
+                new AgentSignalData(new ModerationVerdictSignalData(
+                    self::ACCEPT_KEY, $check->kind, $check->requestId, true, ModerationReason::OK,
+                )),
+            )));
+            $this->assertSame([HilosSignalConstants::HILOS_MODERATION_VERDICT], $successor->agentSignals);
+            $this->assertSame([], $owner->agentSignals);
+        } finally {
+            RtTruthSourceRegistry::unregisterAgent($agentId);
+            $states->setValue(null, $previousStates);
+            Hilos::$rt = $previousRt;
+        }
+    }
+
+    public static function connectionsStartupModes(): iterable
+    {
+        yield 'live predecessor' => [true, true];
+        yield 'empty snapshot' => [true, false];
+        yield 'moderation off' => [false, false];
+    }
+
+    #[DataProvider('connectionsStartupModes')]
+    public function testConnectionsOwnerNeedsTheActualSnapshotAfterTheLinkWait(bool $moderation, bool $live): void
+    {
+        $states = new ReflectionProperty(SourceInterestRegistry::class, 'states');
+        $previousStates = $states->getValue();
+        $previousRt = Hilos::$rt;
+        $agentId = WorkerParkedConnectionOwner::AGENT_TYPE;
+        $collection = WorkerParkedModerationTestRuntime::CONNECTIONS;
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(
+            null, $moderation ? WorkerParkedModerationTestHilos::class : WorkerParkedFrameTestHilos::class,
+        );
+        try {
+            $cut = new WorkerParkedModerationTestRuntime();
+            $cut->configure();
+            Hilos::$rt = $cut;
+            if ($live) {
+                $connection = WorkerParkedConnectionState::create(self::ACCEPT_KEY, 17);
+                RtSyncApplicator::applyCreated(new RtSyncCreatedSignalData($collection, $connection->getId(), $connection->toArray()), false);
+            }
+
+            Hilos::$rt = new WorkerParkedModerationTestRuntime();
+            Hilos::$rt->configure();
+            Hilos::$rt->declareProcessWideReads();
+            foreach ([SourceChange::KIND_RT, SourceChange::KIND_DB] as $kind) {
+                foreach (SourceInterestRegistry::collections($kind) as $key) {
+                    if ($key !== $collection) {
+                        SourceInterestRegistry::markReady($kind, $key);
+                    }
+                }
+            }
+            $this->assertFalse(SourceInterestRegistry::isReady(SourceChange::KIND_RT, $collection));
+            $since = microtime(true);
+            $this->manager->handleDaemonMessage(new WorkerRegisteredDTO(1));
+            $start = new AgentStartDTO($agentId, $live ? [self::ACCEPT_KEY] : []);
+            $this->manager->handleDaemonMessage($start);
+            $this->manager->pass($since + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
+
+            if (!$moderation) {
+                $this->assertInstanceOf(WorkerParkedConnectionOwner::class, $this->manager->agent($agentId));
+                return;
+            }
+
+            $this->assertNull($this->manager->agent($agentId));
+            $this->assertFalse(RtTruthSourceRegistry::allowsOperation($collection, $agentId, TruthSourceOperation::Add));
+            $this->assertSame([], RtTruthSourceRegistry::setKeyByCollectionOf($agentId));
+            $this->assertSame([], array_keys(array_filter($this->manager->client->sent, static fn (WorkerDTO|array $frame): bool =>
+                is_array($frame) && $frame[WorkerDTO::TYPE] === WorkerConstants::MESSAGE_AGENT_STARTED)));
+
+            if (!$live) {
+                $this->manager->pass($since + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
+                $this->assertNull($this->manager->agent($agentId));
+                $this->assertCount(1, $this->manager->client->sentOf(WorkerAgentStartFailedDTO::class));
+                $this->manager->handleDaemonMessage($start);
+                $this->assertNull($this->manager->agent($agentId));
+            }
+
+            $this->streamSnapshotOf($collection, $cut);
+            $this->manager->pass(microtime(true));
+            $successor = $this->manager->agent($agentId);
+            $this->assertInstanceOf(WorkerParkedConnectionOwner::class, $successor);
+            $this->assertSame($live ? 17 : null, $successor->personAtStart);
+
+            $this->manager->handleDaemonMessage(new AgentStopDTO($agentId));
+            $this->manager->handleDaemonMessage($start);
+            $warm = $this->manager->agent($agentId);
+            $this->assertInstanceOf(WorkerParkedConnectionOwner::class, $warm);
+            $this->assertSame($successor->personAtStart, $warm->personAtStart);
+        } finally {
+            RtTruthSourceRegistry::unregisterAgent($agentId);
+            $states->setValue(null, $previousStates);
+            Hilos::$rt = $previousRt;
+        }
+    }
+
+    public function testModerationStartTimeoutRefusesWithoutRetainingItsFrames(): void
+    {
+        $states = new ReflectionProperty(SourceInterestRegistry::class, 'states');
+        $previousStates = $states->getValue();
+        $cold = $previousStates;
+        unset($cold[SourceChange::KIND_RT][HilosModerationCheck::RT_COLLECTION]);
+        $states->setValue(null, $cold);
+        $agentId = WorkerParkedModerationTestOwner::AGENT_TYPE;
+        try {
+            new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, WorkerParkedModerationTestHilos::class);
+            $since = microtime(true);
+            $this->manager->handleDaemonMessage(new AgentStartDTO($agentId));
+            $this->manager->handleDaemonMessage($this->systemSignal($agentId, 'refused-start-frame'));
+            $this->manager->handleDaemonMessage(new DaemonAgentMessageDTO($agentId, new SignalDTO(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName('attachments_published'),
+                new AgentSignalData(new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1'], [1], null, 'accepted-hold')),
+            )));
+            $this->manager->pass($since + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
+
+            $this->assertNull($this->manager->agent($agentId));
+            $this->assertSame([], RtTruthSourceRegistry::setKeyByCollectionOf($agentId));
+            $this->assertCount(1, $this->manager->client->sentOf(WorkerAgentStartFailedDTO::class));
+            $this->assertInstanceOf(AgentCreationFailedException::class, $this->manager->failures[0]->failure);
+
+            // The same declaration in a project without moderation receives the new incarnation's frame.
+            new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, WorkerParkedFrameTestHilos::class);
+            $this->manager->handleDaemonMessage(new AgentStartDTO($agentId));
+            $this->manager->handleDaemonMessage($this->systemSignal($agentId, 'new-start-frame'));
+            $this->assertSame(['new-start-frame'], $this->manager->agent($agentId)?->heard);
+            $this->assertSame([], $this->manager->agent($agentId)?->agentSignals);
+        } finally {
+            RtTruthSourceRegistry::unregisterAgent($agentId);
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agentId));
+            $states->setValue(null, $previousStates);
+        }
+    }
+
     /**
      * @param Closure(): void $work Worker pass whose log is observed
      * @return string Log produced during that pass
@@ -479,8 +701,9 @@ final class WorkerParkedFrameTest extends TestCase
      * the link's RT stream, its parts handed to the worker as they are written.
      *
      * @param string $collectionKey Collection the snapshot is cut of
+     * @param ?RtContext $cut Master's runtime copy when it differs from the worker's
      */
-    private function streamSnapshotOf(string $collectionKey): void
+    private function streamSnapshotOf(string $collectionKey, ?RtContext $cut = null): void
     {
         $parts = [];
         $master = new RtSyncStreamChannel(
@@ -489,7 +712,13 @@ final class WorkerParkedFrameTest extends TestCase
             },
             static fn (): null => null,
         );
-        $master->sendSnapshot($collectionKey, RtSnapshotScope::whole(), announcement: self::FIRST_REPORT);
+        $previousRt = Hilos::$rt;
+        Hilos::$rt = $cut ?? $previousRt;
+        try {
+            $master->sendSnapshot($collectionKey, RtSnapshotScope::whole(), announcement: self::FIRST_REPORT);
+        } finally {
+            Hilos::$rt = $previousRt;
+        }
         foreach ($parts as $part) {
             $this->manager->handleDaemonMessage(new WorkerRtSyncStreamDTO($part));
         }
@@ -527,12 +756,19 @@ abstract class WorkerParkedFrameTestHilos extends Hilos
     public const array AGENTS = [
         WorkerParkedFrameTestAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => WorkerParkedFrameTestAgent::class],
         WorkerParkedFrameTestReader::AGENT_TYPE => [AgentRegistryKey::WORKER => WorkerParkedFrameTestReader::class],
+        WorkerParkedModerationTestOwner::AGENT_TYPE => [AgentRegistryKey::WORKER => WorkerParkedModerationTestOwner::class],
+        WorkerParkedConnectionOwner::AGENT_TYPE => [AgentRegistryKey::WORKER => WorkerParkedConnectionOwner::class],
     ];
 
     public const array PAGES = [
         WorkerParkedFrameTestQuietPage::PAGE => WorkerParkedFrameTestQuietPage::class,
         WorkerParkedFrameTestReadingPage::PAGE => WorkerParkedFrameTestReadingPage::class,
     ];
+}
+
+abstract class WorkerParkedModerationTestHilos extends WorkerParkedFrameTestHilos
+{
+    protected const array FEATURES = [HilosFeature::MODERATION];
 }
 
 /**
@@ -662,9 +898,12 @@ final class WorkerParkedFrameTestAgentManager extends AgentManager
      */
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
-        return $agentType === WorkerParkedFrameTestReader::AGENT_TYPE
-            ? new WorkerParkedFrameTestReader()
-            : new WorkerParkedFrameTestAgent();
+        return match ($agentType) {
+            WorkerParkedFrameTestReader::AGENT_TYPE => new WorkerParkedFrameTestReader(),
+            WorkerParkedModerationTestOwner::AGENT_TYPE => new WorkerParkedModerationTestOwner(),
+            WorkerParkedConnectionOwner::AGENT_TYPE => new WorkerParkedConnectionOwner(),
+            default => new WorkerParkedFrameTestAgent(),
+        };
     }
 }
 
@@ -715,6 +954,120 @@ class WorkerParkedFrameTestAgent extends AbstractAgent
     public function onStop(): void
     {
     }
+}
+
+/** Runtime for a worker and a separately cut master snapshot. */
+final class WorkerParkedModerationTestRuntime extends RtContext
+{
+    public const string CONNECTIONS = 'parkedTestConnections';
+
+    public function configure(): void
+    {
+        new ModerationFeature()->mount($this);
+        $this->_stateCollections[self::CONNECTIONS] = WorkerParkedConnectionStates::init();
+        $this->setRepresent(
+            self::CONNECTIONS,
+            WorkerParkedConnections::class,
+            WorkerParkedConnectionsActions::class,
+            WorkerParkedConnectionActions::class,
+        );
+    }
+}
+
+/** Moderation recipient taking over one set of checks. */
+final class WorkerParkedModerationTestOwner extends WorkerParkedFrameTestAgent
+{
+    public const string AGENT_TYPE = 'unit_parked_moderation_owner';
+
+    public const array OWNS_RT_SET = [HilosModerationCheck::RT_COLLECTION => TruthSourceOperation::BY_KIND];
+
+    /** @var list<string> Check requests visible from the start hook */
+    public array $checksAtStart = [];
+
+    public function ownedRtSetKey(string $collection): string
+    {
+        return self::AGENT_TYPE;
+    }
+
+    public function onStart(): void
+    {
+        if (!Hilos::hasFeature(HilosFeature::MODERATION)) {
+            return;
+        }
+        foreach (Hilos::$rt->hilosModerationChecks as $check) {
+            $this->checksAtStart[] = $check->requestId;
+        }
+    }
+}
+
+/** The same claim widths and Add combination as Chat. */
+final class WorkerParkedConnectionOwner extends WorkerParkedFrameTestAgent
+{
+    public const string AGENT_TYPE = 'unit_parked_connection_owner';
+
+    public const array OWNS_RT = [WorkerParkedModerationTestRuntime::CONNECTIONS => TruthSourceOperation::BY_KIND];
+
+    public const array OWNS_RT_SET = [HilosModerationCheck::RT_COLLECTION => TruthSourceOperation::BY_KIND];
+
+    public ?int $personAtStart = null;
+
+    public function ownedRtSetKey(string $collection): string
+    {
+        return self::AGENT_TYPE;
+    }
+
+    public function onStart(): void
+    {
+        $this->personAtStart = Hilos::$rt->connectionsRegistry()?->offsetGet(WorkerParkedFrameTest::ACCEPT_KEY)?->userId;
+    }
+}
+
+final class WorkerParkedConnectionState extends StateConnection
+{
+    protected function initOwn(): Generator
+    {
+        yield new RtWork();
+    }
+
+    protected function hydrateOwn(RtRowReader $row): Generator
+    {
+        yield new RtWork();
+    }
+
+    protected function exportOwn(RtRowWriter $out): Generator
+    {
+        yield new RtWork();
+    }
+
+    protected function applyOwnDiff(RtRowReader $diff): Generator
+    {
+        yield new RtWork();
+    }
+}
+
+final class WorkerParkedConnectionStates extends StateConnections
+{
+    public const string STATE_CLASS = WorkerParkedConnectionState::class;
+}
+
+final class WorkerParkedConnection extends HilosConnection
+{
+}
+
+final class WorkerParkedConnections extends HilosConnections
+{
+    protected function createRtItem(RtState $state): WorkerParkedConnection
+    {
+        return new WorkerParkedConnection($state);
+    }
+}
+
+final class WorkerParkedConnectionsActions extends HilosConnectionsActions
+{
+}
+
+final class WorkerParkedConnectionActions extends HilosConnectionActions
+{
 }
 
 /**

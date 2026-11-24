@@ -26,18 +26,21 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
     public const string target = 'target';
     public const string clientUploadIds = 'clientUploadIds';
     public const string replySignal = 'replySignal';
+    public const string uploadHoldId = 'uploadHoldId';
 
     /**
      * @param string $acceptKey Accept key of the connection the uploads belong to
      * @param string $target Upload target the uploads must have been declared for
      * @param list<string> $clientUploadIds Ids the client gave the uploads; the answer keeps their order
      * @param string $replySignal Name of the agent signal the answer comes under
+     * @param ?string $uploadHoldId Accepted hold to hand over and echo in the answer, if supplied
      */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $target,
         public readonly array $clientUploadIds,
         public readonly string $replySignal,
+        public readonly ?string $uploadHoldId = null,
     ) {
     }
 
@@ -110,7 +113,7 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
     }
 
     /**
-     * @return array{acceptKey: string, target: string, clientUploadIds: list<string>, replySignal: string}
+     * @return array{acceptKey: string, target: string, clientUploadIds: list<string>, replySignal: string, uploadHoldId?: string}
      *     DTO payload for transport
      */
     public function toArray(): array
@@ -120,7 +123,7 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
             self::target => $this->target,
             self::clientUploadIds => $this->clientUploadIds,
             self::replySignal => $this->replySignal,
-        ];
+        ] + ($this->uploadHoldId === null ? [] : [self::uploadHoldId => $this->uploadHoldId]);
     }
 
     /**
@@ -136,6 +139,7 @@ final class UploadPublishSignalData extends BaseDTO implements SignalDataInterfa
             target: self::requireName($data, self::target),
             clientUploadIds: self::requireClientUploadIds($data, self::clientUploadIds),
             replySignal: self::requireName($data, self::replySignal),
+            uploadHoldId: self::optionalString($data, self::uploadHoldId),
         );
     }
 }

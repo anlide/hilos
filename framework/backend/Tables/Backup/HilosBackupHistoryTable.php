@@ -43,6 +43,7 @@ use Hilos\Core\Table\TableProgressScope;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Pages\Backup\AbstractHilosBackupPage;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
@@ -180,6 +181,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @param SourceChange $change Runtime source change
      * @return ?TableRowMutationDTO Row mutation, or null when the change does not affect this table
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -328,6 +330,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function facetCounts(TableQueryDTO $query, array $wanted): ?array
     {
@@ -357,6 +360,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -372,6 +376,7 @@ class HilosBackupHistoryTable extends TableDefinition implements ViewportTable
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {

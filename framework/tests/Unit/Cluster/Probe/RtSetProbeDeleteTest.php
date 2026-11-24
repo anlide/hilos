@@ -9,6 +9,9 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Item\HilosProbeNote;
@@ -49,6 +52,8 @@ final class RtSetProbeDeleteTest extends TestCase
 
     protected function tearDown(): void
     {
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::OWN_AGENT));
+        SourceInterestRegistry::readsWhatItMounts();
         RtTruthSourceRegistry::unregisterAgent(self::OWN_AGENT);
         RtTruthSourceRegistry::unregisterAgent(self::OTHER_AGENT);
         ExecutionContext::setCurrentAgentId(null);
@@ -100,22 +105,54 @@ final class RtSetProbeDeleteTest extends TestCase
         $this->assertSame('Missing ' . CommandConstants::FIELD_RT_STATE_ID, $reply->payload[CommandConstants::FIELD_MESSAGE]);
     }
 
+    public function testWritingNeedsProofOfAbsenceButCanRewriteAnOwnedRowBeforeTheSnapshot(): void
+    {
+        Hilos::$rt->hilosProbeNotes->actions->write('own', 'node-a', 'local');
+        SourceInterestRegistry::register(SourceChange::KIND_RT, HilosProbeNote::RT_COLLECTION, SourceConsumer::agent(self::OWN_AGENT));
+        SourceInterestRegistry::readsWhatIsDelivered();
+
+        $this->assertTrue($this->write('own', 'node-a', 'updated')->isOk());
+        $this->assertSame('updated', Hilos::$rt->hilosProbeNotes['own']?->text);
+        $this->assertTrue($this->erase('own')->isOk());
+        $this->assertFalse($this->write('shared-id', 'node-a', 'local')->isOk());
+
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, HilosProbeNote::RT_COLLECTION);
+        ExecutionContext::setCurrentAgentId(self::OTHER_AGENT);
+        $this->assertTrue($this->write('shared-id', 'node-b', 'remote')->isOk());
+        ExecutionContext::setCurrentAgentId(self::OWN_AGENT);
+        $this->assertFalse($this->write('shared-id', 'node-a', 'would replace remote')->isOk());
+        $this->assertSame('remote', Hilos::$rt->hilosProbeNotes['shared-id']?->text);
+        $this->assertTrue($this->write('new', 'node-a', 'created after publication')->isOk());
+    }
+
     private function erase(string $noteId): CommandReplyDTO
     {
+        return $this->command(CliCommands::CLUSTER_TEST_RT_DELETE, [CommandConstants::FIELD_RT_STATE_ID => $noteId]);
+    }
+
+    private function write(string $noteId, string $setKey, string $text): CommandReplyDTO
+    {
+        return $this->command(CliCommands::CLUSTER_TEST_RT_WRITE, [
+            CommandConstants::FIELD_RT_STATE_ID => $noteId,
+            CommandConstants::FIELD_RT_SET_KEY => $setKey,
+            CommandConstants::FIELD_TEXT => $text,
+        ]);
+    }
+
+    /** @param array<string, string> $payload */
+    private function command(string $name, array $payload): CommandReplyDTO
+    {
         $agent = new RtSetProbeAgent();
-        $agent->onSignalCommand(
-            new CommandRequestDTO('corr-1', CliCommands::CLUSTER_TEST_RT_DELETE, [
-                CommandConstants::FIELD_RT_STATE_ID => $noteId,
-            ]),
-            '',
-            '',
-        );
+        $agent->onSignalCommand(new CommandRequestDTO('corr-1', $name, $payload), '', '');
 
-        $signal = Hilos::$sr?->getNextQueuedSignal();
-        $this->assertNotNull($signal);
-        $this->assertInstanceOf(CommandReplyDTO::class, $signal->data);
-        $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
+        $replies = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                $replies[] = $signal->data;
+            }
+        }
+        $this->assertCount(1, $replies);
 
-        return $signal->data;
+        return $replies[0];
     }
 }

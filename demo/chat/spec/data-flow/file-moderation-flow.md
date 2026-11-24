@@ -27,7 +27,7 @@ After text approval, ChatAgent checks each image separately in attachment order
 with `chat_message_picture` / `IMAGE` / `imageCopy: true`, keeping the full snapshot,
 hold token and first deadline
         |
-After all checks approve: forget the last check, queue hold approval, publish uploads
+After all checks approve, record the publication wait, forget the last check, queue hold approval and publish uploads
         |
 Uploads owner requires live, finally approved holds before handing the original files over
         |
@@ -65,9 +65,9 @@ removed. The policy reads the existing connection View, so a ChatAgent restart
 does not release the held files; a stale connection source refuses mutation.
 The upload owner's internal handover and cleanup remain available. A rejected
 or unavailable attempt queues `HILOS_UPLOAD_HOLD_SETTLE` with `RELEASED` and its
-token. Close and user switch capture that token before deleting the check or
-changing the connection; after the last check it comes from surviving owner
-marks on the current user's attachments. Release keeps the old token as a
+token. Close and a change of session or person take the token from the exact
+check before handover or from the connection's accepted publication, which
+records the hold, its deadline, and its author. Release keeps the old token as a
 tombstone, clearing its deadline and approval. A fresh attempt may hold the same
 bytes with a new token; a late release cannot change the new hold.
 
@@ -92,17 +92,14 @@ check after replacement B completes.
 
 ## Approved
 
-1. Without files: after every check approves, write the `message_sent` event and then clear the outbound composer.
-2. With files: delete the final check, queue `HILOS_UPLOAD_HOLD_SETTLE` with `APPROVED`, then call `Hilos::$files->publishUploads($acceptKey, 'chat_attachment', $ids, 'chat_attachments_published')` on the same FIFO channel. The target requires live, finally approved owner holds and declares `FileVisibility::AUTHENTICATED`. The composer stays `checking` until the registry answers `ChatAgent` with `FilesPublishedSignalData`.
-3. A late or orphan answer is removed through the files door; a current answer is checked against the connection, exact ordered ids, absence of active checks, fresh sources and file ownership. Upload rows normally disappear at handover; their deletion after the final check does not fail the composer or reject a legitimate registry reply.
-4. The answer carries an error: keep the draft and set `unavailable` with the registry's safe sentence.
-5. Published: write the event with one `event_attachment` link `(event_id, file_id)` per file in attach order and clear the composer in the same ORM transaction, then call `Hilos::$files->markBound($fileIds)` after commit. A write failure rolls back the whole message, retains the draft and chips as `unavailable` under the original submit lockout, and requests removal of known unlinked files through the files door. A stale publication source also returns a fresh current composer as `unavailable`. A failed commit announcement or bind request does not undo the saved message; duplicate answers never remove its linked files.
-6. Browser source fan-out updates the main event rows; the uploaded files and chips are now linked to the message.
+1. Without files, write the `message_sent` event and clear the composer after every check approves.
+2. With files, record the accepted hold, original deadline and author on the live `Connection` before removing the last check. Queue `HILOS_UPLOAD_HOLD_SETTLE` with `APPROVED` and call `Hilos::$files->publishUploads($acceptKey, 'chat_attachment', $ids, 'chat_attachments_published', $holdId)` on the same FIFO. The target requires a live, approved owner hold for every upload and declares `FileVisibility::AUTHENTICATED`.
+3. Before the deadline, Chat accepts the registry's reply for the same hold, author and ordered client ids on a fresh, live composer. A leftover check for that hold is an unfinished handover. Chat removes the exact check and waits for the original deadline without sending publication again. An earlier check for a different hold leaves the current publication alone. Upload rows normally disappear during handover.
+4. An exact refusal returns the registry's safe sentence in `unavailable`. A missing reply leaves the draft `checking` until its original deadline, when the owner sets `unavailable` and releases the exact hold. Recovery after the connections snapshot reads the same deadline. A late reply can remove the unbound files that remain unlinked. An answer without a hold or without a fresh basis for the connection leaves the files and composer alone.
+5. On success, write the event and the ordered `event_attachment` links, and clear the composer in one ORM transaction. Call `Hilos::$files->markBound($fileIds)` after commit. A write failure rolls back the message, retains the draft as `unavailable`, and requests removal of known unbound, unlinked files. A failed commit announcement or bind request leaves the saved message in place.
+6. Browser source fan-out updates the main event rows and their attachments.
 
-The files protocol is unchanged. A failed or reordered owner approval refuses
-handover. Once the rows have been handed over, no hold remains and no new
-deadline, crash recovery or exactly-once guarantee is introduced for the files
-library's reply.
+The files library's reply still uses ordinary signal delivery.
 
 ## Rejected or Unavailable
 

@@ -50,7 +50,7 @@ final class BotAgentStatusesActions extends RtActions
         // The row class names no SET_VIA field, so a bot status row is in no set and has no set key.
         $this->ensureCanWriteState((string)$botId, [], TruthSourceOperation::Add);
 
-        $existing = $this->stateCollection->get((string)$botId);
+        $existing = $this->getStateCollection()->get((string)$botId);
         if ($existing instanceof StateBotAgentStatus) {
             return $this->createRtItemFromState($existing);
         }

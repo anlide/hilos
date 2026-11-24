@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
@@ -45,7 +46,20 @@ final class ClusterPlacementRestartTest extends TestCase
         self::assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[1][1]);
         self::assertSame([], $sink->placed);
 
-        FakePlacementMesh::status($placement, self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3));
+        $order = $mesh->sent[1][1]->placementId;
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3, $order, $order->term));
+        self::assertSame(PlacementState::Started, $placement->registry()->get('chat:7')?->state);
+        self::assertSame([], $sink->placed);
+        self::assertSame([], $sink->notPlaced);
+
+        $oldOrder = new PlacementId($order->leaderNodeId, $order->term - 1, $order->sequence);
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3, $oldOrder, $order->term, workerStarted: true));
+        $ready = PeerAgentStatusDTO::started('chat', '7', 3, $order, $order->term, workerStarted: true);
+        $placement->onAgentStatus(self::HOST, $ready);
+        self::assertSame([], $sink->placed);
+
+        $placement->onAgentStatus(self::TARGET, $ready);
+        $placement->onAgentStatus(self::TARGET, $ready);
         self::assertSame([['chat', '7', self::TARGET]], $sink->placed);
         self::assertSame([], $sink->notPlaced);
     }
@@ -60,7 +74,9 @@ final class ClusterPlacementRestartTest extends TestCase
 
         self::assertSame(self::HOST, $placement->registry()->get('chat:7')?->nodeId);
         self::assertSame(self::HOST, $mesh->sent[1][0]);
-        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::started('chat', '7', 4));
+        self::assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[1][1]);
+        $order = $mesh->sent[1][1]->placementId;
+        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::started('chat', '7', 4, $order, $order->term, workerStarted: true));
         self::assertSame([['chat', '7', self::HOST]], $sink->placed);
     }
 
@@ -79,11 +95,17 @@ final class ClusterPlacementRestartTest extends TestCase
 
     public function testNewHostFailureReportsTheReason(): void
     {
-        [$placement, , $sink] = $this->fixture();
+        [$placement, $mesh, $sink] = $this->fixture();
         $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
         FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
-        FakePlacementMesh::status($placement, self::TARGET, PeerAgentStatusDTO::failed('chat', '7', 'start refused'));
+        self::assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[1][1]);
+        $order = $mesh->sent[1][1]->placementId;
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3, $order, $order->term));
+        $failed = PeerAgentStatusDTO::failed('chat', '7', 'start refused', placementId: $order, authorityTerm: $order->term);
+        $placement->onAgentStatus(self::TARGET, $failed);
+        $placement->onAgentStatus(self::TARGET, $failed);
 
+        self::assertSame([], $sink->placed);
         self::assertSame([['chat', '7', 'start refused']], $sink->notPlaced);
     }
 
@@ -99,6 +121,253 @@ final class ClusterPlacementRestartTest extends TestCase
 
         $placement->noteAgentStarted('chat', '7', placementId: $placement->localPlacementId('chat:7'));
         self::assertSame([['chat', '7', 'leader']], $sink->placed);
+    }
+
+    public function testReplacementWorkerLossWaitsForTheLocalWrites(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $mesh->capabilities['leader'] = [self::SLOTS];
+        $placement->restartElsewhere('chat', '7', self::HOST, 'leader');
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        $order = $placement->localPlacementId('chat:7');
+        self::assertNotNull($order);
+
+        $afterWrites = null;
+        $placement->noteAgentStopped('chat', '7', static function (Closure $settled) use (&$afterWrites): void {
+            $afterWrites = $settled;
+        });
+        self::assertSame('leader', $placement->registry()->get('chat:7')?->nodeId);
+        self::assertSame([], $sink->notPlaced);
+        self::assertNotNull($afterWrites);
+        $afterWrites();
+
+        self::assertFalse($placement->registry()->get('chat:7')?->state->hostsAgent() ?? false);
+        self::assertSame([['chat', '7', 'its worker was lost']], $sink->notPlaced);
+        $placement->noteAgentStarted('chat', '7', placementId: $order);
+        $afterWrites();
+        self::assertSame([], $sink->placed);
+        self::assertCount(1, $sink->notPlaced);
+    }
+
+    public function testReplacementStopIsDistinctFromTheOldStopAcknowledgement(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $oldOrder = new PlacementId('leader', 1, 1);
+        $placement->registry()->put(new PlacementRecord('chat', '7', self::HOST, PlacementState::Started, placementId: $oldOrder));
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        $stop = $mesh->sent[0][1];
+        self::assertInstanceOf(PeerStopAgentDTO::class, $stop);
+        $oldStopped = PeerAgentStatusDTO::stopped('chat', '7', $oldOrder, $stop->authorityTerm, $stop->stopId);
+        $placement->onAgentStatus(self::HOST, $oldStopped);
+        $place = $mesh->sent[1][1];
+        self::assertInstanceOf(PeerPlaceAgentDTO::class, $place);
+        $order = $place->placementId;
+        $targetLost = PeerAgentStatusDTO::stopped('chat', '7', $order, $order->term);
+        $placement->onAgentStatus(self::HOST, $targetLost);
+        $placement->onAgentStatus(self::HOST, $oldStopped);
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::stopped('chat', '7', $order, $order->term, $stop->stopId));
+        self::assertSame([], $sink->notPlaced);
+
+        $placement->onAgentStatus(self::TARGET, $targetLost);
+        self::assertSame([['chat', '7', 'its worker was lost']], $sink->notPlaced);
+        self::assertFalse($placement->registry()->get('chat:7')?->state->hostsAgent() ?? false);
+
+        $placement->placeAgentOnNode('chat', '7', self::TARGET);
+        $new = $placement->registry()->get('chat:7')?->placementId;
+        self::assertNotNull($new);
+        self::assertFalse($order->equals($new));
+        $placement->onAgentStatus(self::TARGET, $targetLost);
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3, $order, $order->term, workerStarted: true));
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::failed('chat', '7', 'late', placementId: $order, authorityTerm: $order->term));
+        self::assertSame($new, $placement->registry()->get('chat:7')?->placementId);
+        self::assertSame([], $sink->placed);
+        self::assertCount(1, $sink->notPlaced);
+    }
+
+    public function testAckReportWithPendingOrderKeepsTheRestartOpenUntilWorkerProof(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        $order = $placement->registry()->get('chat:7')?->placementId;
+        self::assertNotNull($order);
+        $placement->tick(1001.0);
+        $placement->tick(1100.0);
+        $query = $mesh->takeFixtureQuery(self::TARGET);
+        self::assertNotNull($query);
+        $proof = new PeerPlacedAgentEntry('chat', '7', $order, PlacementState::Started, workerStarted: true);
+        $placement->onPlacementReport(self::HOST, new PeerPlacementReportDTO([$proof], queryId: $query->queryId));
+        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO([$proof], queryId: 'old-query'));
+        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO([]));
+        $pending = new PeerPlacedAgentEntry('chat', '7', $order, PlacementState::Placing);
+        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO([$pending], queryId: $query->queryId));
+        self::assertSame([], $sink->placed);
+        self::assertSame([], $sink->notPlaced);
+        self::assertSame(PlacementState::Placing, $placement->registry()->get('chat:7')?->state);
+
+        $placement->onPeerHandshaked(self::TARGET);
+        $query = $mesh->takeFixtureQuery(self::TARGET);
+        self::assertNotNull($query);
+        $report = new PeerPlacementReportDTO([$proof], queryId: $query->queryId);
+        $placement->onPlacementReport(self::TARGET, $report);
+        $placement->onPlacementReport(self::TARGET, $report);
+        self::assertSame([['chat', '7', self::TARGET]], $sink->placed);
+        self::assertSame([], $sink->notPlaced);
+    }
+
+    public function testExactAckWorkerProofFinishesTheRestart(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        $order = $placement->registry()->get('chat:7')?->placementId;
+        self::assertNotNull($order);
+        $placement->tick(1001.0);
+        $placement->tick(1100.0);
+        $query = $mesh->takeFixtureQuery(self::TARGET);
+        self::assertNotNull($query);
+        $report = new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('chat', '7', $order, PlacementState::Started, workerStarted: true),
+        ], queryId: $query->queryId);
+
+        $placement->onPlacementReport(self::TARGET, $report);
+        $placement->onPlacementReport(self::TARGET, $report);
+        self::assertSame([['chat', '7', self::TARGET]], $sink->placed);
+        self::assertSame([], $sink->notPlaced);
+    }
+
+    public function testOnlyARejoinQueryAfterTheReplacementOrderCanAttestItsAbsence(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $placement->onPeerHandshaked(self::TARGET);
+        $old = $mesh->takeFixtureQuery(self::TARGET);
+        self::assertNotNull($old);
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        $order = $placement->registry()->get('chat:7')?->placementId;
+        self::assertNotNull($order);
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3, $order, $order->term));
+
+        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO([], queryId: $old->queryId));
+        self::assertSame($order, $placement->registry()->get('chat:7')?->placementId);
+        self::assertSame([], $sink->notPlaced);
+
+        $placement->onPeerHandshaked(self::TARGET);
+        $query = $mesh->takeFixtureQuery(self::TARGET);
+        self::assertNotNull($query);
+        $report = new PeerPlacementReportDTO([], queryId: $query->queryId);
+        $placement->onPlacementReport(self::TARGET, $report);
+        $placement->onPlacementReport(self::TARGET, $report);
+        self::assertSame([['chat', '7', 'its worker was lost']], $sink->notPlaced);
+        self::assertSame([], $sink->placed);
+        self::assertNotSame($order, $placement->registry()->get('chat:7')?->placementId);
+    }
+
+    public function testExactAckAbsenceFinishesTheRestartBeforeOrdinaryReplacement(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        $order = $placement->registry()->get('chat:7')?->placementId;
+        self::assertNotNull($order);
+        $placement->tick(1001.0);
+        $placement->tick(1100.0);
+        $query = $mesh->takeFixtureQuery(self::TARGET);
+        self::assertNotNull($query);
+        self::assertSame([], $sink->notPlaced);
+
+        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO([], queryId: $query->queryId));
+        self::assertSame([['chat', '7', 'its worker was lost']], $sink->notPlaced);
+        $record = $placement->registry()->get('chat:7');
+        self::assertNotNull($record?->placementId);
+        self::assertFalse($order->equals($record->placementId));
+        $placement->onAgentStatus($record->nodeId, PeerAgentStatusDTO::started(
+            'chat', '7', 3, $record->placementId, $record->placementId->term, workerStarted: true,
+        ));
+        self::assertSame([], $sink->placed);
+        self::assertCount(1, $sink->notPlaced);
+    }
+
+    public function testExactAckWithAnOlderOrderRefusesTheMoveAndFencesTheWriter(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        $order = $placement->registry()->get('chat:7')->placementId;
+        $older = new PlacementId($order->leaderNodeId, $order->term, $order->sequence - 1);
+        $placement->tick(1001.0);
+        $placement->tick(1100.0);
+        $query = $mesh->takeFixtureQuery(self::TARGET);
+        self::assertNotNull($query);
+        $entries = [new PeerPlacedAgentEntry('chat', '7', $older, PlacementState::Started, workerStarted: true)];
+        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO($entries));
+        $placement->onPlacementReport(self::HOST, new PeerPlacementReportDTO($entries, queryId: $query->queryId));
+        self::assertSame([], $sink->notPlaced);
+
+        $mesh->sent = [];
+        $report = new PeerPlacementReportDTO($entries, queryId: $query->queryId);
+        $placement->onPlacementReport(self::TARGET, $report);
+        self::assertSame([['chat', '7', 'its worker was lost']], $sink->notPlaced);
+        self::assertSame(PlacementState::Stopped, $placement->registry()->get('chat:7')->state);
+        self::assertSame($older, $placement->registry()->get('chat:7')->placementId);
+        self::assertCount(1, $mesh->sent);
+        [$node, $stop] = $mesh->sent[0];
+        self::assertSame(self::TARGET, $node);
+        self::assertInstanceOf(PeerStopAgentDTO::class, $stop);
+        self::assertSame($older, $stop->placementId);
+        $placement->onPlacementReport(self::TARGET, $report);
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3, $order, $order->term, workerStarted: true));
+        self::assertNull($placement->placeAgentOnBestNode('chat', '7'));
+        self::assertCount(1, $mesh->sent);
+
+        $placement->onAgentStatus(self::TARGET, $stop->stoppedStatus());
+        $new = $placement->registry()->get('chat:7')->placementId;
+        self::assertGreaterThan($order->sequence, $new->sequence);
+        self::assertSame([], $sink->placed);
+        self::assertCount(1, $sink->notPlaced);
+    }
+
+    public function testReentrantRejoinProofFinishesBeforeTheOrderEntersTheRegistry(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        $mesh->onDelivered = static function (string $node, PeerDTO $frame) use ($placement, $mesh, $sink): void {
+            if (!$frame instanceof PeerPlaceAgentDTO) {
+                return;
+            }
+            self::assertNull($placement->registry()->get('chat:7'));
+            $placement->onPeerHandshaked($node);
+            $query = $mesh->takeFixtureQuery($node);
+            self::assertNotNull($query);
+            $proof = new PeerPlacedAgentEntry('chat', '7', $frame->placementId, PlacementState::Started, workerStarted: true);
+            $report = new PeerPlacementReportDTO([$proof], queryId: $query->queryId);
+            $placement->onPlacementReport($node, $report);
+            self::assertSame([['chat', '7', $node]], $sink->placed);
+            $placement->onPlacementReport($node, $report);
+        };
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        self::assertSame([['chat', '7', self::TARGET]], $sink->placed);
+        self::assertSame([], $sink->notPlaced);
+    }
+
+    public function testSynchronousFallbackWorkerProofConsumesTheMove(): void
+    {
+        [$placement, $mesh, $sink] = $this->fixture();
+        unset($mesh->capabilities[self::TARGET]);
+        $mesh->onDelivered = static function (string $nodeId, PeerDTO $frame) use ($placement): void {
+            if ($frame instanceof PeerPlaceAgentDTO) {
+                $placement->onAgentStatus($nodeId, PeerAgentStatusDTO::started(
+                    'chat', '7', 3, $frame->placementId, $frame->placementId->term, workerStarted: true,
+                ));
+            }
+        };
+
+        $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        self::assertSame([['chat', '7', self::HOST]], $sink->placed);
+        self::assertSame([], $sink->notPlaced);
+        $placement->noteNodeOffline(self::HOST, 1000.0);
+        self::assertSame([], $sink->notPlaced);
     }
 
     public function testSilentOldHostLeavesItsRecordAndReportsRefusal(): void
@@ -127,14 +396,16 @@ final class ClusterPlacementRestartTest extends TestCase
 
     public function testOldHostLeavingAfterStopDoesNotCancelTheNewPlacement(): void
     {
-        [$placement, , $sink] = $this->fixture();
+        [$placement, $mesh, $sink] = $this->fixture();
         $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
         FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
 
         $placement->noteNodeOffline(self::HOST, 100.0);
         self::assertSame([], $sink->notPlaced);
 
-        FakePlacementMesh::status($placement, self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3));
+        self::assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[1][1]);
+        $order = $mesh->sent[1][1]->placementId;
+        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3, $order, $order->term, workerStarted: true));
         self::assertSame([['chat', '7', self::TARGET]], $sink->placed);
     }
 
@@ -182,7 +453,7 @@ final class ClusterPlacementRestartTest extends TestCase
         ]);
         $sink = new RestartTestSink();
         $placement = new ClusterPlacement('leader', $mesh, new RestartTestExecutor(), restartSink: $sink);
-        $placement->onBecameLeader(1000.0);
+        $placement->onBecameLeader(1000.0, term: 1);
         FakePlacementMesh::reply($placement, self::HOST, new PeerPlacementReportDTO([]));
         FakePlacementMesh::reply($placement, self::TARGET, new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
@@ -203,6 +474,8 @@ final class RestartTestMesh implements PlacementMesh
     /** @var list<string> Nodes whose link has gone silent */
     public array $silent = [];
 
+    public ?Closure $onDelivered = null;
+
     /** @param array<string, list<string>> $capabilities Node capabilities */
     public function __construct(public array $capabilities)
     {
@@ -212,7 +485,12 @@ final class RestartTestMesh implements PlacementMesh
     {
         $this->sent[] = [$nodeId, $frame];
         $this->captureFixtureQuery($frame, $nodeId);
-        return !in_array($nodeId, $this->silent, true);
+        if (in_array($nodeId, $this->silent, true)) {
+            return false;
+        }
+
+        $this->onDelivered?->__invoke($nodeId, $frame);
+        return true;
     }
 
     public function broadcastToNodes(PeerDTO $frame): void

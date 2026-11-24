@@ -251,6 +251,29 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
+     * Whether a narrow owner can open its view or read an exact key locally.
+     * A set must be able to add and a keyed read must find a row in that set.
+     *
+     * @param string $collection Mounted runtime collection
+     * @param string $agentId Agent whose frame is reading
+     * @param ?string $key Exact key, or null when only opening the view
+     * @param ?RtState $state State found at that key, if any
+     * @return bool True when this claim supplies a local copy for its holder
+     */
+    public static function canReadLocalClaim(string $collection, string $agentId, ?string $key = null, ?RtState $state = null): bool
+    {
+        $grant = self::grantOf($collection, $agentId);
+        if ($grant === null || $grant->keys->coversEveryKey() || $grant->keys->coversNoKey()
+            || ($grant->keys->coversSet() && !$grant->allows(TruthSourceOperation::Add))
+        ) {
+            return false;
+        }
+
+        return $key === null || $grant->keys->covers($key)
+            || ($grant->keys->coversSet() && $state !== null && $grant->keys->coversRow($key, $state->touchedSetKeys()));
+    }
+
+    /**
      * Check if collection-wide write operation is allowed for runtime collection.
      *
      * @param string $collection Collection name

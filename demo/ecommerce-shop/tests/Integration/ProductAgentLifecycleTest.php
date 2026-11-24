@@ -46,6 +46,7 @@ use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use LogicException;
 use ReflectionClass;
 use ReflectionProperty;
@@ -94,6 +95,7 @@ final class ProductAgentLifecycleTest extends IntegrationTestCase
     protected function tearDown(): void
     {
         TruthSourceRegistry::unregisterAgent(self::AGENT_ID);
+        RtTruthSourceRegistry::unregisterAgent(self::AGENT_ID);
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::AGENT_ID));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::page(self::ACCEPT_KEY));
         ExecutionContext::setCurrentAgentId(null);

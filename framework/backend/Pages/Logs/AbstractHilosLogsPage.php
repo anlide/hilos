@@ -32,6 +32,7 @@ use Hilos\Log\LogRecentEntry;
 use Hilos\Log\NodeLogIndex;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Logs\HilosLogNodesTableRow;
@@ -222,6 +223,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @throws LogicException When the overview cannot be fingerprinted
      * @throws InvalidFormatException When a table-window request id is malformed
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -270,6 +272,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * @throws EnvException When the cluster mode flag cannot be read
      * @throws LogicException When the overview cannot be fingerprinted
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {

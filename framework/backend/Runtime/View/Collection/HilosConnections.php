@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Collection;
 
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\View\Actions\Collection\HilosConnectionsActions;
 use Hilos\Runtime\View\Context\RtContext;
@@ -35,6 +36,7 @@ abstract class HilosConnections extends RtCollection implements HilosPresenceSou
     /**
      * @return StateHilosConnections Backing state collection
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosConnections
     {
@@ -52,6 +54,7 @@ abstract class HilosConnections extends RtCollection implements HilosPresenceSou
      * @param ?int $userId User id, or null for an empty result
      * @return static Connections of that user
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function forUser(?int $userId): static
     {
@@ -89,6 +92,7 @@ abstract class HilosConnections extends RtCollection implements HilosPresenceSou
      * @param ?int $userId User id to summarize active runtime connections for
      * @return HilosUserPresenceSummary Runtime presence and session count summary
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function summaryForUser(?int $userId): HilosUserPresenceSummary
     {

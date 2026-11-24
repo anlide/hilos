@@ -194,9 +194,10 @@ A late release for a different token changes nothing.
 An opted-in target requires every requested upload to remain complete, held by
 one nonempty token, before its deadline, and finally approved. The authoritative
 gate is in the uploads owner's handover handler, before descriptors or row
-deletion. The consumer queues approval before the unchanged publication request
-on its ordinary FIFO channel; missing, delayed or lost approval refuses handover.
-The publication and files-library payloads stay unchanged. Restart still drops
+deletion. The consumer queues approval before the publication request on its
+ordinary FIFO channel. Missing, delayed or lost approval refuses handover.
+The optional hold token follows the publication request, files-library request
+and reply. Consumers that have no hold omit it. Restart still drops
 all uploads and their files; holds promise no recovery of those bytes or of a
 publication response lost after handover.
 

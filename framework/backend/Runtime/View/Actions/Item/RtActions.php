@@ -155,7 +155,7 @@ abstract class RtActions
     protected function remove(): void
     {
         $this->ensureCanWrite(TruthSourceOperation::Remove);
-        $stateCollection = $this->getRtCollection()->getStateCollection();
+        $stateCollection = $this->getRtCollection()->getBackingStateCollection();
         $admission = RtOrdinaryAdmission::reserve(1);
         $admission->seal([RtOrdinaryAdmission::operation(TableMutationType::Delete, $this->getRtCollectionKey(), $this->state, null)]);
         try {
@@ -185,7 +185,7 @@ abstract class RtActions
     protected function removeAsCleanup(): void
     {
         $this->ensureCanWrite(TruthSourceOperation::Remove);
-        RtOrdinaryAdmission::removeAsCleanup($this->getRtCollection()->getStateCollection(), $this->getRtCollectionKey(), $this->state);
+        RtOrdinaryAdmission::removeAsCleanup($this->getRtCollection()->getBackingStateCollection(), $this->getRtCollectionKey(), $this->state);
     }
 
     /**

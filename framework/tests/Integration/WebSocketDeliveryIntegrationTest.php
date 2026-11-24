@@ -999,16 +999,22 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             new WebSocketSignalData(new PageResubscribeSignalData('delivery', $params), targetAcceptKey: $client->acceptKey));
     }
 
-    /** @return iterable<string, array{bool}> Successful handoff with or without subsequent link loss */
+    /** @return iterable<string, array{bool, bool, bool}> Socket intent at the time the relay is released */
     public static function relayLinkOutcomes(): iterable
     {
-        yield 'exact attempt settlement' => [false];
-        yield 'outbound link lost after completion' => [true];
+        yield 'current attempt returns to the socket' => [false, false, false];
+        yield 'outbound link lost after completion' => [true, false, false];
+        yield 'earlier leave has reached the successor' => [false, true, false];
+        yield 'earlier leave followed by a new attempt' => [false, true, true];
     }
 
-    /** @param bool $loseLink Whether to report the loss of only the relay-to-serving link */
+    /**
+     * @param bool $loseLink Whether to report the loss of only the relay-to-serving link
+     * @param bool $leave Whether the old page's unsubscribe reaches the successor before the relay
+     * @param bool $reenter Whether the same socket opens the same page with a new token
+     */
     #[DataProvider('relayLinkOutcomes')]
-    public function testRecoveryRelaySettlesItsOwnSubscriptionWhenItsPeerQueueAcceptsIt(bool $loseLink): void
+    public function testRecoveryRelaySettlesItsOwnSubscriptionWhenItsPeerQueueAcceptsIt(bool $loseLink, bool $leave, bool $reenter): void
     {
         [$client, $socket] = $this->connect();
         $acceptKey = $client->acceptKey;
@@ -1021,6 +1027,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $relayRouter = Hilos::$sr;
         $relay->registerServer(new DeliveryFlowWorkerServer());
         [$peer, $link, $reader] = $this->connectPeer('relay', 'remote');
+        [$successorPeer, $successorLink, $successorReader] = $this->connectPeer('remote', 'socket');
         try {
             $relay->registerServer($peer);
             $placement = $this->beginRelayRecovery();
@@ -1036,6 +1043,45 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             $other = new PendingPageDelivery($acceptKey, 'delivery', 'another-attempt', ['id' => 24], 'owner', 'socket');
             $relayOwner->recordPendingPageDelivery($other);
 
+            $relayCluster = Hilos::$cluster;
+            $serving = new DeliveryFlowMaster();
+            $servingRouter = Hilos::$sr;
+            $servingWorker = new DeliveryFlowWorkerServer();
+            $serving->registerServer($servingWorker);
+            $serving->registerServer($successorPeer);
+            $servingCluster = new ClusterContext();
+            $locations = new ClusterClientLocation('remote');
+            $locations->applySnapshot('socket', [$acceptKey]);
+            $servingCluster->registerClientLocation($locations);
+            $servingCluster->registerAgentSignalSink($serving);
+            $current = null;
+            if ($leave) {
+                Hilos::$sr = $socketRouter;
+                Hilos::$cluster = $previousCluster;
+                $client->acceptJson('{"type":"page_unsubscribe","page":"delivery"}');
+                $unsubscribe = Hilos::$sr->getNextQueuedSignal();
+                self::assertSame(SignalTypeConstants::PAGE_UNSUBSCRIBE, $unsubscribe->signalType->getType());
+                Hilos::$sr->queueSignal($unsubscribe->signalSource, $unsubscribe->signalType, $unsubscribe->signalName, $unsubscribe->data);
+                $this->master->drain();
+                self::assertFalse($client->isDeliveryPending('delivery', $deliveryId));
+                Hilos::$sr = $servingRouter;
+                Hilos::$cluster = $servingCluster;
+                $departed = PeerDTO::fromWire(new PeerSignalDTO('socket', 'remote', 'owner', null, $unsubscribe)->toJson());
+                self::assertInstanceOf(PeerSignalDTO::class, $departed);
+                $successorPeer->onSignalReceived($successorLink, $departed);
+                $serving->drain();
+                self::assertCount(1, $servingWorker->requests);
+                self::assertSame(SignalTypeConstants::PAGE_UNSUBSCRIBE, array_pop($servingWorker->requests)->signal->signalType->getType());
+                if ($reenter) {
+                    Hilos::$sr = $socketRouter;
+                    Hilos::$cluster = $previousCluster;
+                    $current = $this->subscribe($client, params: ['id' => 23]);
+                    self::assertNotSame($deliveryId, $current->data->deliveryId);
+                }
+            }
+
+            Hilos::$sr = $relayRouter;
+            Hilos::$cluster = $relayCluster;
             $order = new PlacementId('socket', 1, 2);
             $records = [new PlacementRecord('owner', null, 'remote', PlacementState::Started, placementId: $order, workerStarted: true)];
             $addresses = ['remote' => [new PeerPlacedAgentEntry('owner', null)]];
@@ -1051,41 +1097,76 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             if (!$loseLink) {
                 self::assertNull($relayIndex->get($acceptKey, $deliveryId));
             }
-            self::assertSame('relay', $this->pending()[$acceptKey][$deliveryId]->nodeId);
-            self::assertTrue($client->isDeliveryPending('delivery', $deliveryId));
+            if (!$leave) {
+                self::assertSame('relay', $this->pending()[$acceptKey][$deliveryId]->nodeId);
+                self::assertTrue($client->isDeliveryPending('delivery', $deliveryId));
+            }
             $placement->onPlacementView('socket', new PeerPlacementViewDTO('socket', $addresses, new PlacementSnapshot('socket', 1, 3, $records)));
             $relay->drain();
             self::assertFalse($link->hasPendingWrite());
 
-            Hilos::$cluster = new ClusterContext();
-            $serving = new DeliveryFlowMaster();
-            $servingWorker = new DeliveryFlowWorkerServer();
-            $serving->registerServer($servingWorker);
-            $serving->deliverSignalToAgent($forwarded->agentType, $forwarded->agentIndex, $forwarded->signal,
-                placementRecoveryRelay: $forwarded->placementRecoveryRelay);
-            self::assertCount(1, $servingWorker->requests);
+            Hilos::$sr = $servingRouter;
+            Hilos::$cluster = $servingCluster;
+            $successorPeer->onSignalReceived($successorLink, $forwarded);
+            $serving->drain();
+            self::assertSame([], $servingWorker->requests, 'An old relay must never reach the page handler');
             $servingIndex = SignalDispatcherFixture::owner($serving)->pendingPageIndex();
-            self::assertNotNull($servingIndex->get($acceptKey, $deliveryId));
-            $this->handle($servingWorker->requests[0]->signal);
-            $signals = $this->forwardFromServing($serving, $this->takeSignals(), $acceptKey);
-            $completion = $signals[array_key_last($signals)];
-            self::assertSame(SignalConstants::DELIVERY_COMPLETE, $completion->signalName->getName());
-            self::assertSame($deliveryId, $completion->data->data->deliveryId);
             self::assertNull($servingIndex->get($acceptKey, $deliveryId));
+            [$recovery] = $this->takePeerFrames($successorLink, $successorReader, 1);
+            self::assertInstanceOf(PeerClientSignalDTO::class, $recovery);
+            self::assertSame('socket', $recovery->targetNodeId);
+            self::assertSame($deliveryId, $recovery->pageRecoveryDeliveryId);
+
             Hilos::$sr = $socketRouter;
-            foreach ($signals as $signal) {
-                $this->deliver($signal, $client, peer: true);
+            Hilos::$cluster = $previousCluster;
+            $this->master->deliverSignalToClient($acceptKey, $recovery->signal, $recovery->pageRecoveryDeliveryId);
+            $client->write();
+            self::assertSame($leave ? [] : [['type' => 'page_resubscribe', 'data' => ['page' => 'delivery', 'params' => ['id' => 23]]]],
+                $this->read($socket));
+            self::assertFalse($client->isDeliveryPending('delivery', $deliveryId));
+            if ($leave && !$reenter) {
+                self::assertSame([], $this->pending());
+                return;
+            }
+            $current ??= $this->subscribe($client, params: ['id' => 23]);
+            $currentId = $current->data->deliveryId;
+            self::assertNotSame($deliveryId, $currentId);
+            self::assertTrue($client->isDeliveryPending('delivery', $currentId));
+
+            Hilos::$sr = $servingRouter;
+            Hilos::$cluster = $servingCluster;
+            $serving->deliverSignalToAgent('owner', null, $current);
+            self::assertCount(1, $servingWorker->requests);
+            self::assertNotNull($servingIndex->get($acceptKey, $currentId));
+            $this->handle($servingWorker->requests[0]->signal);
+            $outbound = $this->takeSignals();
+            foreach ($outbound as $signal) {
+                Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+            }
+            $serving->drain();
+            $signals = $this->takePeerFrames($successorLink, $successorReader, count($outbound));
+            $completion = $signals[array_key_last($signals)];
+            self::assertInstanceOf(PeerClientSignalDTO::class, $completion);
+            self::assertSame(SignalConstants::DELIVERY_COMPLETE, $completion->signal->signalName->getName());
+            self::assertSame($currentId, $completion->signal->data->data->deliveryId);
+            self::assertNull($servingIndex->get($acceptKey, $currentId));
+            Hilos::$sr = $socketRouter;
+            Hilos::$cluster = $previousCluster;
+            foreach ($signals as $frame) {
+                self::assertInstanceOf(PeerClientSignalDTO::class, $frame);
+                $this->master->deliverSignalToClient($acceptKey, $frame->signal, $frame->pageRecoveryDeliveryId);
             }
             $client->write();
             $frames = $this->read($socket);
             self::assertCount(1, $frames);
             self::assertSame(['own_state', 'page_response', 'table_facet_counts', 'after_response'],
                 array_column($frames[0]['data']['frames'], 'type'));
-            self::assertFalse($client->isDeliveryPending('delivery', $deliveryId));
+            self::assertFalse($client->isDeliveryPending('delivery', $currentId));
             self::assertSame([], $this->pending());
 
             if ($loseLink) {
                 Hilos::$sr = $relayRouter;
+                Hilos::$cluster = $relayCluster;
                 $link->close();
                 $relay->noteNodeUnreachable('remote', microtime(true));
                 self::assertSame([], $this->takeSignals(), 'The completed relay must not ask the origin to subscribe again');
@@ -1094,6 +1175,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         } finally {
             $link->close();
             socket_close($reader);
+            $successorLink->close();
+            socket_close($successorReader);
             Hilos::$cluster = $previousCluster;
             Hilos::$sr = $socketRouter;
         }

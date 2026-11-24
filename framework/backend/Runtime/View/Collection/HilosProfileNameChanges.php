@@ -8,6 +8,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Collection\HilosProfileNameChanges as StateHilosProfileNameChanges;
 use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Hilos\Runtime\State\Item\RtState;
@@ -25,6 +26,7 @@ final class HilosProfileNameChanges extends RtCollection
     /**
      * @return StateHilosProfileNameChanges Backing state collection
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function getStateCollection(): StateHilosProfileNameChanges
     {
@@ -46,6 +48,7 @@ final class HilosProfileNameChanges extends RtCollection
      * @param mixed $offset Session token hash
      * @return ?HilosProfileNameChange Item or null
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
      */
     public function offsetGet(mixed $offset): ?HilosProfileNameChange
     {

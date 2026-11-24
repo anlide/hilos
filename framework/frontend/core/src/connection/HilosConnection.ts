@@ -415,9 +415,13 @@ export const captureCurrentSocket = Symbol('captureCurrentSocket')
 export const pageDeliveryAdmissions = new WeakMap<
   HilosConnection,
   {
-    response(
-      data: PageResponseWire,
-    ): { isCurrent: () => boolean; matched: boolean } | false
+    response(data: PageResponseWire):
+      | {
+          isCurrent: () => boolean
+          matched: boolean
+          omitData?: readonly string[]
+        }
+      | false
     refusal(error: PageSubscriptionError): (() => boolean) | false
     address(
       page: string,
@@ -429,7 +433,11 @@ export const pageDeliveryAdmissions = new WeakMap<
 /** The admission retained by a project frame across live publication and replay. */
 export const admittedPageDeliveries = new WeakMap<
   ProjectSignal,
-  { isCurrent: () => boolean; isLive: () => boolean }
+  {
+    isCurrent: () => boolean
+    isLive: () => boolean
+    omitData?: readonly string[]
+  }
 >()
 
 const replayedProjectSignals = new WeakSet<ProjectSignal>()
@@ -1481,7 +1489,11 @@ export class HilosConnection {
         pageDeliveryAdmissions.get(this) === binding &&
         (admission?.isCurrent() ?? true)
       const isLive = () => isCurrentSocket() && isCurrent()
-      admittedPageDeliveries.set(signal, { isCurrent, isLive })
+      admittedPageDeliveries.set(signal, {
+        isCurrent,
+        isLive,
+        omitData: admission?.omitData,
+      })
       this.withTablePresentationUpdate({ kind: 'window' }, () => {
         if (!isLive()) return
 
