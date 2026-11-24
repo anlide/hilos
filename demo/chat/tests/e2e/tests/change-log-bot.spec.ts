@@ -34,7 +34,7 @@ test("keeps a bot description's full old and new values in its receipt and leave
   const after =
     'After: the complete new description.\n' +
     'The receipt renders every word and line. '.repeat(6).trimEnd()
-  await gotoPage(expect, page, '/hilos/app/bots')
+  await gotoPage(expect, page, '/hilos/bots')
   await page.getByTestId('hilos-table-main-action').click()
   await typeInto(page.getByTestId('admin-bots-name'), name)
   await typeInto(page.getByTestId('admin-bots-description'), before)

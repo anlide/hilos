@@ -39,7 +39,7 @@ export async function openBotEdit(
   name: string,
   windows: Awaited<ReturnType<typeof watchBotSearch>>,
 ): Promise<string> {
-  await gotoPage(expect, page, '/hilos/app/bots')
+  await gotoPage(expect, page, '/hilos/bots')
   const mark = await windows.mark()
   let target: Awaited<ReturnType<typeof watchTableModalFocus>> | undefined
   const event: Record<string, unknown> = { name, mark }

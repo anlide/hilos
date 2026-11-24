@@ -16,7 +16,12 @@ test('unknown addresses stay refused through home, history and reload', async ({
   page,
 }) => {
   await test.step('shows Page Not Found for an address no route claims', async () => {
-    for (const path of ['/nope', '/hilos/xyz', '/hilos/app/moderator']) {
+    for (const path of [
+      '/nope',
+      '/hilos/xyz',
+      '/hilos/app/moderator',
+      '/hilos/app/bots',
+    ]) {
       await gotoPage(expect, page, path, PAGE_REFUSED)
       expect(new URL(page.url()).pathname).toBe(path)
 

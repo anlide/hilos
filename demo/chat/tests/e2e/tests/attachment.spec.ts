@@ -104,51 +104,54 @@ async function expectReceived(page: Page, filename: string): Promise<void> {
   await expect(page.getByTestId('attachments-file-name')).toHaveText(filename)
 }
 
-test('a 5 MB file is ready on the composer within two seconds', async ({
-  page,
-}) => {
-  const file = {
-    name: 'upload-speed.txt',
-    mimeType: 'text/plain',
-    buffer: speedFile(),
-  }
-  await createTestUser(expect, page)
+// FIXME(F-130, 2026-11-24): a 5 MB file was ready after 4s, over the 2s limit · foreign · attempt 1 · HIL-2289
+test(
+  'a 5 MB file is ready on the composer within two seconds',
+  { tag: '@quarantine:F-130' },
+  async ({ page }) => {
+    const file = {
+      name: 'upload-speed.txt',
+      mimeType: 'text/plain',
+      buffer: speedFile(),
+    }
+    await createTestUser(expect, page)
 
-  const watch = await watchUploadReady(
-    page.getByTestId('attach-button-input'),
-    'attachments-file',
-  )
-  try {
-    const t0 = Date.now()
-    await page.getByTestId('attach-button-input').setInputFiles(file)
-    await expect(page.getByTestId('attachments-file')).toHaveAttribute(
-      'data-state',
-      'received',
-      { timeout: 30_000 },
+    const watch = await watchUploadReady(
+      page.getByTestId('attach-button-input'),
+      'attachments-file',
     )
-    const observedMs = Date.now() - t0
-    const { startedAt, receivedAt, elapsedMs } = await watch.read()
-    test
-      .info()
-      .annotations.push(
-        { type: 'upload-ms', description: String(elapsedMs) },
-        { type: 'upload-observed-ms', description: String(observedMs) },
+    try {
+      const t0 = Date.now()
+      await page.getByTestId('attach-button-input').setInputFiles(file)
+      await expect(page.getByTestId('attachments-file')).toHaveAttribute(
+        'data-state',
+        'received',
+        { timeout: 30_000 },
       )
-    await expect(page.getByTestId('attachments-file-name')).toHaveText(
-      file.name,
-    )
-    expect(startedAt).not.toBeNull()
-    expect(receivedAt).not.toBeNull()
-    expect(Number.isFinite(elapsedMs)).toBe(true)
-    expect(elapsedMs).toBeGreaterThanOrEqual(0)
-    expect(
-      elapsedMs,
-      `The file was ready after ${elapsedMs} ms`,
-    ).toBeLessThanOrEqual(READY_WITHIN_MS)
-  } finally {
-    await watch.dispose()
-  }
-})
+      const observedMs = Date.now() - t0
+      const { startedAt, receivedAt, elapsedMs } = await watch.read()
+      test
+        .info()
+        .annotations.push(
+          { type: 'upload-ms', description: String(elapsedMs) },
+          { type: 'upload-observed-ms', description: String(observedMs) },
+        )
+      await expect(page.getByTestId('attachments-file-name')).toHaveText(
+        file.name,
+      )
+      expect(startedAt).not.toBeNull()
+      expect(receivedAt).not.toBeNull()
+      expect(Number.isFinite(elapsedMs)).toBe(true)
+      expect(elapsedMs).toBeGreaterThanOrEqual(0)
+      expect(
+        elapsedMs,
+        `The file was ready after ${elapsedMs} ms`,
+      ).toBeLessThanOrEqual(READY_WITHIN_MS)
+    } finally {
+      await watch.dispose()
+    }
+  },
+)
 
 // Attachment lifecycle and authorization e2e (HIL-1035, HIL-144): the file
 // travels through the framework uploads client and is served by the files

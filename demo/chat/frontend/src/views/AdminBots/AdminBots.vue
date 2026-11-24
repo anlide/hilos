@@ -1,4 +1,4 @@
-<!-- The chat bots admin page (PAGE_ADMIN_BOTS) at /hilos/app/bots: the library
+<!-- The chat bots admin page (PAGE_ADMIN_BOTS) at /hilos/bots: the library
 bots table reached from the dashboard's "Chat administration" section. The
 heading, the lead and the breadcrumb come from the page catalog on the backend
 through the framework's HilosAdminPage shell. The bots

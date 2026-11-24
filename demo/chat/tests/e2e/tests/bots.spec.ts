@@ -40,7 +40,7 @@ import { createBotExtras } from '../helpers/bots.js'
 
 // spec-owner: demo — chat's bots and their admin screen
 
-// Bots admin e2e: /hilos/app/bots draws the bots table over the live socket, and
+// Bots admin e2e: /hilos/bots draws the bots table over the live socket, and
 // the create / edit / delete dialogs round-trip through the backend
 // (AdminBotsPage). What the file pins is where a bot turns up in a window after a
 // write — the outcomes of the table mockup (mockups/components/table, "a foreign
@@ -116,7 +116,7 @@ function nameBeforeAll(stamp: number): string {
  * @param page The Playwright page.
  */
 async function openBots(page: Page): Promise<void> {
-  await gotoPage(expect, page, '/hilos/app/bots')
+  await gotoPage(expect, page, '/hilos/bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   await expect(
@@ -488,7 +488,7 @@ test('chat.bots-lifecycle: dashboard, cold entry and F5 lead into live create, e
       }
       await page.getByTestId('dashboard-card-admin_bots').click()
       await expect(page.getByTestId('admin-bots-view')).toBeVisible()
-      expect(new URL(page.url()).pathname).toBe('/hilos/app/bots')
+      expect(new URL(page.url()).pathname).toBe('/hilos/bots')
       await expectBotsPageHead(page)
       expectBotsPageResponse(frames, opening)
     })
@@ -497,7 +497,7 @@ test('chat.bots-lifecycle: dashboard, cold entry and F5 lead into live create, e
         packets: frames.packets.length,
         sent: frames.sent.length,
       }
-      await gotoPage(expect, page, '/hilos/app/bots')
+      await gotoPage(expect, page, '/hilos/bots')
       await expect(page.getByTestId('admin-bots-view')).toBeVisible()
       await expectBotsPageHead(page)
       expectBotsPageResponse(frames, opening)

@@ -46,7 +46,7 @@ test('guest observes bot detail layout, accessible head, and live rename and cle
   test.slow()
 
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/app/bots')
+  await gotoPage(expect, page, '/hilos/bots')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
 
