@@ -801,8 +801,9 @@ final class FreezeGateTestRosterWorkerClient extends WorkerClient
     /**
      * @param string $agentType Type whose worker is asked to stop it
      * @param ?string $agentIndex Instance index, or null for a singleton
+     * @param bool $keepPageMirrors Restart disposition, unused by this protected-mode fixture
      */
-    public function sendAgentStop(string $agentType, ?string $agentIndex = null): void
+    public function sendAgentStop(string $agentType, ?string $agentIndex = null, bool $keepPageMirrors = false): void
     {
         $this->stopped[] = $agentIndex === null ? $agentType : $agentType . ':' . $agentIndex;
     }

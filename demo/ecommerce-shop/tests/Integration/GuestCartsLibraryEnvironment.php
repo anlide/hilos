@@ -38,6 +38,7 @@ abstract class GuestCartsLibraryEnvironment extends StockLibraryEnvironment
         $this->carts = new GuestCartsLibraryAgent();
         OwnershipDeclaration::claimAll($this->carts);
         $this->executionToken = ExecutionContext::push(new ExecutionFrame(agentId: $this->carts->getId()));
+        Hilos::$db->forgetHoldingForTest(EcommerceShopDbContext::productWarehouseStocks);
     }
 
     /**

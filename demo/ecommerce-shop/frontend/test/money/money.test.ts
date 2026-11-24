@@ -27,6 +27,25 @@ describe('money', () => {
     expect(formatMoney(kopecks)).toBe(printed)
   })
 
+  it.each([
+    ['0', '₴0'],
+    ['5', '₴0.05'],
+    ['10', '₴0.10'],
+    ['100000', '₴1,000'],
+    ['9099990809000091', '₴90,999,908,090,000.91'],
+    ['9999999999999999', '₴99,999,999,999,999.99'],
+    ['9318390588416093184', '₴93,183,905,884,160,931.84'],
+  ])('formatMoney(%s) prints the exact amount %s', (kopecks, printed) => {
+    expect(formatMoney(kopecks)).toBe(printed)
+  })
+
+  it.each(['', '00', '-1', '1.5', '1e3', '1\n'])(
+    'rejects a noncanonical amount %j',
+    (kopecks) => {
+      expect(() => formatMoney(kopecks)).toThrow(RangeError)
+    },
+  )
+
   it.each(table.lineTotal)(
     'lineTotal(%i, %i) is %i',
     (price, quantity, total) => {

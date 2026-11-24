@@ -14,6 +14,7 @@ use Demo\EcommerceShop\Database\Entity\Item\UserVoucherCart;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -72,6 +73,11 @@ final class UserAgent extends AbstractUserAgent
         EcommerceShopDbContext::products,
         EcommerceShopDbContext::productWarehouseStocks,
         EcommerceShopDbContext::vouchers,
+    ];
+
+    public const array READS_RT = [
+        ...parent::READS_RT,
+        EcommerceShopRtContext::connections,
     ];
 
     /** @var array<string, mixed> The framework's frames, and the ask to tell the person's tabs the cart */

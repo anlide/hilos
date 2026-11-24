@@ -13,10 +13,15 @@ use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock as EntityProductWarehouseStock;
+use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart as EntitySessionProductCart;
+use Demo\EcommerceShop\Database\Entity\Item\UserProductCart as EntityUserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
+use Demo\EcommerceShop\Database\Object\Item\SessionProductCart as ObjectSessionProductCart;
+use Demo\EcommerceShop\Database\Object\Item\UserProductCart as ObjectUserProductCart;
 use Demo\EcommerceShop\Database\View\Item\Product;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Pages\CartPage;
 use Demo\EcommerceShop\Pages\DTO\ProductPageSubscribeParams;
 use Demo\EcommerceShop\ShopFront\ProductReading;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -24,6 +29,7 @@ use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Daemon\PageSubscriptionContext;
 use Hilos\Core\Page\PageResource;
 use Hilos\Core\Router\PageSubscription;
 use Hilos\Core\Source\SourceChange;
@@ -246,6 +252,69 @@ final class EcommerceShopBrowserContext extends BrowserContext
     }
 
     /**
+     * Matches a cart line of the current owner or a catalog change affecting a product in that owner's cart.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @param string $acceptKey Connection whose session and serving agent must agree
+     * @param SourceChange $change Grouped source fact
+     * @return bool Whether this cart needs a new snapshot
+     * @throws RtActionsStateCollectionNullException When runtime connections are unavailable
+     * @throws HilosException When a configured source refuses a read
+     * @throws LogicException When an ORM collection is misconfigured
+     * @throws InvalidArgumentException When an ORM query or item is invalid
+     * @throws DatabaseException When a cart or stock row cannot be read
+     */
+    protected function observesOwnPageChange(string $page, string $acceptKey, SourceChange $change): bool
+    {
+        if ($page !== PageConstants::CART || !$change->isDb() || !in_array($change->sourceKey, [
+            EcommerceShopDbContext::sessionProductCarts,
+            EcommerceShopDbContext::userProductCarts,
+            EcommerceShopDbContext::products,
+            EcommerceShopDbContext::productWarehouseStocks,
+        ], true)) {
+            return false;
+        }
+
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        $connection = Hilos::$rt->connections[$acceptKey];
+        if ($subscription?->page !== $page || $connection === null || $connection->staleSince() !== null) {
+            return false;
+        }
+
+        $userId = $connection->userId;
+        $sessionId = $connection->sessionId;
+        if (!CartPage::cartOwnerMatches($userId, $sessionId, $subscription->agentType, $subscription->agentIndex)) {
+            return false;
+        }
+
+        if ($change->sourceKey === EcommerceShopDbContext::sessionProductCarts) {
+            return $userId === null && $this->cartLineChangeMatchesOwner($change, $sessionId);
+        }
+        if ($change->sourceKey === EcommerceShopDbContext::userProductCarts) {
+            return $userId !== null && $this->cartLineChangeMatchesOwner($change, $userId);
+        }
+
+        $cartLines = $userId === null ? Hilos::$db->sessionProductCarts : Hilos::$db->userProductCarts;
+        $ownerId = $userId ?? $sessionId;
+        if ($change->mutationType === TableMutationType::Clear) {
+            return $cartLines->hasCartLine($ownerId);
+        }
+        if ($change->sourceKey === EcommerceShopDbContext::products) {
+            return $cartLines->hasCartLine($ownerId, (int) $change->sourceId);
+        }
+        if (!$cartLines->hasCartLine($ownerId)) {
+            return false;
+        }
+        foreach ($this->cartProductIdsOfStockChange($change) as $productId) {
+            if ($cartLines->hasCartLine($ownerId, $productId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Publishes one complete card per affected subscription from the final state of the worker flush.
      *
      * @param bool $databaseBack Whether this worker recovered its database connection
@@ -268,18 +337,19 @@ final class EcommerceShopBrowserContext extends BrowserContext
         $bound = [];
         $unbound = [];
         foreach ($router->pageSubscriptionRecords() as $acceptKey => $subscription) {
-            if ($subscription->page !== PageConstants::PRODUCT) {
+            if ($subscription->page !== PageConstants::PRODUCT || $this->isPageFanOutDeferred((string) $acceptKey)) {
                 continue;
             }
             $slug = $subscription->stringParams()[ProductPageSubscribeParams::SLUG] ?? null;
             if ($slug === null || $slug === '') {
                 continue;
             }
+            $context = new PageSubscriptionContext($router, (string) $acceptKey, $subscription);
             $resource = $router->pageResource($acceptKey);
             if ($resource?->collectionKey === EcommerceShopDbContext::products) {
-                $bound[(int) $resource->idString][$acceptKey] = $subscription;
+                $bound[(int) $resource->idString][$acceptKey] = $context;
             } elseif ($resource === null && $router->hasPageDeliveryFailure($acceptKey)) {
-                $unbound[$slug][$acceptKey] = $subscription;
+                $unbound[$slug][$acceptKey] = $context;
             }
         }
         if ($bound === [] && $unbound === []) {
@@ -307,7 +377,11 @@ final class EcommerceShopBrowserContext extends BrowserContext
         foreach ($bound as $productId => $subscribers) {
             $changed = ($products[$productId] ?? TableMutationType::Create) === TableMutationType::Update;
             $read = $changed || $categories !== [];
-            foreach ($subscribers as $subscription) {
+            foreach ($subscribers as $context) {
+                if (!$context->isCurrent()) {
+                    continue;
+                }
+                $subscription = $context->subscription;
                 $read = $read || isset($retry[$subscription]);
                 if ($unresolvedStock) {
                     $this->unresolvedProductPages[$subscription] = true;
@@ -323,14 +397,17 @@ final class EcommerceShopBrowserContext extends BrowserContext
                 continue;
             } catch (HilosException $failure) {
                 $uncertain = false;
-                foreach ($subscribers as $acceptKey => $subscription) {
+                foreach ($subscribers as $acceptKey => $context) {
+                    if (!$context->isCurrent()) {
+                        continue;
+                    }
                     $basis = $this->productPageBasis($router->pageResource($acceptKey));
                     if ($changed || ($basis !== null && isset($categories[$basis->categoryId]))) {
-                        $this->failPublication(PageConstants::PRODUCT, $acceptKey, $failure);
+                        $this->failAddressedPublication($context, $failure);
                     } else {
                         $uncertain = $uncertain || !$router->hasPageDeliveryFailure($acceptKey);
                         if ($failure instanceof DatabaseException) {
-                            $this->unresolvedProductPages[$subscription] = true;
+                            $this->unresolvedProductPages[$context->subscription] = true;
                         }
                     }
                 }
@@ -342,14 +419,14 @@ final class EcommerceShopBrowserContext extends BrowserContext
             if ($product === null) {
                 continue;
             }
-            foreach ($subscribers as $acceptKey => $subscription) {
-                if (!$subscription->paramEquals(ProductPageSubscribeParams::SLUG, $product->slug)) {
+            foreach ($subscribers as $acceptKey => $context) {
+                if (!$context->isCurrent() || !$context->subscription->paramEquals(ProductPageSubscribeParams::SLUG, $product->slug)) {
                     continue;
                 }
                 if ($changed || isset($categories[$product->categoryId])) {
-                    $this->resendPageWhole(PageConstants::PRODUCT, $acceptKey);
-                } elseif (isset($retry[$subscription])) {
-                    $reconcile[$productId][$acceptKey] = $product;
+                    $this->resendAddressedPageWhole($context);
+                } elseif (isset($retry[$context->subscription])) {
+                    $reconcile[$productId][$acceptKey] = [$context, $product];
                 }
             }
         }
@@ -357,7 +434,11 @@ final class EcommerceShopBrowserContext extends BrowserContext
         if ($unbound !== []) {
             $slugs = [];
             foreach ($unbound as $slug => $subscribers) {
-                foreach ($subscribers as $subscription) {
+                foreach ($subscribers as $context) {
+                    if (!$context->isCurrent()) {
+                        continue;
+                    }
+                    $subscription = $context->subscription;
                     if ($unresolvedStock) {
                         $this->unresolvedProductPages[$subscription] = true;
                     }
@@ -370,11 +451,14 @@ final class EcommerceShopBrowserContext extends BrowserContext
             try {
                 foreach (Hilos::$db->products->whereColumnIn(EntityProduct::slug, ...array_values($slugs)) as $product) {
                     // An SQL collation can find an address that is not an exact browser slug.
-                    foreach ($unbound[$product->slug] ?? [] as $acceptKey => $subscription) {
+                    foreach ($unbound[$product->slug] ?? [] as $acceptKey => $context) {
+                        if (!$context->isCurrent()) {
+                            continue;
+                        }
                         if (isset($products[$product->id]) || isset($categories[$product->categoryId])) {
-                            $this->resendPageWhole(PageConstants::PRODUCT, $acceptKey);
-                        } elseif (isset($retry[$subscription])) {
-                            $reconcile[$product->id][$acceptKey] = $product;
+                            $this->resendAddressedPageWhole($context);
+                        } elseif (isset($retry[$context->subscription])) {
+                            $reconcile[$product->id][$acceptKey] = [$context, $product];
                         }
                     }
                 }
@@ -384,8 +468,10 @@ final class EcommerceShopBrowserContext extends BrowserContext
                 Logger::error("Product page slug lookup failed: {$failure->getMessage()}");
                 if ($failure instanceof DatabaseException) {
                     foreach ($slugs as $slug) {
-                        foreach ($unbound[$slug] as $subscription) {
-                            $this->unresolvedProductPages[$subscription] = true;
+                        foreach ($unbound[$slug] as $context) {
+                            if ($context->isCurrent()) {
+                                $this->unresolvedProductPages[$context->subscription] = true;
+                            }
                         }
                     }
                 }
@@ -398,12 +484,11 @@ final class EcommerceShopBrowserContext extends BrowserContext
     /**
      * Tries a previously uncertain candidate when its exact card has changed or become visible.
      *
-     * @param array<int, array<string, Product>> $candidates Product rows and the subscriptions still awaiting a comparison
+     * @param array<int, array<string, array{PageSubscriptionContext, Product}>> $candidates Products and original comparison addresses
      */
     private function reconcileProductPages(array $candidates): void
     {
-        $router = Hilos::$sr;
-        if ($candidates === [] || $router === null) {
+        if ($candidates === []) {
             return;
         }
 
@@ -415,10 +500,9 @@ final class EcommerceShopBrowserContext extends BrowserContext
             Logger::error("Product page reconciliation stock read failed: {$failure->getMessage()}");
             if ($failure instanceof DatabaseException) {
                 foreach ($candidates as $subscribers) {
-                    foreach ($subscribers as $acceptKey => $product) {
-                        $subscription = $router->pageSubscription($acceptKey);
-                        if ($subscription !== null) {
-                            $this->unresolvedProductPages[$subscription] = true;
+                    foreach ($subscribers as [$context, $product]) {
+                        if ($context->isCurrent()) {
+                            $this->unresolvedProductPages[$context->subscription] = true;
                         }
                     }
                 }
@@ -428,17 +512,19 @@ final class EcommerceShopBrowserContext extends BrowserContext
 
         foreach ($candidates as $productId => $subscribers) {
             $units = $totals->of($productId)->unitCount;
-            foreach ($subscribers as $acceptKey => $product) {
-                $basis = $this->productPageBasis($router->pageResource($acceptKey));
+            foreach ($subscribers as [$context, $product]) {
+                if (!$context->isCurrent()) {
+                    continue;
+                }
+                $basis = $this->productPageBasis($context->router->pageResource($context->acceptKey));
                 try {
                     $reading = new ProductReading($product, Hilos::$db->categories[$product->categoryId], $units);
                 } catch (WiringRefusal) {
                     continue;
                 } catch (HilosException $failure) {
                     Logger::error("Product page reconciliation category read failed for {$productId}: {$failure->getMessage()}");
-                    $subscription = $router->pageSubscription($acceptKey);
-                    if ($failure instanceof DatabaseException && $subscription !== null) {
-                        $this->unresolvedProductPages[$subscription] = true;
+                    if ($failure instanceof DatabaseException && $context->isCurrent()) {
+                        $this->unresolvedProductPages[$context->subscription] = true;
                     }
                     continue;
                 }
@@ -446,7 +532,7 @@ final class EcommerceShopBrowserContext extends BrowserContext
                 if ($basis === null ? $reading->availability !== ProductAvailability::NOT_PLACED
                     : $reading->fingerprint() !== $basis->fingerprint
                 ) {
-                    $this->resendPageWhole(PageConstants::PRODUCT, $acceptKey);
+                    $this->resendAddressedPageWhole($context);
                 }
             }
         }
@@ -459,6 +545,69 @@ final class EcommerceShopBrowserContext extends BrowserContext
     private function productPageBasis(?PageResource $resource): ?ProductPageBasis
     {
         return $resource === null ? null : ($this->productPageBases[$resource] ?? null);
+    }
+
+    /**
+     * Resolves membership from the changed line without re-reading a deleted row.
+     * A collection clear invalidates even a now-empty cart of that owner type.
+     *
+     * @param SourceChange $change Guest or account cart line fact
+     * @param int $ownerId Session id for a guest line or user id for an account line
+     * @return bool Whether the fact belongs to this cart
+     * @throws HilosException When a configured cart collection refuses the read
+     * @throws LogicException When the cart collection is misconfigured
+     * @throws InvalidArgumentException When a loaded cart item has the wrong type
+     * @throws DatabaseException When a sparse cart fact cannot be resolved
+     */
+    private function cartLineChangeMatchesOwner(SourceChange $change, int $ownerId): bool
+    {
+        if ($change->mutationType === TableMutationType::Clear) {
+            return true;
+        }
+
+        $guest = $change->sourceKey === EcommerceShopDbContext::sessionProductCarts;
+        $objectKey = $guest ? ObjectSessionProductCart::sessionId : ObjectUserProductCart::userId;
+        $entityKey = $guest ? EntitySessionProductCart::session_id : EntityUserProductCart::user_id;
+        $rowOwner = $change->row[$objectKey] ?? $change->row[$entityKey] ?? null;
+        $previousOwner = $change->previous[$objectKey] ?? $change->previous[$entityKey] ?? null;
+        if ((int) $rowOwner === $ownerId || (int) $previousOwner === $ownerId) {
+            return true;
+        }
+        if ($rowOwner !== null || $change->mutationType === TableMutationType::Delete) {
+            return false;
+        }
+
+        return $guest
+            ? (Hilos::$db->sessionProductCarts[(int) $change->sourceId] ?? null)?->sessionId === $ownerId
+            : (Hilos::$db->userProductCarts[(int) $change->sourceId] ?? null)?->userId === $ownerId;
+    }
+
+    /**
+     * @param SourceChange $change Applied warehouse stock fact
+     * @return list<int> Products named by the stock fact or its live row
+     * @throws HilosException When the stock collection refuses a read
+     * @throws LogicException When the stock collection is misconfigured
+     * @throws InvalidArgumentException When the stock lookup query is invalid
+     * @throws DatabaseException When a sparse stock fact cannot be resolved
+     */
+    private function cartProductIdsOfStockChange(SourceChange $change): array
+    {
+        $row = $change->row;
+        $previous = $change->previous;
+        $productId = $row[ObjectProductWarehouseStock::productId] ?? $row[EntityProductWarehouseStock::product_id] ?? null;
+        $previousId = $previous[ObjectProductWarehouseStock::productId] ?? $previous[EntityProductWarehouseStock::product_id] ?? null;
+        if ($productId === null && $change->mutationType !== TableMutationType::Delete) {
+            $productId = Hilos::$db->productWarehouseStocks->productIdAtStockKey((int) $change->sourceId);
+        }
+
+        $productIds = [];
+        foreach ([$productId, $previousId] as $id) {
+            if ($id !== null) {
+                $productIds[(int) $id] = true;
+            }
+        }
+
+        return array_keys($productIds);
     }
 
     /**

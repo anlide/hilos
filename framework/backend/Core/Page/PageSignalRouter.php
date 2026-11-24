@@ -28,12 +28,12 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Analytics\AnalyticsPersonEvent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
-use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageMovedSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\ActionAccountFrozenException;
@@ -237,18 +237,15 @@ class PageSignalRouter
      * An answer that is not the page releases what the page holds for the connection
      * ({@see AbstractPage::onUnsubscribe()}); the subscription registration stays.
      *
-     * What it deliberately does NOT do is re-subscribe. The subscription itself is unchanged;
-     * only the answer to it is. That is why the frame never passes through
-     * {@see DaemonManager::updateSubscriptions}: a real re-subscribe would rewrite the
-     * registry entry, drop this connection's table viewports and bill the person an extra
-     * page visit, none of which a re-decision means.
+     * The connection keeps its subscription. An existing owner reuses its mirror and a
+     * new owner can answer before the worker registers its mirror. Both omit a page visit.
      *
      * {@see self::parkUntilIdentified} is not called either, and for the same kind of reason:
      * a subscribe has to wait to learn who sent it, while this frame exists BECAUSE that
      * answer is known - it was the change of that very identity's rights that queued it.
      *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data, shaped exactly like the subscribe it re-judges
-     * @param string $source Signal source
+     * @param string $source Signal source, daemon when it assigns an identity-routed page to a new owner
      * @param string $name Signal name (page name fallback)
      * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      * @throws InvalidFormatException When the tracked delivery has an invalid completion address
@@ -256,7 +253,9 @@ class PageSignalRouter
     public function dispatchPageAccessReassess(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
         $page = $data->page ?? $name;
-        if ($page === '' || !$this->subscribedToPage($data->acceptKey, $page)) {
+        $identityRouted = Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+        $handoff = $identityRouted && $source === SignalSource::DAEMON;
+        if ($page === '' || (!$handoff && !$this->subscribedToPage($data->acceptKey, $page))) {
             // The tab navigated away, or closed, between the grant and this frame. There is
             // nothing to re-decide, and answering would push a page the client left.
             return;
@@ -267,7 +266,7 @@ class PageSignalRouter
             return;
         }
 
-        if ($pageInstance::ACCESS_LEVEL === PageAccessLevel::PUBLIC && !$this->accessCanTurnOnIdentity($page)) {
+        if ($pageInstance::ACCESS_LEVEL === PageAccessLevel::PUBLIC && !$identityRouted && !$this->accessCanTurnOnIdentity($page)) {
             // A page whose verdict cannot depend on who is asking answers the same thing it
             // answered a moment ago. Sending it anyway would push a full page answer into
             // every open chat tab of the person on every grant: harmless frames, pure noise.
@@ -306,7 +305,8 @@ class PageSignalRouter
      */
     public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
-        $owed = Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true;
+        $router = Hilos::$sr;
+        $owed = $router?->hasPageDeliveryFailure($acceptKey) === true;
         $outcome = $this->runPageSubscribeFrame(
             new WebSocketPageSubscribeSignalDTO(acceptKey: $acceptKey, page: $page, params: $params),
             SignalSource::WORKER,
@@ -318,7 +318,10 @@ class PageSignalRouter
 
         // The answer pays the debt before after-response hooks run. A hook throwing after it
         // cannot turn a delivered full answer into a failed silent probe.
-        if ($owed && Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === false) {
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return PageResendOutcome::Unserved;
+        }
+        if ($owed && $router?->hasPageDeliveryFailure($acceptKey) === false) {
             return PageResendOutcome::Answered;
         }
 
@@ -350,13 +353,15 @@ class PageSignalRouter
             return PageResendOutcome::Unserved;
         }
 
-        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
         if ($subscription === null || $subscription->page !== $page) {
             return PageResendOutcome::Unserved;
         }
 
+        $fanOut = $router->pageFanOutAnswer($acceptKey);
         $pageInstance = $this->resolvePage($page, false);
-        if ($pageInstance === null) {
+        if ($pageInstance === null || ($fanOut !== null && !$router->isPageAnswerCurrent($acceptKey))) {
             return PageResendOutcome::Unserved;
         }
 
@@ -365,8 +370,7 @@ class PageSignalRouter
         $errorCode = $missing->errorCode;
         $transitionMessage = PageErrorMessages::RESOURCE_DELETED_MESSAGE;
         try {
-            PageAccessGate::assert($pageInstance::class, $acceptKey);
-            Hilos::$browser?->assertSubscriptionAccess($page, $acceptKey, new PageRouteParams($subscription->params));
+            $this->assertAnswerAccess($pageInstance, $page, $acceptKey, new PageRouteParams($subscription->params));
         } catch (PageSubscriptionException $refusal) {
             // Rights and the freeze outrank the row. Their 401, 403 and 503 go out as
             // that ordinary status. Every other verdict of these guards is the deletion.
@@ -381,7 +385,13 @@ class PageSignalRouter
             }
         }
 
+        if ($fanOut !== null && !$router->isPageAnswerCurrent($acceptKey)) {
+            return PageResendOutcome::Unserved;
+        }
         $this->releaseUnservedConnection($pageInstance, $acceptKey);
+        if ($fanOut !== null && !$router->isPageAnswerCurrent($acceptKey)) {
+            return PageResendOutcome::Unserved;
+        }
         $this->sendSubscriptionError(
             $pageInstance->getAgent()->getAgentSignalSource(),
             $page,
@@ -501,7 +511,11 @@ class PageSignalRouter
         bool $reportRefusal = false,
     ): PageResendOutcome {
         $page = $data->page ?? $name;
+        $router = Hilos::$sr;
         try {
+            if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                return PageResendOutcome::Unserved;
+            }
             if ($page === '') {
                 if ($reportFailure) {
                     Logger::error('Page subscribe without page name');
@@ -510,6 +524,9 @@ class PageSignalRouter
             }
 
             $pageInstance = $this->resolvePage($page, $reportFailure);
+            if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                return PageResendOutcome::Unserved;
+            }
             if ($pageInstance === null) {
                 if (!$reportFailure) {
                     return PageResendOutcome::Refused;
@@ -538,16 +555,27 @@ class PageSignalRouter
                 // tables answers with (HIL-642). Written before the guards rather than after,
                 // because a refusal has to clear it too, and the take does that.
                 Hilos::$sr?->reportTableWindows($data->acceptKey, $data->tableWindows);
-                PageAccessGate::assert($pageInstance::class, $data->acceptKey);
-                Hilos::$browser?->assertSubscriptionAccess($page, $data->acceptKey, $params);
+                $this->assertAnswerAccess($pageInstance, $page, $data->acceptKey, $params);
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 $pageInstance->onSubscribe($data->acceptKey, $params);
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 if ($recordVisit) {
                     $this->recordPersonEvent($data->acceptKey, AnalyticsPersonEvent::PAGE_OPEN, page: $page, params: $params->toArray());
                 }
 
                 return PageResendOutcome::Answered;
             } catch (PageInternalErrorException $e) {
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 if (!$reportFailure) {
                     return PageResendOutcome::Failed;
                 }
@@ -569,11 +597,17 @@ class PageSignalRouter
 
                 return PageResendOutcome::Failed;
             } catch (PageSubscriptionException $e) {
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 if ($e instanceof PageMovedException && !$this->movesElsewhere($page, $data->params, $e)) {
                     // A move that names no address or the very address it was judged at is a
                     // broken declaration of the page, not a verdict: answered exactly as the node
                     // being wrong about itself above, instead of a loop of subscriptions.
                     $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                    if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                        return PageResendOutcome::Unserved;
+                    }
                     if (!$reportFailure) {
                         return PageResendOutcome::Failed;
                     }
@@ -596,6 +630,9 @@ class PageSignalRouter
                     return PageResendOutcome::Answered;
                 }
                 $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 if (!$reportFailure && !$reportRefusal) {
                     return PageResendOutcome::Refused;
                 }
@@ -642,7 +679,13 @@ class PageSignalRouter
 
                 return PageResendOutcome::Refused;
             } catch (Throwable $e) {
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
+                    return PageResendOutcome::Unserved;
+                }
                 if (!$reportFailure) {
                     return PageResendOutcome::Failed;
                 }
@@ -661,10 +704,36 @@ class PageSignalRouter
                 // an answer takes it above, and a refusal drops it here. Left standing, it would
                 // still be there when this page is re-sent to the same connection later, and the
                 // window it names may by then be one the tab has moved on from.
-                Hilos::$sr?->takeReportedTableWindows($data->acceptKey);
+                if ($router?->isPageAnswerCurrent($data->acceptKey) !== false) {
+                    $router?->takeReportedTableWindows($data->acceptKey);
+                }
             }
         } finally {
             $this->completePageDelivery($data->acceptKey, $page !== '' ? $page : $name, $data->deliveryId);
+        }
+    }
+
+    /**
+     * @param AbstractPage $pageInstance Page declaring the access level
+     * @param string $page Page key for browser guards
+     * @param string $acceptKey Subscriber whose access is judged
+     * @param PageRouteParams $params Route parameters to validate
+     * @throws PageSubscriptionException When the access level or browser guards refuse the answer
+     * @throws HilosException When the access verdict or browser data cannot be read
+     */
+    private function assertAnswerAccess(AbstractPage $pageInstance, string $page, string $acceptKey, PageRouteParams $params): void
+    {
+        $fanOut = Hilos::$sr?->pageFanOutAnswer($acceptKey);
+        $assert = static function () use ($fanOut, $pageInstance, $page, $acceptKey, $params): void {
+            PageAccessGate::assert($pageInstance::class, $acceptKey);
+            if ($fanOut?->isCurrent() !== false) {
+                Hilos::$browser?->assertSubscriptionAccess($page, $acceptKey, $params);
+            }
+        };
+        if ($fanOut === null || Hilos::$browser === null) {
+            $assert();
+        } else {
+            Hilos::$browser->evaluatePageFanOutAccess($fanOut, $assert);
         }
     }
 
@@ -2787,6 +2856,7 @@ class PageSignalRouter
      */
     private function releaseUnservedConnection(AbstractPage $page, string $acceptKey): void
     {
+        $router = Hilos::$sr;
         try {
             $page->onUnsubscribe($acceptKey);
         } catch (Throwable $e) {
@@ -2795,7 +2865,9 @@ class PageSignalRouter
             );
         }
 
-        Hilos::$sr?->clearPageResource($acceptKey);
+        if ($router?->isPageAnswerCurrent($acceptKey) !== false) {
+            $router?->clearPageResource($acceptKey);
+        }
     }
 
     /**
@@ -2849,7 +2921,9 @@ class PageSignalRouter
         string $errorCode,
         ?string $transitionMessage = null,
     ): void {
-        Hilos::$sr->queueSignal(
+        $router = Hilos::$sr;
+        $fanOut = $router->pageFanOutAnswer($acceptKey);
+        $router->queueSignal(
             signalSource: $signalSource,
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
@@ -2863,8 +2937,8 @@ class PageSignalRouter
                 targetAcceptKey: $acceptKey,
             ),
         );
-        if ($httpCode !== HttpConstants::HTTP_UNAUTHORIZED) {
-            Hilos::$sr->markPageDeliveryFailure($acceptKey);
+        if ($httpCode !== HttpConstants::HTTP_UNAUTHORIZED && $fanOut?->isCurrent() !== false) {
+            $router->markPageDeliveryFailure($acceptKey);
         }
     }
 

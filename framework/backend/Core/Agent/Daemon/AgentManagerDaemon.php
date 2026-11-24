@@ -33,6 +33,7 @@ use Hilos\Core\Source\Interest\SourceReaderUnion;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Daemon\AgentLossSink;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\PageHandoffIdentity;
 use Hilos\Core\Daemon\RtCopyConfirmation;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
@@ -48,6 +49,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -664,6 +666,11 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function handleAgentMessage(WorkerAgentMessageDTO $dto): void
     {
+        if (isset($dto->signal->meta[PageHandoffIdentity::META_PROOF])
+            || isset($dto->signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID])) {
+            Hilos::$sr->queueSignalEnvelope($dto->signal);
+            return;
+        }
         // Simply queue signal in daemon's SignalRouter
         // DaemonManager will process it in dispatchSignals() and handle routing/delivery
         Hilos::$sr->queueSignal(

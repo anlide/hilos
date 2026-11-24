@@ -13,6 +13,7 @@ use Hilos\Auth\Throttle\ThrottleIdentity;
 use Hilos\Cluster\Connections\ClusterAcceptKey;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
@@ -27,6 +28,7 @@ use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\PageHandoffIdentity;
 use Hilos\Core\Daemon\ProtectedModeAdmissionRecorder;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -52,6 +54,8 @@ use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\Delivery\DeliveryCleanup;
 use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
+use Hilos\Socket\WebSocket\Delivery\DeliveryPacket;
+use Hilos\Socket\WebSocket\Delivery\ScopedSocketWrite;
 use Hilos\Socket\WebSocket\Delivery\DeliveryQueue;
 use Hilos\Socket\WebSocket\Delivery\DeliveryRequestLifetime;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
@@ -259,6 +263,35 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
     /** Latest admitted page intent, retained after its completion for the lifetime of this socket. */
     private ?string $latestPageDeliveryId = null;
+
+    /** The accepted control may outlive its retired page token until a new request or leave. */
+    private ?string $recoveryPage = null;
+
+    /** @var ?SplQueue<ScopedSocketWrite> Complete scoped frames whose first byte has not started */
+    private ?SplQueue $scopedWrites = null;
+
+    /** Logical prefix already acknowledged or discarded since the first outstanding scoped frame. */
+    private int $writePosition = 0;
+
+    private ?string $subscribedPage = null;
+
+    /** The current subscription's authority survives its first answer. */
+    private ?string $subscriptionDeliveryId = null;
+
+    /** RT identity bound to the current subscription token when the master addresses it. */
+    private ?PageHandoffIdentity $pageDeliveryIdentity = null;
+
+    /** This socket lost a scoped answer and needs a new one when its RT row is confirmed. */
+    private bool $pageDeliveryIdentityLost = false;
+
+    /** Only the terminal refusal may publish once the current attempt has expired. */
+    private ?string $expiredPageDeliveryScope = null;
+
+    /** Original deadline for the current remote attempt, in monotonic milliseconds. */
+    private ?int $remotePageHandoffAt = null;
+
+    /** @var ?Closure(WebSocketClient): void Socket master's exact terminal effect */
+    private ?Closure $remotePageHandoffExpiry = null;
 
     /** @var array<string, WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO> Accepted pending requests */
     private array $deliveryRequests = [];
@@ -891,20 +924,31 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->closingDeliveryQueue?->close();
         $this->closingDeliveryQueue = null;
         $this->deliveryCleanup ??= new DeliveryCleanup();
+        if ($this->scopedWrites !== null) {
+            $this->deliveryCleanup->schedule(self::retireTransportFrames($this->scopedWrites));
+            $this->scopedWrites = null;
+            $this->writePosition = 0;
+        }
         if ($this->afterPacking !== null) {
-            $frames = $this->afterPacking;
+            $this->deliveryCleanup->schedule(self::retireTransportFrames($this->afterPacking));
             $this->afterPacking = null;
             $this->afterPackingBytes = 0;
-            $this->deliveryCleanup->schedule((static function () use ($frames): Generator {
-                yield;
-                while (!$frames->isEmpty()) {
-                    $frames->dequeue();
-                    yield;
-                }
-            })());
         }
         $this->deliveryCleanup->retire($this->pendingRotationDrops);
         parent::close();
+    }
+
+    /**
+     * @param SplQueue<string>|SplQueue<ScopedSocketWrite> $frames Old frames detached from this socket
+     * @return Generator<int, void> One retired frame per cleanup step
+     */
+    private static function retireTransportFrames(SplQueue $frames): Generator
+    {
+        yield;
+        while (!$frames->isEmpty()) {
+            $frames->dequeue();
+            yield;
+        }
     }
 
     /** @param DeliveryCleanup $cleanup Master's existing guarded effect owner */
@@ -969,6 +1013,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $livenessAt = $this->liveness?->nextDueAt($nowMs);
         $deadline = $deliveryAt === null ? $livenessAt
             : ($livenessAt === null ? $deliveryAt : min($deliveryAt, $livenessAt));
+        if ($this->remotePageHandoffAt !== null) {
+            $deadline = $deadline === null ? $this->remotePageHandoffAt : min($deadline, $this->remotePageHandoffAt);
+        }
         $this->socketWorkTimer->armAt($deadline === null ? null : $deadline / TimeConstants::MS_PER_SECOND);
     }
 
@@ -994,11 +1041,100 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             if ($queue === null) {
                 return;
             }
-            foreach ($queue->drainPortion($this->deliveryNowMs(), self::DELIVERY_PACKING_STEPS_PER_PORTION, $force) as $text) {
-                $this->queueWrite($this->buildFrameHeader(strlen($text), self::OPCODE_TEXT) . $text);
+            foreach ($queue->drainPackets(
+                $this->deliveryNowMs(), self::DELIVERY_PACKING_STEPS_PER_PORTION, $force, $this->pagePublicationScope(),
+            ) as $packet) {
+                $this->queueDeliveryPacket($packet);
             }
         } finally {
             $this->rearmSocketWork();
+        }
+    }
+
+    /** @param DeliveryPacket $packet Complete text and the socket scope that may still expire */
+    private function queueDeliveryPacket(DeliveryPacket $packet): void
+    {
+        $bytes = $this->buildFrameHeader(strlen($packet->text), self::OPCODE_TEXT) . $packet->text;
+        if ($packet->deliveryId !== null) {
+            $fallback = $packet->unscopedText;
+            $this->scopedWrites ??= new SplQueue();
+            $this->scopedWrites->enqueue(new ScopedSocketWrite(
+                $this->writePosition + strlen($this->writeBuffer),
+                strlen($bytes),
+                $packet->deliveryId,
+                $packet->recovery,
+                $fallback === null ? '' : $this->buildFrameHeader(strlen($fallback), self::OPCODE_TEXT) . $fallback,
+            ));
+        }
+        $this->queueWrite($bytes);
+    }
+
+    /** @return string Runnable prefix, ending before the next frame that still needs a scope check */
+    protected function bytesToWrite(): string
+    {
+        $limit = null;
+        $discarded = 0;
+        $fallback = '';
+        for ($step = 0; $this->scopedWrites !== null && $step < self::TRANSPORT_FRAMES_PER_PORTION; $step++) {
+            $frame = $this->scopedWrites->bottom();
+            $before = $frame->offset - $this->writePosition;
+            $current = $frame->recovery ? $this->recoveryDeliveryId() : $this->pagePublicationScope();
+            if ($frame->deliveryId === $current) {
+                if ($frame->recovery || $this->hasCurrentPageDeliveryIdentity()) {
+                    $limit = $this->scopedWrites->count() === 1 ? null : $this->scopedWrites[1]->offset - $this->writePosition;
+                    break;
+                }
+                $this->notePageDeliveryIdentityLost();
+            }
+            if ($before > 0) {
+                // This prefix may include a partial frame or bytes native TLS has already accepted.
+                $limit = $before;
+                break;
+            }
+
+            $fallback = $frame->unscopedBytes;
+            $discarded += $frame->length;
+            $this->writePosition += $frame->length - strlen($fallback);
+            $this->forgetScopedWrite();
+        }
+
+        if ($discarded > 0) {
+            // Rebuild the tail once even when a run of obsolete frames precedes it.
+            $this->writeBuffer = $fallback . substr($this->writeBuffer, $discarded);
+        }
+        if ($this->scopedWrites !== null && $step === self::TRANSPORT_FRAMES_PER_PORTION) {
+            $this->markReady();
+            return '';
+        }
+
+        return $limit === null ? $this->writeBuffer : substr($this->writeBuffer, 0, $limit);
+    }
+
+    /**
+     * @param int $written Bytes acknowledged by the transport
+     * @param int $retained Bytes natively accepted by TLS and still owed unchanged
+     */
+    protected function onTransportWrite(int $written, int $retained): void
+    {
+        if ($this->scopedWrites === null) {
+            return;
+        }
+        $frame = $this->scopedWrites->bottom();
+        $startedThrough = $this->writePosition + max($written, $retained);
+        $this->writePosition += $written;
+        if ($frame->offset < $startedThrough) {
+            // The peer is owed the complete WebSocket frame, including upon a later scope change.
+            $this->forgetScopedWrite();
+        }
+    }
+
+    /** Ends scope checks for the first frame once it has started or its unstarted bytes are replaced. */
+    private function forgetScopedWrite(): void
+    {
+        $this->scopedWrites->dequeue();
+        if ($this->scopedWrites->isEmpty()) {
+            $this->scopedWrites = null;
+            $this->writePosition = 0;
         }
     }
 
@@ -1495,6 +1631,123 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $this->sendDeliveryFrame(DeliveryFrame::fromJson($data));
     }
 
+    /** @return ?string The scope still permitted to publish bytes for the current subscription */
+    private function pagePublicationScope(): ?string
+    {
+        return $this->expiredPageDeliveryScope ?? $this->subscriptionDeliveryId;
+    }
+
+    /**
+     * @param string $page Address of the expired handoff
+     * @param string $deliveryId Exact expired attempt, still usable for owner reassessment
+     * @param ?DeliveryFrame $refusal Prepared terminal response, absent when identity already changed
+     * @throws InvalidStateException When the WebSocket has no completed handshake
+     * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     * @throws EventLoopException When the next protocol deadline cannot be armed
+     */
+    public function expirePageDelivery(string $page, string $deliveryId, ?DeliveryFrame $refusal): void
+    {
+        if (!$this->isCurrentPageSubscription($page, $deliveryId) || !$this->isDeliveryPending($page, $deliveryId)) {
+            return;
+        }
+        // Keep the request token for reassessment. Earlier scoped answers lose publication rights
+        // even if already packed, and unrelated frames keep their ordinary order.
+        $this->expiredPageDeliveryScope = $deliveryId . ':expired';
+        $this->finishDelivery($page, $deliveryId);
+        if ($refusal !== null) {
+            $this->sendDeliveryFrame($refusal->withPageScope($this->expiredPageDeliveryScope));
+        }
+    }
+
+    /**
+     * @param string $deliveryId Current socket token for the addressed subscription
+     * @param PageHandoffIdentity $identity RT identity certified when the attempt was addressed
+     */
+    public function bindPageDeliveryIdentity(string $deliveryId, PageHandoffIdentity $identity): void
+    {
+        if ($deliveryId === $this->subscriptionDeliveryId) {
+            $this->pageDeliveryIdentity ??= $identity;
+        }
+    }
+
+    /**
+     * @param ?PageHandoffIdentity $claimed Identity carried by a scoped reply, if any
+     * @return bool Whether a reply for the already matched token may publish against the current RT row
+     */
+    public function hasCurrentPageDeliveryIdentity(?PageHandoffIdentity $claimed = null): bool
+    {
+        $identity = $this->pageDeliveryIdentity ?? $claimed;
+        return !$this->pageDeliveryIdentityLost && ($identity === null
+            || (($claimed === null || $claimed == $identity) && $identity == PageHandoffIdentity::current($this->acceptKey)));
+    }
+
+    /** Keep the need for a new whole when a scoped answer loses its own RT authority. */
+    public function notePageDeliveryIdentityLost(): void
+    {
+        if ($this->pageDeliveryIdentity !== null && !$this->hasCurrentPageDeliveryIdentity()) {
+            $this->pageDeliveryIdentityLost = true;
+        }
+    }
+
+    /**
+     * @param string $page Page whose RT row was confirmed
+     * @param string $deliveryId Exact current subscription
+     * @param PageHandoffIdentity $identity Fresh connection identity after the RT fact
+     * @return bool Whether this live subscription needs a new whole
+     */
+    public function needsPageHandoffRecovery(string $page, string $deliveryId, PageHandoffIdentity $identity): bool
+    {
+        return !$this->shouldClose && $this->isCurrentPageSubscription($page, $deliveryId)
+            && $this->pageDeliveryIdentity !== null
+            && ($this->pageDeliveryIdentityLost || $this->pageDeliveryIdentity != $identity);
+    }
+
+    /**
+     * Uses the socket's existing protocol timer. The relay/start and the worker each have
+     * one start-deadline interval. Readdressing the same delivery keeps the original deadline.
+     *
+     * @param string $page Page held by the remote attempt
+     * @param string $deliveryId Its original socket token
+     * @param Closure(WebSocketClient): void $expire Socket master's terminal effect
+     * @throws EventLoopException When the socket deadline cannot be armed
+     */
+    public function watchRemotePageHandoff(string $page, string $deliveryId, Closure $expire): void
+    {
+        if ($this->remotePageHandoffAt !== null || !$this->isCurrentPageSubscription($page, $deliveryId)
+            || !$this->isDeliveryPending($page, $deliveryId)) {
+            return;
+        }
+
+        $this->remotePageHandoffAt = $this->deliveryNowMs() + (int) (2 * AgentConstants::START_DEADLINE_SECONDS * TimeConstants::MS_PER_SECOND);
+        $this->remotePageHandoffExpiry = $expire;
+        $this->rearmSocketWork();
+    }
+
+    /**
+     * An ingress effect can reach the deadline before its ready timer portion.
+     *
+     * @param ?string $deliveryId Exact candidate, or null when the socket checks its own timer
+     * @return bool Whether the candidate reached its original deadline
+     */
+    public function isPageHandoffDue(?string $deliveryId = null): bool
+    {
+        return $this->remotePageHandoffAt !== null
+            && ($deliveryId === null || $deliveryId === $this->subscriptionDeliveryId)
+            && $this->deliveryNowMs() >= $this->remotePageHandoffAt;
+    }
+
+    /** Run the socket master's terminal effect once, for the current due handoff. */
+    public function expireDuePageHandoff(): void
+    {
+        if (!$this->isPageHandoffDue()) {
+            return;
+        }
+        $expire = $this->remotePageHandoffExpiry;
+        $this->remotePageHandoffAt = null;
+        $this->remotePageHandoffExpiry = null;
+        $expire?->__invoke($this);
+    }
+
     /**
      * Queue one immutable frame prepared once for all recipients by the master.
      *
@@ -1512,7 +1765,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         if (!$this->handshakeCompleted) {
             throw new InvalidStateException("Cannot send frame: WebSocket handshake not completed");
         }
-        if ($this->shouldClose) {
+        $authority = $frame->recovery ? $this->recoveryDeliveryId() : $this->pagePublicationScope();
+        if ($this->shouldClose || ($frame->pageDeliveryId !== null && $frame->pageDeliveryId !== $authority)) {
             return;
         }
 
@@ -1534,9 +1788,43 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         if (!$this->isDeliveryPending($page, $deliveryId)) {
             return;
         }
+        if ($this->isPageHandoffDue($deliveryId)) {
+            $this->expireDuePageHandoff();
+            return;
+        }
+        $this->finishDelivery($page, $deliveryId);
+    }
+
+    /**
+     * @param string $page Page holding the matching request
+     * @param string $deliveryId Token whose terminal outcome was already decided
+     * @throws InvalidFormatException When the effective delivery window is not positive
+     * @throws EventLoopException When the next protocol deadline cannot be armed
+     */
+    private function finishDelivery(string $page, string $deliveryId): void
+    {
         $this->forgetDeliveryRequest($page, $deliveryId);
         $this->effectiveDeliveryQueue()->completeDelivery($deliveryId, $this->deliveryNowMs());
         $this->rearmSocketWork();
+    }
+
+    /**
+     * Makes a terminal refusal deliverable while retaining its exact request for recovery.
+     *
+     * @param string $page Page waiting for the terminal answer
+     * @param string $deliveryId Original subscription token
+     * @throws EventLoopException When the next protocol deadline cannot be armed
+     */
+    public function releasePageDeliveryHold(string $page, string $deliveryId): void
+    {
+        if ($this->isDeliveryPending($page, $deliveryId)) {
+            if ($this->subscriptionDeliveryId === $deliveryId) {
+                $this->remotePageHandoffAt = null;
+                $this->remotePageHandoffExpiry = null;
+            }
+            $this->deliveryQueue?->completeDelivery($deliveryId, $this->deliveryNowMs());
+            $this->rearmSocketWork();
+        }
     }
 
     /**
@@ -1569,6 +1857,79 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     public function isLatestPageDelivery(string $deliveryId): bool
     {
         return $this->latestPageDeliveryId === $deliveryId;
+    }
+
+    /**
+     * @param string $page Page named by an addressed frame
+     * @param string $deliveryId Authority of the exact subscription or owner handoff
+     * @return bool Whether the socket still admits frames for that subscription
+     */
+    public function isCurrentPageSubscription(string $page, string $deliveryId): bool
+    {
+        return $this->subscribedPage === $page && $this->subscriptionDeliveryId === $deliveryId;
+    }
+
+    /**
+     * Retire the page authority while admitting the one recovery control that replaces it.
+     *
+     * @param string $page Page leaving its current authority
+     * @param string $deliveryId Exact request ended by recovery
+     * @param DeliveryFrame $frame Prepared page_resubscribe control with the ordinary browser payload
+     * @throws InvalidStateException When the socket handshake is incomplete
+     * @throws InvalidFormatException When the effective window or a merged envelope is invalid
+     * @throws EventLoopException When the next protocol deadline cannot be armed
+     */
+    public function sendPageRecovery(string $page, string $deliveryId, DeliveryFrame $frame): void
+    {
+        if (!$this->isLatestPageDelivery($deliveryId) || $this->recoveryPage !== null) {
+            return;
+        }
+        if ($this->isCurrentPageSubscription($page, $deliveryId)) {
+            $this->subscribedPage = null;
+            $this->subscriptionDeliveryId = null;
+            $this->pageDeliveryIdentity = null;
+            $this->pageDeliveryIdentityLost = false;
+            $this->expiredPageDeliveryScope = null;
+        }
+        $this->recoveryPage = $page;
+        $this->sendDeliveryFrame($frame->withRecoveryScope($deliveryId));
+    }
+
+    /** @return ?string Current recovery control's request, even after its subscription authority ends */
+    private function recoveryDeliveryId(): ?string
+    {
+        return $this->recoveryPage === null ? null : $this->latestPageDeliveryId;
+    }
+
+    /**
+     * @param string $page Page retained on this socket
+     * @param array<string, string> $params Current page route params
+     * @param string $previousId Authority of the subscription changing owners
+     * @return ?WebSocketPageSubscribeSignalDTO New tracked request, absent if the socket has already left
+     * @throws EventLoopException When its predecessor's protocol deadline cannot be rearmed
+     * @throws InvalidFormatException When the delivery window cannot be read
+     */
+    public function beginPageHandoff(string $page, array $params, string $previousId): ?WebSocketPageSubscribeSignalDTO
+    {
+        if (!$this->isCurrentPageSubscription($page, $previousId)) {
+            return null;
+        }
+
+        if ($this->isDeliveryPending($page, $previousId)) {
+            $this->forgetDeliveryRequest($page, $previousId);
+        }
+        $deliveryId = $this->acceptKey . ':' . ++$this->deliverySequence;
+        $request = new WebSocketPageSubscribeSignalDTO($this->acceptKey, $page, $params, deliveryId: $deliveryId);
+        $this->effectiveDeliveryQueue()->holdPageHandoff($deliveryId, $this->deliveryNowMs());
+        $this->rememberDeliveryRequest($page, $deliveryId, $request);
+        $this->pendingSubscribe = $request;
+        $this->subscriptionDeliveryId = $deliveryId;
+        $this->pageDeliveryIdentity = null;
+        $this->pageDeliveryIdentityLost = false;
+        $this->expiredPageDeliveryScope = null;
+        $this->rearmSocketWork();
+
+        return $request;
     }
 
     /**
@@ -1617,6 +1978,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     public function cancelDeliveries(?string $page = null): void
     {
         $this->deliveryCleanup ??= new DeliveryCleanup();
+        if ($page === null || $page === $this->recoveryPage) {
+            $this->recoveryPage = null;
+        }
+        if ($page === null || $this->subscribedPage === $page || $this->subscriptionDeliveryId === null) {
+            $this->remotePageHandoffAt = null;
+            $this->remotePageHandoffExpiry = null;
+        }
         if ($page === null) {
             $this->deliveryGeneration++;
             $this->pendingSubscribe = null;
@@ -1657,6 +2025,28 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         if ($this->pendingSubscribe?->deliveryId === $deliveryId) {
             $this->pendingSubscribe = null;
         }
+        if ($this->subscriptionDeliveryId === $deliveryId) {
+            $this->remotePageHandoffAt = null;
+            $this->remotePageHandoffExpiry = null;
+        }
+    }
+
+    /**
+     * @param string $page Requested page
+     * @param string $deliveryId Token allocated by this socket
+     * @param WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO $request Accepted request
+     */
+    private function rememberDeliveryRequest(
+        string $page,
+        string $deliveryId,
+        WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO $request,
+    ): void {
+        $this->deliveryRequests[$deliveryId] = $request;
+        $this->deliveryRequestLifetimes[$deliveryId] = $this->deliveryPageLifetimes[$page]
+            ??= new DeliveryRequestLifetime($this->deliveryGeneration);
+        $this->deliveryRequestPages[$page][$deliveryId] = true;
+        $this->latestPageDeliveryId = $deliveryId;
+        $this->recoveryPage = null;
     }
 
     /**
@@ -1922,14 +2312,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     $this->effectiveDeliveryQueue()->beginUpdate($deliveryId, $this->deliveryNowMs());
                 }
                 $this->rearmSocketWork();
-                $this->deliveryRequests[$deliveryId] = $dto;
-                $this->deliveryRequestLifetimes[$deliveryId] = $this->deliveryPageLifetimes[$page]
-                    ??= new DeliveryRequestLifetime($this->deliveryGeneration);
-                $this->deliveryRequestPages[$page][$deliveryId] = true;
+                $this->rememberDeliveryRequest($page, $deliveryId, $dto);
                 if ($dto instanceof WebSocketPageSubscribeSignalDTO) {
                     $this->pendingSubscribe = $dto;
+                    $this->subscribedPage = $page;
+                    $this->subscriptionDeliveryId = $deliveryId;
+                    $this->pageDeliveryIdentity = null;
+                    $this->pageDeliveryIdentityLost = false;
+                    $this->expiredPageDeliveryScope = null;
                 }
-                $this->latestPageDeliveryId = $deliveryId;
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType($type),
@@ -1967,6 +2358,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     acceptKey: $acceptKey,
                 );
 
+                if ($this->subscribedPage === $page) {
+                    $this->subscribedPage = null;
+                    $this->subscriptionDeliveryId = null;
+                    $this->pageDeliveryIdentity = null;
+                    $this->pageDeliveryIdentityLost = false;
+                    $this->expiredPageDeliveryScope = null;
+                }
                 $this->cancelDeliveries($page);
                 $this->acceptDeliveryRequest();
                 Hilos::$sr->queueSignal(
@@ -2397,11 +2795,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     public function onTick(): void
     {
         try {
-            if ($this->liveness === null || $this->shouldClose) {
+            if ($this->shouldClose) {
                 return;
             }
-
             $nowMs = $this->deliveryNowMs();
+            $this->expireDuePageHandoff();
+
+            if ($this->liveness === null) {
+                return;
+            }
             if ($this->liveness->isCloseDue($nowMs)) {
                 $this->markShouldClose();
                 return;

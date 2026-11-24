@@ -33,11 +33,14 @@ import {
   PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_VOUCHERS,
   PAGE_ADMIN_WAREHOUSES,
+  PAGE_CART,
   PAGE_CATEGORY,
   PAGE_MAIN,
   PAGE_PRODUCT,
 } from './pages/keys.js'
 import About from './views/About/About.js'
+import Cart from './views/Cart/Cart.js'
+import CartSkeleton from './views/Cart/CartSkeleton.js'
 import CategorySkeleton from './views/Category/CategorySkeleton.js'
 import License from './views/License/License.js'
 import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.js'
@@ -62,6 +65,7 @@ const pages: Record<string, PageView<ComponentType>> = {
   [PAGE_PRODUCT]: lazyPage(() =>
     import('./views/Product/Product.js').then((m) => m.default),
   ),
+  [PAGE_CART]: Cart,
   // The Hilos admin section. The framework ships a real default page for every
   // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
   // the pages it implements itself; the rest render the framework default, never
@@ -317,6 +321,7 @@ const pageSkeletons: Record<string, ComponentType> = {
   [PAGE_MAIN]: MainSkeleton,
   [PAGE_CATEGORY]: CategorySkeleton,
   [PAGE_PRODUCT]: ProductSkeleton,
+  [PAGE_CART]: CartSkeleton,
 }
 
 export interface AppProps {

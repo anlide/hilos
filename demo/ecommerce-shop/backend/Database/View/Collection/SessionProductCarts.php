@@ -29,6 +29,17 @@ final class SessionProductCarts extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectSessionProductCarts::class;
 
     /**
+     * @param int $sessionId Cart owner
+     * @param ?int $productId Product to match, null for any line
+     * @return bool Whether the current cart has a matching line
+     * @throws DatabaseException When the cart membership cannot be read
+     */
+    public function hasCartLine(int $sessionId, ?int $productId = null): bool
+    {
+        return $this->objectCollection->hasCartLine($sessionId, $productId);
+    }
+
+    /**
      * @return array{int, int} Greatest product line ID and voucher binding session ID, zero for an empty table
      * @throws NamedDatabaseException When a table or its database cannot be resolved
      * @throws DatabaseException When the query fails

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -77,6 +79,7 @@ use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Pages\Daemon\AbstractHilosDaemonCronPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonWorkersPage;
 use Hilos\Tables\Daemon\HilosDaemonWorkersTable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** Picture publication compares subject sets, independently of a delivered window. */
@@ -837,6 +840,83 @@ final class DaemonPictureLivePublicationTest extends TestCase
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak'));
     }
 
+    /** @return iterable<string, array{bool, bool}> Publisher and outcome of the guard */
+    public static function replacedPublicationGuards(): iterable
+    {
+        yield 'data succeeds' => [false, false];
+        yield 'data throws' => [false, true];
+        yield 'table succeeds' => [true, false];
+        yield 'table throws' => [true, true];
+    }
+
+    #[DataProvider('replacedPublicationGuards')]
+    public function testPublicationGuardReplacementDefersLaterPortions(bool $table, bool $throws): void
+    {
+        $context = $this->subscribe();
+        $context->authenticated = true;
+        Hilos::$sr->subscribeToPage('publication', new WebSocketPageSubscribeSignalDTO('neighbor', 'publication'));
+        $context->duringIdentity = static function () use ($throws): void {
+            Hilos::$sr->subscribeToPage('publication', new WebSocketPageSubscribeSignalDTO('ak', 'publication'));
+            if ($throws) {
+                throw new RuntimeException('Publication access lookup failed');
+            }
+        };
+        $data = static fn (): PagePayload => new PagePayload(data: ['value' => 2]);
+        if ($table) {
+            $context->publishTableMutations('publication', 'ak', HilosDaemonWorkersTable::TABLE, static fn (): array => []);
+        } else {
+            $context->publishPageData('publication', 'ak', $data, []);
+        }
+        $context->publishPageData('publication', 'ak', $data, []);
+        $context->publishPageData('publication', 'neighbor', $data, []);
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertSame('neighbor', Hilos::$sr->getNextQueuedSignal()?->data->targetAcceptKey);
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak'));
+
+        $context->publishPageData('publication', 'ak', $data, []);
+        self::assertCount(1, $this->frames());
+    }
+
+    public function testLateViewerCheckCannotSendDataToTheReplacement(): void
+    {
+        $context = $this->subscribe();
+        $context->duringViewer = static function (): void {
+            Hilos::$sr->subscribeToPage('publication', new WebSocketPageSubscribeSignalDTO('ak', 'publication'));
+        };
+        $data = static fn (): PagePayload => new PagePayload(data: ['value' => 2]);
+
+        $context->publishPageData('publication', 'ak', $data, []);
+        $context->publishPageData('publication', 'ak', $data, []);
+        self::assertSame([], $this->frames());
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak'));
+        $context->flushToSignalRouter();
+
+        $context->publishPageData('publication', 'ak', $data, []);
+        self::assertCount(1, $this->frames());
+    }
+
+    public function testLateOwedWindowGuardCannotCatchUpAReplacedViewport(): void
+    {
+        $context = $this->subscribe();
+        $context->authenticated = true;
+        $table = HilosDaemonWorkersTable::TABLE;
+        $next = new TableViewportSubscription($table, filter: ['node' => 'n2']);
+        Hilos::$sr->oweTableWindow('ak', $table);
+        $context->publishTableMutations('publication', 'ak', $table, static fn (): array => []);
+        $context->duringIdentity = static fn () => Hilos::$sr->setTableViewport('ak', $next);
+
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertSame([], $this->frames());
+        self::assertSame($next, Hilos::$sr->getTableViewport('ak', $table));
+        self::assertTrue(Hilos::$sr->isTableWindowOwed('ak', $table));
+
+        $context->publishTableMutations('publication', 'ak', $table, static fn (): array => []);
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertSame([SignalTypeConstants::TABLE_WINDOW], array_column($this->frames(), 0));
+        self::assertFalse(Hilos::$sr->isTableWindowOwed('ak', $table));
+    }
+
     public function testPageDebtTakesOneWholeAttemptAndSuppressesBothPartialPublishersUntilFlush(): void
     {
         $context = $this->subscribe();
@@ -1084,6 +1164,8 @@ final class LivePublicationTestBrowser extends IdentityTestBrowser
     public bool $viewer = false;
     public bool $broken = false;
     public bool $readClusterSource = false;
+    public ?Closure $duringIdentity = null;
+    public ?Closure $duringViewer = null;
 
     public function __construct(?int $userId = 1)
     {
@@ -1091,8 +1173,21 @@ final class LivePublicationTestBrowser extends IdentityTestBrowser
         $this->bindHilosFacade(LivePublicationTestBindings::class);
     }
 
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
+    {
+        $callback = $this->duringIdentity;
+        $this->duringIdentity = null;
+        $callback?->__invoke();
+
+        return parent::resolveConnectionIdentity($acceptKey);
+    }
+
     public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
+        $callback = $this->duringViewer;
+        $this->duringViewer = null;
+        $callback?->__invoke();
+
         return $this->viewer;
     }
 

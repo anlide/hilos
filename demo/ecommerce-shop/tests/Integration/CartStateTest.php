@@ -6,6 +6,8 @@ namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
+use Demo\EcommerceShop\CLI\DTO\GuestCartSetQuantityCommandData;
+use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
@@ -17,6 +19,7 @@ use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -28,6 +31,9 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\DatabaseNames;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use RuntimeException;
 
 /**
@@ -69,6 +75,7 @@ final class CartStateTest extends IntegrationTestCase
         try {
             Database::sqlRun('DELETE FROM `session_product_cart` WHERE `session_id` IN (?, ?)', [self::SESSION, self::OTHER_SESSION]);
             if ($this->guestSessionId !== null) {
+                Database::sqlRun('DELETE FROM `session_product_cart` WHERE `session_id` = ?', [$this->guestSessionId]);
                 Database::sqlRun('DELETE FROM `session_voucher_cart` WHERE `session_id` = ?', [$this->guestSessionId]);
                 Database::sqlRun('DELETE FROM `hilos_session` WHERE `id` = ?', [$this->guestSessionId]);
             }
@@ -191,6 +198,87 @@ final class CartStateTest extends IntegrationTestCase
         } catch (AgentException) {
             self::assertSame([], $this->cartStates());
         }
+    }
+
+    /** The fixture stores exact quantities, announces committed changes, and leaves repeated requests unchanged. */
+    public function testGuestCartFixtureSetsAndRemovesExactQuantities(): void
+    {
+        $token = SessionToken::mint();
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $this->guestSessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $productId = self::seededProduct('pine-bark-5-l');
+
+        foreach ([[3, true], [3, false], [2, true], [0, true], [0, false]] as [$quantity, $changed]) {
+            [$reply, $frames] = $this->guestFixture($token, $productId, $quantity);
+            self::assertTrue($reply->isOk());
+            self::assertSame(['quantity' => $quantity], $reply->payload);
+            $lines = $quantity === 0 ? [] : [['productId' => $productId, 'quantity' => $quantity]];
+            $cart = ['userId' => null, 'lines' => $lines, 'voucherId' => null];
+            self::assertSame($changed ? [[CartGroup::forSession($this->guestSessionId), $cart]] : [], $frames);
+            $this->askGuestCart($this->guestSessionId);
+            self::assertSame([[CartGroup::forSession($this->guestSessionId), $cart]], $this->cartStates());
+        }
+    }
+
+    /** Refused exact quantities leave no partial line, and invalid sessions cannot change the cart. */
+    public function testGuestCartFixtureRefusesUnavailableSessionsAndInvalidQuantities(): void
+    {
+        $token = SessionToken::mint();
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $this->guestSessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $stock = self::seededProduct('pine-bark-5-l');
+        $unique = self::seededProduct('morning-meadow');
+
+        $this->assertFixtureRefused($token, $stock, 999_999, 'Only 120 in stock');
+        $this->assertFixtureRefused($token, $unique, 2, 'A unique piece has no quantity: it is one of a kind');
+        $this->assertFixtureRefused($token, PHP_INT_MAX, 1, 'This product does not exist');
+        $this->askGuestCart($this->guestSessionId);
+        self::assertSame(
+            [[CartGroup::forSession($this->guestSessionId), ['userId' => null, 'lines' => [], 'voucherId' => null]]],
+            $this->cartStates(),
+        );
+        self::assertSame(0, (int)Database::sql(
+            'SELECT COUNT(*) AS total FROM session_product_cart WHERE session_id = ?',
+            [$this->guestSessionId],
+        )->field('total'));
+
+        $unavailable = 'This guest session is no longer available';
+        $this->assertFixtureRefused(SessionToken::mint(), $stock, 1, $unavailable);
+        $session->actions->bindUser($this->person('Fixture account'));
+        $this->assertFixtureRefused($token, $stock, 1, $unavailable);
+        $session->actions->unbindUser();
+        $session->actions->expire();
+        $this->assertFixtureRefused($token, $stock, 1, $unavailable);
+
+        $env = Hilos::$env;
+        Hilos::$env = null;
+        try {
+            $this->assertFixtureRefused($token, $stock, 1, 'Setting a guest cart fixture is test-only');
+        } finally {
+            Hilos::$env = $env;
+        }
+    }
+
+    /** Expiry committed before the worker hears the change still closes the fixture command. */
+    public function testGuestCartFixtureRefusesAnExpiredStoredSessionWithAnActiveMirror(): void
+    {
+        $token = SessionToken::mint();
+        $session = Hilos::$db->sessions->actions->createAnonymous($token);
+        $this->guestSessionId = $session->id ?? self::fail('The guest session was not persisted');
+        $productId = self::seededProduct('pine-bark-5-l');
+        [$reply] = $this->guestFixture($token, $productId, 2);
+        self::assertTrue($reply->isOk());
+
+        // Update storage as another worker would, with its DB_SYNC still in flight.
+        $expiresAt = TimeHelper::nowMs();
+        Database::sqlRun('UPDATE `hilos_session` SET `expires_at` = ? WHERE `id` = ?', [$expiresAt, $this->guestSessionId]);
+        self::assertTrue($session->expiresAt === null || $session->expiresAt > $expiresAt);
+
+        $this->assertFixtureRefused($token, $productId, 1, 'This guest session is no longer available');
+        self::assertSame(2, (int)Database::sql(
+            'SELECT quantity FROM session_product_cart WHERE session_id = ? AND product_id = ?',
+            [$this->guestSessionId, $productId],
+        )->field('quantity'));
     }
 
     /** A guest's voucher-only cart is told on commit, on change and on request. */
@@ -387,11 +475,80 @@ final class CartStateTest extends IntegrationTestCase
             self::assertSame(SignalTypeConstants::WS_GROUP, $signal->signalType->getType());
             $data = $signal->data;
             self::assertInstanceOf(WebSocketSignalData::class, $data);
-            self::assertInstanceOf(CartStateSignalData::class, $data->data);
-            $states[] = [$data->targetGroup, $data->data->toArray()];
+            $states[] = self::cartState($data);
         }
 
         return $states;
+    }
+
+    /**
+     * @param string $token Session token sent to the command socket
+     * @param int $productId Product to change
+     * @param int $quantity Requested quantity
+     * @return array{CommandReplyDTO, list<array{string, array<string, mixed>}>} Command outcome and group frames
+     */
+    private function guestFixture(string $token, int $productId, int $quantity): array
+    {
+        $carts = $this->guestCarts();
+        $this->drainSignals();
+        $name = EcommerceShopCommandConstants::GUEST_CART_SET_QUANTITY;
+        $query = new GuestCartSetQuantityCommandData($token, $productId, $quantity);
+        $request = new CommandRequestDTO('guest-fixture', $name, $query->toArray());
+        $parsed = Hilos::$sr->createCommandPayloadDTO($name, $request);
+        $this->underAgent($carts, static fn () => $carts->onSignalCommand($parsed, '', $name));
+
+        $states = [];
+        $replies = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalType->getType() === SignalTypeConstants::COMMAND_REPLY) {
+                self::assertInstanceOf(CommandReplyDTO::class, $signal->data);
+                self::assertSame($request->correlationId, $signal->data->correlationId);
+                $replies[] = $signal->data;
+            } elseif ($signal->signalName->getName() === EcommerceShopSignalConstants::CART_STATE) {
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                $states[] = self::cartState($signal->data);
+            }
+        }
+        self::assertCount(1, $replies);
+
+        return [$replies[0], $states];
+    }
+
+    /**
+     * @param string $token Token used by the command
+     * @param int $productId Product to change
+     * @param int $quantity Requested quantity
+     * @param string $reason Expected refusal
+     */
+    private function assertFixtureRefused(string $token, int $productId, int $quantity, string $reason): void
+    {
+        [$reply, $frames] = $this->guestFixture($token, $productId, $quantity);
+        self::assertFalse($reply->isOk());
+        self::assertSame([CommandConstants::FIELD_MESSAGE => $reason], $reply->payload);
+        self::assertSame([], $frames);
+    }
+
+    /**
+     * @param WebSocketSignalData $frame Cart state delivered to a group
+     * @return array{string, array<string, mixed>} Address and payload on the wire
+     */
+    private static function cartState(WebSocketSignalData $frame): array
+    {
+        self::assertInstanceOf(CartStateSignalData::class, $frame->data);
+
+        return [$frame->targetGroup, $frame->data->toArray()];
+    }
+
+    /**
+     * @param string $slug Address from the seeded catalog
+     * @return int Seeded product ID
+     */
+    private static function seededProduct(string $slug): int
+    {
+        $id = Database::sql('SELECT id FROM product WHERE slug = ?', [$slug])->field('id');
+        self::assertNotNull($id);
+
+        return (int)$id;
     }
 
     /**

@@ -16,6 +16,8 @@ use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Daemon\PageHandoffIdentity;
+use Hilos\Core\Daemon\PageSubscriptionContext;
 use Hilos\Core\Agent\Exception\BrokenSignalPayloadDtoException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
@@ -27,7 +29,11 @@ use Hilos\Core\Group\GroupNameMatch;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\Config\PageAgentIndexRoute;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
+use Hilos\Core\Page\DTO\PageMovedSignalData;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\PageResource;
+use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\AllClientsDestination;
@@ -165,6 +171,24 @@ class SignalRouter
 
     /** @var SplQueue<SignalDTO|LocalClientSignalBatch> Original FIFO; local batches occupy one finite obligation */
     private SplQueue $queuedSignals;
+
+    /** Original request or live mirror producing the current worker-local answer. */
+    private WebSocketPageSubscribeSignalDTO|PageSubscriptionContext|null $pageAnswerAuthority = null;
+
+    /** Original registration during either an admitted subscribe or a whole resend. */
+    private ?PageSubscriptionContext $pageAnswerContext = null;
+
+    /** Authority of the source answer whose callback is running. */
+    private ?PageSubscriptionContext $pageFanOutAnswerContext = null;
+
+    /** @var ?Closure(): bool Queue guard shared by the frames of that source answer */
+    private ?Closure $pageFanOutQueueGuard = null;
+
+    /** @var list<Closure(): void> Window effects owned by the currently assembled whole */
+    private array $pageAnswerEffects = [];
+
+    /** @var ?PageHandoffIdentity Certified identity expected by the current handoff */
+    private ?PageHandoffIdentity $pageAnswerIdentity = null;
 
     /** @var WeakMap<SignalDTO, Closure(): bool> Authority of locally queued effects */
     private WeakMap $signalGuards;
@@ -456,19 +480,208 @@ class SignalRouter
             }
         }
 
-        // Create SignalDTO and queue it
+        $meta = Hilos::$ac?->captureSignalMeta() ?? [];
+        if ($signalType->getType() === SignalTypeConstants::WS_USER && $signalData instanceof WebSocketSignalData
+            && $signalData->targetAcceptKey !== null) {
+            $fanOut = $this->pageFanOutAnswer($signalData->targetAcceptKey);
+            if ($fanOut !== null) {
+                if (!$this->isPageAnswerCurrent($signalData->targetAcceptKey)) {
+                    return;
+                }
+                $answerCurrent = $this->pageFanOutQueueGuard;
+                $current = $current === null ? $answerCurrent : static fn (): bool => $answerCurrent() && $current();
+            }
+            $answerPage = match (true) {
+                $signalData->data instanceof PageResponseSignalData => $signalData->data->pageKey,
+                $signalData->data instanceof PageSubscriptionErrorSignalData,
+                $signalData->data instanceof PageMovedSignalData => $signalData->data->page,
+                default => null,
+            };
+            if ($answerPage !== null && !$this->isPageAnswerCurrent($signalData->targetAcceptKey)) {
+                return;
+            }
+            $authority = $this->pageAnswerAuthority?->acceptKey === $signalData->targetAcceptKey
+                ? $this->pageAnswerAuthority : null;
+            $subscription = match (true) {
+                $authority instanceof PageSubscriptionContext => $authority->subscription,
+                $authority instanceof WebSocketPageSubscribeSignalDTO => $authority,
+                default => $this->pageSubscription($signalData->targetAcceptKey),
+            };
+            if ($answerPage !== null && $subscription?->page === $answerPage && $subscription->deliveryId !== null) {
+                $meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] = $subscription->deliveryId;
+                $meta[WebSocketPageSubscribeSignalDTO::PAGE] = $answerPage;
+                if ($authority !== null && $this->pageAnswerIdentity !== null) {
+                    $meta += $this->pageAnswerIdentity->toMeta();
+                }
+            }
+        }
         $signal = new SignalDTO(
             $signalSource,
             $signalType,
             $signalName,
             $signalData,
-            Hilos::$ac?->captureSignalMeta() ?? [],
+            $meta,
         );
         if ($current !== null) {
             $this->signalGuards[$signal] = $current;
         }
+        if ($signalType->getType() === SignalTypeConstants::WS_USER && $signalData instanceof WebSocketSignalData
+            && $signalData->data instanceof PageResponseSignalData && $signalData->targetAcceptKey !== null) {
+            if (!$this->isPageAnswerCurrent($signalData->targetAcceptKey)) {
+                return;
+            }
+            $this->commitPageAnswerEffects($signalData->targetAcceptKey);
+        }
+        $this->queueSignalEnvelope($signal);
+    }
+
+    /**
+     * Enqueues an internal envelope that already carries its producer's correlation.
+     *
+     * @param SignalDTO $signal Constructed or decoded framework signal
+     */
+    public function queueSignalEnvelope(SignalDTO $signal): void
+    {
         $this->queuedSignals->enqueue($signal);
         $this->queueWake?->__invoke();
+    }
+
+    /**
+     * @template T
+     * @param WebSocketPageSubscribeSignalDTO|PageSubscriptionContext $authority Original request or live mirror answering whole
+     * @param Closure(): T $answer Synchronous page dispatch
+     * @param ?PageHandoffIdentity $identity Certified identity when answering an owner handoff
+     * @return T Result of the page dispatch
+     */
+    public function withPageAnswerAuthority(
+        WebSocketPageSubscribeSignalDTO|PageSubscriptionContext $authority,
+        Closure $answer,
+        ?PageHandoffIdentity $identity = null,
+    ): mixed {
+        $previous = $this->pageAnswerAuthority;
+        $previousIdentity = $this->pageAnswerIdentity;
+        $previousContext = $this->pageAnswerContext;
+        $previousEffects = $this->pageAnswerEffects;
+        $this->pageAnswerEffects = [];
+        $this->pageAnswerAuthority = $authority;
+        $this->pageAnswerIdentity = $identity;
+        $this->pageAnswerContext = $authority instanceof PageSubscriptionContext
+            ? $authority : new PageSubscriptionContext($this, $authority->acceptKey, $this->pageSubscription($authority->acceptKey));
+        try {
+            return $answer();
+        } finally {
+            $this->pageAnswerAuthority = $previous;
+            $this->pageAnswerIdentity = $previousIdentity;
+            $this->pageAnswerContext = $previousContext;
+            $this->pageAnswerEffects = $previousEffects;
+        }
+    }
+
+    /**
+     * @param PageSubscriptionContext $authority Source answer selected before rechecking access
+     * @param Closure(): PageResendOutcome $answer Synchronous page dispatch
+     * @param ?PageHandoffIdentity $identity Certified identity when answering an owner handoff
+     * @return PageResendOutcome Outcome of the page dispatch under the exact assembly authority
+     */
+    final public function withPageFanOutAnswer(
+        PageSubscriptionContext $authority,
+        Closure $answer,
+        ?PageHandoffIdentity $identity,
+    ): PageResendOutcome {
+        return $this->withPageAnswerAuthority($authority, function () use ($authority, $answer): PageResendOutcome {
+            $previous = $this->pageFanOutAnswerContext;
+            $previousGuard = $this->pageFanOutQueueGuard;
+            $this->pageFanOutAnswerContext = $authority;
+            $accepted = false;
+            $this->pageFanOutQueueGuard = static function () use ($authority, &$accepted): bool {
+                return $accepted ? $authority->admitsQueuedAnswer() : $authority->admitsOriginalAnswer();
+            };
+            try {
+                $outcome = $answer();
+                if (!$this->isPageAnswerCurrent($authority->acceptKey)) {
+                    return PageResendOutcome::Unserved;
+                }
+                $accepted = $outcome !== PageResendOutcome::Unserved;
+
+                return $outcome;
+            } finally {
+                $this->pageFanOutAnswerContext = $previous;
+                $this->pageFanOutQueueGuard = $previousGuard;
+            }
+        }, $identity);
+    }
+
+    /**
+     * @param string $acceptKey Connection addressed by a page answer
+     * @return ?PageSubscriptionContext Original address when answering a browser source fact
+     */
+    public function pageFanOutAnswer(string $acceptKey): ?PageSubscriptionContext
+    {
+        return $this->pageAnswerContext === $this->pageFanOutAnswerContext && $this->pageAnswerContext?->acceptKey === $acceptKey
+            ? $this->pageAnswerContext
+            : null;
+    }
+
+    /**
+     * @param string $acceptKey Connection the whole is being assembled for
+     * @param Closure(): void $answer Synchronous assembly and publication
+     */
+    public function withPageAnswerContext(string $acceptKey, Closure $answer): void
+    {
+        if ($this->pageAnswerContext?->acceptKey === $acceptKey) {
+            $answer();
+            return;
+        }
+
+        $this->withPageAnswerAuthority(new PageSubscriptionContext($this, $acceptKey, $this->pageSubscription($acceptKey)), $answer);
+    }
+
+    /**
+     * @param string $acceptKey Connection whose window would be changed
+     * @param Closure(): void $effect Registry or viewport write without project callbacks
+     */
+    public function stagePageAnswerEffect(string $acceptKey, Closure $effect): void
+    {
+        if ($this->pageAnswerContext?->acceptKey === $acceptKey) {
+            $this->pageAnswerEffects[] = $effect;
+        } else {
+            $effect();
+        }
+    }
+
+    /**
+     * @param string $acceptKey Connection whose whole response has been accepted for queuing
+     */
+    private function commitPageAnswerEffects(string $acceptKey): void
+    {
+        if ($this->pageAnswerContext?->acceptKey !== $acceptKey) {
+            return;
+        }
+
+        $effects = $this->pageAnswerEffects;
+        $this->pageAnswerEffects = [];
+        foreach ($effects as $effect) {
+            $effect();
+        }
+    }
+
+    /**
+     * @param string $acceptKey Connection addressed by a page effect
+     * @return bool Whether this answer still owns the mirror and identity it started with
+     */
+    public function isPageAnswerCurrent(string $acceptKey): bool
+    {
+        $context = $this->pageAnswerContext;
+        if ($context?->acceptKey !== $acceptKey) {
+            return $this->pageSubscription($acceptKey)?->admitsPageAnswer($acceptKey) !== false;
+        }
+
+        return $context->isCurrent()
+            && ($context === $this->pageFanOutAnswerContext
+                ? $context->admitsOriginalAnswer()
+                : $context->subscription?->admitsPageAnswer($acceptKey) !== false)
+            && ($this->pageAnswerIdentity === null || $this->pageAnswerIdentity == PageHandoffIdentity::current($acceptKey))
+            && $context->isCurrent();
     }
 
     /**
@@ -728,7 +941,8 @@ class SignalRouter
      */
     public function subscribeToPage(string $page, WebSocketPageSubscribeSignalDTO $data): void
     {
-        $this->subscriptions->subscribeToPage($data->acceptKey, $page, $data->params);
+        $deliveryId = $this->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST ? $data->deliveryId : null;
+        $this->subscriptions->subscribeToPage($data->acceptKey, $page, $data->params, $deliveryId);
         $this->indexNodePage($data->acceptKey);
     }
 

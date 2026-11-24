@@ -18,7 +18,7 @@ use Socket;
 use WeakReference;
 
 /** Native TLS on the owner's base; application bytes and debts stay with the client until drain. */
-final class TlsSocketTransport implements SocketTransportInterface
+final class TlsSocketTransport implements SocketTransportInterface, SocketWriteRetention
 {
     /** Bounds the additional native copy independently of the client's outbound cap. */
     private const int MAX_IN_FLIGHT_BYTES = 16384;
@@ -231,6 +231,12 @@ final class TlsSocketTransport implements SocketTransportInterface
         }
         $this->event->enable(Event::WRITE);
         return 0;
+    }
+
+    /** @return int Application prefix already offered to native TLS and still owed on the next write call */
+    public function pendingWriteBytes(): int
+    {
+        return $this->inFlight === null ? 0 : strlen($this->inFlight);
     }
 
     /** Releases native SSL before closing its PHP-owned socket; repeatable. */

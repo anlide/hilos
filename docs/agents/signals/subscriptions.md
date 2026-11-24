@@ -126,8 +126,27 @@ send the master-minted delivery id.
 but it does not hold the connection's whole queue. Synthetic resends without a
 browser-issued token do not start or finish another request's hold. Unsubscribe,
 navigation, disconnect or loss of the serving attempt cancels the unfinished
-packet; it is not released by a timeout, and a reconnect starts with a new socket
-queue. See [the delivery window](work-in-portions.md#the-stream-to-an-open-page)
+packet. A reconnect starts with a new socket queue. When a remote identity
+handoff reaches its deadline, the socket settles the exact attempt. Expiry and
+internal reassessment address the release to that attempt's historical node.
+The receiving master clears the matching hold or sends the release to its
+already-started local holder. A stopped holder's original worker retires the
+exact mirror and its source interests as part of the stop. It runs the agent's
+and page's unsubscribe hooks before `onStop()` while the holder is still live.
+For an in-place POLICY restart, confirmed mirrors can stay on the original IPC
+through the start and, for a socket in its live roster, until the worker can
+confirm the connection row again. The retained mirror cannot publish a whole
+while its identity is unconfirmed. An exact release can reach the original IPC
+during the restart and can only retire the original attempt. A positive grant
+can start its IPC line only while the exact serving attempt and the node's
+placement authority still hold.
+
+Independent application frames keep their order, and only the terminal refusal
+can publish under the expired attempt. An internal change of owner also keeps
+independent frames while the new attempt holds its whole answer.
+If the connection's RT row becomes stale and
+a whole is discarded, confirmation of that row starts a fresh answer for the
+still-open subscription. See [the delivery window](work-in-portions.md#the-stream-to-an-open-page)
 and [the wire packet shape](../frontend/wire-protocol.md#signal-batches-and-delivery-coalescing).
 
 The sole public-file exception is `/status`: nginx files supply its first

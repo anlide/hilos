@@ -302,6 +302,28 @@ final class BrowserContextPageResourceTest extends TestCase
         $this->assertSame(1, $page->resourceAttempts);
     }
 
+    public function testRawDeletionSharesTheWholeAttemptAlreadyTakenByAPublisher(): void
+    {
+        $key = 'ak-overview';
+        $page = PageResourceBrowser::OVERVIEW;
+        $this->openCard($key, $page, PageResourceBrowser::COUNTRY_ID);
+        $port = new PageResourceScriptedPort(new PageResourceRouterPort($this->router));
+        $port->resendOutcome = PageResendOutcome::Unserved;
+        $this->context->bindPageResender($port);
+        Hilos::$sr->markPageDeliveryFailure($key);
+        $this->context->resendPageWhole($page, $key);
+        self::assertNotNull(Hilos::$sr->pageResource($key));
+
+        $this->context->record(SourceChange::dbDeleted(PageResourceBrowser::COUNTRIES, PageResourceBrowser::COUNTRY_ID));
+        self::assertSame([], $this->context->flushToSignalRouter());
+        self::assertSame([[$page, $key, false]], $port->attempts);
+        self::assertSame([], $this->signalsByAcceptKey());
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure($key));
+
+        $this->context->resendPageWhole($page, $key);
+        self::assertSame([[$page, $key, false], [$page, $key, false]], $port->attempts);
+    }
+
     /** @return iterable<string, array{?class-string<PageSubscriptionException>}> Outcomes of the recreated page's after-response hook */
     public static function recreatedResourceAfterResponseFailures(): iterable
     {

@@ -16,16 +16,23 @@ use Hilos\Socket\Worker\WorkerDTO;
  */
 class AgentStopDTO extends WorkerDTO
 {
-    // Message type
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_AGENT_STOP;
+
+    public const string KEEP_RESTART_MIRRORS = 'keep_for_restart';
+
+    public const string DISCARD_RESTART_MIRRORS = 'discard_restart_mirrors';
+
+    private const string PAGE_MIRRORS = 'pageMirrors';
 
     /**
      * Creates agent stop DTO.
      *
      * @param string $agentId Agent unique ID to stop
+     * @param ?string $pageMirrors Restart disposition, or null for an ordinary stop
      */
     public function __construct(
         public readonly string $agentId,
+        public readonly ?string $pageMirrors = null,
     ) {
     }
 
@@ -49,20 +56,27 @@ class AgentStopDTO extends WorkerDTO
         return [
             self::TYPE => $this->getType(),
             AgentConstants::FIELD_AGENT_ID => $this->agentId,
+            ...($this->pageMirrors === null ? [] : [self::PAGE_MIRRORS => $this->pageMirrors]),
         ];
     }
 
     /**
      * Creates DTO from array.
      *
-     * @param array<string, mixed> $data Source data (agentId)
+     * @param array<string, mixed> $data Agent identity and optional restart disposition
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no agent id
+     * @throws InvalidFormatException When the payload carries no agent id or an invalid restart disposition
      */
     public static function fromArray(array $data): static
     {
+        $pageMirrors = self::optionalString($data, self::PAGE_MIRRORS);
+        if ($pageMirrors !== null && $pageMirrors !== self::KEEP_RESTART_MIRRORS && $pageMirrors !== self::DISCARD_RESTART_MIRRORS) {
+            throw new InvalidFormatException('Unknown agent stop disposition for restart mirrors');
+        }
+
         return new static(
             agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),
+            pageMirrors: $pageMirrors,
         );
     }
 }

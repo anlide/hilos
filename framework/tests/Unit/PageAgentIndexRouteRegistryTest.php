@@ -12,6 +12,8 @@ use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Topology\PageAgentIndexRouteRegistry;
 use PHPUnit\Framework\TestCase;
 
+require_once __DIR__ . '/SignalRouterPerInstancePageRoutingTest.php';
+
 /**
  * Tests PageAgentIndexRouteRegistry aggregation of SUBSCRIPTION_AGENT_INDEX across pages.
  */
@@ -41,6 +43,18 @@ final class PageAgentIndexRouteRegistryTest extends TestCase
         $this->assertSame(PageAgentIndexSource::SESSION_USER, $route->source);
         $this->assertNull($route->param);
         $this->assertSame('index_route_agent', $route->fallbackAgentType);
+    }
+
+    public function testPublicIdentitySourceYieldsAnUnparameterizedRouteWithAGuestFallback(): void
+    {
+        $routes = PageAgentIndexRouteRegistry::routes([
+            PerInstancePublicIdentityPage::PAGE => PerInstancePublicIdentityPage::class,
+        ]);
+
+        $route = $routes[PerInstancePublicIdentityPage::PAGE];
+        $this->assertSame('session_user_or_guest', $route->source->value);
+        $this->assertNull($route->param);
+        $this->assertSame(PerInstanceFallbackAgent::AGENT_TYPE, $route->fallbackAgentType);
     }
 
     public function testNodeParamSourceCarriesItsNodeIdParam(): void

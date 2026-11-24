@@ -51,4 +51,7 @@ final class PageConstants
 
     /** @var string EcommerceShop product page, addressed by the product's slug */
     public const string PRODUCT = 'product';
+
+    /** @var string Storefront cart for the current guest or account */
+    public const string CART = 'cart';
 }

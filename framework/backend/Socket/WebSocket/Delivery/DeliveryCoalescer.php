@@ -181,7 +181,7 @@ final class DeliveryCoalescer
             return null;
         }
         if ($type === SignalTypeConstants::PAGE_RESPONSE) {
-            return serialize([$type, $page]);
+            return serialize([$type, $page, $frame->pageDeliveryId]);
         }
         if (!is_string($tableKey)) {
             return null;
@@ -448,7 +448,11 @@ final class DeliveryCoalescer
             }
         }
 
-        return DeliveryFrame::fromEnvelope($envelope, urgent: $previous->isUrgent() || $latest->isUrgent());
+        return DeliveryFrame::fromEnvelope(
+            $envelope,
+            urgent: $previous->isUrgent() || $latest->isUrgent(),
+            pageDeliveryId: $latest->pageDeliveryId,
+        );
     }
 
     /**

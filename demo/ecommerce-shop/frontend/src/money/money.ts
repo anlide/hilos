@@ -28,6 +28,9 @@ const HALF_KOPECK = 50
 /** A place between digits where a group of three starts, counted from the end. */
 const THOUSANDS = /\B(?=(?:\d{3})+$)/g
 
+/** Decimal kopecks with no leading zeroes and nothing after the last digit. */
+export const KOPECK_AMOUNT_PATTERN = /^(?:0|[1-9][0-9]*)(?![\s\S])/
+
 // Money::parse accepts only these three spaces and up to fifteen whole digits.
 const INPUT_AMOUNT =
   /^[ \u00a0\u202f]*(\d+(?:[ \u00a0\u202f]+\d+)*)(?:[.,](\d{1,2}))?[ \u00a0\u202f]*$/
@@ -37,12 +40,25 @@ const MAX_HRYVNIA_DIGITS = 15
 /**
  * Prints an amount the way the shop shows it.
  *
- * @param kopecks - Amount in kopecks
+ * @param kopecks - Amount in kopecks as a safe integer or canonical decimal string
  * @returns The sign, the hryvnias in groups of three and the kopecks when there are any: ₴1,234,567.89
- * @throws RangeError When the amount is not a whole number of kopecks from zero up
+ * @throws RangeError When the amount is not a nonnegative safe integer or canonical decimal string
  */
-export function formatMoney(kopecks: number): string {
-  return SIGN + amountText(kopecks, THOUSANDS_SEPARATOR)
+export function formatMoney(kopecks: number | string): string {
+  if (typeof kopecks === 'number') {
+    return SIGN + amountText(kopecks, THOUSANDS_SEPARATOR)
+  }
+  if (!KOPECK_AMOUNT_PATTERN.test(kopecks)) {
+    throw new RangeError(
+      'An exact amount must be written as nonnegative decimal kopecks',
+    )
+  }
+
+  const whole = kopecks.slice(0, -KOPECK_DIGITS) || KOPECK_PAD
+  const fraction = kopecks
+    .slice(-KOPECK_DIGITS)
+    .padStart(KOPECK_DIGITS, KOPECK_PAD)
+  return SIGN + groupedAmountText(whole, fraction, THOUSANDS_SEPARATOR)
 }
 
 /**

@@ -1684,6 +1684,102 @@ final class ClusterPlacement implements WorkerPlacement
 
     /**
      * @param string $agentId Addressed agent
+     * @param string $nodeId Node selected by the current placement route
+     * @return bool Whether current placement authority records a confirmed worker on that node
+     */
+    public function hasConfirmedWorker(string $agentId, string $nodeId): bool
+    {
+        $record = $this->confirmedPlacementRecord($agentId);
+
+        return $record?->nodeId === $nodeId && $record->state === PlacementState::Started && $record->workerStarted;
+    }
+
+    /**
+     * @param string $agentId Addressed agent
+     * @param string $nodeId Destination proved by placement recovery
+     * @return ?PlacementId Order that confirmed the worker's start on that node
+     */
+    public function confirmedWorkerOrder(string $agentId, string $nodeId): ?PlacementId
+    {
+        $record = $this->confirmedPlacementRecord($agentId);
+
+        return $record?->nodeId === $nodeId && $record->state === PlacementState::Started && $record->workerStarted
+            ? $record->placementId : null;
+    }
+
+    /**
+     * The authenticated previous holder can relay on a newer order before the socket sees it.
+     *
+     * @param string $agentId Addressed agent
+     * @param string $nodeId Holder named by the forwarded order
+     * @param PlacementId $order Order attached by the previous holder
+     * @return bool Whether the order agrees with or advances this node's confirmed view
+     */
+    public function permitsWorkerRelay(string $agentId, string $nodeId, PlacementId $order): bool
+    {
+        $record = $this->confirmedPlacementRecord($agentId);
+        $knownOrder = $record?->placementId;
+        if ($order->equals($knownOrder)) {
+            return $record->nodeId === $nodeId && $record->state === PlacementState::Started && $record->workerStarted;
+        }
+
+        return !$this->isLeader && ($record === null || $knownOrder?->precedes($order) === true) && $this->confirmsOrderAuthority($order);
+    }
+
+    /**
+     * @param string $agentId Agent whose serving worker is being asked for proof
+     * @return ?PlacementId This worker's started order, if still confirmed under current authority
+     */
+    public function confirmedLocalWorkerOrder(string $agentId): ?PlacementId
+    {
+        $hosted = $this->hosted[$agentId] ?? null;
+        $order = $hosted?->placementId;
+        if (!$hosted?->workerStarted || $order === null || !$this->isLocalPlacementCurrent($agentId, $order)) {
+            return null;
+        }
+
+        $record = $this->confirmedPlacementRecord($agentId);
+        if ($order->equals($record?->placementId)) {
+            if ($record->nodeId === $this->selfNodeId && $record->state === PlacementState::Started && $record->workerStarted) {
+                // The current leader may have adopted this exact order from another term.
+                return $order;
+            }
+            // A local worker report can precede the placement view of the same assignment.
+            return $record->nodeId === $this->selfNodeId && $record->state->hostsAgent() && $this->confirmsOrderAuthority($order)
+                ? $order : null;
+        }
+
+        return ($record === null || $record->placementId?->precedes($order) === true) && $this->confirmsOrderAuthority($order) ? $order : null;
+    }
+
+    /**
+     * An order ahead of the retained view still needs independent confirmation of its issuer.
+     *
+     * @param PlacementId $order Order issued ahead of this node's view
+     * @return bool Whether its issuance term still owns placement authority
+     */
+    private function confirmsOrderAuthority(PlacementId $order): bool
+    {
+        if ($this->isLeader) {
+            return $order->leaderNodeId === $this->selfNodeId && $order->term === $this->leaderTerm && $this->ownsLocalPlacementAuthority();
+        }
+        if ($this->acceptsLeaderCommand($order->leaderNodeId, $order->term)) {
+            return true;
+        }
+        $snapshot = $this->acceptedPlacementSnapshot;
+        try {
+            return $snapshot !== null && !isset($this->offlineSince[$order->leaderNodeId])
+                && ($this->placingAuthorityTerm === null || $order->term >= $this->placingAuthorityTerm)
+                && $snapshot->leaderNodeId === $order->leaderNodeId && $snapshot->term === $order->term
+                && $this->isConfirmedPlacementView($snapshot);
+        } catch (EnvException $failure) {
+            Logger::warning('Cannot confirm worker order authority: ' . $failure->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * @param string $agentId Addressed agent
      * @return ?PlacementRecovery Source replay still awaiting proof or still carried by an original hold
      */
     private function trackedPlacementRecovery(string $agentId): ?PlacementRecovery
@@ -1752,7 +1848,7 @@ final class ClusterPlacement implements WorkerPlacement
     private function confirmedPlacementRecord(string $agentId): ?PlacementRecord
     {
         if ($this->isLeader) {
-            return $this->rebuildPending ? null : $this->registry->get($agentId);
+            return $this->rebuildPending || !$this->ownsLocalPlacementAuthority() ? null : $this->registry->get($agentId);
         }
         $snapshot = $this->acceptedPlacementSnapshot;
         if ($snapshot === null) {
@@ -2880,7 +2976,11 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function isConfirmedPlacementView(PlacementSnapshot $snapshot): bool
     {
-        if (!$this->isLeader && $this->releasedAuthorityTerm !== null && $snapshot->term <= $this->releasedAuthorityTerm) {
+        if (!$this->isLeader && (
+            ($this->releasedAuthorityTerm !== null && $snapshot->term <= $this->releasedAuthorityTerm)
+            || ($this->placingAuthorityTerm !== null && ($snapshot->term < $this->placingAuthorityTerm
+                || ($snapshot->term === $this->placingAuthorityTerm && $snapshot->leaderNodeId !== $this->placingAuthorityNodeId)))
+        )) {
             return false;
         }
         $leadership = Hilos::$cluster?->leadership();

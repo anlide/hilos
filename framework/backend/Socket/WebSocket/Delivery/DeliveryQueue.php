@@ -47,7 +47,7 @@ final class DeliveryQueue
 
     private DeliveryCleanup $cleanup;
 
-    /** @var ?Generator<int, ?string> Original packet; later enqueues cannot change its captured survivors */
+    /** @var ?Generator<int, ?DeliveryPacket, ?string, void> Original packet with its captured survivors */
     private ?Generator $packing = null;
 
     /** Transport bytes still owned by packing, transferred once when a complete package leaves. */
@@ -166,7 +166,7 @@ final class DeliveryQueue
     {
         $this->coalescer->append(
             $frame,
-            barrier: $this->isHeld() && $frame->getType() === SignalTypeConstants::PAGE_RESPONSE,
+            barrier: $frame->recovery || ($this->isHeld() && $frame->getType() === SignalTypeConstants::PAGE_RESPONSE),
         );
         if (self::standsAlone($frame)) {
             $this->closeOpenRun($frame);
@@ -202,6 +202,21 @@ final class DeliveryQueue
             $this->forgetClosedPackages();
         }
         $this->cleanup->retire($this->updates);
+        $this->subscriptionId = $deliveryId;
+        $this->acceptRequest($nowMs);
+    }
+
+    /**
+     * An internal handoff replaces the hold on the same open page. Packing still
+     * rejects retired scoped responses and keeps their independent neighbors.
+     *
+     * @param string $deliveryId New master-minted handoff token
+     * @param int $nowMs Caller-supplied monotonic milliseconds
+     * @throws InvalidFormatException When the token is empty
+     */
+    public function holdPageHandoff(string $deliveryId, int $nowMs): void
+    {
+        self::requireDeliveryId($deliveryId);
         $this->subscriptionId = $deliveryId;
         $this->acceptRequest($nowMs);
     }
@@ -286,9 +301,25 @@ final class DeliveryQueue
      * @param int $nowMs Caller-supplied monotonic milliseconds of this drain decision
      * @param int $steps Maximum survivor or package transitions
      * @param bool $force Drain completed work before graceful close
-     * @return list<string> Complete packages, at most one per step; a batch never leaves partially
+     * @param ?string $pageDeliveryId Current authority of this socket, if it has an open page
+     * @return list<string> Complete text packages for consumers without a pending transport write
      */
-    public function drainPortion(int $nowMs, int $steps, bool $force = false): array
+    public function drainPortion(int $nowMs, int $steps, bool $force = false, ?string $pageDeliveryId = null): array
+    {
+        return array_map(
+            static fn (DeliveryPacket $packet): string => $packet->text,
+            $this->drainPackets($nowMs, $steps, $force, $pageDeliveryId),
+        );
+    }
+
+    /**
+     * @param int $nowMs Caller-supplied monotonic milliseconds of this drain decision
+     * @param int $steps Maximum survivor or package transitions
+     * @param bool $force Drain completed work before graceful close
+     * @param ?string $pageDeliveryId Current authority of this socket, if it has an open page
+     * @return list<DeliveryPacket> Complete packages with scope retained for the transport boundary
+     */
+    public function drainPackets(int $nowMs, int $steps, bool $force, ?string $pageDeliveryId): array
     {
         if ($steps <= 0) {
             return [];
@@ -314,15 +345,16 @@ final class DeliveryQueue
         $packages = [];
         $this->packing->valid();
         for ($step = 0; $step < $steps && $this->packing !== null; $step++) {
-            $this->packing->next();
+            $this->packing->send($pageDeliveryId);
             if (!$this->packing->valid()) {
                 $this->packing = null;
+                $this->packingBytes = 0;
                 break;
             }
             $package = $this->packing->current();
             if ($package !== null) {
                 $packages[] = $package;
-                $this->packingBytes -= WebSocketClient::frameHeaderBytes(strlen($package)) + strlen($package);
+                $this->packingBytes -= WebSocketClient::frameHeaderBytes(strlen($package->text)) + strlen($package->text);
             }
         }
 
@@ -361,53 +393,96 @@ final class DeliveryQueue
      */
     private static function standsAlone(DeliveryFrame $frame): bool
     {
-        return $frame->getType() === null || $frame->getType() === SignalTypeConstants::SIGNAL_BATCH;
+        return $frame->getType() === null || $frame->getType() === SignalTypeConstants::SIGNAL_BATCH || $frame->recovery;
     }
 
     /**
      * @param array<int, DeliveryFrame> $frames Original sparse survivors, transferred without array_values()
      * @param DeliveryCleanup $cleanup Existing owner of the detached packet after packing or cancellation
-     * @return Generator<int, ?string> Effect-free admission, then one survivor transition or complete package
+     * @return Generator<int, ?DeliveryPacket, ?string, void> One survivor or complete packet per step, resumed with the current token
      */
     private static function packetDelivery(array $frames, DeliveryCleanup $cleanup): Generator
     {
         $text = null;
         $count = 0;
+        $unscopedText = null;
+        $unscopedCount = 0;
+        $scope = null;
         try {
-            yield null;
+            $current = yield null;
             foreach ($frames as $frame) {
                 if (self::standsAlone($frame)) {
                     if ($text !== null) {
-                        if ($count > 1) {
-                            $text .= self::BATCH_CLOSE;
-                        }
-                        yield $text;
-                        $text = null;
-                        $count = 0;
+                        $current = yield self::finishRun($text, $count, $unscopedText, $unscopedCount, $scope, $current);
+                        $text = $unscopedText = $scope = null;
+                        $count = $unscopedCount = 0;
                     }
-                    yield $frame->json;
-                } else {
-                    if ($count === 0) {
-                        $text = $frame->json;
-                    } elseif ($count === 1) {
-                        $text = self::BATCH_OPEN . $text . self::BATCH_SEPARATOR . $frame->json;
-                    } else {
-                        $text .= self::BATCH_SEPARATOR;
-                        $text .= $frame->json;
-                    }
-                    $count++;
-                    yield null;
+                    $current = yield $frame->recovery || $frame->pageDeliveryId === null || $frame->pageDeliveryId === $current
+                        ? new DeliveryPacket($frame->json, $frame->pageDeliveryId, recovery: $frame->recovery)
+                        : null;
+                    continue;
                 }
+                if ($frame->pageDeliveryId !== null) {
+                    if ($frame->pageDeliveryId !== $current) {
+                        $current = yield null;
+                        continue;
+                    }
+                    // Later enqueues cannot join this packet. Only its original token can
+                    // expire, so one unscoped variant preserves the neighbors in order.
+                    if ($scope === null) {
+                        $scope = $frame->pageDeliveryId;
+                        $unscopedText = $text;
+                        $unscopedCount = $count;
+                    }
+                } elseif ($scope !== null) {
+                    self::appendPackedText($unscopedText, $unscopedCount++, $frame->json);
+                }
+                self::appendPackedText($text, $count++, $frame->json);
+                $current = yield null;
             }
             if ($text !== null) {
-                if ($count > 1) {
-                    $text .= self::BATCH_CLOSE;
-                }
-                yield $text;
+                yield self::finishRun($text, $count, $unscopedText, $unscopedCount, $scope, $current);
             }
         } finally {
             $cleanup->retire($frames);
         }
+    }
+
+    /**
+     * @param ?string $text Partial run
+     * @param int $count Envelopes already in the run
+     * @param string $json Next complete envelope
+     */
+    private static function appendPackedText(?string &$text, int $count, string $json): void
+    {
+        if ($count === 0) {
+            $text = $json;
+        } elseif ($count === 1) {
+            $text = self::BATCH_OPEN . $text . self::BATCH_SEPARATOR . $json;
+        } else {
+            $text .= self::BATCH_SEPARATOR;
+            $text .= $json;
+        }
+    }
+
+    /**
+     * @param string $text Run including answers admitted earlier
+     * @param int $count Envelopes in the original run
+     * @param ?string $unscopedText Run without subscription-scoped answers
+     * @param int $unscopedCount Envelopes that survive a subscription change
+     * @param ?string $scope Token of the scoped answers
+     * @param ?string $current Current token at the emission boundary
+     * @return ?DeliveryPacket Finalized run, or null when nothing survives
+     */
+    private static function finishRun(
+        string $text, int $count, ?string $unscopedText, int $unscopedCount, ?string $scope, ?string $current,
+    ): ?DeliveryPacket {
+        $fallback = $unscopedCount > 1 ? $unscopedText . self::BATCH_CLOSE : $unscopedText;
+        if ($scope !== null && $scope !== $current) {
+            return $fallback === null ? null : new DeliveryPacket($fallback);
+        }
+
+        return new DeliveryPacket($count > 1 ? $text . self::BATCH_CLOSE : $text, $scope, $fallback);
     }
 
     /**

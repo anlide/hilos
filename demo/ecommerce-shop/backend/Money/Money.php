@@ -34,6 +34,9 @@ final class Money
     private const int KOPECK_DIGITS = 2;
     private const string KOPECK_PAD = '0';
 
+    private const int DECIMAL_BASE = 10;
+    private const string EXACT_AMOUNT = '/^(?:0|[1-9][0-9]*)\z/';
+
     /** Longest whole part a person may write; even the longest one stays far from an overflow. */
     private const int HRYVNIA_MAX_DIGITS = 15;
 
@@ -141,6 +144,52 @@ final class Money
     }
 
     /**
+     * @param int $price Price of one unit, in kopecks
+     * @param int $quantity Units on the line
+     * @return string The exact price times quantity as decimal kopecks
+     * @throws LogicException When the price or the quantity is below zero
+     */
+    public static function lineTotalExact(int $price, int $quantity): string
+    {
+        self::requireNotNegative($price, 'A price');
+        self::requireNotNegative($quantity, 'A quantity');
+        if ($quantity === 0 || $price <= intdiv(PHP_INT_MAX, $quantity)) {
+            return (string) ($price * $quantity);
+        }
+
+        $total = '0';
+        $addend = (string) $price;
+        // Each successive bit of the quantity contributes twice as much as the previous one.
+        while ($quantity !== 0) {
+            if (($quantity & 1) === 1) {
+                $total = self::addDecimal($total, $addend);
+            }
+            $quantity >>= 1;
+            $addend = self::addDecimal($addend, $addend);
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param string ...$amounts Nonnegative decimal kopecks without leading zeroes
+     * @return string The exact sum as decimal kopecks, "0" for none
+     * @throws LogicException When an amount is not a canonical decimal string
+     */
+    public static function sumExact(string ...$amounts): string
+    {
+        $total = '0';
+        foreach ($amounts as $amount) {
+            if (preg_match(self::EXACT_AMOUNT, $amount) !== 1) {
+                throw new LogicException('An exact amount must be written as nonnegative decimal kopecks');
+            }
+            $total = self::addDecimal($total, $amount);
+        }
+
+        return $total;
+    }
+
+    /**
      * Works out the discount on the items, the one operation that rounds.
      *
      * @param int $items Amount of the items, in kopecks
@@ -174,6 +223,28 @@ final class Money
         }
 
         return $items - $discount;
+    }
+
+    /**
+     * @param string $amount Nonnegative decimal kopecks without leading zeroes
+     * @param string $addend Nonnegative decimal kopecks without leading zeroes
+     * @return string Their exact sum as decimal kopecks
+     */
+    private static function addDecimal(string $amount, string $addend): string
+    {
+        $left = strlen($amount) - 1;
+        $right = strlen($addend) - 1;
+        $carry = 0;
+        $reversed = '';
+        while ($left >= 0 || $right >= 0 || $carry !== 0) {
+            $digits = $carry + ($left >= 0 ? (int) $amount[$left] : 0) + ($right >= 0 ? (int) $addend[$right] : 0);
+            $reversed .= (string) ($digits % self::DECIMAL_BASE);
+            $carry = intdiv($digits, self::DECIMAL_BASE);
+            --$left;
+            --$right;
+        }
+
+        return strrev($reversed);
     }
 
     /**

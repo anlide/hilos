@@ -8,6 +8,7 @@ use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
@@ -27,6 +28,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Status\StatusSettingsCatalog;
 use Hilos\Tests\Unit\Status\StatusPageTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 
 /** Final wire from the production PageResender and Status builder, including guards and recovery. */
 final class StatusOverviewFanoutTest extends StatusPageTestCase
@@ -314,6 +316,83 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
         }
         $this->flush();
         self::assertSame([], $this->drain());
+    }
+
+    /** @return iterable<string, array{?RuntimeException, bool}> How the replaced whole guard returns */
+    public static function replacedWholeGuardResults(): iterable
+    {
+        yield 'allowed' => [null, false];
+        yield 'refused' => [null, true];
+        yield 'thrown' => [new RuntimeException('Whole access lookup failed'), false];
+    }
+
+    #[DataProvider('replacedWholeGuardResults')]
+    public function testReplacementDuringTheRealWholeGuardWaitsForAFreshFlush(?RuntimeException $failure, bool $refused): void
+    {
+        $this->subscribe();
+        $this->subscribe('second');
+        $this->browser->duringSubscriptionAccess = function (string $acceptKey) use ($failure, $refused): void {
+            self::assertSame('overview', $acceptKey);
+            $this->subscribe();
+            if ($failure !== null) {
+                throw $failure;
+            }
+            if ($refused) {
+                throw new PageForbiddenException();
+            }
+        };
+
+        $this->factsForFlush();
+        $this->flush();
+        $this->whole('second');
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('overview'));
+
+        $this->factsForFlush();
+        $this->flush();
+        $frames = $this->drain();
+        self::assertSame(['overview', 'second'], array_map(static fn ($frame) => $frame->data->targetAcceptKey, $frames));
+        foreach ($frames as $frame) {
+            self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $frame->signalName->getName());
+        }
+    }
+
+    /** @return iterable<string, array{string}> Status projections published after the DB-back guard */
+    public static function lateStatusProjections(): iterable
+    {
+        yield 'subscribers' => [HilosPageConstants::HILOS_STATUS_SUBSCRIBERS];
+        yield 'works' => [HilosPageConstants::HILOS_STATUS_WORKS];
+        yield 'history' => [HilosPageConstants::HILOS_STATUS_HISTORY];
+    }
+
+    #[DataProvider('lateStatusProjections')]
+    public function testDbBackProjectionFailureAfterGuardReplacementKeepsTheNewAddressClean(string $page): void
+    {
+        $this->subscribe(page: $page);
+        $this->subscribe('second', $page);
+        $overviewChecks = 0;
+        $check = function (string $acceptKey) use ($page, &$overviewChecks, &$check): void {
+            if ($acceptKey === 'overview' && ++$overviewChecks === 2) {
+                $this->subscribe(page: $page);
+                throw new RuntimeException('Projection access lookup failed');
+            }
+            $this->browser->duringIdentity = $check;
+        };
+        $this->browser->duringIdentity = $check;
+
+        $this->browser->recordDatabaseBack();
+        $this->flush();
+        $frames = $this->drain();
+        self::assertSame(['second'], array_map(static fn ($frame) => $frame->data->targetAcceptKey, $frames));
+        self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $frames[0]->signalName->getName());
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('overview'));
+
+        $this->browser->recordDatabaseBack();
+        $this->flush();
+        $frames = $this->drain();
+        self::assertSame(['overview', 'second'], array_map(static fn ($frame) => $frame->data->targetAcceptKey, $frames));
+        foreach ($frames as $frame) {
+            self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $frame->signalName->getName());
+        }
     }
 
     private function factsForFlush(): void

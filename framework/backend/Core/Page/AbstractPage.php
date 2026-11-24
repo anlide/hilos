@@ -457,8 +457,31 @@ abstract class AbstractPage implements ActionHostInterface
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        $router = Hilos::$sr;
+        if ($router === null) {
+            $this->answerPageSubscription($acceptKey, $params);
+            return;
+        }
+
+        $router->withPageAnswerContext($acceptKey, fn () => $this->answerPageSubscription($acceptKey, $params));
+    }
+
+    /**
+     * @param string $acceptKey Connection this whole answers
+     * @param PageRouteParams $params Route params from page subscription
+     * @throws PageInternalErrorException When the row's address param is absent
+     * @throws PageSubscriptionException When assembling the answer refuses the subscription
+     * @throws InvalidArgumentException When the page-response or facet-counts signal cannot be named
+     * @throws HilosException When the page or browser cannot assemble the answer
+     */
+    private function answerPageSubscription(string $acceptKey, PageRouteParams $params): void
+    {
+        $router = Hilos::$sr;
         $answer = $this->prepareResourceAnswer($acceptKey, $params);
         $pageResource = $answer?->resource ?? $this->resolvePageResource($acceptKey, $params);
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return;
+        }
         $addressParam = $pageResource?->addressParam;
         if ($addressParam !== null && !$params->has($addressParam)) {
             throw new PageInternalErrorException(
@@ -466,20 +489,37 @@ abstract class AbstractPage implements ActionHostInterface
             );
         }
         $this->onSubscribeBeforeResponse($acceptKey, $params);
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return;
+        }
         $own = $this->withPageIdentity($answer?->payload ?? $this->buildPagePayload($acceptKey, $params), $acceptKey, $params);
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return;
+        }
         $snapshot = Hilos::$browser?->buildSubscribeSnapshot(static::PAGE, $acceptKey, $params) ?? new PagePayload();
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return;
+        }
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
             $acceptKey,
             new PageResponseSignalData(static::PAGE, $own->over($snapshot)),
         );
-        Hilos::$sr?->bindPageResource($acceptKey, $pageResource);
-        Hilos::$sr?->clearPageDeliveryFailure($acceptKey);
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return;
+        }
+        $router?->bindPageResource($acceptKey, $pageResource);
+        $router?->clearPageDeliveryFailure($acceptKey);
         if ($answer?->onQueued !== null) {
             ($answer->onQueued)();
         }
+        if ($router?->isPageAnswerCurrent($acceptKey) === false) {
+            return;
+        }
         Hilos::$browser?->sendSnapshotFacetCounts(static::PAGE, $acceptKey, $snapshot);
-        $this->onSubscribeAfterResponse($acceptKey, $params);
+        if ($router?->pageFanOutAnswer($acceptKey)?->isCurrent() !== false) {
+            $this->onSubscribeAfterResponse($acceptKey, $params);
+        }
     }
 
     /**
@@ -1175,8 +1215,11 @@ abstract class AbstractPage implements ActionHostInterface
      */
     protected static function frameForViewer(string $acceptKey, SignalDataInterface $frame, array $fields): ?SignalDataInterface
     {
+        $fanOut = Hilos::$sr?->pageFanOutAnswer($acceptKey);
         try {
-            $verdict = PageAccessGate::verdict(static::class, $acceptKey);
+            $verdict = $fanOut !== null && Hilos::$browser !== null
+                ? Hilos::$browser->evaluatePageFanOutAccess($fanOut, static fn () => PageAccessGate::verdict(static::class, $acceptKey))
+                : PageAccessGate::verdict(static::class, $acceptKey);
         } catch (PageSubscriptionException) {
             return null;
         } catch (HilosException $e) {
@@ -1188,13 +1231,16 @@ abstract class AbstractPage implements ActionHostInterface
             return null;
         }
 
+        if ($fanOut?->isCurrent() === false) {
+            return null;
+        }
         if ($verdict === PageAccessVerdict::ALLOW) {
             return $frame;
         }
 
         $hidden = Hilos::$browser?->hideForViewer($frame->toArray(), $fields);
 
-        return $hidden === null ? null : new SignalData($hidden);
+        return $hidden === null || $fanOut?->isCurrent() === false ? null : new SignalData($hidden);
     }
 
     /**

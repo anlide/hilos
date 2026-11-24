@@ -73,7 +73,11 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::stock($bulbs, self::warehouse(), 1);
         self::stock($bulbs, self::warehouse(), 1);
 
+        $stock = Hilos::$db->productWarehouseStocks->getObjectCollection();
+        self::assertNotNull($stock);
+        self::assertFalse($stock->isAllLoaded());
         Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
+        self::assertFalse($stock->isAllLoaded());
         $lines = self::storedLines(101);
         self::assertCount(1, $lines);
         self::assertSame(['productId' => $bulbs, 'quantity' => 1], self::withoutId($lines[0]));

@@ -24,12 +24,16 @@ final class DeliveryFrame
      * @param ?stdClass $envelope Recognized application envelope, otherwise an opaque text boundary
      * @param bool $subscriptionResponse Full subscription answer, never a mergeable patch
      * @param bool $urgent Explicit server-side response correlation
+     * @param ?string $pageDeliveryId Exact subscription token, when stamped by the page producer
+     * @param bool $recovery Whether the socket accepted this control under a recovery lifetime
      */
     private function __construct(
         public readonly string $json,
         private readonly ?stdClass $envelope,
         public readonly bool $subscriptionResponse,
         private readonly bool $urgent,
+        public readonly ?string $pageDeliveryId,
+        public readonly bool $recovery = false,
     ) {
     }
 
@@ -40,10 +44,12 @@ final class DeliveryFrame
      * @param string $json Prepared transport text
      * @param bool $subscriptionResponse Whether this is a complete initial page response
      * @param bool $urgent Whether the sender correlated a response to an accepted request
+     * @param ?string $pageDeliveryId Exact subscription token for an addressed page frame
      * @return self Immutable prepared frame
      */
-    public static function fromJson(string $json, bool $subscriptionResponse = false, bool $urgent = false): self
-    {
+    public static function fromJson(
+        string $json, bool $subscriptionResponse = false, bool $urgent = false, ?string $pageDeliveryId = null,
+    ): self {
         $envelope = json_decode($json);
         if (!$envelope instanceof stdClass
             || !isset($envelope->{SignalPayloadConstants::FIELD_TYPE})
@@ -53,23 +59,43 @@ final class DeliveryFrame
             $envelope = null;
         }
 
-        return new self($json, $envelope, $subscriptionResponse, $urgent);
+        return new self($json, $envelope, $subscriptionResponse, $urgent, $pageDeliveryId);
     }
 
     /**
      * @param array<string, mixed>|stdClass $envelope Existing wire envelope; objects retain JSON map identity
      * @param bool $subscriptionResponse Whether this is a complete initial page response
      * @param bool $urgent Whether the sender correlated a response to an accepted request
+     * @param ?string $pageDeliveryId Subscription token retained when coalescing page frames
      * @return self Prepared frame detached from the caller's mutable objects
      * @throws InvalidFormatException When the envelope cannot be encoded as JSON
      */
-    public static function fromEnvelope(array|stdClass $envelope, bool $subscriptionResponse = false, bool $urgent = false): self
-    {
+    public static function fromEnvelope(
+        array|stdClass $envelope, bool $subscriptionResponse = false, bool $urgent = false, ?string $pageDeliveryId = null,
+    ): self {
         try {
-            return self::fromJson(json_encode($envelope, self::JSON_FLAGS), $subscriptionResponse, $urgent);
+            return self::fromJson(json_encode($envelope, self::JSON_FLAGS), $subscriptionResponse, $urgent, $pageDeliveryId);
         } catch (JsonException $exception) {
             throw new InvalidFormatException('Delivery envelope cannot be encoded', previous: $exception);
         }
+    }
+
+    /**
+     * @param string $scope Socket-local scope of a terminal page answer
+     * @return self Prepared text with the scope admitted by the socket
+     */
+    public function withPageScope(string $scope): self
+    {
+        return new self($this->json, $this->envelope, $this->subscriptionResponse, $this->urgent, $scope);
+    }
+
+    /**
+     * @param string $deliveryId Exact request ended by the recovery control
+     * @return self Prepared text with the local lifetime of the accepted recovery
+     */
+    public function withRecoveryScope(string $deliveryId): self
+    {
+        return new self($this->json, $this->envelope, $this->subscriptionResponse, $this->urgent, $deliveryId, recovery: true);
     }
 
     /** @return ?string Signal name, or null for opaque text */

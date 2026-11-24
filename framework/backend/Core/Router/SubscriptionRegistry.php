@@ -161,8 +161,9 @@ final class SubscriptionRegistry
      * @param string $acceptKey Client accept key
      * @param string $page Page identifier
      * @param array<string, mixed> $params Route params
+     * @param ?string $deliveryId Socket authority for an identity-routed subscription
      */
-    public function subscribeToPage(string $acceptKey, string $page, array $params): void
+    public function subscribeToPage(string $acceptKey, string $page, array $params, ?string $deliveryId = null): void
     {
         if ($acceptKey === '') {
             return;
@@ -176,7 +177,7 @@ final class SubscriptionRegistry
             $this->pageIndex->add($generation);
         }
         $this->pageGenerations[$acceptKey] = $generation;
-        $this->pages[$acceptKey] = new PageSubscription($page, $params);
+        $this->pages[$acceptKey] = new PageSubscription($page, $params, deliveryId: $deliveryId);
         // The viewports are NOT dropped here, and the moment matters: this runs after the
         // subscription has been answered, and the answer is now where a page's windows are
         // opened (HIL-642). Dropping them here would throw away the windows the frame just

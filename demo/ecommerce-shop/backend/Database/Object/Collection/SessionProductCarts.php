@@ -38,6 +38,24 @@ final class SessionProductCarts extends Objects
     private const string LAST_VOUCHER_SESSION_ID = 'last_voucher_session_id';
 
     /**
+     * Checks the cart's owner/product index without walking the held rows or loading new objects.
+     *
+     * @param int $sessionId Cart owner
+     * @param ?int $productId Product to match, null for any line
+     * @return bool Whether the current cart has a matching line
+     * @throws DatabaseException When the cart membership cannot be read
+     */
+    public function hasCartLine(int $sessionId, ?int $productId = null): bool
+    {
+        $filters = [EntitySessionProductCart::session_id => $sessionId];
+        if ($productId !== null) {
+            $filters[EntitySessionProductCart::product_id] = $productId;
+        }
+
+        return EntitySessionProductCart::countUpTo(0, $filters) > 0;
+    }
+
+    /**
      * Captures the high-water marks once for a recovery pass, using the last primary key of each table.
      *
      * @return array{int, int} Greatest product line ID and voucher binding session ID, zero for an empty table

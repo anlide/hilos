@@ -49,6 +49,17 @@ class Sessions extends DbCollection
     }
 
     /**
+     * @param int $sessionId Session primary key
+     * @return bool Whether the persisted session is still an active guest
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function isStoredActiveGuest(int $sessionId): bool
+    {
+        return $this->objectCollection->isStoredActiveGuest($sessionId);
+    }
+
+    /**
      * Finds a session by its cookie token.
      *
      * @param string $token Session cookie token (empty string returns null)

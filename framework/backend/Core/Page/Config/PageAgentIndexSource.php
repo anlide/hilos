@@ -20,4 +20,7 @@ enum PageAgentIndexSource: string
 
     /** The index is the durable user id behind the connection. */
     case SESSION_USER = 'session_user';
+
+    /** A public page follows the session user, with an unindexed owner for guests. */
+    case SESSION_USER_OR_GUEST = 'session_user_or_guest';
 }

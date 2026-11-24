@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageBindings;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Router\SignalRouter;
@@ -78,6 +82,48 @@ final class BrowserContextLiveFacetCountsTest extends TestCase
         self::assertSame(1, $facets->facets->filters['status'][TableConstants::FACET_KEY_OPTIONS]['sent']->count);
         self::assertSame([], $context->flushToSignalRouter());
         self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testLateFacetGuardCannotSendTheCountOfAReplacedSubscription(): void
+    {
+        $viewport = $this->viewport();
+        $table = new LiveFacetUnitTable([]);
+        $context = $this->boot($viewport, $table);
+        $this->declareFacets();
+        $table->rows[] = new LiveFacetUnitRow('1', 'pending');
+        $publish = static fn () => $context->publishTableMutations(LiveFacetUnitContext::PAGE, 'ak-1', LiveFacetUnitTable::TABLE,
+            static fn (): array => [new TableRowMutationDTO(TableMutationType::Create, '1', new LiveFacetUnitRow('1', 'pending'))]);
+        $publish();
+        $context->duringIdentity = static function (): void {
+            Hilos::$sr->subscribeToPage(LiveFacetUnitContext::PAGE, new WebSocketPageSubscribeSignalDTO('ak-1', LiveFacetUnitContext::PAGE));
+        };
+
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertNull($this->nextFacetCountsSignal());
+
+        $publish();
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertNotNull($this->nextFacetCountsSignal());
+    }
+
+    public function testMarkedTotalRemembersItsWindowAcrossEarlyPublicationAndFlush(): void
+    {
+        $viewport = $this->viewport();
+        $table = new LiveFacetUnitTable([]);
+        $context = $this->boot($viewport, $table);
+        $table->rows[] = new LiveFacetUnitRow('1', 'pending');
+        $publish = static fn () => $context->publishTableMutations(LiveFacetUnitContext::PAGE, 'ak-1', LiveFacetUnitTable::TABLE,
+            static fn (): array => [new TableRowMutationDTO(TableMutationType::Create, '1', new LiveFacetUnitRow('1', 'pending'))]);
+        $publish();
+        $next = $this->viewport();
+        Hilos::$sr->setTableViewport('ak-1', $next);
+        $before = $next->totalCount();
+        $context->flushToSignalRouter();
+        self::assertSame($before, $next->totalCount());
+
+        $publish();
+        $context->flushToSignalRouter();
+        self::assertSame(1, $next->totalCount());
     }
 
     public function testCreatedRowTriggersOneFacetCountsSignalWithAllDeclaredFiltersAfterFlush(): void
@@ -288,6 +334,17 @@ final class LiveFacetUnitContext extends BrowserContext
     public const string PAGE = 'live_facet_page';
     public const string SIGNAL = 'live_facet_signal';
 
+    public ?Closure $duringIdentity = null;
+
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
+    {
+        $callback = $this->duringIdentity;
+        $this->duringIdentity = null;
+        $callback?->__invoke();
+
+        return ConnectionIdentity::resolved(1);
+    }
+
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
         if ($page !== self::PAGE) {
@@ -296,6 +353,7 @@ final class LiveFacetUnitContext extends BrowserContext
 
         return BrowserPageConfig::fromArray([
             BrowserConfigKey::SIGNAL => self::SIGNAL,
+            BrowserConfigKey::GUARDS => [[BrowserGuardKey::TYPE => BrowserGuardType::AUTHENTICATED]],
         ]);
     }
 

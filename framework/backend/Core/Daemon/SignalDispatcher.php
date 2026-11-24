@@ -27,6 +27,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -931,6 +932,7 @@ class SignalDispatcher
         )) === SignalDispatchPhase::Terminal) {
             return;
         }
+        $signal = $dispatch->getSignal();
         $dispatch->phase = SignalDispatchPhase::Destinations;
         $dispatch->destinations = Hilos::$sr->destinationCandidates($signal);
         yield;
@@ -1979,8 +1981,14 @@ class SignalDispatcher
                     break;
                 }
                 $data = $parked->signal->data;
-                $pending = $data instanceof WebSocketPageSubscribeSignalDTO
-                    && (Hilos::$browser?->connectionIdentity($data->acceptKey)->pending ?? false);
+                $pending = false;
+                if ($data instanceof WebSocketPageSubscribeSignalDTO) {
+                    $page = $data->page ?? $parked->signal->signalName->getName();
+                    $identityRouted = $data->deliveryId !== null
+                        && Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+                    $pending = $identityRouted ? PageHandoffIdentity::current($data->acceptKey) === null
+                        : (Hilos::$browser?->connectionIdentity($data->acceptKey)->pending ?? false);
+                }
                 $identity = $this->identitySignals()->get($id);
                 if ($identity !== null && !$this->identitySignals()->isCanceled($identity)
                     && (!$pending || $due)) {

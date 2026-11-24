@@ -2434,9 +2434,8 @@ final class TopologyValidator
      * a malformed entry silently ({@see PageAgentIndexRouteRegistry::routes}), so reading it
      * here would report nothing at all for exactly the pages that need reporting. An indexed
      * owner that leaves the declaration empty is refused in the same pass: the page would be
-     * addressed with no index. A PARAM or SESSION_USER source cannot address a NODE-scoped
-     * owner; that page declares source NODE_PARAM. The error joins the accumulator and the
-     * walk continues.
+     * addressed with no index. NODE-scoped owners use NODE_PARAM. Public identity routing
+     * requires an indexed owner and an unindexed guest fallback, both registered and non-NODE.
      *
      * @param array $pages Page registry
      * @param array $agents Agent registry
@@ -2513,6 +2512,23 @@ final class TopologyValidator
             if ($source === PageAgentIndexSource::SESSION_USER && $pageClass::ACCESS_LEVEL === PageAccessLevel::PUBLIC) {
                 $errors[] = "{$path} with source " . PageAgentIndexSource::SESSION_USER->value
                     . ' requires ACCESS_LEVEL other than ' . PageAccessLevel::PUBLIC->value;
+            }
+
+            if ($source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                $sourcePath = "{$path} with source " . $source->value;
+                if ($pageClass::ACCESS_LEVEL !== PageAccessLevel::PUBLIC) {
+                    $errors[] = "{$sourcePath} requires ACCESS_LEVEL " . PageAccessLevel::PUBLIC->value;
+                }
+                $owner = $agents[$agentType] ?? null;
+                if (!AgentRegistry::requiresIndex($owner) || AgentRegistry::scope($owner) === AgentScope::NODE) {
+                    $errors[] = "{$sourcePath} requires a registered indexed non-NODE SUBSCRIPTION_AGENT_TYPE";
+                }
+                $fallback = is_string($fallbackAgentType) ? ($agents[$fallbackAgentType] ?? null) : null;
+                if ($fallback !== null
+                    && (AgentRegistry::requiresIndex($fallback) || AgentRegistry::scope($fallback) === AgentScope::NODE)
+                ) {
+                    $errors[] = "{$sourcePath} requires an unindexed non-NODE fallback agent";
+                }
             }
         }
     }

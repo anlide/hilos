@@ -44,6 +44,7 @@ use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageErrorMessages;
 use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
@@ -217,6 +218,49 @@ final class WorkerManagerResendPageTest extends TestCase
         $this->assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
         $this->assertSame(ResendWorkerTestPage::PAGE, Hilos::$sr->pageSubscription('ak-1')?->page);
         $this->assertSame(['countryCode' => 'se'], Hilos::$sr->pageSubscription('ak-1')?->params);
+    }
+
+    /** @return iterable<string, array{?Throwable}> Outcomes of a deletion guard that replaces its subscription */
+    public static function replacedDeletionGuards(): iterable
+    {
+        yield 'allowed' => [null];
+        yield 'refused' => [new PageForbiddenException()];
+        yield 'thrown' => [new RuntimeException('Deletion access lookup failed')];
+    }
+
+    #[DataProvider('replacedDeletionGuards')]
+    public function testRawDeletionGuardCannotReleaseOrFailTheReplacement(?Throwable $failure): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        Hilos::$browser->bindPageResender($manager);
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE], $this->drainQueue());
+        $original = PageResource::db(ResendWorkerTestTable::SOURCE, 'original');
+        $replacement = PageResource::db(ResendWorkerTestTable::SOURCE, 'replacement');
+        Hilos::$sr->bindPageResource('ak-1', $original);
+        Hilos::$browser->duringGuard = static function () use ($replacement, $failure): void {
+            $page = ResendWorkerTestPage::PAGE;
+            Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO('ak-1', $page));
+            Hilos::$sr->bindPageAgent('ak-1', $page, ResendWorkerTestAgent::AGENT_TYPE, ResendWorkerTestManager::FIRST);
+            Hilos::$sr->bindPageResource('ak-1', $replacement);
+            if ($failure !== null) {
+                throw $failure;
+            }
+        };
+
+        Hilos::$browser->record(SourceChange::dbDeleted($original->collectionKey, $original->idString, []));
+        $contained = Hilos::$browser->flushToSignalRouter();
+        self::assertSame([], $this->drainQueue());
+        self::assertSame([], $contained);
+        self::assertSame(0, $page->unsubscribeCount);
+        self::assertSame($replacement, Hilos::$sr->pageResource('ak-1'));
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+
+        Hilos::$browser->record(SourceChange::dbDeleted($replacement->collectionKey, $replacement->idString, []));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        self::assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], $this->drainQueue());
+        self::assertSame(1, $page->unsubscribeCount);
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
     }
 
     public function testADeletionRefusalForAConnectionWithNoSubscriptionHereIsUnserved(): void
@@ -1338,6 +1382,8 @@ final class ResendWorkerTestBrowser extends BrowserContext
 
     public ?PageSubscriptionException $guardRefusal = null;
 
+    public ?Closure $duringGuard = null;
+
     /** @var ?array<string, string> Params the latest guard check was handed */
     public ?array $guardParams = null;
 
@@ -1360,6 +1406,9 @@ final class ResendWorkerTestBrowser extends BrowserContext
     public function assertSubscriptionAccess(string $page, string $acceptKey, PageRouteParams $params): void
     {
         $this->guardParams = $params->toArray();
+        $callback = $this->duringGuard;
+        $this->duringGuard = null;
+        $callback?->__invoke();
         if ($this->guardRefusal !== null) {
             throw $this->guardRefusal;
         }

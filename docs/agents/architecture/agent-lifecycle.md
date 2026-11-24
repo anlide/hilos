@@ -242,6 +242,20 @@ mirror (`Hilos::$sr->acceptKeysServedBy()`), before `onStart()`. A tab whose
 subscription survived the stop therefore still keeps the new instance from
 being stopped for idleness without sending another subscribe frame.
 
+An in-place POLICY restart can retain an admitted identity handoff mirror and
+its source interests on the original worker. The exact mirror holds the user
+and session proved at admission, so a copy that loses freshness before or
+after the first KEEP still has the same identity to confirm. A start that
+names the live socket gives the retained mirror an idle subscriber slot.
+
+Page delivery needs both the serving instance and a fresh matching connection
+identity from RT. Losing confirmation leaves the exact subscription owed a
+whole. A matching start, published snapshot or row fact that ends the wait
+lets the next browser flush try that whole for the same mirror. A confirmed
+different identity, deletion, socket close, exact release, new placement
+order, revocation, failed start or seating on another worker ends retention.
+Pending handoff proofs end with the stopping instance.
+
 ## When a worker dies
 
 A worker that dies takes its agents with it, and none of them gets to report a

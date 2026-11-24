@@ -91,6 +91,7 @@ use Hilos\Hilos as HilosFacade;
 use Hilos\ProtectedMode\ProtectedModeStubConstants;
 use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use RuntimeException;
 
 /**
@@ -905,6 +906,52 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage(PageAccessLevel::PUBLIC->value);
 
         TopologyPerInstancePublicSessionUserHilos::validateTopology();
+    }
+
+    public function testPublicIdentityRoutePassesTopologyValidation(): void
+    {
+        TopologyPublicIdentityHilos::validateTopology();
+        $this->assertSame(
+            PageAgentIndexSource::SESSION_USER_OR_GUEST,
+            TopologyPublicIdentityHilos::getPageAgentIndexRoutes()[TopologyPublicIdentityPage::PAGE]->source,
+        );
+    }
+
+    /** @return iterable<string, array{class-string<AbstractPage>, array, string}> Invalid route declarations */
+    public static function invalidPublicIdentityRoutes(): iterable
+    {
+        $agents = TopologyPublicIdentityHilos::AGENTS;
+        $owner = TopologyPublicIdentityPage::SUBSCRIPTION_AGENT_TYPE;
+        $fallback = TopologyValidAgent::AGENT_TYPE;
+        yield 'private page' => [TopologyPrivateIdentityPage::class, $agents, 'requires ACCESS_LEVEL public'];
+        yield 'missing owner' => [TopologyPublicIdentityPage::class, [$fallback => $agents[$fallback]], 'indexed non-NODE SUBSCRIPTION_AGENT_TYPE'];
+        yield 'missing fallback' => [TopologyPublicIdentityPage::class, [$owner => $agents[$owner]], 'missing from AGENTS'];
+
+        $invalid = $agents;
+        $invalid[$owner][AgentRegistryKey::INDEXED] = false;
+        yield 'unindexed owner' => [TopologyPublicIdentityPage::class, $invalid, 'indexed non-NODE SUBSCRIPTION_AGENT_TYPE'];
+        $invalid = $agents;
+        $invalid[$owner][AgentRegistryKey::SCOPE] = AgentScope::NODE;
+        yield 'node owner' => [TopologyPublicIdentityPage::class, $invalid, 'indexed non-NODE SUBSCRIPTION_AGENT_TYPE'];
+        $invalid = $agents;
+        $invalid[$fallback][AgentRegistryKey::INDEXED] = true;
+        yield 'indexed fallback' => [TopologyPublicIdentityPage::class, $invalid, 'unindexed non-NODE fallback agent'];
+        $invalid = $agents;
+        $invalid[$fallback][AgentRegistryKey::SCOPE] = AgentScope::NODE;
+        yield 'node fallback' => [TopologyPublicIdentityPage::class, $invalid, 'unindexed non-NODE fallback agent'];
+    }
+
+    #[DataProvider('invalidPublicIdentityRoutes')]
+    public function testPublicIdentityRouteRefusesAnInvalidDeclaration(string $pageClass, array $agents, string $expected): void
+    {
+        $errors = [];
+        new ReflectionMethod(TopologyValidator::class, 'validatePageAgentIndexRoutes')->invokeArgs(
+            new TopologyValidator(),
+            [[$pageClass::PAGE => $pageClass], $agents, &$errors],
+        );
+
+        $this->assertCount(1, $errors);
+        $this->assertStringContainsString($expected, $errors[0]);
     }
 
     public function testPerNodeAgentPassesValidation(): void
@@ -6796,6 +6843,37 @@ final class TopologyNodeAddressedSessionUserHilos extends TopologyNodeAddressedP
 {
     public const array PAGES = [
         TopologyNodeAddressedSessionUserPage::PAGE => TopologyNodeAddressedSessionUserPage::class,
+    ];
+}
+
+class TopologyPublicIdentityPage extends AbstractPage
+{
+    public const string PAGE = 'topology_public_identity_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyPageNodeAgent::AGENT_TYPE;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER_OR_GUEST,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
+    ];
+}
+
+final class TopologyPrivateIdentityPage extends TopologyPublicIdentityPage
+{
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
+}
+
+final class TopologyPublicIdentityHilos extends TopologyNodeAddressedPageHilos
+{
+    public const array PAGES = [TopologyPublicIdentityPage::PAGE => TopologyPublicIdentityPage::class];
+
+    public const array AGENTS = [
+        TopologyPageNodeAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyPageNodeAgent::class,
+            AgentRegistryKey::DAEMON => TopologyPageNodeAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        TopologyValidAgent::AGENT_TYPE => parent::AGENTS[TopologyValidAgent::AGENT_TYPE],
     ];
 }
 

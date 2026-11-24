@@ -10,6 +10,7 @@ use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableWindowFrameDTO;
 use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
+use stdClass;
 
 /**
  * TableViewportSubscription - Worker-local record of one table's live viewport.
@@ -76,6 +77,9 @@ final class TableViewportSubscription
     /** Whether the server last told this window that unheld rows follow it, or null when it has not said. */
     private ?bool $hasRowsAfter = null;
 
+    /** Identity shared by the viewport and its rendered-field refinements. */
+    private object $windowIdentity;
+
     /**
      * @param string $tableKey Table the viewport scopes
      * @param array<string, mixed> $filter Open filter map, resolved to a query by the concrete table
@@ -100,6 +104,7 @@ final class TableViewportSubscription
         public readonly array $rendered = [],
         public readonly ?array $shownFields = null,
     ) {
+        $this->windowIdentity = new stdClass();
     }
 
     /**
@@ -249,6 +254,7 @@ final class TableViewportSubscription
             rendered: $rendered,
             shownFields: $this->shownFields,
         );
+        $declared->windowIdentity = $this->windowIdentity;
         $declared->rowDigests = $this->rowDigests;
         $declared->rowAnchors = $this->rowAnchors;
         $declared->totalCount = $this->totalCount;
@@ -270,6 +276,15 @@ final class TableViewportSubscription
         }
 
         return $declared;
+    }
+
+    /**
+     * @param self $other Another viewport record
+     * @return bool Whether both records describe the same held window through rendered-field declarations
+     */
+    public function isSameWindow(self $other): bool
+    {
+        return $this->windowIdentity === $other->windowIdentity;
     }
 
     /**

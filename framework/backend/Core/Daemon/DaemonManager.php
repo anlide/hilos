@@ -53,6 +53,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Placement\BestFitPlacementPolicy;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementRestartSink;
@@ -1136,6 +1137,8 @@ abstract class DaemonManager extends BaseManager implements
         $this->noteSignalWorkerFact($agentId);
         if ($agentId === null) {
             $this->noteSlaveSyncAuthorityChanged();
+        } else {
+            $this->recoverRefusedPageHandoffs($this->pendingPageIndex()->handoffCandidates($agentId));
         }
     }
 
@@ -1254,6 +1257,9 @@ abstract class DaemonManager extends BaseManager implements
             return false;
         }
         $signal = $dispatch->getSignal();
+        if ($signal?->signalSource instanceof PageReassessmentSource && !$signal->signalSource->context->isCurrent()) {
+            return false;
+        }
         return !$dispatch->clientResolved || $signal === null
             || (!$this->isAbandonedPageDelivery($dispatch, $signal, $dispatch->release?->localOnly ?? false)
                 && !$this->isStalePageRecovery($dispatch, $signal));
@@ -3755,6 +3761,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->wakeReadiness();
         $this->policyDeclarations->noteChanged($agentId);
         $this->agentRestarts->onAgentStarted($agentId);
+        $this->recoverRefusedPageHandoffs($this->pendingPageIndex()->handoffCandidates($agentId), $origin);
         if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
             $this->forceDaemonNodeFrames();
         }
@@ -4666,7 +4673,17 @@ abstract class DaemonManager extends BaseManager implements
         $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
 
         $request = $signal->data;
+        if ($signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS && $signal->signalSource->getSource() === SignalSource::DAEMON
+            && (!$request instanceof WebSocketPageSubscribeSignalDTO || $request->deliveryId === null
+                || PageHandoffIdentity::fromMeta($signal->meta) === null)) {
+            return;
+        }
         if ($signalType === SignalTypeConstants::PAGE_UNSUBSCRIBE && $request instanceof WebSocketPageUnsubscribeSignalDTO) {
+            $deliveryId = $signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] ?? null;
+            if (is_string($deliveryId)) {
+                $this->releaseLocalPageDelivery($agentType, $agentIndex, $signal, $request, $deliveryId);
+                return;
+            }
             $this->cancelPendingPageDeliveries($dispatch, $request->acceptKey, $request->page ?? $signalName);
         } elseif ($signalType === SignalTypeConstants::CONNECTION_CLOSE && $request instanceof WebSocketCloseSignalDTO) {
             $this->cancelPendingPageDeliveries($dispatch, $request->acceptKey);
@@ -4681,6 +4698,50 @@ abstract class DaemonManager extends BaseManager implements
             Logger::warning("Peer signal dropped: {$signalType}/{$signalName}"
                 . " -> agent {$agentLabel} - no worker server");
             $this->answerStartRefusedSubscription($signal);
+            return;
+        }
+
+        if (isset($signal->meta[PageHandoffIdentity::META_PROOF])) {
+            if (!$request instanceof WebSocketPageSubscribeSignalDTO || !PageHandoffIdentity::isReply($signal, $request)) {
+                return;
+            }
+            $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex);
+            $granted = $signal->meta[PageHandoffIdentity::META_PROOF] === PageHandoffIdentity::GRANTED;
+            $index = $this->pendingPageIndex();
+            $pending = $index->get($request->acceptKey, $request->deliveryId);
+            $permitted = null;
+            if ($granted) {
+                if (!$pending?->handoff || $pending->awaitsRecovery || $pending->nodeId !== null
+                    || $pending->agentId !== $agentId || $pending->page !== $request->page
+                    || !self::samePageParams($pending->params, $request->params)
+                    || $pending->identity != PageHandoffIdentity::fromMeta($signal->meta)) {
+                    return;
+                }
+                if (!self::isLocalPageHandoffOwner($agentType, $agentIndex)) {
+                    $this->answerStartRefusedSubscription($signal);
+                    return;
+                }
+                if (!self::isCurrentPageHandoffGrant($agentId, $signal)) {
+                    return;
+                }
+                $ledger = WeakReference::create($index);
+                $permitted = static fn (): bool => !$pending->awaitsRecovery
+                    && $ledger->get()?->get($pending->acceptKey, $pending->deliveryId) === $pending;
+            } elseif ($this->deliveryClient($dispatch, $request->acceptKey) === null && $pending?->handoff && $pending->agentId === $agentId) {
+                $this->settlePendingPageDelivery($pending);
+            }
+            try {
+                if ($this->agentManagerDaemon->isAgentStarted($agentId)) {
+                    $workerServer->sendSignalToAgent($agentType, $agentIndex,
+                        new DaemonAgentMessageDTO($agentId, $signal, writePermitted: $permitted));
+                    return;
+                }
+            } catch (HilosException $failure) {
+                Logger::warning('Page handoff could not reach its serving worker: ' . $failure::class);
+            }
+            if ($granted) {
+                $this->answerStartRefusedSubscription($signal);
+            }
             return;
         }
 
@@ -6419,6 +6480,23 @@ abstract class DaemonManager extends BaseManager implements
             }
             return;
         }
+        if (($signal->meta[PageHandoffIdentity::META_PROOF] ?? null) === PageHandoffIdentity::PROBE) {
+            if ($destination instanceof WebSocketDestination) {
+                try {
+                    yield from $this->replyToPageHandoffProbe($dispatch, $destination->acceptKey, $signal);
+                } catch (Throwable $failure) {
+                    Logger::error('Local page handoff proof failed with ' . $failure::class);
+                }
+            }
+            return;
+        }
+        if ($destination instanceof WebSocketDestination && isset($signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID])) {
+            $target = yield from $this->clientLookup($dispatch, $server, $destination->acceptKey);
+            if ($target?->getClient() !== null && Hilos::$sr->isCurrentClientDestination($destination)) {
+                $this->sendSignalToWebSocketClient($dispatch, $server, $signal, $destination->acceptKey);
+            }
+            return;
+        }
         if (!$dispatch->framePrepared) {
             $dispatch->frame = $this->prepareSignalFrame($signal);
             $dispatch->framePrepared = true;
@@ -7178,6 +7256,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Signal DTO
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
      * @throws HilosException When a collection refuses to be re-read from the replaced database
+     * @throws InvalidArgumentException When a re-decision for the changed connection cannot be named
      */
     protected function handleDaemonSignal(SignalDTO $signal, ?string $originNodeId = null): void
     {
@@ -7186,6 +7265,11 @@ abstract class DaemonManager extends BaseManager implements
             && in_array($signalType, PeerDbSyncDTO::SIGNAL_TYPES, true)) {
             return;
         }
+        $identityPage = $signal->data instanceof RtSyncSignalDataInterface ? $this->identityPageSubscription($signal->data->stateId) : null;
+        if ($identityPage !== null && Hilos::$rt?->connectionsRegistry()?->getCollectionName() !== $signal->data->collectionKey) {
+            $identityPage = null;
+        }
+        $identityBefore = $identityPage === null ? null : PageHandoffIdentity::current($identityPage->acceptKey);
         match ($signalType) {
             SignalTypeConstants::DB_SYNC_CREATED => DbSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
@@ -7221,6 +7305,10 @@ abstract class DaemonManager extends BaseManager implements
         }
         if ($signal->data instanceof RtSyncSignalDataInterface) {
             $this->signalDispatcher?->onIdentitySourceChanged($signal->data->collectionKey, $signal->data->stateId);
+        }
+        $identityAfter = $identityPage === null ? null : PageHandoffIdentity::current($identityPage->acceptKey);
+        if ($identityPage !== null && $identityAfter !== null && $identityBefore != $identityAfter) {
+            $this->queueIdentityPageReassessment($identityPage);
         }
     }
 
@@ -9635,16 +9723,45 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $workerServer = $this->findWorkerServer();
-        if ($workerServer === null) {
-            return;
+        if ($workerServer !== null) {
+            $this->writeFrameToWorkers(
+                $workerServer,
+                new WorkerRtStalenessMessageDTO($collectionKey, $thawed, null),
+                SourceChange::KIND_RT,
+                $collectionKey,
+            );
         }
 
-        $this->writeFrameToWorkers(
-            $workerServer,
-            new WorkerRtStalenessMessageDTO($collectionKey, $thawed, null),
-            SourceChange::KIND_RT,
-            $collectionKey,
-        );
+        if ($collectionKey === Hilos::$rt?->connectionsRegistry()?->getCollectionName()) {
+            $this->queueSignalEffectInDispatch(
+                fn (SignalDispatch $dispatch): Generator => $this->reassessThawedPageDeliveries($dispatch, $thawed),
+                null,
+            );
+        }
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Local RT recovery effect
+     * @param list<string> $acceptKeys Only the connection rows the RT publication confirmed
+     * @return Generator<int, void> One exact socket lookup per portion
+     * @throws InvalidArgumentException When the addressed reassessment cannot be named
+     */
+    private function reassessThawedPageDeliveries(SignalDispatch $dispatch, array $acceptKeys): Generator
+    {
+        yield;
+        foreach ($acceptKeys as $acceptKey) {
+            $client = $this->deliveryClient($dispatch, $acceptKey);
+            if ($client !== null) {
+                $original = $this->identityPageSubscription($acceptKey);
+                $subscription = $original?->subscription;
+                $identity = PageHandoffIdentity::current($acceptKey);
+                if ($subscription?->deliveryId !== null && $identity !== null
+                    && $client->needsPageHandoffRecovery($subscription->page, $subscription->deliveryId, $identity)) {
+                    $this->queueIdentityPageReassessment($original);
+                }
+            }
+            yield;
+        }
     }
 
     /**
@@ -9660,6 +9777,7 @@ abstract class DaemonManager extends BaseManager implements
     public function handOverConnections(string $nodeId): void
     {
         $this->sendConnectionsToNode($this->findPeerServer(), $nodeId);
+        $this->recoverRefusedPageHandoffs($this->pendingPageIndex()->recoveryCandidates(nodeId: $nodeId));
     }
 
     /**
@@ -9679,6 +9797,15 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function deliverSignalToClient(string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null): void
     {
+        if (($signal->meta[PageHandoffIdentity::META_PROOF] ?? null) === PageHandoffIdentity::PROBE) {
+            $this->queueSignalEffectInDispatch(
+                fn(SignalDispatch $dispatch): Generator => $this->replyToPageHandoffProbe($dispatch, $acceptKey, $signal),
+                null,
+                peerApplyContext: 'page handoff authority',
+            );
+            return;
+        }
+
         // Counted on acceptance, before the socket is looked for: what this records is that the
         // mesh reached this node, which is what a cluster scenario asserts on and what the
         // scenario, which opens no browser, has no other way of seeing.
@@ -9706,6 +9833,358 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
         $this->sendSignalToWebSocketClient($dispatch, $webSocketServer, $signal, $acceptKey);
+    }
+
+    /**
+     * The serving worker asks only once it can run the handoff. The socket's current token is
+     * checked at the reply effect, after any peer transport yield and before an affirmative reply.
+     *
+     * @param SignalDispatch $dispatch Original probe's dispatch lifetime
+     * @param string $acceptKey Socket named by the addressed probe
+     * @param SignalDTO $probe Request for proof from a ready serving worker
+     * @return Generator<int, void> Existing local worker or addressed peer delivery
+     * @throws Throwable When the transport or terminal effect fails
+     */
+    private function replyToPageHandoffProbe(SignalDispatch $dispatch, string $acceptKey, SignalDTO $probe): Generator
+    {
+        yield;
+        $probeData = $probe->data;
+        $request = $probeData instanceof WebSocketSignalData ? $probeData->data : null;
+        $agentType = $probe->signalSource->getType();
+        $agentIndex = $probe->signalSource->getIndex();
+        $identity = PageHandoffIdentity::fromMeta($probe->meta);
+        $challenge = $probe->meta[PageHandoffIdentity::META_CHALLENGE] ?? null;
+        $expiry = $probe->meta[PageHandoffIdentity::META_TERMINAL_REFUSAL] ?? null;
+        if ($probe->signalType->getType() !== SignalTypeConstants::WS_USER
+            || $probe->signalName->getName() !== SignalTypeConstants::PAGE_ACCESS_REASSESS
+            || $probe->signalSource->getSource() !== SignalSource::AGENT
+            || !$request instanceof WebSocketPageSubscribeSignalDTO || $request->acceptKey !== $acceptKey
+            || $request->page === null || $request->deliveryId === null || $agentType === null || $identity === null
+            || ($expiry === null ? !PageHandoffIdentity::isChallenge($challenge) : $expiry !== $request->deliveryId)
+            || $probeData->targetAcceptKey !== $acceptKey) {
+            return;
+        }
+        $replyNode = $probe->meta[PageHandoffIdentity::META_REPLY_NODE] ?? null;
+        if ($replyNode !== null && !is_string($replyNode)) {
+            return;
+        }
+        $relayFrom = $probe->meta[PageHandoffIdentity::META_RELAY_FROM] ?? null;
+        $relayOrder = PageHandoffIdentity::relayOrder($probe->meta);
+        $workerOrder = PageHandoffIdentity::workerOrder($probe->meta);
+        if ($expiry !== null) {
+            yield from $this->resolveSignalEffectClient($dispatch, $acceptKey);
+            $pending = $this->pendingPageIndex()->get($acceptKey, $expiry);
+            $client = $this->deliveryClient($dispatch, $acceptKey);
+            if ($client?->isCurrentPageSubscription($request->page, $expiry) === true
+                && $client->isDeliveryPending($request->page, $expiry)
+                && $pending?->handoff && !$pending->awaitsRecovery && $pending->page === $request->page
+                && self::samePageParams($pending->params, $request->params) && $pending->identity == $identity
+                && $pending->agentId === $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex)
+                && $this->matchesPageHandoffExpirySender($pending, $replyNode, $relayFrom, $relayOrder, $workerOrder)) {
+                $this->completeExpiredPageHandoff($client, $pending);
+            }
+            return;
+        }
+
+        $reply = function () use (
+            $dispatch, $request, $agentType, $agentIndex, $identity, $challenge, $replyNode, $relayFrom, $relayOrder, $workerOrder,
+        ): SignalDTO {
+            $subscription = Hilos::$sr->pageSubscription($request->acceptKey);
+            $client = $this->deliveryClient($dispatch, $request->acceptKey);
+            $pending = $this->pendingPageIndex()->get($request->acceptKey, $request->deliveryId);
+            $granted = $subscription?->deliveryId === $request->deliveryId && $subscription->page === $request->page
+                && $subscription->agentType === $agentType && $subscription->agentIndex === $agentIndex
+                && $client?->isCurrentPageSubscription($request->page, $request->deliveryId) === true
+                && $client->isDeliveryPending($request->page, $request->deliveryId)
+                && $pending?->handoff === true && !$pending->awaitsRecovery
+                && $pending->agentId === $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex)
+                && $pending->page === $request->page && self::samePageParams($pending->params, $request->params)
+                && $pending->identity == $identity && $identity == PageHandoffIdentity::current($request->acceptKey)
+                && $this->permitsPageHandoffProbe($pending, $agentType, $agentIndex, $replyNode, $relayFrom, $relayOrder, $workerOrder);
+            if ($granted && $pending->nodeId !== $replyNode) {
+                // The verified relay changes the serving node on the original socket ledger.
+                $this->signalDispatcher()->recordPendingPageDelivery(new PendingPageDelivery(
+                    $pending->acceptKey, $pending->page, $pending->deliveryId, $pending->params, $pending->agentId,
+                    $replyNode, handoff: true, identity: $identity, placementOrder: $workerOrder,
+                ));
+                $subscription->handoffServingNode = $replyNode;
+            }
+            if ($client?->isPageHandoffDue($request->deliveryId) === true) {
+                $client->expireDuePageHandoff();
+                $granted = false;
+            }
+
+            return new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS),
+                new SignalName($request->page),
+                $request,
+                [
+                    ...$identity->toMeta(),
+                    PageHandoffIdentity::META_CHALLENGE => $challenge,
+                    PageHandoffIdentity::META_PROOF => $granted ? PageHandoffIdentity::GRANTED : PageHandoffIdentity::REFUSED,
+                    ...($granted && $workerOrder !== null ? [PageHandoffIdentity::META_WORKER_ORDER => $workerOrder->toArray()] : []),
+                ],
+            );
+        };
+        if (is_string($replyNode)) {
+            $peer = $this->findPeerServer();
+            if ($peer !== null) {
+                yield from $peer->addressedDelivery($replyNode, function () use ($peer, $replyNode, $agentType, $agentIndex, $reply): void {
+                    $signal = $reply();
+                    if (!$peer->sendSignalToNode($replyNode, $agentType, $agentIndex, $signal)
+                        && $signal->meta[PageHandoffIdentity::META_PROOF] === PageHandoffIdentity::GRANTED) {
+                        $this->answerUnreachableSubscription($signal);
+                    }
+                });
+            }
+            return;
+        }
+        $workers = $this->findWorkerServer();
+        if ($workers !== null) {
+            $this->deliverSignalToAgentInDispatch($dispatch, $agentType, $agentIndex, $reply());
+        }
+    }
+
+    /**
+     * An expiry can end the exact historical attempt even when its giver can no longer grant it.
+     * The linked node either owns that ledger address or received the request from that address.
+     *
+     * @param PendingPageDelivery $pending Exact live request on the socket
+     * @param ?string $replyNode Authenticated reporting node, absent for a local worker
+     * @param mixed $relayFrom Prior holder stamped at the authenticated relay ingress
+     * @param ?PlacementId $relayOrder Original order that carried the request across the relay
+     * @param ?PlacementId $workerOrder Order under which the concrete worker received it
+     * @return bool Whether this report names the outstanding wait without changing its address
+     */
+    private function matchesPageHandoffExpirySender(
+        PendingPageDelivery $pending, ?string $replyNode, mixed $relayFrom, ?PlacementId $relayOrder, ?PlacementId $workerOrder,
+    ): bool {
+        if ($pending->nodeId === $replyNode) {
+            return $pending->placementOrder === null || $pending->placementOrder->equals($workerOrder);
+        }
+
+        return $replyNode !== null && $pending->nodeId !== null && $relayFrom === $pending->nodeId && $relayOrder !== null;
+    }
+
+    /**
+     * Releases a proven expiry as a single refusal while preserving adjacent application frames.
+     *
+     * @param WebSocketClient $client Socket holding the exact expired request
+     * @param PendingPageDelivery $pending Ledger entry whose worker exhausted its deadline
+     * @throws Throwable When the refusal cannot be prepared, the hold released, or socket work rearmed
+     */
+    private function completeExpiredPageHandoff(WebSocketClient $client, PendingPageDelivery $pending): void
+    {
+        $this->settleExpiredPageHandoff($pending);
+        $message = null;
+        if ($pending->identity !== null) {
+            $client->bindPageDeliveryIdentity($pending->deliveryId, $pending->identity);
+        }
+        if ($client->hasCurrentPageDeliveryIdentity($pending->identity)) {
+            $message = $this->prepareSignalFrame(new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::WS_USER),
+                new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+                new WebSocketSignalData(PageSubscriptionErrorSignalData::forStatus(
+                    page: $pending->page,
+                    httpCode: HttpConstants::HTTP_SERVICE_UNAVAILABLE,
+                    errorCode: self::SUBSCRIPTION_AGENT_UNAVAILABLE_CODE,
+                ), targetAcceptKey: $pending->acceptKey),
+                [
+                    WebSocketPageSubscribeSignalDTO::PAGE => $pending->page,
+                    WebSocketPageSubscribeSignalDTO::DELIVERY_ID => $pending->deliveryId,
+                ],
+            ));
+        } else {
+            $client->notePageDeliveryIdentityLost();
+        }
+        $client->expirePageDelivery($pending->page, $pending->deliveryId, $message);
+    }
+
+    /**
+     * @param PendingPageDelivery $pending Socket's last certified serving address
+     */
+    private function releaseExpiredPageHandoff(PendingPageDelivery $pending): void
+    {
+        $agent = AgentId::fromId($pending->agentId);
+        $this->sendPageHandoffRelease(
+            $agent->type, $agent->index, $pending->nodeId, $pending->acceptKey, $pending->page, $pending->deliveryId,
+        );
+    }
+
+    /**
+     * @param string $agentType Historical owner type
+     * @param ?string $agentIndex Historical owner index
+     * @param ?string $nodeId Historical peer, or null for the local worker path
+     * @param string $acceptKey Connection that held the subscription
+     * @param string $page Original page
+     * @param string $deliveryId Original token
+     */
+    private function sendPageHandoffRelease(
+        string $agentType, ?string $agentIndex, ?string $nodeId, string $acceptKey, string $page, string $deliveryId,
+    ): void {
+        try {
+            $release = $this->pageHandoffRelease($acceptKey, $page, $deliveryId);
+            if ($nodeId !== null) {
+                $this->findPeerServer()?->sendSignalToNode($nodeId, $agentType, $agentIndex, $release);
+                return;
+            }
+            $this->releaseLocalPageDelivery($agentType, $agentIndex, $release, $release->data, $deliveryId);
+        } catch (Throwable $failure) {
+            Logger::error('Serving page handoff release failed with ' . $failure::class);
+        }
+    }
+
+    /**
+     * Finish the attempt on this master or at its already-started local holder.
+     * A stopped holder's worker retires its exact mirror when it handles the stop.
+     *
+     * @param string $agentType Historical owner type
+     * @param ?string $agentIndex Historical owner index
+     * @param SignalDTO $signal Addressed unsubscribe envelope
+     * @param WebSocketPageUnsubscribeSignalDTO $request Unsubscribe carried by the envelope
+     * @param string $deliveryId Original token
+     * @throws Throwable When the historical hold or worker delivery fails
+     */
+    private function releaseLocalPageDelivery(
+        string $agentType, ?string $agentIndex, SignalDTO $signal, WebSocketPageUnsubscribeSignalDTO $request, string $deliveryId,
+    ): void {
+        $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex);
+        $pending = $this->pendingPageIndex()->get($request->acceptKey, $deliveryId);
+        if ($pending !== null && $pending->nodeId === null && $pending->agentId === $agentId
+            && $pending->page === ($request->page ?? $signal->signalName->getName())) {
+            $stillHeld = $pending->handoff && $this->agentSignalHolds()->pageDeliveryHold($pending) !== null;
+            $this->settlePendingPageDelivery($pending);
+            if ($stillHeld) {
+                return;
+            }
+        }
+        $workers = $this->findWorkerServer();
+        if ($this->agentManagerDaemon->isAgentStarted($agentId)) {
+            $workers?->sendSignalToAgent($agentType, $agentIndex, new DaemonAgentMessageDTO($agentId, $signal));
+        } else {
+            $workers?->releaseRestartPageMirror(new DaemonAgentMessageDTO($agentId, $signal));
+        }
+    }
+
+    /**
+     * @param string $acceptKey Connection that held the subscription
+     * @param string $page Original page
+     * @param ?string $deliveryId Original token, absent for a legacy subscription
+     * @return SignalDTO Addressed release that can never remove a replacement token
+     * @throws InvalidArgumentException When the original page cannot name the release
+     */
+    private function pageHandoffRelease(string $acceptKey, string $page, ?string $deliveryId): SignalDTO
+    {
+        return new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
+            new SignalName($page),
+            new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey),
+            $deliveryId === null ? [] : [WebSocketPageSubscribeSignalDTO::DELIVERY_ID => $deliveryId],
+        );
+    }
+
+    /**
+     * @param PendingPageDelivery $pending Exact expiry on the worker's master or the socket master
+     */
+    private function settleExpiredPageHandoff(PendingPageDelivery $pending): void
+    {
+        try {
+            $this->settlePendingPageDelivery($pending);
+        } catch (Throwable $failure) {
+            // The ledger and hold indexes have retired. A disposal failure must leave
+            // the report free to reach the socket and release its application hold.
+            Logger::error('Page handoff expiry cleanup failed with ' . $failure::class);
+        }
+    }
+
+    /**
+     * @param PendingPageDelivery $pending Socket's original selected address
+     * @param string $agentType Logical source of the probe
+     * @param ?string $agentIndex Logical source index
+     * @param ?string $replyNode Node authenticated by the peer link, or null for the local worker
+     * @param mixed $relayFrom Node that relayed the addressed handoff, if any
+     * @param ?PlacementId $relayOrder Order that confirmed the relayed destination
+     * @param ?PlacementId $workerOrder Order stamped when this attempt was handed to the serving worker
+     * @return bool Whether this holder may claim the original attempt
+     * @throws EnvException When the placement lookup reads invalid cluster configuration
+     * @throws ClusterConfigurationException When the local socket node is misconfigured
+     * @throws ClusterDisabledException When the local socket node loses its identity
+     */
+    private function permitsPageHandoffProbe(
+        PendingPageDelivery $pending,
+        string $agentType,
+        ?string $agentIndex,
+        ?string $replyNode,
+        mixed $relayFrom,
+        ?PlacementId $relayOrder,
+        ?PlacementId $workerOrder,
+    ): bool {
+        $placement = self::pageHandoffPlacement($agentType);
+        $sameNode = $pending->nodeId === $replyNode;
+        if ($placement === null) {
+            $address = Hilos::$sr->placeAgentDestination(new AgentDestination($agentType, $agentIndex));
+            return $sameNode && ($replyNode === null
+                ? $address instanceof AgentDestination && $this->agentManagerDaemon->isAgentStarted($pending->agentId)
+                : $address instanceof RemoteAgentDestination && $address->nodeId === $replyNode);
+        }
+
+        $expected = $sameNode ? $pending->placementOrder : $relayOrder;
+        if ($workerOrder === null || ($expected !== null && !$workerOrder->equals($expected))
+            || (!$sameNode && ($pending->nodeId === null || $relayFrom !== $pending->nodeId || $relayOrder === null))) {
+            return false;
+        }
+
+        if ($replyNode === null) {
+            return $this->agentManagerDaemon->isAgentStarted($pending->agentId)
+                && $workerOrder->equals($placement->confirmedLocalWorkerOrder($pending->agentId));
+        }
+
+        return $placement->permitsWorkerRelay($pending->agentId, $replyNode, $workerOrder);
+    }
+
+    /**
+     * @param string $agentId Logical owner addressed by the handoff grant
+     * @param SignalDTO $signal Grant carried to the worker
+     * @return bool Whether the serving node still has authority to start writing the grant
+     */
+    public static function isCurrentPageHandoffGrant(string $agentId, SignalDTO $signal): bool
+    {
+        $agent = AgentId::fromId($agentId);
+        $placement = self::pageHandoffPlacement($agent->type);
+        if ($placement === null) {
+            return !isset($signal->meta[PageHandoffIdentity::META_WORKER_ORDER])
+                && self::isLocalPageHandoffOwner($agent->type, $agent->index);
+        }
+
+        return PageHandoffIdentity::workerOrder($signal->meta)?->equals($placement->confirmedLocalWorkerOrder($agentId)) === true;
+    }
+
+    /**
+     * @param string $agentType Type of the handoff owner
+     * @param ?string $agentIndex Index of the handoff owner
+     * @return bool Whether the placement route still addresses this node
+     */
+    private static function isLocalPageHandoffOwner(string $agentType, ?string $agentIndex): bool
+    {
+        try {
+            return Hilos::$sr->placeAgentDestination(new AgentDestination($agentType, $agentIndex)) instanceof AgentDestination;
+        } catch (EnvException $failure) {
+            Logger::warning('Could not verify page grant placement: ' . $failure::class);
+            return false;
+        }
+    }
+
+    /**
+     * @param string $agentType Type of the handoff owner
+     * @return ?ClusterPlacement Coordinator when this agent follows an explicit cluster placement order
+     */
+    private static function pageHandoffPlacement(string $agentType): ?ClusterPlacement
+    {
+        return AgentRegistry::placement(Hilos::appClass()::AGENTS[$agentType] ?? null) === AgentPlacement::POLICY
+            ? Hilos::$cluster?->placement() : null;
     }
 
     /**
@@ -9928,7 +10407,9 @@ abstract class DaemonManager extends BaseManager implements
             $this->completeRefusedDelivery($data->acceptKey, $data->page ?? $signal->signalName->getName(), $data->deliveryId);
             return;
         }
-        if ($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE) {
+        $handoffIdentity = $data instanceof WebSocketPageSubscribeSignalDTO && $data->deliveryId !== null
+            ? PageHandoffIdentity::fromMeta($signal->meta) : null;
+        if ($handoffIdentity === null && $signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE) {
             return;
         }
 
@@ -9941,18 +10422,35 @@ abstract class DaemonManager extends BaseManager implements
         $page = $data->page ?? $signal->signalName->getName();
         Logger::warning("Page subscription to '{$page}' refused for '{$data->acceptKey}': {$reason}");
 
+        $error = new WebSocketSignalData(
+            data: PageSubscriptionErrorSignalData::forStatus(page: $page, httpCode: $httpCode, errorCode: $errorCode),
+            targetAcceptKey: $data->acceptKey,
+        );
+        if ($handoffIdentity !== null) {
+            $pending = $this->pendingPageIndex()->get($data->acceptKey, $data->deliveryId);
+            if ($pending === null || $pending->awaitsRecovery) {
+                return;
+            }
+            $pending->awaitsRecovery = true;
+            Hilos::$sr->queueSignalEnvelope(new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::WS_USER),
+                new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+                $error,
+                [
+                    WebSocketPageSubscribeSignalDTO::PAGE => $page,
+                    WebSocketPageSubscribeSignalDTO::DELIVERY_ID => $data->deliveryId,
+                    PageHandoffIdentity::META_TERMINAL_REFUSAL => $data->deliveryId,
+                    ...$handoffIdentity->toMeta(),
+                ],
+            ));
+            return;
+        }
         Hilos::$sr->queueSignal(
             signalSource: new SignalSource(SignalSource::DAEMON),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
-            signalData: new WebSocketSignalData(
-                data: PageSubscriptionErrorSignalData::forStatus(
-                    page: $page,
-                    httpCode: $httpCode,
-                    errorCode: $errorCode,
-                ),
-                targetAcceptKey: $data->acceptKey,
-            ),
+            signalData: $error,
         );
         $this->completeRefusedDelivery($data->acceptKey, $page, $data->deliveryId);
     }
@@ -10932,17 +11430,64 @@ abstract class DaemonManager extends BaseManager implements
                 && $targeting instanceof WebSocketSignalData && $targeting->data instanceof DeliveryCompleteSignalData
                 && $targeting->targetAcceptKey === $acceptKey
             ) {
-                $this->acceptPageDeliveryControl($dispatch, $signal);
                 $walk = $this->clientLookup($dispatch, $server, $acceptKey);
                 foreach ($walk as $_) {
                 }
                 $walk->getReturn()?->getClient()?->completeDelivery($targeting->data->page, $targeting->data->deliveryId);
+                $this->acceptPageDeliveryControl($dispatch, $signal, localSocketSettled: true);
             }
             return;
         }
 
+        $deliveryId = $signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] ?? null;
+        $target = $signal->data;
+        if (is_string($deliveryId) && $signal->signalType->getType() === SignalTypeConstants::WS_USER
+            && $signal->signalName->getName() === SignalConstants::PAGE_RESUBSCRIBE
+            && $target instanceof WebSocketSignalData && $target->targetAcceptKey === $acceptKey
+            && $target->data instanceof PageResubscribeSignalData) {
+            $client = $this->deliveryClient($dispatch, $acceptKey);
+            if ($client !== null) {
+                try {
+                    $this->acceptTerminalPageRecovery($dispatch, $client, $target->data->page, $target->data->params, $deliveryId);
+                } catch (Throwable $failure) {
+                    Logger::error('Exact page recovery failed with ' . $failure::class);
+                }
+            }
+            return;
+        }
         if ($this->isStalePageRecovery($dispatch, $signal)) {
             return;
+        }
+        $page = $signal->meta[WebSocketPageSubscribeSignalDTO::PAGE] ?? null;
+        if (is_string($deliveryId)) {
+            $client = $this->deliveryClient($dispatch, $acceptKey);
+            $identity = PageHandoffIdentity::fromMeta($signal->meta);
+            if (!is_string($page) || $client?->isCurrentPageSubscription($page, $deliveryId) !== true) {
+                return;
+            }
+            if ($client->isPageHandoffDue($deliveryId)) {
+                $client->expireDuePageHandoff();
+                return;
+            }
+            if (!$client->hasCurrentPageDeliveryIdentity($identity)) {
+                $client->notePageDeliveryIdentityLost();
+                return;
+            }
+            if ($identity !== null) {
+                $client->bindPageDeliveryIdentity($deliveryId, $identity);
+            }
+        }
+        if (is_string($deliveryId) && is_string($page)
+            && ($signal->meta[PageHandoffIdentity::META_TERMINAL_REFUSAL] ?? null) === $deliveryId) {
+            $pending = $this->pendingPageIndex()->get($acceptKey, $deliveryId);
+            if ($pending?->handoff && $pending->page === $page) {
+                $pending->awaitsRecovery = true;
+                $this->deliveryClient($dispatch, $acceptKey)?->releasePageDeliveryHold($page, $deliveryId);
+                $this->queueSignalEffectInDispatch(function (SignalDispatch $recovery) use ($pending): Generator {
+                    yield;
+                    yield from $this->recoverRefusedPageHandoff($recovery, $pending);
+                }, $dispatch);
+            }
         }
         $this->acceptPageDeliveryControl($dispatch, $signal);
         $message = $this->prepareSignalFrame($signal);
@@ -10989,12 +11534,12 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $this->acceptPageDeliveryControl($dispatch, $signal);
         $target = yield from $lookup;
         $client = $target?->getClient();
         if ($client !== null && Hilos::$sr->isCurrentClientDestination($destination)) {
             $client->completeDelivery($targeting->data->page, $targeting->data->deliveryId);
         }
+        $this->acceptPageDeliveryControl($dispatch, $signal, localSocketSettled: true);
     }
 
     /**
@@ -11081,18 +11626,22 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Request being dispatched
      * @param AgentAddressedDestination $destination Selected serving address
      * @return ?PendingPageDelivery Exact attempt recorded for this send
+     * @throws EventLoopException When the original socket deadline cannot be armed
      */
     private function trackPageDelivery(SignalDispatch $dispatch, SignalDTO $signal, AgentAddressedDestination $destination): ?PendingPageDelivery
     {
         $data = $signal->data;
-        if (($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE
+        $identity = PageHandoffIdentity::fromMeta($signal->meta);
+        $handoff = $data instanceof WebSocketPageSubscribeSignalDTO
+            && $identity !== null && !isset($signal->meta[PageHandoffIdentity::META_PROOF]);
+        if ((!$handoff && $signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE
                 && $signal->signalType->getType() !== SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION)
             || (!$data instanceof WebSocketPageSubscribeSignalDTO && !$data instanceof WebSocketPageUpdateSubscriptionSignalDTO)
             || $data->deliveryId === null
         ) {
             return null;
         }
-        if ($data instanceof WebSocketPageSubscribeSignalDTO
+        if ($signal->signalType->getType() === SignalTypeConstants::PAGE_SUBSCRIBE && $data instanceof WebSocketPageSubscribeSignalDTO
             && $this->pendingPageIndex()->get($data->acceptKey, $data->deliveryId) === null) {
             $this->cancelPendingPageDeliveries($dispatch, $data->acceptKey, cancelSocket: false);
         }
@@ -11103,9 +11652,51 @@ abstract class DaemonManager extends BaseManager implements
             $data->params,
             $this->agentManagerDaemon->buildAgentId($destination->agentType, $destination->agentIndex),
             $destination instanceof RemoteAgentDestination ? $destination->nodeId : null,
+            handoff: $handoff,
+            identity: $handoff ? $identity : null,
         );
         $this->signalDispatcher()->recordPendingPageDelivery($pending);
+        if ($handoff) {
+            $client = $this->deliveryClient($dispatch, $data->acceptKey);
+            if ($client !== null) {
+                $client->bindPageDeliveryIdentity($data->deliveryId, $identity);
+                $subscription = Hilos::$sr->pageSubscription($pending->acceptKey);
+                if ($subscription?->deliveryId === $pending->deliveryId && $subscription->page === $pending->page
+                    && !$destination instanceof UnknownAgentDestination) {
+                    $subscription->handoffServingNode = $pending->nodeId;
+                }
+                if ($destination instanceof RemoteAgentDestination) {
+                    $owner = WeakReference::create($this);
+                    $deliveryId = $pending->deliveryId;
+                    $client->watchRemotePageHandoff($pending->page, $deliveryId,
+                        static function (WebSocketClient $socket) use ($owner, $deliveryId): void {
+                            $owner->get()?->expireUnansweredPageHandoff($socket, $deliveryId);
+                        },
+                    );
+                }
+            }
+        }
         return $pending;
+    }
+
+    /**
+     * @param WebSocketClient $client Socket that still owns the attempt's fallback deadline
+     * @param string $deliveryId Original token, even if its serving address moved
+     */
+    private function expireUnansweredPageHandoff(WebSocketClient $client, string $deliveryId): void
+    {
+        $pending = $this->pendingPageIndex()->get($client->acceptKey, $deliveryId);
+        if ($pending?->handoff && !$pending->awaitsRecovery && $client->isCurrentPageSubscription($pending->page, $deliveryId)
+            && $client->isDeliveryPending($pending->page, $deliveryId)) {
+            try {
+                $this->completeExpiredPageHandoff($client, $pending);
+            } catch (Throwable $failure) {
+                Logger::error('Socket page handoff expiry failed with ' . $failure::class);
+                $client->markShouldClose();
+            } finally {
+                $this->releaseExpiredPageHandoff($pending);
+            }
+        }
     }
 
     /**
@@ -11114,8 +11705,9 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Addressed internal boundary or existing page recovery control
+     * @param bool $localSocketSettled Whether the local socket already decided the completion
      */
-    private function acceptPageDeliveryControl(SignalDispatch $dispatch, SignalDTO $signal): void
+    private function acceptPageDeliveryControl(SignalDispatch $dispatch, SignalDTO $signal, bool $localSocketSettled = false): void
     {
         $target = $signal->data;
         if ($signal->signalType->getType() !== SignalTypeConstants::WS_USER
@@ -11123,12 +11715,32 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
         if ($signal->signalName->getName() === SignalConstants::DELIVERY_COMPLETE && $target->data instanceof DeliveryCompleteSignalData) {
+            // Dispatch preparation keeps the local entry available to its socket's expiry effect.
+            if (!$localSocketSettled && $this->deliveryClient($dispatch, $target->targetAcceptKey)
+                ?->isDeliveryPending($target->data->page, $target->data->deliveryId) === true) {
+                return;
+            }
             $pending = $this->pendingPageIndex()->get($target->targetAcceptKey, $target->data->deliveryId);
             if ($pending?->page === $target->data->page) {
                 $this->pendingPageIndex()->remove($pending->acceptKey, $pending->deliveryId);
             }
+        } elseif (($signal->meta[PageHandoffIdentity::META_PROOF] ?? null) === PageHandoffIdentity::PROBE
+            && $signal->signalName->getName() === SignalTypeConstants::PAGE_ACCESS_REASSESS
+            && $signal->signalSource->getSource() === SignalSource::AGENT && $target->data instanceof WebSocketPageSubscribeSignalDTO
+            && $target->data->acceptKey === $target->targetAcceptKey && $target->data->deliveryId !== null
+            && ($signal->meta[PageHandoffIdentity::META_TERMINAL_REFUSAL] ?? null) === $target->data->deliveryId
+            && $this->deliveryClient($dispatch, $target->targetAcceptKey) === null) {
+            $pending = $this->pendingPageIndex()->get($target->targetAcceptKey, $target->data->deliveryId);
+            if ($pending?->handoff && $pending->nodeId === null && $pending->page === $target->data->page
+                && $pending->agentId === $this->agentManagerDaemon->buildAgentId($signal->signalSource->getType(), $signal->signalSource->getIndex())
+                && $pending->identity == PageHandoffIdentity::fromMeta($signal->meta)
+                && self::samePageParams($pending->params, $target->data->params)
+                && $this->matchesPageHandoffExpirySender($pending, null, null, null, PageHandoffIdentity::workerOrder($signal->meta))) {
+                $this->settleExpiredPageHandoff($pending);
+            }
         } elseif ($signal->signalName->getName() === SignalConstants::PAGE_RESUBSCRIBE
-            && $target->data instanceof PageResubscribeSignalData && !$this->isStalePageRecovery($dispatch, $signal)) {
+            && $target->data instanceof PageResubscribeSignalData && !isset($signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID])
+            && !$this->isStalePageRecovery($dispatch, $signal)) {
             $this->cancelPendingPageDeliveries($dispatch, $target->targetAcceptKey, $target->data->page);
         }
     }
@@ -11169,7 +11781,7 @@ abstract class DaemonManager extends BaseManager implements
         $message = $this->prepareSignalFrame(self::terminalPageRecoverySignal($acceptKey, $page, $params));
         if ($message !== null) {
             try {
-                $client->sendDeliveryFrame($message);
+                $client->sendPageRecovery($page, $deliveryId, $message);
             } catch (Throwable $failure) {
                 Logger::error("Failed to send message to acceptKey {$acceptKey}: " . $failure->getMessage());
             }
@@ -11203,7 +11815,8 @@ abstract class DaemonManager extends BaseManager implements
         if ($signal->signalType->getType() !== SignalTypeConstants::WS_USER
             || $signal->signalName->getName() !== SignalConstants::PAGE_RESUBSCRIBE
             || !$target instanceof WebSocketSignalData || $target->targetAcceptKey === null
-            || !$target->data instanceof PageResubscribeSignalData) {
+            || !$target->data instanceof PageResubscribeSignalData
+            || isset($signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID])) {
             return false;
         }
 
@@ -11297,6 +11910,64 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * @param ?Generator<int, ?int> $candidates Selected addresses that may have become available
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+    private function recoverRefusedPageHandoffs(?Generator $candidates, ?SignalDispatch $origin = null): void
+    {
+        if ($candidates === null) {
+            return;
+        }
+        $this->queueSignalEffectInDispatch(function (SignalDispatch $dispatch) use ($candidates): Generator {
+            yield;
+            foreach ($candidates as $sourceId) {
+                yield;
+                $pending = $sourceId === null ? null : $this->pendingPageIndex()->candidate($sourceId);
+                if ($pending !== null) {
+                    yield from $this->recoverRefusedPageHandoff($dispatch, $pending);
+                }
+            }
+        }, $origin);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original recovery lifetime
+     * @param PendingPageDelivery $pending Exact refusal or placement candidate
+     * @return Generator<int, void> Existing client recovery if this attempt can be retried
+     * @throws Throwable When placement or the terminal recovery effect fails
+     */
+    private function recoverRefusedPageHandoff(SignalDispatch $dispatch, PendingPageDelivery $pending): Generator
+    {
+        if (!$pending->awaitsRecovery || $this->pendingPageIndex()->get($pending->acceptKey, $pending->deliveryId) !== $pending
+            || !$this->isPageHandoffAddressAvailable($pending)) {
+            return;
+        }
+        $client = $this->deliveryClient($dispatch, $pending->acceptKey);
+        if ($client !== null && $pending->identity != PageHandoffIdentity::current($pending->acceptKey)) {
+            return;
+        }
+        yield from $this->terminalPageRecovery($dispatch, $pending, $client);
+    }
+
+    /**
+     * @param PendingPageDelivery $pending Refused handoff that still belongs to this ledger
+     * @return bool Whether the selected agent address may accept a new request
+     * @throws EnvException When placement reads invalid cluster configuration
+     */
+    private function isPageHandoffAddressAvailable(PendingPageDelivery $pending): bool
+    {
+        $agent = AgentId::fromId($pending->agentId);
+        $address = Hilos::$sr->placeAgentDestination(new AgentDestination($agent->type, $agent->index));
+        $policy = AgentRegistry::placement(Hilos::appClass()::AGENTS[$agent->type] ?? null) === AgentPlacement::POLICY;
+        return match (true) {
+            $address instanceof AgentDestination => $this->agentManagerDaemon->isAgentStarted($pending->agentId),
+            $address instanceof RemoteAgentDestination => ($this->findPeerServer()?->hasActiveLinkToNode($address->nodeId) ?? false)
+                && (!$policy || Hilos::$cluster?->placement()?->hasConfirmedWorker($pending->agentId, $address->nodeId) === true),
+            default => false,
+        };
+    }
+
+    /**
      * @param SignalDispatch $dispatch Original delivery lifetime
      * @param list<string> $agentIds Original local loss cohort
      * @param ?string $nodeId Lost remote node
@@ -11365,23 +12036,20 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
         $client = $this->deliveryClient($dispatch, $acceptKey);
-        if ($preservePlacementRecovery) {
+        if ($pending->awaitsRecovery) {
+            return;
+        }
+        if ($client !== null || $preservePlacementRecovery || $pending->handoff) {
             yield from $this->terminalPageRecovery($dispatch, $pending, $client);
             return;
         }
-        if ($client !== null && !$client->isDeliveryPending($pending->page, $pending->deliveryId)) {
-            $this->pendingPageIndex()->remove($acceptKey, $pending->deliveryId);
-            return;
-        }
-        unset($client);
-        $this->cancelPendingPageDeliveries($dispatch, $acceptKey, $pending->page);
-        try {
-            Hilos::$sr->queueSignal(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::WS_USER),
-                new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
-                new WebSocketSignalData(new PageResubscribeSignalData($pending->page, $pending->params), targetAcceptKey: $acceptKey));
-        } catch (InvalidArgumentException $failure) {
-            Logger::error('Page delivery recovery refused for ' . $acceptKey . ': ' . $failure->getMessage());
-        }
+
+        // The socket's request remains pending until the addressed control has its turn.
+        // Retire this source now so another loss fact cannot queue the same control again.
+        $this->settlePendingPageDelivery($pending);
+        Hilos::$sr->queueSignalEnvelope(self::terminalPageRecoverySignal(
+            $acceptKey, $pending->page, $pending->params, $pending->deliveryId,
+        ));
     }
 
     /**
@@ -11423,15 +12091,17 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $acceptKey Connection that admitted the attempt
      * @param string $page Original request page
      * @param array<string, mixed> $params Original request params
+     * @param ?string $deliveryId Correlation for a queued internal control, omitted from browser output
      * @return SignalDTO Addressed control with its ordinary browser payload
      * @throws InvalidFormatException When the recovery parameters are malformed
      * @throws InvalidArgumentException When the recovery signal cannot be named
      */
-    private static function terminalPageRecoverySignal(string $acceptKey, string $page, array $params): SignalDTO
+    private static function terminalPageRecoverySignal(string $acceptKey, string $page, array $params, ?string $deliveryId = null): SignalDTO
     {
         return new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::WS_USER),
             new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
-            new WebSocketSignalData(new PageResubscribeSignalData($page, $params), targetAcceptKey: $acceptKey));
+            new WebSocketSignalData(new PageResubscribeSignalData($page, $params), targetAcceptKey: $acceptKey),
+            $deliveryId === null ? [] : [WebSocketPageSubscribeSignalDTO::DELIVERY_ID => $deliveryId]);
     }
 
     /**
@@ -11462,8 +12132,13 @@ abstract class DaemonManager extends BaseManager implements
     {
         $json = $this->encodeSignalFrame($signal);
         $inner = $signal->data instanceof WebSocketSignalData ? $signal->data->data : $signal->data;
+        $deliveryId = $signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] ?? null;
 
-        return $json === null ? null : DeliveryFrame::fromJson($json, urgent: $inner instanceof HandshakeResponseSignalData);
+        return $json === null ? null : DeliveryFrame::fromJson(
+            $json,
+            urgent: $inner instanceof HandshakeResponseSignalData,
+            pageDeliveryId: is_string($deliveryId) ? $deliveryId : null,
+        );
     }
 
     /**
@@ -11708,7 +12383,7 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * The old owner's unsubscribe completes before the new subscription record is written.
+     * Addresses the previous subscription's release before writing the new record.
      *
      * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Subscription envelope
@@ -11736,6 +12411,13 @@ abstract class DaemonManager extends BaseManager implements
                     return;
                 }
                 Hilos::$sr->subscribeToPage($page, $signal->data);
+                $identityRouted = $signal->data->deliveryId !== null
+                    && Hilos::$sr->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+                if ($identityRouted) {
+                    // Release may have yielded while the master's connection row changed.
+                    $identity = PageHandoffIdentity::current($signal->data->acceptKey);
+                    $address = $this->settledPageAgentAddress($page, $signal->data->acceptKey, $signal->data->params);
+                }
                 if ($address !== null) {
                     Hilos::$sr->bindPageAgent(
                         $signal->data->acceptKey,
@@ -11744,6 +12426,17 @@ abstract class DaemonManager extends BaseManager implements
                         $address->agentIndex,
                         $address->agentNode,
                     );
+                }
+                if ($identityRouted) {
+                    if ($identity === null) {
+                        $this->answerStartRefusedSubscription($signal);
+                        $dispatch->cancel();
+                        return;
+                    }
+                    $dispatch->replaceSignal(new SignalDTO(
+                        $signal->signalSource, $signal->signalType, $signal->signalName, $signal->data,
+                        [...$signal->meta, ...$identity->toMeta()],
+                    ));
                 }
                 break;
 
@@ -11759,8 +12452,15 @@ abstract class DaemonManager extends BaseManager implements
                 // connection has already navigated away from. Re-addressing on it would take the
                 // page the connection IS on away from the agent serving it and point that record
                 // at the agent of the page it left - a live page dead with nothing to notice it.
-                if (Hilos::$sr->pageSubscription($signal->data->acceptKey)?->page !== $reassessedPage) {
+                $subscription = Hilos::$sr->pageSubscription($signal->data->acceptKey);
+                if ($subscription?->page !== $reassessedPage) {
                     return;
+                }
+                if (Hilos::$sr->pageAgentIndexRoute($reassessedPage)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                    yield from $this->prepareIdentityPageReassessment(
+                        $dispatch, $signal, new PageSubscriptionContext(Hilos::$sr, $signal->data->acceptKey, $subscription),
+                    );
+                    break;
                 }
                 $reassessedAddress = $this->settledPageAgentAddress(
                     $reassessedPage,
@@ -11802,6 +12502,15 @@ abstract class DaemonManager extends BaseManager implements
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
                 // The registry entry itself is dropped after routing, by
                 // {@see forgetSubscriptionsAfterRouting()}: it is what names the addressee.
+                if ($signal->data instanceof WebSocketPageUnsubscribeSignalDTO) {
+                    $previous = Hilos::$sr->pageSubscription($signal->data->acceptKey);
+                    if ($previous?->page === $signalName && $previous->deliveryId !== null) {
+                        $dispatch->replaceSignal(new SignalDTO(
+                            $signal->signalSource, $signal->signalType, $signal->signalName, $signal->data,
+                            [...$signal->meta, WebSocketPageSubscribeSignalDTO::DELIVERY_ID => $previous->deliveryId],
+                        ));
+                    }
+                }
                 break;
 
             // GROUP_SUBSCRIBE is deliberately absent: the master no longer writes a membership off
@@ -11855,6 +12564,104 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * @param string $acceptKey Connection whose identity source changed
+     * @return ?PageSubscriptionContext Open page that opts into identity-driven answers
+     */
+    private function identityPageSubscription(string $acceptKey): ?PageSubscriptionContext
+    {
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
+        if ($subscription === null || $router->pageAgentIndexRoute($subscription->page)?->source !== PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+            return null;
+        }
+
+        return new PageSubscriptionContext($router, $acceptKey, $subscription);
+    }
+
+    /**
+     * @param PageSubscriptionContext $original Exact subscription affected by the connection fact
+     * @throws InvalidArgumentException When its reassessment cannot be named
+     */
+    private function queueIdentityPageReassessment(PageSubscriptionContext $original): void
+    {
+        $subscription = $original->subscription;
+        $original->router->queueSignal(
+            new PageReassessmentSource(SignalSource::RT, $original, identityChanged: true),
+            new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS),
+            new SignalName($subscription->page),
+            new WebSocketPageSubscribeSignalDTO($original->acceptKey, $subscription->page, $subscription->params),
+        );
+    }
+
+    /**
+     * Addresses the previous owner's exact release before handing the page to the new owner.
+     * When both owners share a worker, it retires any remaining older mirror
+     * before the new owner's hook. A rights re-decision at the existing address keeps its records.
+     *
+     * @param SignalDispatch $dispatch Delivery whose envelope will name its authorized subscription
+     * @param SignalDTO $signal Original re-decision, including its analytics metadata
+     * @param PageSubscriptionContext $original Live subscription when the re-decision was prepared
+     * @return Generator<int, void> Ordered release and bind before ordinary destination delivery
+     * @throws EnvException When the old owner's placement reads invalid cluster configuration
+     * @throws InvalidArgumentException When the release or reassessment cannot be named
+     * @throws InvalidFormatException When a pending recovery address is malformed
+     */
+    private function prepareIdentityPageReassessment(SignalDispatch $dispatch, SignalDTO $signal, PageSubscriptionContext $original): Generator
+    {
+        $subscription = $original->subscription;
+        $acceptKey = $original->acceptKey;
+        $page = $subscription->page;
+        $router = $original->router;
+        $address = $this->settledPageAgentAddress($page, $acceptKey, $subscription->params);
+        $identity = PageHandoffIdentity::current($acceptKey);
+        if ($address === null || $identity === null) {
+            $dispatch->cancel();
+            return;
+        }
+
+        $ownerChanged = $subscription->agentType !== $address->agentType || $subscription->agentIndex !== $address->agentIndex;
+        $identityChanged = $signal->signalSource instanceof PageReassessmentSource && $signal->signalSource->identityChanged;
+        $source = $signal->signalSource->getSource();
+        $request = new WebSocketPageSubscribeSignalDTO($acceptKey, $page, $subscription->params);
+        $renew = $identityChanged && $subscription->deliveryId !== null;
+        if ($ownerChanged || $renew) {
+            yield from $this->replacedPageDelivery($dispatch, $original, $page, $address, releaseSameOwner: $renew);
+            if (!$original->isCurrent() || $identity != PageHandoffIdentity::current($acceptKey)) {
+                $dispatch->cancel();
+                return;
+            }
+            if ($subscription->deliveryId !== null) {
+                $request = $this->deliveryClient($dispatch, $acceptKey)?->beginPageHandoff(
+                    $page, $subscription->params, $subscription->deliveryId,
+                );
+                if ($request === null) {
+                    $dispatch->cancel();
+                    return;
+                }
+                $pending = $this->pendingPageIndex()->get($acceptKey, $subscription->deliveryId);
+                if ($pending !== null) {
+                    $this->settlePendingPageDelivery($pending);
+                }
+                $router->subscribeToPage($page, $request);
+            }
+            $router->bindPageAgent($acceptKey, $page, $address->agentType, $address->agentIndex);
+            $source = SignalSource::DAEMON;
+        } elseif ($subscription->deliveryId !== null
+            && $this->pendingPageIndex()->get($acceptKey, $subscription->deliveryId)?->handoff === true) {
+            $dispatch->cancel();
+            return;
+        }
+
+        $dispatch->replaceSignal(new SignalDTO(
+            new PageReassessmentSource($source, new PageSubscriptionContext($router, $acceptKey, $router->pageSubscription($acceptKey))),
+            $signal->signalType,
+            new SignalName($page),
+            $request,
+            [...$signal->meta, ...$identity->toMeta()],
+        ));
+    }
+
+    /**
      * Resolves which agent instance serves a subscription to one page.
      *
      * Null for a page that declares no per-instance route: it is served by its agent type,
@@ -11884,7 +12691,7 @@ abstract class DaemonManager extends BaseManager implements
         $value = match ($route->source) {
             PageAgentIndexSource::PARAM => $route->param === null ? null : ($params[$route->param] ?? null),
             PageAgentIndexSource::NODE_PARAM => $route->param === null ? null : ($params[$route->param] ?? null),
-            PageAgentIndexSource::SESSION_USER => $this->sessionUserIndexValue($acceptKey),
+            PageAgentIndexSource::SESSION_USER, PageAgentIndexSource::SESSION_USER_OR_GUEST => $this->sessionUserIndexValue($acceptKey),
         };
 
         if ($value instanceof PageAgentAddress) {
@@ -12018,13 +12825,18 @@ abstract class DaemonManager extends BaseManager implements
      * @param PageSubscriptionContext $original Original routing and subscription incarnation
      * @param string $page Next page
      * @param ?PageAgentAddress $address Next resolved page owner
+     * @param bool $releaseSameOwner Whether a new token retires the old one at the same logical agent
      * @return Generator<int, void, void, PageSubscriptionContext> Original context, including an abandoned lifetime
      * @throws EnvException When the old-owner placement reads invalid cluster configuration
      * @throws InvalidArgumentException When its unsubscribe cannot be named
      * @throws InvalidFormatException When a pending recovery address is malformed
      */
     private function replacedPageDelivery(
-        SignalDispatch $dispatch, PageSubscriptionContext $original, string $page, ?PageAgentAddress $address,
+        SignalDispatch $dispatch,
+        PageSubscriptionContext $original,
+        string $page,
+        ?PageAgentAddress $address,
+        bool $releaseSameOwner = false,
     ): Generator {
         yield;
         $previous = $original->subscription;
@@ -12038,12 +12850,35 @@ abstract class DaemonManager extends BaseManager implements
                 $page, [], $address->agentType, $address->agentIndex, $address->agentNode,
             ))
             : $original->router->pageServingAgent(new PageSubscription($page));
-        if ($nextAgent !== null && self::samePageAgent($previousAgent, $nextAgent)) {
+        if (!$releaseSameOwner && $nextAgent !== null && self::samePageAgent($previousAgent, $nextAgent)) {
             return $original;
         }
 
-        yield from $this->whileSubscriptionCurrent($original,
-            $this->pendingPageRecovery($dispatch, acceptKey: $original->acceptKey, page: $previous->page));
+        if ($previous->deliveryId !== null) {
+            $pending = $this->pendingPageIndex()->get($original->acceptKey, $previous->deliveryId);
+            if ($pending?->handoff
+                || $original->router->pageAgentIndexRoute($previous->page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                $nodeId = $pending?->handoff ? $pending->nodeId : $previous->handoffServingNode;
+                if ($nodeId !== null && $pending !== null) {
+                    $this->settlePendingPageDelivery($pending);
+                }
+                $this->sendPageHandoffRelease(
+                    $previousAgent->agentType,
+                    $previousAgent->agentIndex,
+                    $nodeId,
+                    $original->acceptKey,
+                    $previous->page,
+                    $previous->deliveryId,
+                );
+                return $original;
+            }
+            if ($pending !== null) {
+                $this->settlePendingPageDelivery($pending);
+            }
+        } else {
+            yield from $this->whileSubscriptionCurrent($original,
+                $this->pendingPageRecovery($dispatch, acceptKey: $original->acceptKey, page: $previous->page));
+        }
         $workerServer = $this->findWorkerServer();
         if (!$original->isCurrent() || $workerServer === null) {
             return $original;
@@ -12054,12 +12889,7 @@ abstract class DaemonManager extends BaseManager implements
             $workerServer,
             $this->findPeerServer(),
             $original->router->placeAgentDestination($previousAgent),
-            new SignalDTO(
-                new SignalSource(SignalSource::WEBSOCKET),
-                new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
-                new SignalName($previous->page),
-                new WebSocketPageUnsubscribeSignalDTO(acceptKey: $original->acceptKey),
-            ),
+            $this->pageHandoffRelease($original->acceptKey, $previous->page, $previous->deliveryId),
         ));
         return $original;
     }
@@ -12228,7 +13058,15 @@ abstract class DaemonManager extends BaseManager implements
         if ($signal->signalType->getType() === SignalTypeConstants::PAGE_UNSUBSCRIBE
             && $data instanceof WebSocketPageUnsubscribeSignalDTO
         ) {
-            $this->cancelPendingPageDeliveries($dispatch, $data->acceptKey, $signal->signalName->getName());
+            $deliveryId = $signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] ?? null;
+            if (is_string($deliveryId)) {
+                if (Hilos::$sr->pageSubscription($data->acceptKey)?->deliveryId !== $deliveryId) {
+                    return;
+                }
+                $this->cancelPendingPageDeliveries($dispatch, $data->acceptKey, $signal->signalName->getName(), cancelSocket: false);
+            } else {
+                $this->cancelPendingPageDeliveries($dispatch, $data->acceptKey, $signal->signalName->getName());
+            }
             Hilos::$sr->unsubscribeFromPage($signal->signalName->getName(), $data);
 
             return;
@@ -12286,10 +13124,22 @@ abstract class DaemonManager extends BaseManager implements
 
         $page = $data->page ?? $signal->signalName->getName();
         $address = $this->resolvePageAgentAddress($page, $data->acceptKey, $data->params);
-        if ($address === null || !$address->pending) {
+        $waitsForConfirmedRow = $data->deliveryId !== null
+            && Hilos::$sr->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST
+            && PageHandoffIdentity::current($data->acceptKey) === null;
+        if (!$waitsForConfirmedRow && $address?->pending !== true) {
             return false;
         }
 
+        if ($signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS && !$signal->signalSource instanceof PageReassessmentSource) {
+            $identityPage = $this->identityPageSubscription($data->acceptKey);
+            if ($identityPage?->subscription?->page === $page) {
+                $signal = new SignalDTO(new PageReassessmentSource($signal->signalSource->getSource(), $identityPage),
+                    $signal->signalType, $signal->signalName, $signal->data, $signal->meta);
+            } elseif (Hilos::$sr->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                return false;
+            }
+        }
         $this->signalDispatcher()->parkIdentitySignal($signal, $data->acceptKey, $page);
 
         return true;
@@ -12543,6 +13393,20 @@ abstract class DaemonManager extends BaseManager implements
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
 
+        if ($signalType === SignalTypeConstants::PAGE_UNSUBSCRIBE && $signal->data instanceof WebSocketPageUnsubscribeSignalDTO) {
+            $acceptKey = $signal->data->acceptKey;
+            $subscription = Hilos::$sr->pageSubscription($acceptKey);
+            $deliveryId = $signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] ?? null;
+            if (is_string($deliveryId) && $subscription?->deliveryId === $deliveryId && $subscription->page === $signalName
+                && $subscription->agentType !== null) {
+                $this->sendPageHandoffRelease(
+                    $subscription->agentType, $subscription->agentIndex, $subscription->handoffServingNode,
+                    $acceptKey, $signalName, $deliveryId,
+                );
+                return AgentDeliveryOutcome::Delivered;
+            }
+        }
+
         if (!$destination instanceof AgentDestination) {
             $recoveryOutcome = $this->parkForPlacementRecovery($dispatch, $workerServer, $destination, $signal);
             if ($recoveryOutcome !== null) {
@@ -12560,11 +13424,18 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             $relay = $dispatch->release?->recovery !== null && $dispatch->release->localOnly;
+            $relayOrder = $relay && $pending?->handoff
+                ? Hilos::$cluster?->placement()?->confirmedWorkerOrder($pending->agentId, $destination->nodeId) : null;
             $delivered = $mesh->sendSignalToNode(
                 $destination->nodeId,
                 $destination->agentType,
                 $destination->agentIndex,
-                $signal,
+                $relayOrder === null ? $signal : new SignalDTO($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data, [
+                    ...$signal->meta,
+                    PageHandoffIdentity::META_RELAY_LEADER => $relayOrder->leaderNodeId,
+                    PageHandoffIdentity::META_RELAY_TERM => $relayOrder->term,
+                    PageHandoffIdentity::META_RELAY_SEQUENCE => $relayOrder->sequence,
+                ]),
                 placementRecoveryRelay: $relay,
             );
             if (!$delivered) {
@@ -12582,6 +13453,9 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         if ($destination instanceof UnknownAgentDestination) {
+            if (PageHandoffIdentity::fromMeta($signal->meta) !== null) {
+                $this->trackPageDelivery($dispatch, $signal, $destination);
+            }
             Logger::warning("Signal dropped: {$signalType}/{$signalName}"
                 . " -> agent {$destination->agentType} has no known node");
 
@@ -12645,7 +13519,7 @@ abstract class DaemonManager extends BaseManager implements
             if ($recoveryOutcome !== null) {
                 return $recoveryOutcome;
             }
-            $this->trackPageDelivery($dispatch, $signal, $destination);
+            $pending = $this->trackPageDelivery($dispatch, $signal, $destination);
             // An agent that has not reported its start is started here, as being addressed always
             // started it, and the frame waits in the master for the report instead of being written
             // behind the start: a start that fails inside the worker takes with it every frame
@@ -12704,6 +13578,16 @@ abstract class DaemonManager extends BaseManager implements
 
                         return AgentDeliveryOutcome::StartRefused;
                     }
+                }
+            }
+
+            if ($pending?->handoff) {
+                $order = self::pageHandoffPlacement($agentType)?->confirmedLocalWorkerOrder($agentId);
+                $pending->placementOrder = $order;
+                if ($order !== null) {
+                    $signal = new SignalDTO($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data, [
+                        ...$signal->meta, PageHandoffIdentity::META_WORKER_ORDER => $order->toArray(),
+                    ]);
                 }
             }
 

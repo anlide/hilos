@@ -18,6 +18,7 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 use Hilos\Socket\Transport\PlainSocketTransport;
 use Hilos\Socket\Transport\SocketTransportInterface;
+use Hilos\Socket\Transport\SocketWriteRetention;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Logger;
 use Random\RandomException;
@@ -249,26 +250,29 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
-        $bufferLength = strlen($this->writeBuffer);
-        $written = $this->transport->write($this->writeBuffer);
+        $bytes = $this->bytesToWrite();
+        if ($bytes !== '') {
+            $written = $this->transport->write($bytes);
+            if ($written === false) {
+                $this->handleSocketError(SocketOperation::WRITE);
+                return;
+            }
 
-        if ($written === false) {
-            $this->handleSocketError(SocketOperation::WRITE);
-            return;
+            $retained = $this->transport instanceof SocketWriteRetention ? $this->transport->pendingWriteBytes() : 0;
+            $this->onTransportWrite($written, $retained);
+            if ($written === 0) {
+                return;
+            }
+
+            $offered = strlen($bytes);
+            if ($written < $offered) {
+                Logger::debug("Partial write: {$written}/{$offered} bytes written");
+            }
+            $this->writeBuffer = substr($this->writeBuffer, $written);
+            if ($written === $offered && $this->writeBuffer !== '') {
+                $this->markReady();
+            }
         }
-
-        // Nothing taken is not a failure: an encrypted stream answers "offer the same bytes
-        // again later" this way, and the buffer is left exactly as it is for the next turn.
-        if ($written === 0) {
-            return;
-        }
-
-        // Log if we didn't write everything (partial write)
-        if ($written < $bufferLength) {
-            Logger::debug("Partial write: {$written}/{$bufferLength} bytes written");
-        }
-
-        $this->writeBuffer = substr($this->writeBuffer, $written);
 
         if ($this->writeBuffer === '') {
             if ($this->closeWhenOutputDrained) {
@@ -278,6 +282,24 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
                 $this->onAfterOutboundDrained();
             }
         }
+    }
+
+    /**
+     * The protocol may admit only a prefix of its currently queued bytes.
+     *
+     * @return string Bytes to offer in this write, preserving any prefix retained by the transport
+     */
+    protected function bytesToWrite(): string
+    {
+        return $this->writeBuffer;
+    }
+
+    /**
+     * @param int $written Prefix acknowledged on this write
+     * @param int $retained Prefix still owed to the transport, measured before removing acknowledged bytes
+     */
+    protected function onTransportWrite(int $written, int $retained): void
+    {
     }
 
     /**

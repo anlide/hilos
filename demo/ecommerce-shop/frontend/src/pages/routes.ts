@@ -19,6 +19,7 @@ import {
   PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_VOUCHERS,
   PAGE_ADMIN_WAREHOUSES,
+  PAGE_CART,
   PAGE_CATEGORY,
   PAGE_MAIN,
   PAGE_PRODUCT,
@@ -34,6 +35,7 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
   [PAGE_MAIN]: { path: '/', admin: false },
   [PAGE_CATEGORY]: { path: '/category/{slug}', admin: false },
   [PAGE_PRODUCT]: { path: '/product/{slug}', admin: false },
+  [PAGE_CART]: { path: '/cart', admin: false },
   [PAGE_ADMIN_WAREHOUSES]: {
     path: '/hilos/app/warehouses',
     admin: true,

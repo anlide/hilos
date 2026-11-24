@@ -198,20 +198,22 @@ abstract class ProductPageEnvironment extends StockLibraryEnvironment
     /**
      * Fails the card's keyed product lookup as the worker handles a category fact.
      *
-     * @param WorkerDbSyncUpdatedMessageDTO $message Applied category update
+     * @param WorkerDbSyncUpdatedMessageDTO $message Applied catalog update
+     * @param ?Closure(): void $beforeFailure Change that takes place during the keyed read
      */
-    protected function deliverWithProductLookupFailure(WorkerDbSyncUpdatedMessageDTO $message): void
+    protected function deliverWithProductLookupFailure(WorkerDbSyncUpdatedMessageDTO $message, ?Closure $beforeFailure = null): void
     {
         $views = new ReflectionProperty(DbContext::class, '_dbItemCollections');
         $original = $views->getValue($this->reader);
-        $failingView = new class extends DbCollection {
-            public function __construct()
+        $failingView = new class ($beforeFailure) extends DbCollection {
+            public function __construct(private readonly ?Closure $beforeFailure)
             {
             }
 
             public function offsetExists(mixed $offset): bool
             {
-                throw new DatabaseException('Product lookup failed during category fan-out');
+                $this->beforeFailure?->__invoke();
+                throw new DatabaseException('Product lookup failed during catalog fan-out');
             }
         };
         $views->setValue($this->reader, array_replace($original, [EcommerceShopDbContext::products => $failingView]));
@@ -554,6 +556,36 @@ final class ProductPageTest extends ProductPageEnvironment
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
         $this->deliverDatabaseRecovery();
         self::assertSame([], $this->takeFrames());
+    }
+
+    public function testAKeyedReadFailureCannotFailTheNewProductAddress(): void
+    {
+        $this->subscribe(self::GUEST, $this->stock->slug);
+        $this->takeCard(self::GUEST);
+        $this->subscribe(self::VISITOR, $this->other->slug);
+        $this->takeCard(self::VISITOR);
+        $router = Hilos::$sr;
+        $neighbor = $router->pageSubscription(self::VISITOR);
+        $resource = $router->pageResource(self::VISITOR);
+        $this->deliverWithProductLookupFailure(
+            self::productPriceFact($this->stock->id, 1500),
+            static function () use ($router, $neighbor, $resource): void {
+                $router->subscribeToPage(ProductPage::PAGE, new WebSocketPageSubscribeSignalDTO(self::GUEST, ProductPage::PAGE, $neighbor->params));
+                $router->bindPageAgent(self::GUEST, ProductPage::PAGE, $neighbor->agentType, $neighbor->agentIndex);
+                $router->bindPageResource(self::GUEST, $resource);
+            },
+        );
+        self::assertSame([], $this->takeFrames());
+        self::assertFalse($router->hasPageDeliveryFailure(self::GUEST));
+        self::assertFalse($router->hasPageDeliveryFailure(self::VISITOR));
+        self::assertSame($resource, $router->pageResource(self::GUEST));
+
+        $this->deliver(self::productPriceFact($this->other->id, 1700));
+        $replies = $this->takeFrames();
+        self::assertSame([self::GUEST, self::VISITOR], array_column($replies, 'targetAcceptKey'));
+        foreach ($replies as $reply) {
+            self::assertInstanceOf(PageResponseSignalData::class, $reply->data);
+        }
     }
 
     /** A cold stock key that could not be resolved is retried after recovery, with no unrelated frames. */

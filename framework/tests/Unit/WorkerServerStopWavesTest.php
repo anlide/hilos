@@ -366,9 +366,11 @@ final class StopWavesTestWorkerServer extends WorkerServer
      * @param string $agentType Fixture input
      * @param ?string $agentIndex Fixture input
      * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     * @param bool $keepPageMirrors Restart disposition, unused by this shutdown fixture
      */
-    protected function stopAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
-    {
+    protected function stopAgent(
+        string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null, bool $keepPageMirrors = false,
+    ): void {
         StopWavesTestLog::$events[] = 'agent_stop:' . $agentType;
     }
 

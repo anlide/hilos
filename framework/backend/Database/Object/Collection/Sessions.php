@@ -13,6 +13,7 @@ use Hilos\Database\Entity\Item\Session as EntitySession;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlSortDirection;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Sessions object collection.
@@ -48,6 +49,20 @@ class Sessions extends Objects
         $session = static::entityClass()::getById($sessionId);
 
         return $session !== null && $session->user_id === null;
+    }
+
+    /**
+     * @param int $sessionId Session primary key
+     * @return bool Whether storage holds an unexpired session without a bound user
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function isStoredActiveGuest(int $sessionId): bool
+    {
+        $session = static::entityClass()::getById($sessionId);
+
+        return $session !== null && $session->user_id === null
+            && ($session->expires_at === null || $session->expires_at > TimeHelper::nowMs());
     }
 
     /**

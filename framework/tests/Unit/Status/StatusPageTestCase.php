@@ -153,7 +153,18 @@ final class StatusPageBrowser extends BrowserContext
     public bool $admin = true;
     public bool $viewer = false;
     public ?int $userId = 1;
+    /** @var ?Closure(string): void */
     public ?Closure $duringIdentity = null;
+    /** @var ?Closure(string): void */
+    public ?Closure $duringSubscriptionAccess = null;
+
+    public function assertSubscriptionAccess(string $page, string $acceptKey, PageRouteParams $params): void
+    {
+        $callback = $this->duringSubscriptionAccess;
+        $this->duringSubscriptionAccess = null;
+        $callback?->__invoke($acceptKey);
+        parent::assertSubscriptionAccess($page, $acceptKey, $params);
+    }
 
     /**
      * @param string $acceptKey Judged connection
@@ -163,7 +174,7 @@ final class StatusPageBrowser extends BrowserContext
     {
         $callback = $this->duringIdentity;
         $this->duringIdentity = null;
-        $callback?->__invoke();
+        $callback?->__invoke($acceptKey);
         return ConnectionIdentity::resolved($this->userId);
     }
 

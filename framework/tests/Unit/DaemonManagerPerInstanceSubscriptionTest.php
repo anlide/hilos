@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Generator;
@@ -13,9 +14,14 @@ use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentIdleTracker;
+use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\AgentDeliveryOutcome;
@@ -24,9 +30,16 @@ use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\Daemon\PageSubscriptionContext;
 use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\Daemon\ParkedSignal;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\AbstractPageFactory;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\PageAccessReassessment;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\PageSubscription;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
@@ -36,15 +49,24 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
+use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use LogicException;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -812,6 +834,286 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         );
     }
 
+    /** @return iterable<string, array{bool}> Placement of the two serving agents */
+    public static function identityOwnerPlacements(): iterable
+    {
+        yield 'shared worker' => [true];
+        yield 'separate workers' => [false];
+    }
+
+    #[DataProvider('identityOwnerPlacements')]
+    public function testPublicIdentityFactsTransferTheLiveSubscriptionAndAnswerOnTheNewOwner(bool $sharedWorker): void
+    {
+        $previousRt = Hilos::$rt;
+        $manager = $this->manager();
+        $masterRouter = Hilos::$sr;
+        $guest = new PerInstanceIdentityTestWorker(1, new PerInstanceFallbackAgent());
+        $user = $sharedWorker ? $guest : new PerInstanceIdentityTestWorker(2);
+        $user->addFixtureAgent(new PerInstanceIdentityTestAgent('7'));
+        Hilos::$sr = $masterRouter;
+        Hilos::$rt = new RosterRtContext();
+        Hilos::$rt->configure();
+        Hilos::$browser = new PerInstanceRosterIdentityBrowser();
+        $page = PerInstancePublicIdentityPage::PAGE;
+        $guestType = PerInstanceFallbackAgent::AGENT_TYPE;
+        $userType = PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE;
+        $frames = [];
+        $manager->observeWorkerMessages(static function (DaemonAgentMessageDTO $message) use ($guest, $user, $guestType, &$frames): void {
+            $frames[] = $message;
+            ($message->agentId === $guestType ? $guest : $user)->deliver($message);
+        });
+
+        try {
+            $this->applyIdentityFact($manager, SignalTypeConstants::RT_SYNC_CREATED, new RtSyncCreatedSignalData(
+                RosterRtContext::connections, self::ACCEPT_KEY, RosterConnection::create(self::ACCEPT_KEY, null)->toArray(),
+            ));
+            $this->queueSubscribe($page, []);
+            $manager->drainQueue();
+            $this->assertIdentityPageStaleness($guest);
+            $this->assertIdentityPageAnswer($guest, $guestType, null);
+            $this->assertIdentityOwner($masterRouter, $guest, $guestType, null);
+            $manager->forgetDeliveries();
+
+            $this->updateIdentity($manager, 7);
+            $manager->drainQueue();
+            $this->assertSame([
+                SignalTypeConstants::PAGE_UNSUBSCRIBE . '@' . $guestType,
+                SignalTypeConstants::PAGE_ACCESS_REASSESS . '@' . $userType . ':7',
+            ], $manager->deliveries());
+            $this->assertIdentityOwner($masterRouter, $user, $userType, '7');
+            $this->assertIdentityPageStaleness($user);
+            $this->assertIdentityPageAnswer($user, $userType, '7');
+            $this->assertNotNull($guest->idleDeadline($guestType));
+            if (!$sharedWorker) {
+                $this->assertNull($guest->router->pageSubscription(self::ACCEPT_KEY));
+            }
+
+            $masterRecord = $masterRouter->pageSubscription(self::ACCEPT_KEY);
+            $workerRecord = $user->router->pageSubscription(self::ACCEPT_KEY);
+            $guest->deliver($frames[count($frames) - 2]);
+            $user->deliver($frames[array_key_last($frames)]);
+            $this->assertNull($user->router->getNextQueuedSignal());
+            $this->assertSame($workerRecord, $user->router->pageSubscription(self::ACCEPT_KEY));
+            $manager->forgetDeliveries();
+            $user->queueConnectionReassessmentOn($masterRouter, self::ACCEPT_KEY);
+            $manager->drainQueue();
+            $this->assertSame([SignalTypeConstants::PAGE_ACCESS_REASSESS . '@' . $userType . ':7'], $manager->deliveries());
+            $this->assertIdentityPageAnswer($user, $userType, '7');
+            $this->assertSame($masterRecord, $masterRouter->pageSubscription(self::ACCEPT_KEY));
+            $this->assertSame($workerRecord, $user->router->pageSubscription(self::ACCEPT_KEY));
+
+            $manager->forgetDeliveries();
+            $user->queueConnectionReassessmentOn($masterRouter, self::ACCEPT_KEY);
+            $this->updateIdentity($manager, null);
+            $manager->drainQueue();
+            $this->assertSame([
+                SignalTypeConstants::PAGE_UNSUBSCRIBE . '@' . $userType . ':7',
+                SignalTypeConstants::PAGE_ACCESS_REASSESS . '@' . $guestType,
+            ], $manager->deliveries());
+            $this->assertIdentityOwner($masterRouter, $guest, $guestType, null);
+            $this->assertIdentityPageStaleness($guest);
+            $this->assertIdentityPageAnswer($guest, $guestType, null);
+            $this->assertNotNull($user->idleDeadline($userType . ':7'));
+            if (!$sharedWorker) {
+                $this->assertNull($user->router->pageSubscription(self::ACCEPT_KEY));
+            }
+
+            $this->queue(SignalTypeConstants::PAGE_UNSUBSCRIBE, $page, new WebSocketPageUnsubscribeSignalDTO(self::ACCEPT_KEY));
+            $manager->drainQueue();
+            $manager->forgetDeliveries();
+            $this->updateIdentity($manager, 7);
+            $manager->drainQueue();
+            $this->assertSame([], $manager->deliveries());
+            $this->assertNull($masterRouter->pageSubscription(self::ACCEPT_KEY));
+            $this->assertNull($guest->router->pageSubscription(self::ACCEPT_KEY));
+        } finally {
+            Hilos::$rt = $previousRt;
+        }
+    }
+
+    /** @return iterable<string, array{?int, ?int}> Identity before and after the handoff */
+    public static function delayedIdentityChanges(): iterable
+    {
+        yield 'sign in' => [null, 7];
+        yield 'sign out' => [7, null];
+    }
+
+    #[DataProvider('delayedIdentityChanges')]
+    public function testHandoffWaitsForTheConnectionFactOnTheServingWorker(?int $before, ?int $after): void
+    {
+        $previousRt = Hilos::$rt;
+        $manager = $this->manager();
+        $masterRouter = Hilos::$sr;
+        $worker = new PerInstanceIdentityTestWorker(1, new PerInstanceFallbackAgent());
+        $worker->addFixtureAgent(new PerInstanceIdentityTestAgent('7'));
+        Hilos::$sr = $masterRouter;
+        Hilos::$browser = new PerInstanceRosterIdentityBrowser();
+        $masterRt = new RosterRtContext();
+        $workerRt = new RosterRtContext();
+        $page = PerInstancePublicIdentityPage::PAGE;
+        $initial = new RtSyncCreatedSignalData(
+            RosterRtContext::connections, self::ACCEPT_KEY, RosterConnection::create(self::ACCEPT_KEY, $before)->toArray(),
+        );
+        try {
+            foreach ([$masterRt, $workerRt] as $runtime) {
+                Hilos::$rt = $runtime;
+                $runtime->configure();
+                $this->applyIdentityFact($manager, SignalTypeConstants::RT_SYNC_CREATED, $initial);
+            }
+            Hilos::$rt = $masterRt;
+            $manager->observeWorkerMessages(static function (DaemonAgentMessageDTO $message) use ($worker, $workerRt, $masterRt): void {
+                Hilos::$rt = $workerRt;
+                try {
+                    $worker->deliver($message);
+                } finally {
+                    Hilos::$rt = $masterRt;
+                }
+            });
+            $this->queueSubscribe($page, []);
+            $manager->drainQueue();
+            $this->assertIdentityPageStaleness($worker);
+            $this->assertIdentityPageAnswer(
+                $worker,
+                $before === null ? PerInstanceFallbackAgent::AGENT_TYPE : PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE,
+                $before === null ? null : (string)$before,
+            );
+
+            $this->updateIdentity($manager, $after);
+            $manager->drainQueue();
+            $this->assertNull($worker->router->pageSubscription(self::ACCEPT_KEY));
+            $this->assertNotSame(SignalTypeConstants::PAGE_RESPONSE, $worker->router->getNextQueuedSignal()?->signalName->getName());
+
+            Hilos::$rt = $workerRt;
+            $worker->applyConnectionUpdate(new RtSyncUpdatedSignalData(
+                RosterRtContext::connections, self::ACCEPT_KEY, [StateHilosConnection::userId => $after],
+            ));
+            $this->assertIdentityPageStaleness($worker);
+            $this->assertIdentityPageAnswer(
+                $worker,
+                $after === null ? PerInstanceFallbackAgent::AGENT_TYPE : PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE,
+                $after === null ? null : (string)$after,
+            );
+        } finally {
+            Hilos::$rt = $previousRt;
+        }
+    }
+
+    public function testPublicIdentitySubscribeParksUntilItsConnectionFactSelectsTheOwner(): void
+    {
+        $previousRt = Hilos::$rt;
+        try {
+            $manager = $this->manager();
+            Hilos::$rt = new RosterRtContext();
+            Hilos::$rt->configure();
+            Hilos::$browser = new PerInstanceRosterIdentityBrowser();
+            $page = PerInstancePublicIdentityPage::PAGE;
+            $this->queueSubscribe($page, []);
+            $manager->drainQueue();
+            $this->assertSame([], $manager->deliveries());
+            $this->assertNull(Hilos::$sr->pageSubscription(self::ACCEPT_KEY));
+
+            $this->applyIdentityFact($manager, SignalTypeConstants::RT_SYNC_CREATED, new RtSyncCreatedSignalData(
+                RosterRtContext::connections, self::ACCEPT_KEY, RosterConnection::create(self::ACCEPT_KEY, 7)->toArray(),
+            ));
+            $manager->drainQueue();
+
+            $this->assertSame([
+                SignalTypeConstants::PAGE_SUBSCRIBE . '@' . PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE . ':7',
+            ], $manager->deliveries());
+            $this->assertSame('7', Hilos::$sr->pageSubscription(self::ACCEPT_KEY)?->agentIndex);
+        } finally {
+            Hilos::$rt = $previousRt;
+        }
+    }
+
+    public function testQueuedPublicIdentityFactLeavesAReopenedSubscriptionAlone(): void
+    {
+        $previousRt = Hilos::$rt;
+        try {
+            $manager = $this->manager();
+            Hilos::$rt = new RosterRtContext();
+            Hilos::$rt->configure();
+            Hilos::$browser = new PerInstanceRosterIdentityBrowser();
+            $this->applyIdentityFact($manager, SignalTypeConstants::RT_SYNC_CREATED, new RtSyncCreatedSignalData(
+                RosterRtContext::connections, self::ACCEPT_KEY, RosterConnection::create(self::ACCEPT_KEY, null)->toArray(),
+            ));
+            $page = PerInstancePublicIdentityPage::PAGE;
+            $this->queueSubscribe($page, []);
+            $manager->drainQueue();
+            $manager->forgetDeliveries();
+
+            $this->updateIdentity($manager, 7);
+            Hilos::$sr->unsubscribeFromPage($page, new WebSocketPageUnsubscribeSignalDTO(self::ACCEPT_KEY));
+            Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $page));
+            Hilos::$sr->bindPageAgent(self::ACCEPT_KEY, $page, PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE, '7');
+            $reopened = Hilos::$sr->pageSubscription(self::ACCEPT_KEY);
+            $manager->drainQueue();
+
+            $this->assertSame([], $manager->deliveries());
+            $this->assertSame($reopened, Hilos::$sr->pageSubscription(self::ACCEPT_KEY));
+        } finally {
+            Hilos::$rt = $previousRt;
+        }
+    }
+
+    private function applyIdentityFact(PerInstanceMasterTestManager $manager, string $type, RtSyncSignalDataInterface $fact): void
+    {
+        new ReflectionMethod(DaemonManager::class, 'handleDaemonSignal')->invoke($manager,
+            new SignalDTO(new SignalSource(SignalSource::RT), new SignalType($type), new SignalName($type), $fact));
+    }
+
+    private function updateIdentity(PerInstanceMasterTestManager $manager, ?int $userId): void
+    {
+        $this->applyIdentityFact($manager, SignalTypeConstants::RT_SYNC_UPDATED, new RtSyncUpdatedSignalData(
+            RosterRtContext::connections, self::ACCEPT_KEY, [StateHilosConnection::userId => $userId],
+        ));
+    }
+
+    /**
+     * A worker taking up the page reports replica freshness before its page answer.
+     *
+     * @param PerInstanceIdentityTestWorker $worker Worker admitting the subscription
+     */
+    private function assertIdentityPageStaleness(PerInstanceIdentityTestWorker $worker): void
+    {
+        $signal = $worker->router->getNextQueuedSignal();
+        $this->assertSame(SignalTypeConstants::RT_STALENESS, $signal?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame(self::ACCEPT_KEY, $signal->data->targetAcceptKey);
+    }
+
+    private function assertIdentityPageAnswer(PerInstanceIdentityTestWorker $worker, string $type, ?string $index): void
+    {
+        $answer = $worker->router->getNextQueuedSignal();
+        $this->assertSame(SignalTypeConstants::PAGE_RESPONSE, $answer?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $answer->data);
+        $this->assertSame(self::ACCEPT_KEY, $answer->data->targetAcceptKey);
+        $this->assertInstanceOf(PageResponseSignalData::class, $answer->data->data);
+        $this->assertSame(PerInstancePublicIdentityPage::PAGE, $answer->data->data->pageKey);
+        $this->assertSame(['ownerType' => $type, 'ownerIndex' => $index], $answer->data->data->payload->data);
+        $this->assertNull($worker->router->getNextQueuedSignal());
+    }
+
+    private function assertIdentityOwner(SignalRouter $master, PerInstanceIdentityTestWorker $worker, string $type, ?string $index): void
+    {
+        foreach ([$master, $worker->router] as $router) {
+            $subscription = $router->pageSubscription(self::ACCEPT_KEY);
+            $this->assertNotNull($subscription);
+            $this->assertSame(PerInstancePublicIdentityPage::PAGE, $subscription->page);
+            $this->assertSame([], $subscription->params);
+            $this->assertSame($type, $subscription->agentType);
+            $this->assertSame($index, $subscription->agentIndex);
+            $this->assertNull($subscription->agentNode);
+            $this->assertNull($subscription->deliveryId);
+            $this->assertNull($subscription->handoffServingNode);
+            $this->assertNull($subscription->admittedIdentity);
+            $this->assertFalse($subscription->retainedForRestart);
+            $this->assertFalse($subscription->awaitingIdentityConfirmation);
+        }
+        $agentId = $index === null ? $type : $type . ':' . $index;
+        $this->assertNull($worker->idleDeadline($agentId));
+    }
+
     /**
      * @param PerInstanceMasterTestManager $manager Existing parked subscription owner
      */
@@ -926,6 +1228,12 @@ final class PerInstanceMasterTestManager extends DaemonManager
         $this->workerServer->deliveries = [];
     }
 
+    /** @param Closure(DaemonAgentMessageDTO): void $observer Code receiving the actual worker transport payload */
+    public function observeWorkerMessages(Closure $observer): void
+    {
+        $this->workerServer->observe = $observer;
+    }
+
     /** @return list<string> Delivery attempts including remote addresses */
     public function addressed(): array
     {
@@ -998,6 +1306,9 @@ final class PerInstanceMasterTestWorkerServer extends WorkerServer
     /** @var list<string> Actual subscription destinations, without retaining their payloads */
     public array $subscribeAcceptKeys = [];
 
+    /** @var ?Closure(DaemonAgentMessageDTO): void Fixture sink for frames sent to a worker */
+    public ?Closure $observe = null;
+
     public function __construct()
     {
     }
@@ -1020,10 +1331,188 @@ final class PerInstanceMasterTestWorkerServer extends WorkerServer
         if ($messageDto->signal->data instanceof WebSocketPageSubscribeSignalDTO) {
             $this->subscribeAcceptKeys[] = $messageDto->signal->data->acceptKey;
         }
+        ($this->observe)?->__invoke($messageDto);
     }
 
     protected function onStart(): void
     {
+    }
+}
+
+final class PerInstanceRosterIdentityBrowser extends BrowserContext
+{
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
+    {
+        $connection = Hilos::$rt?->connectionsRegistry()[$acceptKey] ?? null;
+
+        return $connection === null ? ConnectionIdentity::pending() : ConnectionIdentity::resolved($connection->userId);
+    }
+}
+
+final class PerInstanceIdentityTestWorker extends WorkerManager
+{
+    /** @var ?Closure(): AgentInterface Agent to mount on a subsequent daemon start */
+    public ?Closure $startAgent = null;
+
+    /** @var ?Closure(AgentInterface): ?PageSignalRouter Optional router for another page on the same worker */
+    public ?Closure $pageRouterFor = null;
+
+    public readonly SignalRouter $router;
+    public ?Closure $onPageRelease = null;
+
+    public function __construct(int $workerIndex, ?AgentInterface $agent = null)
+    {
+        parent::__construct($workerIndex);
+        $this->router = Hilos::$sr;
+        if ($agent !== null) {
+            $this->addFixtureAgent($agent);
+        }
+    }
+
+    public function addFixtureAgent(AgentInterface $agent): void
+    {
+        $this->agentManager->addAgent($agent->getId(), $agent);
+    }
+
+    public function deliver(WorkerDTO $message): void
+    {
+        $previous = Hilos::$sr;
+        Hilos::$sr = $this->router;
+        try {
+            $this->handleDaemonMessage(WorkerDTO::factoryWorkerDTO($message->toJson()));
+        } finally {
+            Hilos::$sr = $previous;
+        }
+    }
+
+    public function applyConnectionUpdate(RtSyncUpdatedSignalData $fact): void
+    {
+        $this->applyConnectionSync($fact);
+    }
+
+    public function applyConnectionSync(RtSyncUpdatedSignalData|RtSyncDeletedSignalData $fact): void
+    {
+        $previous = Hilos::$sr;
+        Hilos::$sr = $this->router;
+        try {
+            $operation = RtSyncStreamOperation::fromSignalData($fact, 1);
+            $apply = new ReflectionMethod(WorkerManager::class, 'appliedStreamedRtSync');
+            RtWorkDriver::runSynchronously($apply->invoke($this, $operation, static function (bool $applied): void {
+                TestCase::assertTrue($applied);
+            }));
+            $this->releaseParkedFrames(microtime(true));
+        } finally {
+            Hilos::$sr = $previous;
+        }
+    }
+
+    public function passAt(float $now): void
+    {
+        $previous = Hilos::$sr;
+        Hilos::$sr = $this->router;
+        try {
+            $this->releaseParkedFrames($now);
+        } finally {
+            Hilos::$sr = $previous;
+        }
+    }
+
+    public function queueConnectionReassessmentOn(SignalRouter $master, string $acceptKey): void
+    {
+        Hilos::$sr = $this->router;
+        try {
+            PageAccessReassessment::sweepThisWorkerConnections([$acceptKey]);
+            $signal = $this->router->getNextQueuedSignal();
+            $master->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        } finally {
+            Hilos::$sr = $master;
+        }
+    }
+
+    public function idleDeadline(string $agentId): ?float
+    {
+        $tracker = new ReflectionProperty(WorkerManager::class, 'agentIdleTracker')->getValue($this);
+        assert($tracker instanceof AgentIdleTracker);
+
+        return $tracker->getIdleDeadline($agentId, 1);
+    }
+
+    protected function createSignalRouter(): SignalRouter
+    {
+        return new PerInstanceTestRouter();
+    }
+
+    protected function createAgentManager(): AgentManager
+    {
+        return new class($this) extends AgentManager {
+            public function __construct(private readonly PerInstanceIdentityTestWorker $worker)
+            {
+            }
+
+            protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
+            {
+                return $this->worker->startAgent?->__invoke() ?? throw new LogicException('The fixture mounts its agents before dispatch.');
+            }
+        };
+    }
+
+    protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
+    {
+        return $this->pageRouterFor?->__invoke($agent)
+            ?? new PageSignalRouter(new PerInstanceIdentityTestPageFactory($agent, $this->onPageRelease), new ActionRouteConfig());
+    }
+}
+
+final class PerInstanceIdentityTestAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE;
+    public ?Closure $onSubscribe = null;
+    public ?Closure $onRelease = null;
+    public ?Closure $onStopping = null;
+
+    public function onSignalPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
+    {
+        $this->onSubscribe?->__invoke();
+    }
+
+    public function __construct(string $index)
+    {
+        $this->agentIndex = $index;
+    }
+
+    /**
+     * @param WebSocketPageUnsubscribeSignalDTO $data Released subscription
+     * @param string $source Source of the release
+     * @param string $name Released page
+     */
+    public function onSignalPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void
+    {
+        $this->onRelease?->__invoke();
+    }
+
+    /** Notify the fixture that the worker has reached the agent's stop hook. */
+    public function onStop(): void
+    {
+        $this->onStopping?->__invoke();
+    }
+}
+
+/** @extends AbstractPageFactory<AbstractAgent> */
+final class PerInstanceIdentityTestPageFactory extends AbstractPageFactory
+{
+    public function __construct(AbstractAgent $agent, private readonly ?Closure $onRelease = null)
+    {
+        parent::__construct($agent);
+    }
+
+    protected function createPage(string $pageName): AbstractPage
+    {
+        return new PerInstancePublicIdentityPage($this->agent, $this->onRelease);
+    }
+
+    public function hasPage(string $pageName): bool
+    {
+        return $pageName === PerInstancePublicIdentityPage::PAGE;
     }
 }
 

@@ -76,6 +76,7 @@ use Hilos\Core\Group\DTO\GroupJoinSignalData;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Group\GroupSubscriptionDispatcher;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
@@ -84,7 +85,9 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\PageSubscription;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -196,9 +199,11 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Logger;
 use Hilos\WiringRefusal;
 use Hilos\Utils\WorkerTickFailureLog;
+use Random\RandomException;
 use Throwable;
 use Hilos\Database\OrmTestConstants;
 use Hilos\Environment\NonProductionGate;
@@ -411,6 +416,21 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /** @var array<string, PageSignalRouter> Page routers by agent id */
     private array $pageSignalRouters = [];
+
+    /** @var array<string, DaemonAgentMessageDTO> Page handoffs waiting for the connection row in this worker */
+    private array $pageHandoffWaits = [];
+
+    /** @var array<string, array<string, AgentInterface>> Each waiting accept key and the exact serving instance */
+    private array $pageHandoffWaitsByAgent = [];
+
+    /** @var array<string, float> Age of the exact pending frame, also bounding its challenge */
+    private array $pageHandoffSince = [];
+
+    /** @var array<string, DaemonAgentMessageDTO> Handoffs woken by the corresponding RT fact */
+    private array $readyPageHandoffs = [];
+
+    /** @var array<string, string|false> Current challenge or spent refusal, by accept key */
+    private array $pageHandoffChallenges = [];
 
     /**
      * @var array<string, list<WorkerDTO>> Frames held behind each consumer that waits for its state,
@@ -956,6 +976,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *     agent that does not own the connection row it names
      * @throws HilosException When a collection refuses to be re-read - after the database was
      *     replaced, or when this worker is first told it may read that collection
+     * @throws RandomException When the worker cannot mint a handoff challenge
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {
@@ -1213,8 +1234,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
     {
-        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
-        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null
+            || !$subscription->admitsPageAnswer($acceptKey)) {
             return PageResendOutcome::Unserved;
         }
 
@@ -1224,15 +1247,18 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return PageResendOutcome::Unserved;
         }
 
+        $context = new PageSubscriptionContext($router, $acceptKey, $subscription);
+        $fanOut = Hilos::$browser?->activePageFanOut($acceptKey);
+        if ($fanOut !== null && ($fanOut->router !== $router || $fanOut->subscription !== $subscription)) {
+            return PageResendOutcome::Unserved;
+        }
+        $answer = fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->resendPage($page, $acceptKey, $params, $reportRefusal);
         try {
             return ExecutionContext::run(
                 new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
-                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->resendPage(
-                    $page,
-                    $acceptKey,
-                    $params,
-                    $reportRefusal,
-                ),
+                $fanOut === null
+                    ? fn (): PageResendOutcome => $router->withPageAnswerAuthority($context, $answer, $subscription->admittedIdentity)
+                    : fn (): PageResendOutcome => $router->withPageFanOutAnswer($fanOut, $answer, $subscription->admittedIdentity),
             );
         } catch (PageSignalRouterNotFoundException) {
             return PageResendOutcome::Unserved;
@@ -1257,7 +1283,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     public function refuseDeletedResource(string $page, string $acceptKey): PageResendOutcome
     {
-        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
         if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
             return PageResendOutcome::Unserved;
         }
@@ -1268,10 +1295,16 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return PageResendOutcome::Unserved;
         }
 
+        $fanOut = Hilos::$browser?->activePageFanOut($acceptKey);
+        if ($fanOut !== null && ($fanOut->router !== $router || $fanOut->subscription !== $subscription)) {
+            return PageResendOutcome::Unserved;
+        }
+        $refuse = fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->refuseDeletedResource($page, $acceptKey);
         try {
             return ExecutionContext::run(
                 new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
-                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)->refuseDeletedResource($page, $acceptKey),
+                $fanOut === null ? $refuse
+                    : fn (): PageResendOutcome => $router->withPageFanOutAnswer($fanOut, $refuse, $subscription->admittedIdentity),
             );
         } catch (PageSignalRouterNotFoundException) {
             return PageResendOutcome::Unserved;
@@ -1448,9 +1481,6 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // agent this worker holds, and one the tracker has never heard of is never idle.
             $now = microtime(true);
             $this->agentIdleTracker->noteStarted($agentId, $now);
-            foreach (Hilos::$sr->acceptKeysServedBy($agentType, $agentIndex) as $acceptKey) {
-                $this->agentIdleTracker->noteSubscriber($agentId, $acceptKey, $now);
-            }
             // Before the start hook and not inside it: an agent writes its first row within onStart(),
             // so the claim has to stand by then. The hook stays outside the try because the catch
             // below takes back the start of an agent that never ran, which is why it may skip
@@ -1473,13 +1503,21 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 throw $refusal;
             }
         } catch (Throwable $failure) {
+            $this->settleRestartPageMirrors($agentId);
             // Includes factory and pre-registration declaration failures: their read interest
             // already stands even though no instance, claim or idle window has been registered.
-            $this->releaseSourceInterest(SourceConsumer::agent($agentId));
-            $this->notifyAgentStartFailed($agentId, $agentType, $agentIndex, $failure->getMessage());
+            try {
+                $this->releaseSourceInterest(SourceConsumer::agent($agentId));
+            } finally {
+                $this->notifyAgentStartFailed($agentId, $agentType, $agentIndex, $failure->getMessage());
+            }
 
             throw $failure;
         }
+        foreach ($this->settleRestartPageMirrors($agentId, $data->liveAcceptKeys) as $acceptKey) {
+            $this->agentIdleTracker->noteSubscriber($agentId, $acceptKey, $now);
+        }
+        $this->setCurrentAgentId($agentId);
         // Contained here and reported as a start that happened (HIL-1040). The agent is one this
         // worker keeps - its claims stand, the idle tracker knows it, and it takes messages as it
         // did before HIL-629 - so a master told "the start failed" would be told something untrue
@@ -1545,7 +1583,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        if (!$this->agentManager->hasAgent($agentId)) {
+        if ($data->pageMirrors === AgentStopDTO::DISCARD_RESTART_MIRRORS) {
+            $this->settleRestartPageMirrors($agentId);
             return;
         }
 
@@ -1555,7 +1594,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         }
 
         try {
-            $this->runAgentStopHook($agent);
+            $this->runAgentStopHook($agent, $data->pageMirrors === AgentStopDTO::KEEP_RESTART_MIRRORS);
         } catch (Throwable $e) {
             // A failing stop hook must not crash the worker on a daemon stop request;
             // truth sources are already unregistered in the hook's finally.
@@ -1625,8 +1664,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $data->collectionKey,
                 array_values(array_diff($data->stateIds, $this->rtSyncStream?->heldRows($data->collectionKey) ?? [])),
             );
+            foreach ($data->stateIds as $stateId) {
+                $this->wakePageHandoff($data->collectionKey, $stateId);
+            }
         } else {
             RtStaleness::mark($data->collectionKey, $data->stateIds, $data->since);
+            $this->markUnconfirmedPageDeliveries($data->collectionKey, $data->stateIds);
         }
 
         $this->notifyStalenessToPages($data->collectionKey);
@@ -2530,7 +2573,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         }
         if ($status === RtSnapshotStatus::Published) {
             unset($this->rtSnapshotsContested[$collectionKey]);
-            $this->publishRtSnapshotMarks($collectionKey, $wereFrozen, $snapshot->staleRows());
+            $this->publishRtSnapshotMarks($collectionKey, $wereFrozen, $snapshot->staleRows(), $snapshot->scope);
             $settled(true);
 
             return;
@@ -2625,9 +2668,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @param string $collectionKey Collection whose snapshot was published
      * @param list<string> $wereFrozen Rows this copy marked frozen when the snapshot came
      * @param array<string, float> $staleRows Moments the master's copy of rows froze, by id, as the snapshot carries them
+     * @param ?RtSnapshotScope $publishedScope Rows actually replaced, absent for a publication of marks alone
      */
-    private function publishRtSnapshotMarks(string $collectionKey, array $wereFrozen, array $staleRows): void
-    {
+    private function publishRtSnapshotMarks(
+        string $collectionKey, array $wereFrozen, array $staleRows, ?RtSnapshotScope $publishedScope = null,
+    ): void {
         // Which rows are frozen arrives with them, and this is the only chance to learn it: a
         // worker that came up during a break was not there for the frame that froze them, and
         // nothing repeats that frame (HIL-711).
@@ -2647,6 +2692,16 @@ abstract class WorkerManager extends BaseManager implements PageResender
             RtStaleness::mark($collectionKey, [(string)$stateId], $since);
         }
         SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collectionKey);
+        foreach ($this->pageHandoffWaits as $acceptKey => $frame) {
+            $this->wakePendingPageHandoff($collectionKey, $acceptKey, deleted: false);
+        }
+        if ($publishedScope !== null && $collectionKey === Hilos::$rt?->connectionsRegistry()?->getCollectionName()) {
+            foreach (Hilos::$sr?->pageSubscriptionRecords() ?? [] as $acceptKey => $subscription) {
+                if ($subscription->admittedIdentity !== null && $publishedScope->admits((string)$acceptKey, null)) {
+                    $this->settleAdmittedPageMirrorOnRtFact($collectionKey, (string)$acceptKey, deletedIfAbsent: true);
+                }
+            }
+        }
         // Both halves of the replacement are named to the tables: the rows this snapshot thawed
         // and the rows it froze. A window shows the mark per row, so it has to be told about a
         // row leaving the frozen set exactly as loudly as about one joining it (HIL-800).
@@ -2718,6 +2773,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
         RtStaleness::mark($collectionKey, $stateIds, $since);
+        $this->markUnconfirmedPageDeliveries($collectionKey, $stateIds);
         if (!isset($this->rtInterestAddedAt[$collectionKey]) || isset($this->rtInterestAnswered[$collectionKey])) {
             $this->requestRtSnapshot($collectionKey);
         }
@@ -2765,6 +2821,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
         $settled(true);
+        $this->wakePageHandoff(
+            $operation->collectionKey,
+            $operation->stateId,
+            $operation->signalType === SignalTypeConstants::RT_SYNC_DELETED,
+        );
     }
 
     /**
@@ -2951,10 +3012,24 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @throws RtTruthSourceWriteNotAllowedException When a connection liveness transition reaches an
      *     agent that does not own the connection row it names
      * @throws HilosException Whatever the applied write emptying a dropped collection raises
+     * @throws RandomException When the worker cannot mint a handoff challenge
      */
     private function handleAgentMessage(DaemonAgentMessageDTO $data): void
     {
         $agentId = $data->agentId;
+        $signalType = $data->signal->signalType->getType();
+        $source = $data->signal->signalSource->getSource();
+        $name = $data->signal->signalName->getName();
+        $signalData = $data->signal->data;
+        $releaseId = $data->signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] ?? null;
+        if ($signalType === SignalTypeConstants::PAGE_UNSUBSCRIBE
+            && $signalData instanceof WebSocketPageUnsubscribeSignalDTO && is_string($releaseId)) {
+            $this->releasePageHandoffMirror($agentId, $signalData, $source, $name, $releaseId);
+            return;
+        }
+        if ($signalType === SignalTypeConstants::CONNECTION_CLOSE && $signalData instanceof WebSocketCloseSignalDTO) {
+            $this->releaseDisconnectedRestartPageMirror($signalData->acceptKey);
+        }
 
         if (!$this->agentManager->hasAgent($agentId)) {
             Logger::error("handleAgentMessage - agent not found: {$agentId}");
@@ -2973,11 +3048,6 @@ abstract class WorkerManager extends BaseManager implements PageResender
         // own methods and are deliberately not marked: counted as being addressed, they would
         // mean no installation with traffic ever reaches an idle moment.
         $this->agentIdleTracker->noteAddressed($agentId, microtime(true));
-
-        $signalType = $data->signal->signalType->getType();
-        $source = $data->signal->signalSource->getSource();
-        $name = $data->signal->signalName->getName();
-        $signalData = $data->signal->data;
 
         $apiRequestKey = Hilos::$ac?->getSignalMetaKey($data->signal, AnalyticsCollector::META_API_REQUEST_KEY);
         $userActionKey = Hilos::$ac?->getSignalMetaKey($data->signal, AnalyticsCollector::META_USER_ACTION_KEY);
@@ -3040,6 +3110,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 if ($signalData instanceof WebSocketCloseSignalDTO) {
                     $this->dispatchPageUnsubscribeIfTrackedOnConnectionClose($agentId, $agent, $signalData, $source);
                     if ($signalData->acceptKey !== '') {
+                        $this->forgetPageHandoff($signalData->acceptKey);
                         Hilos::$sr?->unsubscribeFromAll($signalData->acceptKey);
                         // Anything this connection was waiting to have judged dies with it:
                         // held frames would otherwise sit out their deadline and then be
@@ -3102,48 +3173,162 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 break;
 
             case SignalTypeConstants::PAGE_SUBSCRIBE:
+            case SignalTypeConstants::PAGE_ACCESS_REASSESS:
                 if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
-                    $this->dispatchPreviousPageUnsubscribeIfReplaced($agentId, $agent, $signalData, $name, $source);
-                    // After the page it replaces has let go, and before anything is asked of the
-                    // new one: the hooks below read the collections this takes up, and the frame
-                    // is judged out of them. Parked when they are not here yet, and handled again
-                    // from the top of this case once they are, or once the wait runs out - the
-                    // replaced page has let go by then, so it lets go exactly once (HIL-1012).
-                    $this->takeUpPageSources($signalData->page ?? $name, $signalData->acceptKey);
-                    $pageConsumer = SourceConsumer::page($signalData->acceptKey);
-                    $pageReads = $this->pageSourceReads($signalData->page ?? $name);
-                    if ($this->waitsForSources($pageConsumer, $pageReads)) {
+                    $page = $signalData->page ?? $name;
+                    $acceptKey = $signalData->acceptKey;
+                    $reassess = $signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS;
+                    $identityRouted = Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+                    $expected = PageHandoffIdentity::fromMeta($data->signal->meta);
+                    $proof = isset($data->signal->meta[PageHandoffIdentity::META_PROOF]);
+                    $trackedHandoff = $identityRouted && $signalData->deliveryId !== null;
+                    $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+                    if ($reassess && (!$identityRouted || (!$proof && $source !== SignalSource::DAEMON))) {
+                        if (!$identityRouted) {
+                            $this->getPageSignalRouter($agentId, $agent)->dispatchPageAccessReassess($signalData, $source, $name);
+                            Hilos::$sr?->bindPageAgent($acceptKey, $page, $agent->getType(), $agent->getIndex());
+                        } elseif ($subscription?->page === $page && $subscription->agentType === $agent->getType()
+                            && $subscription->agentIndex === $agent->getIndex()) {
+                            $this->getPageSignalRouter($agentId, $agent)->dispatchPageAccessReassess($signalData, $source, $name);
+                        }
+                        break;
+                    }
+
+                    $pageConsumer = SourceConsumer::page($acceptKey);
+                    $pageReads = $this->pageSourceReads($page);
+                    if ($trackedHandoff) {
+                        if ($expected === null || ($subscription?->deliveryId !== null
+                            && !PageHandoffIdentity::follows($acceptKey, $signalData->deliveryId, $subscription->deliveryId))) {
+                            break;
+                        }
+                        if ($proof) {
+                            $admitted = $this->acceptPageHandoffProof($data, $signalData, $agent);
+                            if ($admitted === null) {
+                                break;
+                            }
+                            $reassess = $admitted->signal->signalType->getType() === SignalTypeConstants::PAGE_ACCESS_REASSESS;
+                            $source = $admitted->signal->signalSource->getSource();
+                        } else {
+                            $admitted = $this->rememberPageHandoff($data, $signalData, $agent);
+                            if ($admitted === null) {
+                                break;
+                            }
+                        }
+
+                        $reads = $pageReads;
+                        $reads[SourceChange::KIND_RT][] = $expected->collectionKey;
+                        if ($expected != PageHandoffIdentity::current($acceptKey)
+                            || $this->waitsForSources($pageConsumer, $reads)) {
+                            if ($proof) {
+                                unset($this->pageHandoffChallenges[$acceptKey]);
+                            }
+                            break;
+                        }
+                        if (!$proof) {
+                            $this->requestPageHandoffProof($admitted, $signalData);
+                            break;
+                        }
+                    } elseif ($reassess && $identityRouted) {
+                        if ($proof || $expected === null || $subscription !== null) {
+                            break;
+                        }
+                        if ($expected != PageHandoffIdentity::current($acceptKey)) {
+                            $this->rememberPageHandoff($data, $signalData, $agent);
+                            break;
+                        }
+                    } elseif ($proof) {
+                        break;
+                    }
+
+                    $waiting = $this->pageHandoffWaits[$acceptKey]->signal->data ?? null;
+                    if (!$trackedHandoff && $waiting instanceof WebSocketPageSubscribeSignalDTO && $waiting->deliveryId !== null
+                        && $signalData->deliveryId !== null
+                        && PageHandoffIdentity::follows($acceptKey, $signalData->deliveryId, $waiting->deliveryId)) {
+                        $this->forgetPageHandoff($acceptKey);
+                    }
+                    $previousAgent = $this->agentManager->buildAgentId($subscription?->agentType, $subscription?->agentIndex);
+                    if ($previousAgent !== null && ($trackedHandoff
+                        || ($subscription->deliveryId !== null && $previousAgent !== $agentId))) {
+                        $this->releasePageHandoffMirror(
+                            $previousAgent, new WebSocketPageUnsubscribeSignalDTO($acceptKey),
+                            $source, $subscription->page, $subscription->deliveryId,
+                        );
+                    }
+                    if (!$trackedHandoff && !$reassess) {
+                        $this->dispatchPreviousPageUnsubscribeIfReplaced($agentId, $agent, $signalData, $name, $source);
+                    }
+                    // The old holder's hook may have changed the mirror, the wait or the connection.
+                    if ($trackedHandoff) {
+                        if (($this->pageHandoffWaits[$acceptKey] ?? null) !== $admitted
+                            || $this->agentManager->getAgent($agentId) !== $agent) {
+                            break;
+                        }
+                        if (Hilos::$sr?->pageSubscription($acceptKey) !== null || $expected != PageHandoffIdentity::current($acceptKey)) {
+                            $this->expirePageHandoff($acceptKey, $admitted);
+                            break;
+                        }
+                    }
+                    $this->takeUpPageSources($page, $acceptKey, $trackedHandoff ? $expected->collectionKey : null);
+                    if (!$trackedHandoff && $this->waitsForSources($pageConsumer, $pageReads)) {
                         $this->waitForSources($pageConsumer, $pageReads);
                         $this->parkBehind($data, $pageConsumer);
                         break;
+                    }
+                    if ($trackedHandoff) {
+                        // Consume the grant, keeping its exact wait through the project hook.
+                        $this->pageHandoffChallenges[$acceptKey] = false;
+                    } elseif ($reassess) {
+                        $this->forgetPageHandoff($acceptKey);
                     }
                     // A real subscribe starts a new answer, including a same-page reconnect and a
                     // parked frame admitted here. Registration follows that answer and must preserve
                     // any debt it sets, and the row the answer binds. A silent resend is not this path.
                     Hilos::$sr?->clearPageDeliveryFailure($signalData->acceptKey);
                     Hilos::$sr?->clearPageResource($signalData->acceptKey);
-                    $agent->onSignalPageSubscribe($signalData, $source, $name);
-                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
-                    $this->rememberPageSubscriptionAfterSubscribe($signalData, $name, $agent);
+                    $before = Hilos::$sr?->pageSubscription($acceptKey);
+                    try {
+                        $agent->onSignalPageSubscribe($signalData, $source, $name);
+                        $pageRouter = $this->getPageSignalRouter($agentId, $agent);
+                    } catch (Throwable $failure) {
+                        if ($trackedHandoff) {
+                            $this->expireAdmittedPageHandoff($acceptKey, $admitted, $before);
+                        }
+                        throw $failure;
+                    }
+                    if ($trackedHandoff) {
+                        if (($this->pageHandoffWaits[$acceptKey] ?? null) !== $admitted) {
+                            break;
+                        }
+                        if (Hilos::$sr?->pageSubscription($acceptKey) !== $before
+                            || $this->agentManager->getAgent($agentId) !== $agent
+                            || $expected != PageHandoffIdentity::current($acceptKey)) {
+                            $this->expireAdmittedPageHandoff($acceptKey, $admitted, $before);
+                            break;
+                        }
+                        $this->forgetPageHandoff($acceptKey);
+                    }
+                    $answer = static function () use ($reassess, $pageRouter, $signalData, $source, $name): void {
+                        if ($reassess) {
+                            $pageRouter->dispatchPageAccessReassess($signalData, $source, $name);
+                        } else {
+                            $pageRouter->dispatchPageSubscribe($signalData, $source, $name);
+                        }
+                    };
+                    if ($signalData->deliveryId !== null
+                        && Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                        Hilos::$sr->withPageAnswerAuthority($signalData, $answer, $expected);
+                    } else {
+                        $answer();
+                    }
+                    if ($trackedHandoff && (Hilos::$sr?->pageSubscription($acceptKey) !== $before
+                        || $this->agentManager->getAgent($agentId) !== $agent
+                        || $expected != PageHandoffIdentity::current($acceptKey))) {
+                        break;
+                    }
+                    $this->rememberPageSubscriptionAfterSubscribe($signalData, $name, $agent, $trackedHandoff ? $expected : null);
                     $this->agentIdleTracker->noteSubscriber($agentId, $signalData->acceptKey, microtime(true));
                 } else {
-                    Logger::error("onSignalPageSubscribe - invalid signal data type: " . get_class($signalData));
-                }
-                break;
-
-            case SignalTypeConstants::PAGE_ACCESS_REASSESS:
-                if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
-                    // Only the frame, and none of the subscribe's bookkeeping: the previous
-                    // page is not being replaced, the agent is not being told of a new
-                    // subscriber, and the mirror already holds this exact subscription. A
-                    // re-decision changes the answer, not the subscription (HIL-621).
-                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageAccessReassess($signalData, $source, $name);
-                    // Except for who serves it: a re-decision may hand the subscription to another
-                    // instance of the agent (HIL-627), and a page re-sent after a failed delivery
-                    // is answered by the agent this names (HIL-1236).
-                    Hilos::$sr?->bindPageAgent($signalData->acceptKey, $signalData->page ?? $name, $agent->getType(), $agent->getIndex());
-                } else {
-                    Logger::error("onSignalPageAccessReassess - invalid signal data type: " . get_class($signalData));
+                    Logger::error("{$signalType} - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -3158,16 +3343,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
                 if ($signalData instanceof WebSocketPageUnsubscribeSignalDTO) {
-                    $agent->onSignalPageUnsubscribe($signalData, $source, $name);
-                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageUnsubscribe($signalData, $source, $name);
-                    if ($signalData->acceptKey !== '') {
-                        // Read before the unsubscribe, because that is what removes the record
-                        // this page name is being taken from.
-                        $page = Hilos::$sr?->pageSubscription($signalData->acceptKey)?->page ?? $name;
-                        Hilos::$sr?->unsubscribeFromPage($page, $signalData);
-                        $this->releaseSourceInterest(SourceConsumer::page($signalData->acceptKey));
-                        $this->agentIdleTracker->dropSubscriber($agentId, $signalData->acceptKey, microtime(true));
-                    }
+                    $this->releasePageHandoffMirror($agentId, $signalData, $source, $name, null);
                 } else {
                     Logger::error("onSignalPageUnsubscribe - invalid signal data type: " . get_class($signalData));
                 }
@@ -3572,16 +3748,242 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @param WebSocketPageSubscribeSignalDTO $dto Subscribe payload
      * @param string $name Signal name used as page id when the DTO page is empty
      * @param AgentInterface $agent Agent that served the subscribe
+     * @param ?PageHandoffIdentity $admittedIdentity Identity confirmed by the completed worker admission
      */
-    private function rememberPageSubscriptionAfterSubscribe(WebSocketPageSubscribeSignalDTO $dto, string $name, AgentInterface $agent): void
-    {
+    private function rememberPageSubscriptionAfterSubscribe(
+        WebSocketPageSubscribeSignalDTO $dto, string $name, AgentInterface $agent, ?PageHandoffIdentity $admittedIdentity,
+    ): void {
         $acceptKey = $dto->acceptKey;
         if ($acceptKey === '') {
             return;
         }
 
-        Hilos::$sr?->subscribeToPage($dto->page ?? $name, $dto);
-        Hilos::$sr?->bindPageAgent($acceptKey, $dto->page ?? $name, $agent->getType(), $agent->getIndex());
+        $router = Hilos::$sr;
+        $router?->subscribeToPage($dto->page ?? $name, $dto);
+        $router?->bindPageAgent($acceptKey, $dto->page ?? $name, $agent->getType(), $agent->getIndex());
+        $subscription = $router?->pageSubscription($acceptKey);
+        if ($subscription !== null) {
+            $subscription->admittedIdentity = $admittedIdentity;
+        }
+    }
+
+    /**
+     * @param string $agentId Agent that owned the original mirror
+     * @param WebSocketPageUnsubscribeSignalDTO $data Addressed release
+     * @param string $source Signal source
+     * @param string $page Page held by the original mirror
+     * @param ?string $deliveryId Original authority, absent when an ordinary page is replaced by an admitted handoff
+     * @param bool $runHooks Whether the original instance may still run its unsubscribe hooks
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function releasePageHandoffMirror(
+        string $agentId,
+        WebSocketPageUnsubscribeSignalDTO $data,
+        string $source,
+        string $page,
+        ?string $deliveryId,
+        bool $runHooks = true,
+    ): void {
+        $acceptKey = $data->acceptKey;
+        $consumer = SourceConsumer::page($acceptKey);
+        $waiting = $this->pageHandoffWaits[$acceptKey] ?? null;
+        if ($deliveryId !== null && $waiting?->agentId === $agentId && $waiting->signal->data instanceof WebSocketPageSubscribeSignalDTO
+            && $waiting->signal->data->page === $page && $waiting->signal->data->deliveryId === $deliveryId) {
+            $this->forgetPageHandoff($acceptKey);
+        }
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
+        if ($subscription?->page !== $page || $subscription->deliveryId !== $deliveryId
+            || $this->agentManager->buildAgentId($subscription->agentType, $subscription->agentIndex) !== $agentId) {
+            return;
+        }
+
+        $original = new PageSubscriptionContext($router, $acceptKey, $subscription);
+        $agent = $runHooks && !$subscription->retainedForRestart ? $this->agentManager->getAgent($agentId) : null;
+        try {
+            if ($agent !== null) {
+                ExecutionContext::run(new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
+                    function () use ($original, $agent, $agentId, $data, $source, $page): void {
+                        try {
+                            $agent->onSignalPageUnsubscribe($data, $source, $page);
+                        } finally {
+                            if ($original->isCurrent()) {
+                                $this->getPageSignalRouter($agentId, $agent)->dispatchPageUnsubscribe($data, $source, $page);
+                            }
+                        }
+                    });
+            }
+        } catch (Throwable $failure) {
+            Logger::error("Page handoff release on {$agentId} failed with " . $failure::class);
+        } finally {
+            if ($original->isCurrent()) {
+                $router->unsubscribeFromPage($page, $data);
+                $this->agentIdleTracker->dropSubscriber($agentId, $acceptKey, microtime(true));
+                if (!isset($this->parkedFrames[$consumer])) {
+                    $this->releaseSourceInterest($consumer);
+                }
+            }
+        }
+    }
+
+    /**
+     * @param DaemonAgentMessageDTO $frame Original handoff headed for this worker
+     * @param WebSocketPageSubscribeSignalDTO $request One authenticated delivery attempt
+     * @param AgentInterface $agent Exact local instance that owns the attempt
+     * @return ?DaemonAgentMessageDTO Exact frame held here, or null when superseded
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function rememberPageHandoff(
+        DaemonAgentMessageDTO $frame, WebSocketPageSubscribeSignalDTO $request, AgentInterface $agent,
+    ): ?DaemonAgentMessageDTO {
+        $acceptKey = $request->acceptKey;
+        $held = $this->pageHandoffWaits[$acceptKey] ?? null;
+        $waiting = $held?->signal->data;
+        $identity = PageHandoffIdentity::fromMeta($frame->signal->meta);
+        if ($waiting instanceof WebSocketPageSubscribeSignalDTO) {
+            if ($waiting == $request && $held->agentId === $frame->agentId
+                && ($this->pageHandoffWaitsByAgent[$frame->agentId][$acceptKey] ?? null) === $agent
+                && $identity == PageHandoffIdentity::fromMeta($held->signal->meta)) {
+                return $held;
+            }
+            if ($waiting->deliveryId !== null && ($request->deliveryId === null
+                || !PageHandoffIdentity::follows($acceptKey, $request->deliveryId, $waiting->deliveryId))) {
+                return null;
+            }
+        }
+        $reads = $this->pageSourceReads($request->page ?? $frame->signal->signalName->getName());
+        $reads[SourceChange::KIND_RT][] = $identity->collectionKey;
+        $consumer = SourceConsumer::pageHandoff($request->deliveryId ?? $acceptKey);
+        // Take the new interest before dropping a predecessor's only copy.
+        $this->raiseSourceInterest($consumer, $reads);
+        if ($waiting instanceof WebSocketPageSubscribeSignalDTO
+            && $consumer !== SourceConsumer::pageHandoff($waiting->deliveryId ?? $acceptKey)) {
+            $this->forgetPageHandoff($acceptKey);
+        } elseif ($held !== null && $held->agentId !== $frame->agentId) {
+            $this->forgetPageHandoffAgentIndex($held->agentId, $acceptKey);
+        }
+        unset($this->readyPageHandoffs[$acceptKey], $this->pageHandoffChallenges[$acceptKey]);
+        $this->pageHandoffWaits[$acceptKey] = $frame;
+        $this->pageHandoffWaitsByAgent[$frame->agentId][$acceptKey] = $agent;
+        $this->pageHandoffSince[$acceptKey] = microtime(true);
+        $this->readyPageHandoffs[$acceptKey] = $frame;
+
+        return $frame;
+    }
+
+    /**
+     * @param DaemonAgentMessageDTO $frame Placement and RT-ready handoff
+     * @param WebSocketPageSubscribeSignalDTO $request Exact attempt to check at the socket
+     * @throws InvalidArgumentException When the proof signal cannot be named
+     * @throws RandomException When the worker cannot mint a handoff challenge
+     */
+    private function requestPageHandoffProof(DaemonAgentMessageDTO $frame, WebSocketPageSubscribeSignalDTO $request): void
+    {
+        if (isset($this->pageHandoffChallenges[$request->acceptKey])) {
+            return;
+        }
+        $challenge = RandomHelper::secureHex(PageHandoffIdentity::CHALLENGE_BYTES);
+        $this->pageHandoffChallenges[$request->acceptKey] = $challenge;
+        $this->queuePageHandoffProbe($frame, $request, $challenge);
+    }
+
+    /**
+     * Uses the same authenticated route for a proof and for the concrete worker's terminal expiry.
+     *
+     * @param DaemonAgentMessageDTO $frame The original handoff addressed to this worker
+     * @param WebSocketPageSubscribeSignalDTO $request Exact socket request
+     * @param ?string $challenge Fresh challenge for a grant, or null to report expiry
+     * @throws InvalidArgumentException When the proof signal cannot be named
+     */
+    private function queuePageHandoffProbe(
+        DaemonAgentMessageDTO $frame, WebSocketPageSubscribeSignalDTO $request, ?string $challenge,
+    ): void {
+        $agent = AgentId::fromId($frame->agentId);
+        Hilos::$sr->queueSignalEnvelope(new SignalDTO(
+            new SignalSource(SignalSource::AGENT, $agent->type, $agent->index),
+            new SignalType(SignalTypeConstants::WS_USER),
+            new SignalName(SignalTypeConstants::PAGE_ACCESS_REASSESS),
+            new WebSocketSignalData($request, targetAcceptKey: $request->acceptKey),
+            [
+                ...$frame->signal->meta,
+                PageHandoffIdentity::META_PROOF => PageHandoffIdentity::PROBE,
+                ...($challenge !== null
+                    ? [PageHandoffIdentity::META_CHALLENGE => $challenge]
+                    : [PageHandoffIdentity::META_TERMINAL_REFUSAL => $request->deliveryId]),
+            ],
+        ));
+    }
+
+    /**
+     * @param DaemonAgentMessageDTO $frame Proof addressed to this worker's agent
+     * @param WebSocketPageSubscribeSignalDTO $request Attempt named by the proof
+     * @param AgentInterface $agent Current instance on the addressed worker
+     * @return ?DaemonAgentMessageDTO The exact original request admitted by the socket master
+     * @throws InvalidArgumentException When the terminal handoff signal cannot be named
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function acceptPageHandoffProof(
+        DaemonAgentMessageDTO $frame, WebSocketPageSubscribeSignalDTO $request, AgentInterface $agent,
+    ): ?DaemonAgentMessageDTO {
+        $acceptKey = $request->acceptKey;
+        $waiting = $this->pageHandoffWaits[$acceptKey] ?? null;
+        $challenge = $this->pageHandoffChallenges[$acceptKey] ?? null;
+        if (!PageHandoffIdentity::isReply($frame->signal, $request) || $waiting?->agentId !== $frame->agentId
+            || ($this->pageHandoffWaitsByAgent[$frame->agentId][$acceptKey] ?? null) !== $agent
+            || $waiting->signal->data != $request || $challenge === null
+            || ($frame->signal->meta[PageHandoffIdentity::META_CHALLENGE] ?? null) !== $challenge
+            || PageHandoffIdentity::fromMeta($waiting->signal->meta) != PageHandoffIdentity::fromMeta($frame->signal->meta)) {
+            return null;
+        }
+        if (microtime(true) >= $this->pageHandoffSince[$acceptKey] + AgentConstants::START_DEADLINE_SECONDS) {
+            $this->expirePageHandoff($acceptKey, $waiting);
+            return null;
+        }
+        if ($frame->signal->meta[PageHandoffIdentity::META_PROOF] === PageHandoffIdentity::GRANTED) {
+            return PageHandoffIdentity::workerOrder($waiting->signal->meta) == PageHandoffIdentity::workerOrder($frame->signal->meta)
+                ? $waiting : null;
+        }
+
+        // Keep the original deadline so this attempt can report expiry. A refusal consumes
+        // the challenge and prevents both an immediate retry and a delayed conflicting grant.
+        $this->pageHandoffChallenges[$acceptKey] = false;
+
+        return null;
+    }
+
+    /**
+     * @param string $acceptKey Connection whose handoff is settled or superseded here
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function forgetPageHandoff(string $acceptKey): void
+    {
+        $frame = $this->pageHandoffWaits[$acceptKey] ?? null;
+        $request = $frame?->signal->data;
+        if (!$request instanceof WebSocketPageSubscribeSignalDTO) {
+            return;
+        }
+        unset(
+            $this->pageHandoffWaits[$acceptKey], $this->pageHandoffSince[$acceptKey],
+            $this->readyPageHandoffs[$acceptKey], $this->pageHandoffChallenges[$acceptKey],
+        );
+        $this->forgetPageHandoffAgentIndex($frame->agentId, $acceptKey);
+        $this->releaseSourceInterest(SourceConsumer::pageHandoff($request->deliveryId ?? $acceptKey));
+    }
+
+    /**
+     * @param string $agentId Agent that owned the previous wait
+     * @param string $acceptKey Connection no longer waiting on that agent
+     */
+    private function forgetPageHandoffAgentIndex(string $agentId, string $acceptKey): void
+    {
+        unset($this->pageHandoffWaitsByAgent[$agentId][$acceptKey]);
+        if ($this->pageHandoffWaitsByAgent[$agentId] === []) {
+            unset($this->pageHandoffWaitsByAgent[$agentId]);
+        }
     }
 
     /**
@@ -3802,11 +4204,16 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *
      * @param string $page Page being subscribed to
      * @param string $acceptKey Subscribing WebSocket accept key, which is the consumer
+     * @param ?string $identitySource Connection collection the admitted handoff continues to read
      * @throws InvalidArgumentException When the staleness signal cannot be named
      */
-    private function takeUpPageSources(string $page, string $acceptKey): void
+    private function takeUpPageSources(string $page, string $acceptKey, ?string $identitySource = null): void
     {
-        $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $this->pageSourceReads($page));
+        $reads = $this->pageSourceReads($page);
+        if ($identitySource !== null) {
+            $reads[SourceChange::KIND_RT][] = $identitySource;
+        }
+        $this->raiseSourceInterest(SourceConsumer::page($acceptKey), $reads);
         // And where this page stands on frozen replicas, which nothing else would ever tell it:
         // the frame that froze them went out before this subscription existed, and the next one
         // only comes when a link moves (HIL-711). A connection has one page, so the answer is
@@ -3994,6 +4401,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
         if ($this->parkedSources === []) {
             return null;
         }
+        if ($data instanceof DaemonAgentMessageDTO && $data->signal->signalType->getType() === SignalTypeConstants::PAGE_UNSUBSCRIBE
+            && isset($data->signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID])) {
+            return null;
+        }
 
         $agentId = self::agentIdOf($data);
         if ($agentId !== null && isset($this->parkedSources[self::PARKED_LINK_KEY])) {
@@ -4044,6 +4455,89 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
+     * @param string $collectionKey RT source that applied or recovered its copy
+     * @param string $acceptKey Row that may now satisfy the waiting handoff
+     * @param bool $deleted Whether the applied fact removed this connection
+     * @throws InvalidArgumentException When the terminal handoff signal cannot be named
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function wakePageHandoff(string $collectionKey, string $acceptKey, bool $deleted = false): void
+    {
+        $this->settleAdmittedPageMirrorOnRtFact($collectionKey, $acceptKey, $deleted);
+        $this->wakePendingPageHandoff($collectionKey, $acceptKey, $deleted);
+    }
+
+    /**
+     * @param string $collectionKey RT source that applied or recovered its copy
+     * @param string $acceptKey Row that may now satisfy the waiting handoff
+     * @param bool $deleted Whether the applied fact removed this connection
+     * @throws InvalidArgumentException When the terminal handoff signal cannot be named
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function wakePendingPageHandoff(string $collectionKey, string $acceptKey, bool $deleted): void
+    {
+        $frame = $this->pageHandoffWaits[$acceptKey] ?? null;
+        if ($frame === null || ($frame->signal->meta[PageHandoffIdentity::META_COLLECTION] ?? null) !== $collectionKey) {
+            return;
+        }
+        if ($deleted && Hilos::$rt?->connectionsSource()?->get($acceptKey) === null) {
+            $this->expirePageHandoff($acceptKey, $frame);
+            return;
+        }
+        if (PageHandoffIdentity::fromMeta($frame->signal->meta) == PageHandoffIdentity::current($acceptKey)) {
+            $this->readyPageHandoffs[$acceptKey] = $frame;
+        }
+    }
+
+    /**
+     * @param string $acceptKey Connection whose grant already took up page sources
+     * @param DaemonAgentMessageDTO $frame Its original granted request
+     * @param ?PageSubscription $before Mirror that preceded the page hook
+     * @throws InvalidArgumentException When the terminal handoff signal cannot be named
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function expireAdmittedPageHandoff(string $acceptKey, DaemonAgentMessageDTO $frame, ?PageSubscription $before): void
+    {
+        if (($this->pageHandoffWaits[$acceptKey] ?? null) !== $frame) {
+            return;
+        }
+
+        try {
+            $this->expirePageHandoff($acceptKey, $frame);
+        } finally {
+            $consumer = SourceConsumer::page($acceptKey);
+            if (Hilos::$sr?->pageSubscription($acceptKey) === $before && !isset($this->parkedFrames[$consumer])) {
+                $this->releaseSourceInterest($consumer);
+            }
+        }
+    }
+
+    /**
+     * @param string $acceptKey Connection whose wait ended
+     * @param DaemonAgentMessageDTO $frame Exact worker request with no remaining path to its hook
+     * @throws InvalidArgumentException When the terminal handoff signal cannot be named
+     * @throws LogicException When ending source interest reads an unconfigured DB collection
+     * @throws DatabaseException When ending source interest cannot re-read a DB collection
+     */
+    private function expirePageHandoff(string $acceptKey, DaemonAgentMessageDTO $frame): void
+    {
+        if (($this->pageHandoffWaits[$acceptKey] ?? null) !== $frame) {
+            return;
+        }
+        $request = $frame->signal->data;
+        try {
+            if ($request instanceof WebSocketPageSubscribeSignalDTO && $request->deliveryId !== null) {
+                $this->queuePageHandoffProbe($frame, $request, null);
+            }
+        } finally {
+            $this->forgetPageHandoff($acceptKey);
+        }
+    }
+
+    /**
      * Ends every wait whose state has landed or whose deadline has passed, and handles what it held.
      *
      * Called once per loop pass, before the frames read in that pass: a held frame arrived earlier,
@@ -4064,6 +4558,24 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     protected function releaseParkedFrames(float $now): void
     {
+        foreach ($this->pageHandoffSince as $acceptKey => $since) {
+            if ($now >= $since + AgentConstants::START_DEADLINE_SECONDS) {
+                try {
+                    $this->expirePageHandoff($acceptKey, $this->pageHandoffWaits[$acceptKey]);
+                } catch (Throwable $failure) {
+                    $this->containFailure(WorkerTickUnit::DAEMON_MESSAGE, SignalTypeConstants::PAGE_ACCESS_REASSESS, $failure);
+                }
+            }
+        }
+        foreach ($this->readyPageHandoffs as $acceptKey => $frame) {
+            if (($this->pageHandoffWaits[$acceptKey] ?? null) !== $frame
+                || isset($this->pageHandoffChallenges[$acceptKey])
+                || PageHandoffIdentity::fromMeta($frame->signal->meta) != PageHandoffIdentity::current($acceptKey)) {
+                unset($this->readyPageHandoffs[$acceptKey]);
+                continue;
+            }
+            $this->handleReleasedFrame($frame);
+        }
         foreach (array_keys($this->parkedSources) as $consumerId) {
             $sources = $this->parkedSources[$consumerId] ?? null;
             if ($sources === null) {
@@ -4409,16 +4921,24 @@ abstract class WorkerManager extends BaseManager implements PageResender
         // rows it accumulated, and either way the cached view goes with them
         // ({@see DbContext::reHydrateCollection()}). The rows themselves are not lost - they are
         // in the database - so this is a cache being let go rather than state being thrown away.
+        $failure = null;
         foreach ($heldDb as $collectionKey) {
             if (SourceInterestRegistry::hasConsumers(SourceChange::KIND_DB, $collectionKey)) {
                 continue;
             }
-            Hilos::$db?->reHydrateCollection($collectionKey);
             $dropped = true;
+            try {
+                Hilos::$db?->reHydrateCollection($collectionKey);
+            } catch (Throwable $reloadFailure) {
+                $failure ??= $reloadFailure;
+            }
         }
 
         if ($dropped) {
             $this->notifySourceInterest();
+        }
+        if ($failure !== null) {
+            throw $failure;
         }
     }
 
@@ -4688,6 +5208,219 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
+     * Close exact page deliveries while their old instance can run its unsubscribe hooks.
+     * An in-place restart may retain an admitted mirror with a confirmed connection identity.
+     *
+     * @param AgentInterface $agent Instance whose tracked mirrors are being retired
+     * @param bool $keepForRestart Whether this stop is the first half of an in-place restart
+     */
+    private function releaseStoppingAgentPageHandoffs(AgentInterface $agent, bool $keepForRestart): void
+    {
+        $router = Hilos::$sr;
+        if ($router === null) {
+            return;
+        }
+
+        $agentId = $agent->getId();
+        foreach ($router->acceptKeysServedBy($agent->getType(), $agent->getIndex()) as $acceptKey) {
+            $subscription = $router->pageSubscription($acceptKey);
+            if ($subscription?->deliveryId === null) {
+                continue;
+            }
+            if ($keepForRestart && $subscription->admittedIdentity !== null) {
+                $identity = $this->readPageHandoffIdentity($agentId, $acceptKey);
+                if ($router->pageSubscription($acceptKey) !== $subscription) {
+                    continue;
+                }
+                if ($identity === null || $identity == $subscription->admittedIdentity) {
+                    $subscription->retainedForRestart = true;
+                    if ($identity === null) {
+                        $this->waitForPageIdentity($router, $acceptKey, $subscription);
+                    }
+                    continue;
+                }
+            }
+            $this->releaseStoppedPageMirror($agentId, $acceptKey, $subscription->page, $subscription->deliveryId);
+        }
+    }
+
+    /**
+     * Keeps a live retained subscription while its worker copy is unconfirmed. The roster holds its
+     * idle slot at start and RT confirmation controls publication. Refusal or discard uses an empty roster.
+     *
+     * @param string $agentId Agent whose in-place restart has settled
+     * @param list<string> $liveAcceptKeys Live sockets from the successful start request
+     * @return list<string> Subscribers still bound to this agent after settlement
+     */
+    private function settleRestartPageMirrors(string $agentId, array $liveAcceptKeys = []): array
+    {
+        $router = Hilos::$sr;
+        if ($router === null) {
+            return [];
+        }
+
+        $agent = AgentId::fromId($agentId);
+        $subscribers = $router->acceptKeysServedBy($agent->type, $agent->index);
+        $live = null;
+        foreach ($subscribers as $index => $acceptKey) {
+            $subscription = $router->pageSubscription($acceptKey);
+            if ($subscription?->deliveryId === null || !$subscription->retainedForRestart) {
+                continue;
+            }
+            $live ??= array_fill_keys($liveAcceptKeys, true);
+            $identity = isset($live[$acceptKey]) ? $this->readPageHandoffIdentity($agentId, $acceptKey) : null;
+            if ($router->pageSubscription($acceptKey) !== $subscription) {
+                unset($subscribers[$index]);
+                continue;
+            }
+            if (!isset($live[$acceptKey]) || ($identity !== null && $identity != $subscription->admittedIdentity)) {
+                unset($subscribers[$index]);
+                $this->releaseStoppedPageMirror($agentId, $acceptKey, $subscription->page, $subscription->deliveryId, runHooks: false);
+            } elseif ($identity === null) {
+                $this->waitForPageIdentity($router, $acceptKey, $subscription);
+            } else {
+                $this->resumeAdmittedPageDelivery($router, $acceptKey, $subscription);
+            }
+        }
+
+        return array_values($subscribers);
+    }
+
+    /**
+     * Loss of the identity source can hide live facts from the page. Owe the current whole
+     * until a fresh publication can prove that the exact subscription may resume.
+     *
+     * @param string $collectionKey RT source that lost freshness
+     * @param list<string> $stateIds Rows whose freshness was lost
+     */
+    private function markUnconfirmedPageDeliveries(string $collectionKey, array $stateIds): void
+    {
+        $router = Hilos::$sr;
+        if ($router === null || $collectionKey !== Hilos::$rt?->connectionsRegistry()?->getCollectionName()) {
+            return;
+        }
+        foreach ($stateIds as $acceptKey) {
+            $subscription = $router->pageSubscription($acceptKey);
+            if ($subscription?->admittedIdentity?->collectionKey === $collectionKey) {
+                $this->waitForPageIdentity($router, $acceptKey, $subscription);
+            }
+        }
+    }
+
+    /**
+     * @param SignalRouter $router This worker's subscription registry
+     * @param string $acceptKey Connection whose identity became unconfirmed
+     * @param PageSubscription $subscription Exact mirror that may miss its live changes while waiting
+     */
+    private function waitForPageIdentity(SignalRouter $router, string $acceptKey, PageSubscription $subscription): void
+    {
+        $subscription->awaitingIdentityConfirmation = true;
+        $router->markPageDeliveryFailure($acceptKey);
+    }
+
+    /**
+     * @param string $collectionKey RT source that published the fact
+     * @param string $acceptKey Connection named by that fact
+     * @param bool $deletedIfAbsent Whether this fact certifies absence when the row is missing
+     */
+    private function settleAdmittedPageMirrorOnRtFact(string $collectionKey, string $acceptKey, bool $deletedIfAbsent): void
+    {
+        $router = Hilos::$sr;
+        $subscription = $router?->pageSubscription($acceptKey);
+        if ($subscription?->deliveryId === null || $subscription->admittedIdentity?->collectionKey !== $collectionKey) {
+            return;
+        }
+        $agentId = $this->agentManager->buildAgentId($subscription->agentType, $subscription->agentIndex);
+        if ($agentId === null) {
+            return;
+        }
+
+        $identity = $this->readPageHandoffIdentity($agentId, $acceptKey);
+        if ($router->pageSubscription($acceptKey) !== $subscription) {
+            return;
+        }
+        if ($identity === null) {
+            $connections = Hilos::$rt?->connectionsRegistry();
+            if (!$deletedIfAbsent || RtStaleness::staleSince($collectionKey, $acceptKey) !== null || isset($connections[$acceptKey])) {
+                $this->waitForPageIdentity($router, $acceptKey, $subscription);
+                return;
+            }
+        } elseif ($identity == $subscription->admittedIdentity) {
+            if ($this->agentManager->hasAgent($agentId)) {
+                $this->resumeAdmittedPageDelivery($router, $acceptKey, $subscription);
+            }
+            return;
+        }
+        $this->releaseStoppedPageMirror($agentId, $acceptKey, $subscription->page, $subscription->deliveryId);
+    }
+
+    /**
+     * Opens delivery after both the serving instance and the admitted identity are available.
+     *
+     * @param SignalRouter $router This worker's subscription registry
+     * @param string $acceptKey Connection whose identity was just confirmed
+     * @param PageSubscription $subscription Admitted mirror served by a live agent
+     */
+    private function resumeAdmittedPageDelivery(SignalRouter $router, string $acceptKey, PageSubscription $subscription): void
+    {
+        $wasPaused = $subscription->retainedForRestart || $subscription->awaitingIdentityConfirmation;
+        $subscription->retainedForRestart = false;
+        $subscription->awaitingIdentityConfirmation = false;
+        if ($wasPaused && $router->hasPageDeliveryFailure($acceptKey)) {
+            Hilos::$browser?->recordPageDeliveryRecovery(new PageSubscriptionContext($router, $acceptKey, $subscription));
+        }
+    }
+
+    /** @param string $acceptKey Socket that closed, including while its original agent is absent */
+    private function releaseDisconnectedRestartPageMirror(string $acceptKey): void
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription?->deliveryId === null || !$subscription->retainedForRestart) {
+            return;
+        }
+        $agentId = $this->agentManager->buildAgentId($subscription->agentType, $subscription->agentIndex);
+        if ($agentId !== null) {
+            $this->releaseStoppedPageMirror($agentId, $acceptKey, $subscription->page, $subscription->deliveryId, runHooks: false);
+        }
+    }
+
+    /**
+     * @param string $agentId Agent whose admitted mirror is being checked
+     * @param string $acceptKey Socket the mirror belongs to
+     * @return ?PageHandoffIdentity Confirmed identity if the worker can still read it
+     */
+    private function readPageHandoffIdentity(string $agentId, string $acceptKey): ?PageHandoffIdentity
+    {
+        try {
+            return PageHandoffIdentity::current($acceptKey);
+        } catch (Throwable $failure) {
+            $this->containFailure(WorkerTickUnit::AGENT, $agentId, $failure);
+            return null;
+        }
+    }
+
+    /**
+     * Contains a failed release so the remaining pages and the stop or start hook still run.
+     *
+     * @param string $agentId Holder of the original subscription
+     * @param string $acceptKey Connection whose mirror is being released
+     * @param string $page Original page
+     * @param string $deliveryId Original delivery token
+     * @param bool $runHooks Whether the original instance can still run its unsubscribe hooks
+     */
+    private function releaseStoppedPageMirror(
+        string $agentId, string $acceptKey, string $page, string $deliveryId, bool $runHooks = true,
+    ): void {
+        try {
+            $this->releasePageHandoffMirror(
+                $agentId, new WebSocketPageUnsubscribeSignalDTO($acceptKey), SignalSource::DAEMON, $page, $deliveryId, $runHooks,
+            );
+        } catch (Throwable $failure) {
+            $this->containFailure(WorkerTickUnit::AGENT, $agentId, $failure);
+        }
+    }
+
+    /**
      * Run the agent stop hook while preserving truth-source write rights during cleanup.
      *
      * The agent may still write to owned DB/RT collections inside {@see AgentInterface::onStop()}.
@@ -4698,10 +5431,24 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * behind the writes of the hook ({@see self::notifyRtSourcesReleased()}), not here.
      *
      * @param AgentInterface $agent Agent being stopped
+     * @param bool $keepPageMirrors Whether a local restart may reuse confirmed mirrors on this link
      * @throws Throwable When the agent stop hook fails
      */
-    private function runAgentStopHook(AgentInterface $agent): void
+    private function runAgentStopHook(AgentInterface $agent, bool $keepPageMirrors = false): void
     {
+        $this->setCurrentAgentId($agent->getId());
+        foreach ($this->pageHandoffWaitsByAgent[$agent->getId()] ?? [] as $acceptKey => $waitingAgent) {
+            if ($waitingAgent !== $agent) {
+                continue;
+            }
+            try {
+                $this->forgetPageHandoff($acceptKey);
+            } catch (Throwable $failure) {
+                $this->containFailure(WorkerTickUnit::AGENT, $agent->getId(), $failure);
+            }
+        }
+        $this->releaseStoppingAgentPageHandoffs($agent, $keepPageMirrors);
+        // Containment clears the context of the failed cleanup unit. The hook still owns its grants.
         $this->setCurrentAgentId($agent->getId());
         try {
             $agent->onStop();
@@ -5100,9 +5847,16 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        // Process signals one by one in while-do loop
-        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+        while (($router = Hilos::$sr) !== null && ($signal = $router->getNextQueuedSignal()) !== null) {
+            if (!$router->isSignalApplicable($signal)) {
+                continue;
+            }
             $signalType = $signal->signalType->getType();
+            if ($signalType === SignalTypeConstants::WS_USER && $signal->signalName->getName() === SignalTypeConstants::PAGE_RESPONSE
+                && $signal->data instanceof WebSocketSignalData && $signal->data->targetAcceptKey !== null
+                && !$router->isPageAnswerCurrent($signal->data->targetAcceptKey)) {
+                continue;
+            }
 
             $syncSignalData = match ($signalType) {
                 SignalTypeConstants::DB_SYNC_CREATED => self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),
@@ -5130,6 +5884,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 } elseif ($syncSignalData instanceof RtSyncSignalDataInterface) {
                     // The ordinary RT stream takes the write; the daemon answers it once applied.
                     $this->rtSyncStream()->send($syncSignalData);
+                    $this->settleAdmittedPageMirrorOnRtFact(
+                        $syncSignalData->collectionKey, $syncSignalData->stateId, $syncSignalData instanceof RtSyncDeletedSignalData,
+                    );
                 }
                 continue;
             }

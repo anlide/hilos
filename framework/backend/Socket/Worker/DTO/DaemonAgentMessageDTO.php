@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Closure;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -32,11 +33,13 @@ class DaemonAgentMessageDTO extends WorkerDTO
      * @param string $agentId Agent ID
      * @param SignalDTO $signal Signal payload
      * @param ?string $uploadReceiptId Raw-byte receipt completed only after binary processing or final drop
+     * @param ?Closure(): bool $writePermitted Master-local admission, consumed by the IPC writer and omitted from the wire
      */
     public function __construct(
         public readonly string $agentId,
         public readonly SignalDTO $signal,
         public readonly ?string $uploadReceiptId = null,
+        public readonly ?Closure $writePermitted = null,
     ) {
     }
 

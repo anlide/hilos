@@ -125,6 +125,12 @@ final class SignalDispatch
         return $this->signal;
     }
 
+    /** @param SignalDTO $signal Prepared envelope for the remaining destination and delivery steps */
+    public function replaceSignal(SignalDTO $signal): void
+    {
+        $this->signal = $signal;
+    }
+
     /** @return bool Whether this is a synchronous lifetime with no scheduler-owned admission */
     public function isDirect(): bool
     {

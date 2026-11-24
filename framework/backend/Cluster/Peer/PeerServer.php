@@ -110,6 +110,9 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\AgentRestartDoor;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Daemon\PageHandoffIdentity;
+use Hilos\Cluster\Connections\ClusterAcceptKey;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -3077,6 +3080,25 @@ final class PeerServer extends AbstractTlsServer implements
                     return;
                 }
             }
+            $signal = $frame->signal;
+            if ($signal->data instanceof WebSocketPageSubscribeSignalDTO && PageHandoffIdentity::fromMeta($signal->meta) !== null) {
+                $origin = $link->remoteIdentity()?->nodeId;
+                $acceptKey = $signal->data->acceptKey;
+                if ($origin === null || $origin !== $frame->originNodeId
+                    || (isset($signal->meta[PageHandoffIdentity::META_PROOF])
+                        && $origin !== (ClusterAcceptKey::nodeOf($acceptKey) ?? Hilos::$cluster?->clientLocation()?->nodeFor($acceptKey)))) {
+                    return;
+                }
+                $meta = $signal->meta;
+                unset($meta[PageHandoffIdentity::META_RELAY_FROM], $meta[PageHandoffIdentity::META_REPLY_NODE]);
+                if ($frame->placementRecoveryRelay) {
+                    $meta[PageHandoffIdentity::META_RELAY_FROM] = $origin;
+                } else {
+                    unset($meta[PageHandoffIdentity::META_RELAY_LEADER], $meta[PageHandoffIdentity::META_RELAY_TERM],
+                        $meta[PageHandoffIdentity::META_RELAY_SEQUENCE]);
+                }
+                $signal = new SignalDTO($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data, $meta);
+            }
             $sink = Hilos::$cluster?->agentSignalSink();
             if ($sink === null) {
                 Logger::warning("Dropping peer signal for agent '{$frame->agentType}': no local agent signal sink registered");
@@ -3085,7 +3107,7 @@ final class PeerServer extends AbstractTlsServer implements
             $sink->deliverSignalToAgent(
                 $frame->agentType,
                 $frame->agentIndex,
-                $frame->signal,
+                $signal,
                 $frame->placementRecoveryRelay,
                 $frame->uploadReservation !== null,
             );
@@ -3886,7 +3908,17 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         try {
-            $sink->deliverSignalToClient($frame->acceptKey, $frame->signal, $frame->pageRecoveryDeliveryId);
+            $signal = $frame->signal;
+            if (($signal->meta[PageHandoffIdentity::META_PROOF] ?? null) === PageHandoffIdentity::PROBE) {
+                if ($link->remoteIdentity()?->nodeId !== $frame->originNodeId) {
+                    return;
+                }
+                $signal = new SignalDTO(
+                    $signal->signalSource, $signal->signalType, $signal->signalName, $signal->data,
+                    [...$signal->meta, PageHandoffIdentity::META_REPLY_NODE => $frame->originNodeId],
+                );
+            }
+            $sink->deliverSignalToClient($frame->acceptKey, $signal, $frame->pageRecoveryDeliveryId);
         } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer client signal to '{$frame->acceptKey}': {$e->getMessage()}");
         }

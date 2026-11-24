@@ -50,6 +50,7 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeReadyDTO;
 use Hilos\Socket\Worker\DTO\ProtectedModeRefusedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
@@ -98,6 +99,7 @@ use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbedDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 use LogicException as NativeLogicException;
+use SplQueue;
 use WeakReference;
 
 /**
@@ -154,6 +156,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /** @var array<string, true> Agents this link was sent agent_stop for, not yet reported stopped by the worker */
     private array $stopsAwaitingReport = [];
 
+    /** @var array<string, true> In-place restarts whose original mirrors may still be on this link */
+    private array $restartPageMirrors = [];
+
     /** @var array<string, ?PlacementId> Outstanding starts sent on this exact connection */
     private array $startsAwaitingReport = [];
 
@@ -187,6 +192,13 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *      written ({@see self::sendInTurn()}); the stream is this link instance's, so the count ends with it
      */
     private array $waitingInTurn = [];
+
+    /** @var ?SplQueue<WorkerWritePermission> Unstarted IPC lines that still need admission at write */
+    private ?SplQueue $writePermissions = null;
+
+    /** Bytes acknowledged or discarded since the first outstanding guarded line was queued. */
+    private int $writePosition = 0;
+
     /**
      * @var array<string, array<string, int>> Rows whose thaw waits for its turn behind this link's stream, by
      *      collection, each with the number of the last thaw naming it ({@see self::sendRtStaleness()}); the
@@ -333,6 +345,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $this->heldForRtSyncStream = '';
         $this->heldOrderKeys = [];
         $this->writeBuffer = '';
+        $this->writePermissions = null;
+        $this->writePosition = 0;
     }
 
     /**
@@ -677,7 +691,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         if ($agent?->hasWorkerClient() === true && ($agent->getWorkerClient() !== $this || $this->agentManager->isAgentStarted($agentId))) {
             return;
         }
-        unset($this->startsAwaitingReport[$agentId]);
+        unset($this->startsAwaitingReport[$agentId], $this->restartPageMirrors[$agentId]);
         try {
             $this->agentManager->handleAgentStarted(
                 $dto,
@@ -723,6 +737,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $pending = array_key_exists($agentId, $this->startsAwaitingReport);
         $placementId = $this->startsAwaitingReport[$agentId] ?? null;
         unset($this->startsAwaitingReport[$agentId]);
+        if ($pending) {
+            unset($this->restartPageMirrors[$agentId]);
+        }
         if ($pending && $this->awaitsStopReport($agentId)) {
             // A failed start left no worker instance to answer the stop sent behind it.
             unset($this->stopsAwaitingReport[$agentId]);
@@ -1296,13 +1313,86 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
+     * @param string $message Serialized IPC line without its delimiter
+     * @param ?Closure(): bool $permitted Admission at the stream turn and before its first transport byte
+     */
+    private function queueInTurnWrite(string $message, ?Closure $permitted): void
+    {
+        if ($permitted === null) {
+            $this->send($message);
+        } elseif ($permitted()) {
+            $bytes = $message . "\n";
+            $this->writePermissions ??= new SplQueue();
+            $this->writePermissions->enqueue(new WorkerWritePermission(
+                $this->writePosition + strlen($this->writeBuffer), strlen($bytes), $permitted,
+            ));
+            $this->queueWrite($bytes);
+        }
+    }
+
+    /** @return string Runnable IPC prefix ending before the next independently guarded line */
+    protected function bytesToWrite(): string
+    {
+        if ($this->writePermissions === null) {
+            return parent::bytesToWrite();
+        }
+
+        $line = $this->writePermissions->bottom();
+        if (($line->permitted)()) {
+            return $this->writePermissions->count() === 1 ? parent::bytesToWrite()
+                : substr($this->writeBuffer, 0, $this->writePermissions[1]->offset - $this->writePosition);
+        }
+        $prefix = $line->offset - $this->writePosition;
+        if ($prefix > 0) {
+            return substr($this->writeBuffer, 0, $prefix);
+        }
+
+        $this->writeBuffer = substr($this->writeBuffer, $line->length);
+        $this->writePosition += $line->length;
+        $this->forgetWritePermission();
+        if ($this->writePermissions !== null) {
+            // Discard at most one whole line per ready portion.
+            $this->markReady();
+            return '';
+        }
+
+        return parent::bytesToWrite();
+    }
+
+    /**
+     * @param int $written Bytes acknowledged by the transport
+     * @param int $retained Bytes accepted by native TLS and still owed unchanged
+     */
+    protected function onTransportWrite(int $written, int $retained): void
+    {
+        if ($this->writePermissions === null) {
+            return;
+        }
+        $startedThrough = $this->writePosition + max($written, $retained);
+        $this->writePosition += $written;
+        if ($this->writePermissions->bottom()->offset < $startedThrough) {
+            $this->forgetWritePermission();
+        }
+    }
+
+    /** Retires admission once the line is discarded or its first byte is accepted. */
+    private function forgetWritePermission(): void
+    {
+        $this->writePermissions->dequeue();
+        if ($this->writePermissions->isEmpty()) {
+            $this->writePermissions = null;
+            $this->writePosition = 0;
+        }
+    }
+
+    /**
      * Send a message the worker hands to an agent or to its pages to read against its RT copy - a
      * signal to an agent ({@see WorkerServer::sendSignalToAgent()}), an access re-decision of pages
      * ({@see DaemonManager::walkWorkerFrame()}). Once this link's RT stream is open, it goes in its
      * turn among the stream's operations ({@see RtSyncStreamChannel::writeInTurn()}): a write streamed
      * to the worker before it is out whole first, so the worker reads, say, the signal an agent sent
      * right after its RT write only behind that write - and holds it until the write is applied. Its
-     * turn come, it is written by {@see self::send()}; as on a peer link ({@see PeerLink::sendFrame()}),
+     * turn come, it joins the existing byte writer; as on a peer link ({@see PeerLink::sendFrame()}),
      * nothing else waits but a frame naming an agent a waiting frame names: a stop written right after
      * a signal to the same agent goes behind it ({@see self::sendNamingAgent()}), as the worker holds
      * it on receipt ({@see WorkerManager::nextDaemonMessage()}). The agent counts as waited for until
@@ -1311,19 +1401,19 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param string $message Message to send
      * @param ?string $agentId Agent the message names, or null when it names none
+     * @param ?Closure(): bool $permitted Authority retained until writing the first byte of the line
      */
-    public function sendInTurn(string $message, ?string $agentId = null): void
+    public function sendInTurn(string $message, ?string $agentId = null, ?Closure $permitted = null): void
     {
         if ($this->rtSyncStream === null) {
-            $this->send($message);
-
+            $this->queueInTurnWrite($message, $permitted);
             return;
         }
         if ($agentId !== null) {
             $this->waitingInTurn[$agentId] = ($this->waitingInTurn[$agentId] ?? 0) + 1;
         }
         $link = WeakReference::create($this);
-        $this->rtSyncStream->writeInTurn(static function () use ($link, $message, $agentId): void {
+        $this->rtSyncStream->writeInTurn(static function () use ($link, $message, $agentId, $permitted): void {
             $client = $link->get();
             if ($client === null) {
                 return;
@@ -1331,7 +1421,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             if ($agentId !== null && --$client->waitingInTurn[$agentId] === 0) {
                 unset($client->waitingInTurn[$agentId]);
             }
-            $client->send($message);
+            $client->queueInTurnWrite($message, $permitted);
         });
     }
 
@@ -1455,19 +1545,49 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @param bool $keepPageMirrors Whether this is the stop of an in-place restart
      */
-    public function sendAgentStop(string $agentType, ?string $agentIndex = null): void
+    public function sendAgentStop(string $agentType, ?string $agentIndex = null, bool $keepPageMirrors = false): void
     {
         // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
         $this->stopsAwaitingReport[$agentId] = true;
+        if ($keepPageMirrors) {
+            $this->restartPageMirrors[$agentId] = true;
+        } else {
+            unset($this->restartPageMirrors[$agentId]);
+        }
         Logger::debug("Sending agent_stop signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 
-        $dto = new AgentStopDTO(
-            agentId: $agentId,
-        );
-
+        $dto = new AgentStopDTO($agentId, $keepPageMirrors ? AgentStopDTO::KEEP_RESTART_MIRRORS : null);
         $this->sendNamingAgent($agentId, $dto->toJson());
+    }
+
+    /**
+     * Clears the mirrors on their original link when the restart will not start there.
+     * The original stop already has its own report.
+     *
+     * @param string $agentId Agent whose restart was canceled or seated elsewhere
+     */
+    public function discardRestartPageMirrors(string $agentId): void
+    {
+        if (!isset($this->restartPageMirrors[$agentId])) {
+            return;
+        }
+        unset($this->restartPageMirrors[$agentId]);
+        if (!$this->linkClosed && !$this->shouldClose()) {
+            $this->sendNamingAgent($agentId, new AgentStopDTO($agentId, AgentStopDTO::DISCARD_RESTART_MIRRORS)->toJson());
+        }
+    }
+
+    /**
+     * @param DaemonAgentMessageDTO $release Exact historical release for a page that may still be held on this link
+     */
+    public function releaseRestartPageMirror(DaemonAgentMessageDTO $release): void
+    {
+        if (isset($this->restartPageMirrors[$release->agentId]) && !$this->linkClosed && !$this->shouldClose()) {
+            $this->sendInTurn($release->toJson(), $release->agentId);
+        }
     }
 
     /**

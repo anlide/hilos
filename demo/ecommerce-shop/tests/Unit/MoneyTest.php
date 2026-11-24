@@ -51,6 +51,22 @@ final class MoneyTest extends TestCase
         self::assertSame($expected, Money::sum(...$amounts));
     }
 
+    public function testExactLineTotalKeepsEveryDigitPastTheIntegerBoundary(): void
+    {
+        self::assertSame('0', Money::lineTotalExact(99_999_999, 0));
+        self::assertSame('9099990809000091', Money::lineTotalExact(99_999_999, 90_999_909));
+        self::assertSame('9223372036854775807', Money::lineTotalExact(PHP_INT_MAX, 1));
+        self::assertSame('85070591730234615847396907784232501249', Money::lineTotalExact(PHP_INT_MAX, PHP_INT_MAX));
+    }
+
+    public function testExactSumKeepsEveryDigitPastTheIntegerBoundary(): void
+    {
+        self::assertSame('0', Money::sumExact());
+        self::assertSame('0', Money::sumExact('0', '0'));
+        self::assertSame('9999999999999999', Money::sumExact('4999999950000000', '5000000049999999'));
+        self::assertSame('9318390588416093184', Money::sumExact(...array_fill(0, 1024, '9099990809000091')));
+    }
+
     /**
      * @param int $items Amount of the items
      * @param int $percent Discount in percent
@@ -208,6 +224,9 @@ final class MoneyTest extends TestCase
     {
         return [
             'a negative amount printed' => [static fn (): string => Money::format(-1)],
+            'a negative price multiplied exactly' => [static fn (): string => Money::lineTotalExact(-1, 2)],
+            'a negative quantity multiplied exactly' => [static fn (): string => Money::lineTotalExact(1, -2)],
+            'an exact amount with trailing whitespace' => [static fn (): string => Money::sumExact("1\n")],
             'a discount over a hundred percent' => [static fn (): int => Money::discountOf(100, 101)],
             'a discount over the items' => [static fn (): int => Money::totalAfterDiscount(1, 2)],
         ];

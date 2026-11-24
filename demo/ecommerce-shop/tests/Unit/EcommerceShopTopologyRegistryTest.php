@@ -176,6 +176,7 @@ use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
+use Demo\EcommerceShop\Pages\CartPage;
 use Demo\EcommerceShop\Pages\CategoryPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
@@ -197,6 +198,7 @@ use Demo\EcommerceShop\CLI\DTO\VoucherFixtureCodeCommandData;
 use Demo\EcommerceShop\CLI\DTO\VoucherFixtureCreateCommandData;
 use Demo\EcommerceShop\CLI\DTO\VoucherFixtureSetActiveCommandData;
 use Demo\EcommerceShop\CLI\DTO\VoucherFixtureUpdateCommandData;
+use Demo\EcommerceShop\CLI\DTO\GuestCartSetQuantityCommandData;
 use Demo\EcommerceShop\CLI\DTO\WarehouseDeleteCommandData;
 use Demo\EcommerceShop\CLI\EcommerceShopCliManager;
 use Hilos\Constants\AppEnv;
@@ -840,6 +842,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             MainPage::PAGE => MainPage::class,
             CategoryPage::PAGE => CategoryPage::class,
             ProductPage::PAGE => ProductPage::class,
+            CartPage::PAGE => CartPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
@@ -1041,18 +1044,27 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     }
 
     /**
-     * The product page is served by the agent its slug names, the Daemon environment pages by the
-     * replica of the node they name.
+     * Product uses the slug, Cart uses the connection's owner, and Daemon uses the named node.
      */
-    public function testProductPageIsAddressedBySlugAndDaemonEnvironmentPagesByNode(): void
+    public function testIndexedPagesUseTheAddressDeclaredByTheirRoute(): void
     {
         $routes = Hilos::getPageAgentIndexRoutes();
-        $this->assertSame([ProductPage::PAGE, DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        $this->assertSame([ProductPage::PAGE, CartPage::PAGE, DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
         $this->assertSame(AgentType::PRODUCT, Hilos::getPageRoutes()[ProductPage::PAGE]);
         $this->assertSame(PageAccessLevel::PUBLIC, ProductPage::ACCESS_LEVEL);
         $this->assertSame('param', $routes[ProductPage::PAGE]->source->value);
         $this->assertSame('slug', $routes[ProductPage::PAGE]->param);
         $this->assertSame(AgentType::ECOMMERCE_SHOP, $routes[ProductPage::PAGE]->fallbackAgentType);
+
+        self::assertSame('cart', CartPage::PAGE);
+        self::assertSame(PageAccessLevel::PUBLIC, CartPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, CartPage::REACH);
+        self::assertSame([], CartPage::ACTIONS);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getPageRoutes()[CartPage::PAGE]);
+        self::assertSame('session_user_or_guest', $routes[CartPage::PAGE]->source->value);
+        self::assertNull($routes[CartPage::PAGE]->param);
+        self::assertSame(AgentType::GUEST_CARTS_LIBRARY, $routes[CartPage::PAGE]->fallbackAgentType);
+
         foreach ([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE] as $page) {
             $this->assertSame('node_param', $routes[$page]->source->value);
             $this->assertSame('nodeId', $routes[$page]->param);
@@ -1106,6 +1118,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ],
             UserAgent::READS_DB,
         );
+        self::assertSame([...AbstractUserAgent::READS_RT, EcommerceShopRtContext::connections], UserAgent::READS_RT);
         self::assertSame(
             [EcommerceShopDbContext::userProductCarts, EcommerceShopDbContext::userVoucherCarts],
             EcommerceShopAccountDataOwnerDirectory::declaredPersonal(),
@@ -1328,6 +1341,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ],
             GuestCartsLibraryAgent::readDbCollections(),
         );
+        self::assertSame([EcommerceShopRtContext::connections], GuestCartsLibraryAgent::READS_RT);
         self::assertSame(
             AccountErasureExemption::OutsideAccount,
             EcommerceShopAccountDataOwnerDirectory::declaredExemptions()[EcommerceShopDbContext::sessionVoucherCarts],
@@ -1339,6 +1353,18 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ],
             GuestCartsLibraryAgent::AGENT_SIGNALS,
         );
+    }
+
+    /** The socket routes the guest cart fixture straight to the guest carts library. */
+    public function testGuestCartFixtureCommandIsRoutedWithItsPayload(): void
+    {
+        $command = 'test:ecommerce-shop:guest-cart-set-quantity';
+        self::assertSame(
+            [$command => GuestCartSetQuantityCommandData::class],
+            GuestCartsLibraryAgent::AGENT_COMMANDS,
+        );
+        self::assertSame(AgentType::GUEST_CARTS_LIBRARY, Hilos::getCommandAgentRoutes()[$command]);
+        self::assertSame(GuestCartSetQuantityCommandData::class, Hilos::getCommandDtoRoutes()[$command]);
     }
 
     /** The vouchers library runs once on the policy-selected node and gains Remove only in the test environment. */

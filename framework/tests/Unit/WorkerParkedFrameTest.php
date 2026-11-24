@@ -15,6 +15,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -104,6 +105,7 @@ final class WorkerParkedFrameTest extends TestCase
         $this->manager = new WorkerParkedFrameTestManager();
     }
 
+    /** Release the worker fixture's interests and the execution frame left by a resumed start. */
     protected function tearDown(): void
     {
         foreach ([WorkerParkedFrameTestReader::AGENT_TYPE, WorkerParkedFrameTestAgent::AGENT_TYPE] as $agentId) {
@@ -113,6 +115,7 @@ final class WorkerParkedFrameTest extends TestCase
         SourceInterestRegistry::releaseConsumer(self::BOOTSTRAP_CONSUMER);
         SourceInterestRegistry::readsWhatItMounts();
         Hilos::$sr = null;
+        ExecutionContext::clear();
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->boundAppClass);
 
         parent::tearDown();

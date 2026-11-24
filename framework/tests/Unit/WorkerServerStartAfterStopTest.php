@@ -1328,11 +1328,12 @@ final class StartAfterStopTestWorkerClient extends WorkerClient
      *
      * @param string $agentType Agent type stopped on this worker
      * @param ?string $agentIndex Instance stopped, or null for the singleton
+     * @param bool $keepPageMirrors Restart disposition passed through to the worker link
      */
-    public function sendAgentStop(string $agentType, ?string $agentIndex = null): void
+    public function sendAgentStop(string $agentType, ?string $agentIndex = null, bool $keepPageMirrors = false): void
     {
         $this->stoppedAgents[] = [$agentType, $agentIndex];
-        parent::sendAgentStop($agentType, $agentIndex);
+        parent::sendAgentStop($agentType, $agentIndex, $keepPageMirrors);
     }
 
     public function send(string $message): void

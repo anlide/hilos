@@ -37,6 +37,9 @@ final class PendingPageIndex
     /** @var array<string, SignalHoldIndex> Connection-interest generations selected for local agents */
     private array $byAgent = [];
 
+    /** @var array<string, SignalHoldIndex> Exact handoff generations by agent, including remote addresses */
+    private array $handoffsByAgent = [];
+
     /**
      * @param Closure(string, string): ?PendingPageDelivery $resolve Read the manager's original payload slot
      * @param Closure(PendingPageEntry): void $settled Release that exact original payload slot
@@ -71,6 +74,9 @@ final class PendingPageIndex
         }
         $entry->sourceId = ++$this->sourceSequence;
         $this->sources[$entry->sourceId] = $entry->id;
+        if ($delivery->handoff) {
+            ($this->handoffsByAgent[$entry->agentId] ??= new SignalHoldIndex())->add($entry->sourceId);
+        }
         $key = serialize([$entry->nodeId === null ? $entry->agentId : null, $entry->nodeId]);
         $sourceConnectionId = $entry->connection->sources[$key] ?? null;
         if ($sourceConnectionId === null) {
@@ -143,6 +149,15 @@ final class PendingPageIndex
         $id = $this->sources[$sourceId] ?? null;
         $entry = $id === null ? null : ($this->entries[$id] ?? null);
         return $entry !== null && $entry->sourceId === $sourceId ? $this->get($entry->acceptKey, $entry->deliveryId) : null;
+    }
+
+    /**
+     * @param string $agentId Agent whose address may have become available
+     * @return ?Generator<int, int> Original handoff generations, including ones refused on a former host
+     */
+    public function handoffCandidates(string $agentId): ?Generator
+    {
+        return ($this->handoffsByAgent[$agentId] ?? null)?->candidates($this->sourceSequence);
     }
 
     /**
@@ -234,6 +249,11 @@ final class PendingPageIndex
     private function forgetSource(PendingPageEntry $entry): void
     {
         unset($this->sources[$entry->sourceId]);
+        $handoffs = $this->handoffsByAgent[$entry->agentId] ?? null;
+        $handoffs?->remove($entry->sourceId);
+        if ($handoffs?->isEmpty()) {
+            unset($this->handoffsByAgent[$entry->agentId]);
+        }
         $source = $this->sourceConnections[$entry->sourceConnectionId] ?? null;
         if ($source === null || --$source->pending > 0) {
             return;

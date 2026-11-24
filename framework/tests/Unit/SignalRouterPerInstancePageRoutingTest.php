@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Hilos;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -20,7 +23,9 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -421,6 +426,40 @@ final class PerInstanceProfilePage extends AbstractPage
     ];
 }
 
+final class PerInstancePublicIdentityPage extends AbstractPage
+{
+    public const string PAGE = 'per_instance_public_identity';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'per_instance_public_identity_agent';
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER_OR_GUEST,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => PerInstanceFallbackAgent::AGENT_TYPE,
+    ];
+
+    public function __construct(AbstractAgent $agent, private readonly ?Closure $onRelease = null)
+    {
+        parent::__construct($agent);
+    }
+
+    public function onUnsubscribe(string $acceptKey): void
+    {
+        parent::onUnsubscribe($acceptKey);
+        $this->onRelease?->__invoke();
+    }
+
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
+    {
+        $data = ['ownerType' => $this->getAgent()->getType(), 'ownerIndex' => $this->getAgent()->getIndex()];
+        $row = Hilos::$rt?->connectionsSource()?->get($acceptKey);
+        if ($row instanceof HilosSessionConnection) {
+            $data[HilosSessionConnection::sessionId] = $row->sessionId;
+        }
+
+        return new PagePayload(data: $data);
+    }
+}
+
 final class PerInstancePlainPage extends AbstractPage
 {
     public const string PAGE = 'per_instance_plain';
@@ -518,6 +557,7 @@ final class PerInstanceTestHilos extends HilosFacade
     public const array PAGES = [
         PerInstanceChatPage::PAGE => PerInstanceChatPage::class,
         PerInstanceProfilePage::PAGE => PerInstanceProfilePage::class,
+        PerInstancePublicIdentityPage::PAGE => PerInstancePublicIdentityPage::class,
         PerInstancePlainPage::PAGE => PerInstancePlainPage::class,
         PerInstanceNodePage::PAGE => PerInstanceNodePage::class,
         PerInstanceLifecyclePage::PAGE => PerInstanceLifecyclePage::class,

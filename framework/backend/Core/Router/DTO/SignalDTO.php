@@ -38,7 +38,7 @@ class SignalDTO extends BaseDTO
      * @param SignalTypeInterface $signalType Signal type (frame, handshake, action, etc.)
      * @param SignalNameInterface $signalName Signal name
      * @param SignalDataInterface $data Signal payload data
-     * @param array<string, int|string> $meta Analytics correlation metadata
+     * @param array<string, int|string|array{leaderNodeId: string, term: int, sequence: int}> $meta Internal correlation metadata
      * @throws InvalidArgumentException When the signal name is empty
      */
     public function __construct(

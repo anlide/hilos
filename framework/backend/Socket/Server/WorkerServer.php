@@ -33,6 +33,8 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentId;
+use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\PageHandoffIdentity;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\DaemonSection\DaemonWorkerPicture;
@@ -2485,6 +2487,9 @@ abstract class WorkerServer extends AbstractServer implements
         }
 
         if ($awaitedWorker !== null) {
+            if ($awaiting !== null && $placementId !== null && !$placementId->equals($awaiting->placementId)) {
+                $awaiting->awaitedWorker->discardRestartPageMirrors($agentId);
+            }
             $next = new AwaitingStopReportStart(
                 $agentId,
                 $agentType,
@@ -2974,6 +2979,7 @@ abstract class WorkerServer extends AbstractServer implements
                 }
 
                 $this->removeStopReportWait($agentId);
+                $seatedOnOriginalLink = false;
                 try {
                     $this->startAgentInternal(
                         $awaiting->agentType,
@@ -2983,11 +2989,17 @@ abstract class WorkerServer extends AbstractServer implements
                         protectedModeReplay: $awaiting->protectedModeReplay,
                         placementId: $awaiting->placementId,
                     );
+                    $agent = $this->agentManager->getAgent($agentId);
+                    $seatedOnOriginalLink = $agent?->hasWorkerClient() === true && $agent->getWorkerClient() === $awaiting->awaitedWorker;
                 } catch (Throwable $failure) {
                     Logger::error("Agent {$agentId} could not start after its earlier stop: {$failure->getMessage()}");
                     $this->refuseAwaitingAgent($agentId, $failure, $awaiting->placementId);
 
                     continue;
+                } finally {
+                    if (!$seatedOnOriginalLink) {
+                        $awaiting->awaitedWorker->discardRestartPageMirrors($agentId);
+                    }
                 }
 
                 if ($this->isAgentAwaitingStopReport($agentId) || $this->isAgentAwaitingWorker($agentId)) {
@@ -3632,8 +3644,14 @@ abstract class WorkerServer extends AbstractServer implements
             }
         }
 
-        // Agent exists and is linked: the signal goes behind the RT writes streamed to its worker before it
-        $workerClient->sendInTurn($messageDto->toJson(), $agentId);
+        // Agent exists and is linked: the signal goes behind the RT writes streamed to its worker before it.
+        $signal = $messageDto->signal;
+        $writePermitted = $messageDto->writePermitted;
+        $permitted = ($signal->meta[PageHandoffIdentity::META_PROOF] ?? null) === PageHandoffIdentity::GRANTED
+            ? static fn (): bool => $writePermitted?->__invoke() === true
+                && DaemonManager::isCurrentPageHandoffGrant($agentId, $signal)
+            : null;
+        $workerClient->sendInTurn($messageDto->toJson(), $agentId, $permitted);
     }
 
     /**
@@ -3674,14 +3692,18 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
+     * @param bool $keepPageMirrors Whether an in-place POLICY restart will settle their lifetime
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    protected function stopAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
-    {
+    protected function stopAgent(
+        string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null, bool $keepPageMirrors = false,
+    ): void {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
-        if (isset($this->agentsAwaitingStopReport[$agentId])) {
+        $awaiting = $this->agentsAwaitingStopReport[$agentId] ?? null;
+        if ($awaiting !== null) {
+            $awaiting->awaitedWorker->discardRestartPageMirrors($agentId);
             $this->removeStopReportWait($agentId);
             $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its earlier stop report', $immediateStartSink);
 
@@ -3709,7 +3731,7 @@ abstract class WorkerServer extends AbstractServer implements
             return;
         }
 
-        $workerClient->sendAgentStop($agentType, $agentIndex);
+        $workerClient->sendAgentStop($agentType, $agentIndex, $keepPageMirrors);
         $this->agentManager->removeAgent($agentId);
         $this->agentManager->reportAgentStopped($agentId, $immediateStartSink);
     }
@@ -4478,15 +4500,43 @@ abstract class WorkerServer extends AbstractServer implements
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
         $oldWorkerId = $this->placedWorkerId($agentType, $agentIndex);
-        $this->stopAgent($agentType, $agentIndex, $immediateStartSink);
-        if ($this->agentManager->hasAgent($agentId)) {
-            throw new LogicException("Agent {$agentId} could not be stopped");
-        }
+        $oldLink = $oldWorkerId === null ? null : $this->agentManager->getAgent($agentId)?->getWorkerClient();
+        $placementId = $placedByLeader ? Hilos::$cluster?->placement()?->localPlacementId($agentId) : null;
+        $keepPageMirrors = $oldLink !== null && !$oldLink->shouldClose() && $this->isPolicyPlacement($agentType)
+            && $this->findWorkerClientById($oldWorkerId) === $oldLink;
+        try {
+            $this->stopAgent($agentType, $agentIndex, $immediateStartSink, $keepPageMirrors);
+            if ($this->agentManager->hasAgent($agentId)) {
+                throw new LogicException("Agent {$agentId} could not be stopped");
+            }
 
-        $this->startAgentInternal(
-            $agentType, $agentIndex, $placedByLeader, $oldWorkerId, immediateStartSink: $immediateStartSink,
-            placementId: $placedByLeader ? Hilos::$cluster?->placement()?->localPlacementId($agentId) : null,
-        );
+            $this->startAgentInternal(
+                $agentType, $agentIndex, $placedByLeader, $oldWorkerId, immediateStartSink: $immediateStartSink,
+                placementId: $placementId,
+            );
+        } finally {
+            if ($keepPageMirrors && ($this->agentsAwaitingStopReport[$agentId]->awaitedWorker ?? null) !== $oldLink) {
+                $oldLink->discardRestartPageMirrors($agentId);
+            }
+        }
+    }
+
+    /**
+     * Puts an exact release on its old IPC during the restart's stop wait or pending start.
+     *
+     * @param DaemonAgentMessageDTO $release Historical page release already addressed to this node
+     */
+    public function releaseRestartPageMirror(DaemonAgentMessageDTO $release): void
+    {
+        $awaiting = $this->agentsAwaitingStopReport[$release->agentId] ?? null;
+        if ($awaiting !== null) {
+            $awaiting->awaitedWorker->releaseRestartPageMirror($release);
+            return;
+        }
+        $agent = $this->agentManager->getAgent($release->agentId);
+        if ($agent?->hasWorkerClient() === true) {
+            $agent->getWorkerClient()->releaseRestartPageMirror($release);
+        }
     }
 
     /**

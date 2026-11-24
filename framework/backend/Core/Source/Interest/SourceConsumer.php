@@ -39,6 +39,15 @@ final class SourceConsumer
     }
 
     /**
+     * @param string $attemptId Token of a pending handoff, or its connection for a tokenless request
+     * @return string Reader held by that attempt, separate from the live page
+     */
+    public static function pageHandoff(string $attemptId): string
+    {
+        return 'page-handoff:' . $attemptId;
+    }
+
+    /**
      * Reads back the connection a page consumer name was built from.
      *
      * The other direction of {@see page()}, and here for the reason the names themselves are:

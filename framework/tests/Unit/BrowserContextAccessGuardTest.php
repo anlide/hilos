@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
@@ -16,15 +18,21 @@ use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageUnauthorizedException;
+use Hilos\Core\Page\PageResendOutcome;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
+use Throwable;
 
 /**
  * Unit tests for the ACCESS browser guard: an anonymous session is denied a
@@ -85,6 +93,125 @@ final class BrowserContextAccessGuardTest extends TestCase
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
     }
 
+    public function testProjectSubclassCanReportFailureWithTheProtectedPageAddress(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        $page = AccessGuardTestBrowserContext::PAGE;
+        Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO('ak-1', $page));
+        $browser = new class extends BrowserContext {
+            public function reportFailure(string $page, string $acceptKey, Throwable $failure): void
+            {
+                $this->failPublication(page: $page, acceptKey: $acceptKey, failure: $failure);
+            }
+        };
+
+        $browser->reportFailure($page, 'ak-1', new RuntimeException('Publisher failed'));
+        $browser->reportFailure($page, 'ak-1', new RuntimeException('Publisher failed again'));
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, Hilos::$sr->getNextQueuedSignal()?->signalName->getName());
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testOwnPageChangeResendsOnlyWithAccessAndOncePerFlush(): void
+    {
+        $this->seed();
+        $page = AccessGuardTestBrowserContext::PAGE;
+        Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO('ak-1', $page));
+        $fact = SourceChange::rtUpdated(AccessGuardTestRtContext::USERS, '7', []);
+
+        $denied = new AccessGuardTestBrowserContext(null);
+        $blocked = $this->createMock(PageResender::class);
+        $blocked->expects(self::never())->method('resendPage');
+        $denied->bindPageResender($blocked);
+        $denied->record($fact);
+        self::assertSame([], $denied->flushToSignalRouter());
+
+        $allowed = new AccessGuardTestBrowserContext(7);
+        $resender = $this->createMock(PageResender::class);
+        $resender->expects(self::once())->method('resendPage')->with($page, 'ak-1', [], false)->willReturn(PageResendOutcome::Answered);
+        $allowed->bindPageResender($resender);
+        $allowed->record($fact);
+        $allowed->record(SourceChange::rtUpdated(AccessGuardTestRtContext::USERS, '5', []));
+        self::assertSame([], $allowed->flushToSignalRouter());
+    }
+
+    public function testGuardOnlyDenialSkipsTheOwnPageObserver(): void
+    {
+        $this->seed();
+        $page = AccessGuardTestBrowserContext::PAGE;
+        Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO('ak-1', $page));
+        $context = new AccessGuardTestBrowserContext(null, guardOnly: true, observe: static function (): never {
+            throw new RuntimeException('An access refusal must stop the observer');
+        });
+
+        $context->record(SourceChange::rtUpdated(AccessGuardTestRtContext::USERS, '7', []));
+
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testAnObserverThrowAfterReplacementLeavesTheNewSubscriptionEligible(): void
+    {
+        $this->seed();
+        $page = AccessGuardTestBrowserContext::PAGE;
+        $subscribe = new WebSocketPageSubscribeSignalDTO('ak-1', $page);
+        Hilos::$sr->subscribeToPage($page, $subscribe);
+        $original = Hilos::$sr->pageSubscription('ak-1');
+        $context = new AccessGuardTestBrowserContext(7, observe: static function () use ($page, $subscribe, $original): bool {
+            if (Hilos::$sr->pageSubscription('ak-1') === $original) {
+                Hilos::$sr->subscribeToPage($page, $subscribe);
+                throw new RuntimeException('Failure from the replaced subscription');
+            }
+
+            return true;
+        });
+        $resender = $this->createMock(PageResender::class);
+        $resender->expects(self::once())->method('resendPage')->with($page, 'ak-1', [], false)->willReturn(PageResendOutcome::Answered);
+        $context->bindPageResender($resender);
+        $context->record(SourceChange::rtUpdated(AccessGuardTestRtContext::USERS, '7', []));
+        $context->record(SourceChange::rtUpdated(AccessGuardTestRtContext::USERS, '5', []));
+
+        self::assertSame([], $context->flushToSignalRouter());
+        self::assertNotSame($original, Hilos::$sr->pageSubscription('ak-1'));
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testAWholeAnswerCannotPayOrDeduplicateAReplacementWithTheSameParams(): void
+    {
+        $this->seed();
+        $page = AccessGuardTestBrowserContext::PAGE;
+        $subscribe = new WebSocketPageSubscribeSignalDTO('ak-1', $page, ['scope' => 'same']);
+        Hilos::$sr->subscribeToPage($page, $subscribe);
+        $original = Hilos::$sr->pageSubscription('ak-1');
+        $context = new AccessGuardTestBrowserContext(7);
+        $resender = $this->createMock(PageResender::class);
+        $attempts = [];
+        $resender->expects(self::exactly(2))->method('resendPage')->with($page, 'ak-1', ['scope' => 'same'], false)
+            ->willReturnCallback(static function () use ($page, $subscribe, $original, &$attempts): PageResendOutcome {
+                $current = Hilos::$sr->pageSubscription('ak-1');
+                $attempts[] = [$current, Hilos::$sr->hasPageDeliveryFailure('ak-1')];
+                if ($current === $original) {
+                    Hilos::$sr->subscribeToPage($page, $subscribe);
+                    Hilos::$sr->markPageDeliveryFailure('ak-1');
+                }
+
+                return PageResendOutcome::Answered;
+            });
+        $context->bindPageResender($resender);
+        foreach (['7', '5', '9'] as $rowId) {
+            $context->record(SourceChange::rtUpdated(AccessGuardTestRtContext::USERS, $rowId, []));
+        }
+
+        self::assertSame([], $context->flushToSignalRouter());
+        $replacement = Hilos::$sr->pageSubscription('ak-1');
+        self::assertNotSame($original, $replacement);
+        self::assertSame([[$original, false], [$replacement, true]], $attempts);
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        self::assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     private function seed(): void
     {
         Hilos::$sr = new SignalRouter();
@@ -105,9 +232,32 @@ final class AccessGuardTestBrowserContext extends BrowserContext
         BrowserSourceKey::KEY => AccessGuardTestRtContext::USERS,
     ];
 
-    public function __construct(private readonly ?int $currentUserId)
-    {
+    /**
+     * @param ?int $currentUserId Connection identity for the access guard
+     * @param bool $guardOnly Whether the page declares guards without a browser signal
+     * @param ?Closure(): bool $observe Scripted observer result, or null to match changes to users
+     */
+    public function __construct(
+        private readonly ?int $currentUserId,
+        private readonly bool $guardOnly = false,
+        private readonly ?Closure $observe = null,
+    ) {
         parent::__construct();
+    }
+
+    /**
+     * @param string $page Subscribed page
+     * @param string $acceptKey Subscriber connection
+     * @param SourceChange $change Grouped source fact
+     * @return bool Whether the fixture wants a whole answer
+     */
+    protected function observesOwnPageChange(string $page, string $acceptKey, SourceChange $change): bool
+    {
+        if ($this->observe !== null) {
+            return ($this->observe)();
+        }
+
+        return $page === self::PAGE && $change->sourceKey === AccessGuardTestRtContext::USERS;
     }
 
     /**
@@ -135,7 +285,7 @@ final class AccessGuardTestBrowserContext extends BrowserContext
         }
 
         return BrowserPageConfig::fromArray([
-            BrowserConfigKey::SIGNAL => self::SIGNAL,
+            ...($this->guardOnly ? [] : [BrowserConfigKey::SIGNAL => self::SIGNAL]),
             BrowserConfigKey::GUARDS => [
                 [
                     BrowserGuardKey::TYPE => BrowserGuardType::ACCESS,

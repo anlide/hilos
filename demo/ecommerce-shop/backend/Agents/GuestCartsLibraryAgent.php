@@ -5,21 +5,27 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Agents;
 
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
+use Demo\EcommerceShop\CLI\DTO\GuestCartSetQuantityCommandData;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
+use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Object\Item\SessionProductCart;
 use Demo\EcommerceShop\Database\Object\Item\SessionVoucherCart;
+use Demo\EcommerceShop\Database\View\Item\SessionProductCart as CartLine;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -58,7 +64,11 @@ use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Objects;
+use Hilos\Environment\NonProductionGate;
 use Hilos\HilosException;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\WiringRefusal;
 use LogicException as NativeLogicException;
 use Throwable;
 
@@ -97,7 +107,16 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         HilosDbContext::sessions,
     ];
 
+    public const array READS_RT = [
+        ...parent::READS_RT,
+        EcommerceShopRtContext::connections,
+    ];
+
     public const string AGENT_TYPE = AgentType::GUEST_CARTS_LIBRARY;
+
+    public const array AGENT_COMMANDS = [
+        EcommerceShopCommandConstants::GUEST_CART_SET_QUANTITY => GuestCartSetQuantityCommandData::class,
+    ];
 
     // The sweep frame is declared HERE and not in the sessions library, which is what routes it
     // to this agent: a destination is taken from whoever names a signal, and the library naming
@@ -114,6 +133,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     private const string RECOVERY_RULE = 'guest_cart_sweep_recovery';
     private const string RECOVERY_CRON = '* * * * *';
     private const int RECOVERY_ROWS_PER_TABLE = 25;
+    private const string GUEST_SESSION_UNAVAILABLE = 'This guest session is no longer available';
 
     private ?CronRule $recoveryRule = null;
     private bool $recoverOnFirstTick = true;
@@ -210,7 +230,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     public function applyVoucher(int $sessionId, string $code): void
     {
         if (!Hilos::$db->sessions->isStoredGuest($sessionId)) {
-            throw new ValidationException('This guest session is no longer available');
+            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
         }
 
         $voucherId = CartVoucherRules::voucherForCode($code)->id
@@ -318,10 +338,94 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Answers the stand's exact-quantity command under the guest carts library's ownership.
+     *
+     * @param CommandRequestDTO $data Topology-hydrated command
+     * @param string $source Command source, unused
+     * @param string $name Signal name, unused
+     * @throws AgentException When the fixture operation fails
+     * @throws InvalidArgumentException When the reply cannot be queued
+     */
+    public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
+    {
+        if ($data->command !== EcommerceShopCommandConstants::GUEST_CART_SET_QUANTITY) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+            return;
+        }
+        if (!NonProductionGate::admitted()) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Setting a guest cart fixture is test-only'));
+            return;
+        }
+        $query = $data->parsedPayload;
+        if (!$query instanceof GuestCartSetQuantityCommandData) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'The guest cart fixture request is invalid'));
+            return;
+        }
+
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, fn () => $this->setFixtureQuantity($query));
+        } catch (ValidationException $refusal) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $refusal->getMessage()));
+            return;
+        } catch (WiringRefusal $refusal) {
+            throw new AgentException('The guest cart fixture data sources are unavailable', previous: $refusal);
+        } catch (Throwable $failure) {
+            throw new AgentException('The guest cart fixture could not be changed', previous: $failure);
+        }
+
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [EcommerceShopCommandConstants::quantity => $query->quantity]));
+    }
+
     /** @return list<CronRule> Current orphaned cart recovery schedule */
     protected function cronRules(): array
     {
         return $this->recoveryRule === null ? [] : [$this->recoveryRule];
+    }
+
+    /**
+     * @param GuestCartSetQuantityCommandData $query Exact quantity to leave for an active guest
+     * @throws ValidationException When the session or requested quantity is refused
+     * @throws LogicException When a collection or write is misconfigured
+     * @throws InvalidArgumentException When a selection or signal cannot be built
+     * @throws DatabaseException When a row cannot be read or written
+     * @throws ObjectGetIdStringNotImplementedException When a cart line cannot provide a key
+     * @throws CollectionNotManualException When a selection refuses a cart line
+     * @throws CreateNotAllowedException When this process may not add a line
+     * @throws WriteNotAllowedException When this process may not change or remove a line
+     * @throws SourceChangeSubscriberException When a store change subscriber fails
+     * @throws HilosException When the configured cart sources refuse the operation
+     */
+    private function setFixtureQuantity(GuestCartSetQuantityCommandData $query): void
+    {
+        $session = Hilos::$db->sessions->findByToken($query->sessionToken);
+        $sessionId = $session?->id;
+        if ($sessionId === null || $session->token !== $query->sessionToken || $session->userAtKeyboard() !== null
+            || !Hilos::$db->sessions->isStoredActiveGuest($sessionId)
+        ) {
+            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
+        }
+
+        $carts = Hilos::$db->sessionProductCarts;
+        $line = $carts->whereColumnIs(SessionProductCart::sessionId, $sessionId)
+            ->filter(static fn (CartLine $line): bool => $line->productId === $query->productId)
+            ->first();
+        if (($line?->quantity ?? 0) === $query->quantity) {
+            return;
+        }
+
+        if ($query->quantity === 0) {
+            $carts->actions->remove($sessionId, $query->productId);
+        } else {
+            if ($line === null) {
+                $carts->actions->add($sessionId, $query->productId);
+            }
+            if ($line !== null || $query->quantity !== CartLineRules::QUANTITY_MIN) {
+                $carts->actions->setQuantity($sessionId, $query->productId, $query->quantity);
+            }
+        }
+
+        $this->publishCart($sessionId);
     }
 
     /**
