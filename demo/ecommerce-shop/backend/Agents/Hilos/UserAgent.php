@@ -47,6 +47,7 @@ use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\NamedDatabaseException;
+use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
@@ -286,26 +287,34 @@ final class UserAgent extends AbstractUserAgent
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
      * @throws DuplicateIdException When the collection already holds the binding key
      * @throws TableNameUndeterminedException When the binding table is unknown
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     * @throws NestedTransactionRefusedException When a transaction cannot be opened
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
      * @throws HilosException When the binding collection refuses a reload or the cart snapshot cannot be read
+     * @throws Throwable When the transaction propagates another failure from the cart operation
      */
     public function applyVoucher(string $code): void
     {
         $userId = (int)$this->getIndex();
         AddressablePerson::require($userId);
 
-        $voucherId = CartVoucherRules::voucherForCode($code)->id
-            ?? throw new LogicException('A catalog voucher must have an ID');
-        $binding = Hilos::$db->userVoucherCarts[$userId] ?? null;
-        $previousVoucherId = $binding?->voucherId;
-        if ($binding === null) {
-            Hilos::$db->userVoucherCarts->actions->create($userId, $voucherId);
-        } else {
-            $binding->actions->setVoucher($voucherId);
-        }
+        CartVoucherRules::applyVoucher($code, function (int $voucherId) use ($userId): void {
+            $binding = Hilos::$db->userVoucherCarts[$userId] ?? null;
+            $previousVoucherId = $binding?->voucherId;
+            if ($binding === null) {
+                Hilos::$db->userVoucherCarts->actions->create($userId, $voucherId);
+            } else {
+                $binding->actions->setVoucher($voucherId);
+            }
 
-        if ($previousVoucherId !== $voucherId) {
-            $this->publishCart($userId);
-        }
+            if ($previousVoucherId !== $voucherId) {
+                $this->publishCart($userId);
+            }
+        });
     }
 
     /**

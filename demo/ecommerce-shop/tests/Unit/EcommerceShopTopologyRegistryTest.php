@@ -66,6 +66,7 @@ use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartSetQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CartVoucherApplyActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
@@ -1143,11 +1144,6 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertNotContains($cartSet, CartPage::AUTH_ACTIONS);
         self::assertNotContains($cartSet, CartPage::READING_ACTIONS);
 
-        self::assertSame([
-            $remove => CartRemoveLineActionDTO::class,
-            $cartStep => CartStepQuantityActionDTO::class,
-            $cartSet => CartSetQuantityActionDTO::class,
-        ], CartPage::ACTIONS);
         foreach ([
             EcommerceShopDbContext::sessionVoucherCarts,
             EcommerceShopDbContext::userVoucherCarts,
@@ -1164,6 +1160,44 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             $this->assertSame('node_param', $routes[$page]->source->value);
             $this->assertSame('nodeId', $routes[$page]->param);
             $this->assertSame(HilosAgentType::HILOS_DAEMON, $routes[$page]->fallbackAgentType);
+        }
+    }
+
+    /** Applying a voucher uses the live subscription to name the owner for either cart kind. */
+    public function testCartVoucherApplicationRoutesOnlyToTheBoundCartOwner(): void
+    {
+        $action = EcommerceShopSignalConstants::CART_APPLY_VOUCHER;
+        self::assertSame('cart_apply_voucher', $action);
+        self::assertSame([
+            EcommerceShopSignalConstants::CART_REMOVE_LINE => CartRemoveLineActionDTO::class,
+            EcommerceShopSignalConstants::CART_STEP_QUANTITY => CartStepQuantityActionDTO::class,
+            EcommerceShopSignalConstants::CART_SET_QUANTITY => CartSetQuantityActionDTO::class,
+            $action => CartVoucherApplyActionDTO::class,
+        ], CartPage::ACTIONS);
+        self::assertSame(CartPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+        self::assertSame(CartVoucherApplyActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getActionAgentRoutes()[$action]);
+        self::assertNotContains($action, CartPage::AUTH_ACTIONS);
+        self::assertNotContains($action, CartPage::READING_ACTIONS);
+        self::assertArrayNotHasKey($action, Hilos::getAgentActionRoutes());
+        self::assertArrayNotHasKey($action, Hilos::getAgentSignalRoutes());
+
+        $router = new EcommerceShopSignalRouter();
+        foreach ([
+            'guest' => [AgentType::GUEST_CARTS_LIBRARY, null],
+            'account' => [HilosAgentType::HILOS_USER, '42'],
+        ] as $ownerKind => [$agentType, $agentIndex]) {
+            $frame = new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::ACTION),
+                new SignalName($action),
+                new WebSocketActionSignalDTO($ownerKind, $action, ['code' => 'SPRING25', 'ownerKind' => $ownerKind]),
+            );
+            self::assertSame([], $router->getDestinations($frame));
+            $router->subscribeToPage(CartPage::PAGE, new WebSocketPageSubscribeSignalDTO($ownerKind, CartPage::PAGE));
+            self::assertSame([], $router->getDestinations($frame));
+            $router->bindPageAgent($ownerKind, CartPage::PAGE, $agentType, $agentIndex);
+            self::assertEquals([new AgentDestination($agentType, $agentIndex)], $router->getDestinations($frame));
         }
     }
 

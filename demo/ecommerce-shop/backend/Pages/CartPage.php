@@ -20,6 +20,7 @@ use Demo\EcommerceShop\Pages\DTO\CartPageData;
 use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartSetQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CartVoucherApplyActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Runtime\View\Item\Connection;
 use Hilos\Constants\HilosAgentType;
@@ -70,6 +71,7 @@ final class CartPage extends AbstractPage
         EcommerceShopSignalConstants::CART_REMOVE_LINE => CartRemoveLineActionDTO::class,
         EcommerceShopSignalConstants::CART_STEP_QUANTITY => CartStepQuantityActionDTO::class,
         EcommerceShopSignalConstants::CART_SET_QUANTITY => CartSetQuantityActionDTO::class,
+        EcommerceShopSignalConstants::CART_APPLY_VOUCHER => CartVoucherApplyActionDTO::class,
     ];
 
     /**
@@ -91,6 +93,7 @@ final class CartPage extends AbstractPage
     public const string DATA_CART = 'cart';
 
     private const string GUEST_CART_KEY_MESSAGE = 'ecommerce-shop:guest-cart:v1:%d:0';
+    private const string CART_UNAVAILABLE = 'This cart is no longer available.';
 
     /**
      * @param string $acceptKey Acting connection
@@ -99,7 +102,7 @@ final class CartPage extends AbstractPage
      * @return ?ActionReplyDTO No result body on success
      * @throws AgentUnknownActionException When the action does not belong to this page
      * @throws InvalidActionPayloadException When the payload does not match the action
-     * @throws ValidationException When the owner binding, line or requested quantity is unavailable
+     * @throws ValidationException When the owner binding, line, requested quantity or voucher is refused
      * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      * @throws NamedDatabaseException When the primary database cannot be resolved
      * @throws NestedTransactionRefusedException When another application transaction is open
@@ -134,6 +137,14 @@ final class CartPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, CartSetQuantityActionDTO::class, $dto);
                 }
                 $this->handleSetQuantity($acceptKey, $dto);
+
+                return null;
+
+            case EcommerceShopSignalConstants::CART_APPLY_VOUCHER:
+                if (!$dto instanceof CartVoucherApplyActionDTO) {
+                    throw new InvalidActionPayloadException($action, CartVoucherApplyActionDTO::class, $dto);
+                }
+                $this->handleApplyVoucher($acceptKey, $dto);
 
                 return null;
 
@@ -362,17 +373,73 @@ final class CartPage extends AbstractPage
 
     /**
      * @param string $acceptKey Connection invoking the action
+     * @param CartVoucherApplyActionDTO $dto Entered code and displayed cart kind
+     * @throws ValidationException When the cart binding changed or the voucher is refused
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws NestedTransactionRefusedException When another application transaction is open
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
+     * @throws LogicException When voucher application raises an unexpected failure
+     * @throws HilosException When the runtime, database or cart sources cannot complete the action
+     */
+    private function handleApplyVoucher(string $acceptKey, CartVoucherApplyActionDTO $dto): void
+    {
+        $connection = $this->requireActionConnection($acceptKey, self::CART_UNAVAILABLE);
+        $sessionId = $connection->sessionId;
+        $userId = $connection->userId;
+        $guestToken = $userId === null ? $connection->sessionToken : null;
+        $ownerKind = $userId === null ? CartStepQuantityActionDTO::GUEST : CartStepQuantityActionDTO::ACCOUNT;
+        if ($sessionId === null || $sessionId <= 0 || $dto->ownerKind !== $ownerKind
+            || ($userId === null && ($guestToken === null || $guestToken === ''))
+            || !Hilos::$sr?->pageSubscription($acceptKey)?->admitsPageAnswer($acceptKey)
+        ) {
+            throw new ValidationException(self::CART_UNAVAILABLE);
+        }
+
+        $agent = $this->getAgent();
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, static function () use ($agent, $sessionId, $userId, $guestToken, $dto): void {
+                try {
+                    $sessionActive = Hilos::$db->sessions->lockStoredActiveSession($sessionId, $userId, $guestToken);
+                } catch (DatabaseException $failure) {
+                    throw new ValidationException(self::CART_UNAVAILABLE, previous: $failure);
+                }
+                if (!$sessionActive) {
+                    throw new ValidationException(self::CART_UNAVAILABLE);
+                }
+
+                if ($agent instanceof GuestCartsLibraryAgent) {
+                    $agent->applyVoucher($sessionId, $dto->code);
+                } elseif ($agent instanceof UserAgent) {
+                    $agent->applyVoucher($dto->code);
+                } else {
+                    throw new ValidationException(self::CART_UNAVAILABLE);
+                }
+            });
+        } catch (HilosException $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new LogicException('Failed to apply the cart voucher', previous: $failure);
+        }
+    }
+
+    /**
+     * @param string $acceptKey Connection invoking the action
+     * @param string $unavailableReason Public refusal when the cart binding has changed
      * @return Connection Current connection whose active cart subscription agrees with the serving agent
      * @throws ValidationException When the connection or its cart subscription no longer belongs to the agent
      * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      * @throws HilosException When the runtime context refuses the read
      */
-    private function requireActionConnection(string $acceptKey): Connection
+    private function requireActionConnection(string $acceptKey, string $unavailableReason = CartLineRules::LINE_UNAVAILABLE): Connection
     {
         try {
             $connection = $this->requireConnection($acceptKey);
         } catch (PageConflictException $failure) {
-            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
+            throw new ValidationException($unavailableReason, previous: $failure);
         }
 
         $agent = $this->getAgent();
@@ -380,7 +447,7 @@ final class CartPage extends AbstractPage
         if (!$agent instanceof AgentInterface || $subscription?->page !== self::PAGE
             || $subscription->agentType !== $agent->getType() || $subscription->agentIndex !== $agent->getIndex()
         ) {
-            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+            throw new ValidationException($unavailableReason);
         }
 
         return $connection;

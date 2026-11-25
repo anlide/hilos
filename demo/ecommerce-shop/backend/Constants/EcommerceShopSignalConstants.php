@@ -113,6 +113,9 @@ final class EcommerceShopSignalConstants
     /** @var string Browser action to set the exact quantity of a saved cart line */
     public const string CART_SET_QUANTITY = 'cart_set_quantity';
 
+    /** @var string Browser action to apply a voucher to the current cart */
+    public const string CART_APPLY_VOUCHER = 'cart_apply_voucher';
+
     /** @var string Server → client, WS_GROUP: the whole cart of one guest session or one person, sent by its owner */
     public const string CART_STATE = 'cart_state';
 

@@ -63,6 +63,7 @@ use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\NamedDatabaseException;
+use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
@@ -144,6 +145,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     private const string RECOVERY_CRON = '* * * * *';
     private const int RECOVERY_ROWS_PER_TABLE = 25;
     private const string GUEST_SESSION_UNAVAILABLE = 'This guest session is no longer available';
+    private const string FIXTURE_VOUCHER_MISMATCH = 'This guest cart holds a different voucher';
 
     private ?CronRule $recoveryRule = null;
     private bool $recoverOnFirstTick = true;
@@ -329,27 +331,19 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
      * @throws DuplicateIdException When the collection already holds the binding key
      * @throws TableNameUndeterminedException When the binding table is unknown
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     * @throws NestedTransactionRefusedException When a transaction cannot be opened
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
      * @throws HilosException When the binding collection refuses a reload or the cart snapshot cannot be read
+     * @throws Throwable When the transaction propagates another failure from the cart operation
      */
     public function applyVoucher(int $sessionId, string $code): void
     {
-        if (!Hilos::$db->sessions->isStoredGuest($sessionId)) {
-            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
-        }
-
-        $voucherId = CartVoucherRules::voucherForCode($code)->id
-            ?? throw new LogicException('A catalog voucher must have an ID');
-        $binding = Hilos::$db->sessionVoucherCarts[$sessionId] ?? null;
-        $previousVoucherId = $binding?->voucherId;
-        if ($binding === null) {
-            Hilos::$db->sessionVoucherCarts->actions->create($sessionId, $voucherId);
-        } else {
-            $binding->actions->setVoucher($voucherId);
-        }
-
-        if ($previousVoucherId !== $voucherId) {
-            $this->publishCart($sessionId);
-        }
+        $this->applyVoucherToSlot($sessionId, $code, allowReplacement: true);
     }
 
     /**
@@ -575,7 +569,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Writes the fixture only when the slot is empty or already holds the requested code.
+     * Writes the fixture only for an empty slot or its selected voucher.
      *
      * @param GuestCartSetVoucherCommandData $query Voucher and desired association
      * @throws ValidationException When the session, code or existing association refuses the change
@@ -595,22 +589,90 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
      * @throws DuplicateIdException When the collection already holds the binding key
      * @throws TableNameUndeterminedException When the binding table is unknown
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     * @throws NestedTransactionRefusedException When a transaction cannot be opened
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
      * @throws HilosException When a configured cart source refuses the operation
+     * @throws Throwable When the transaction propagates another failure from the cart operation
      */
     private function setFixtureVoucher(GuestCartSetVoucherCommandData $query): void
     {
         $sessionId = $this->fixtureGuestSessionId($query->sessionToken);
         $code = VoucherFixture::code($query->code);
-        $current = $this->cartVoucher($sessionId);
-        if ($current !== null && $current->code !== $code) {
-            throw new ValidationException('This guest cart holds a different voucher');
+        if ($query->applied) {
+            $this->applyVoucherToSlot($sessionId, $code, allowReplacement: false);
+
+            return;
         }
 
-        if ($query->applied) {
-            $this->applyVoucher($sessionId, $code);
-        } elseif ($current !== null) {
+        $current = $this->cartVoucher($sessionId);
+        if ($current !== null && $current->code !== $code) {
+            throw new ValidationException(self::FIXTURE_VOUCHER_MISMATCH);
+        }
+        if ($current !== null) {
             $this->removeVoucher($sessionId);
         }
+    }
+
+    /**
+     * Checks and writes the binding with the voucher ID selected under the catalog lock.
+     *
+     * @param int $sessionId Browser session ID
+     * @param string $code Voucher code as entered
+     * @param bool $allowReplacement Whether the operation may replace another voucher
+     * @throws EmptyValueException When the trimmed code is empty
+     * @throws ValueTooLongException When the code exceeds the catalog limit
+     * @throws ValidationException When the session, code or existing binding refuses the change
+     * @throws LogicException When the session collection is misconfigured
+     * @throws InvalidArgumentException When a session query or sync signal is invalid
+     * @throws DatabaseException When the session, catalog or binding read or write fails
+     * @throws ItemNotFoundException When the binding disappears during a keyed read
+     * @throws ObjectGetIdStringNotImplementedException When the binding cannot be keyed
+     * @throws CollectionNotManualException When the selection cannot accept the binding
+     * @throws ItemNotFoundForUpdateException When the binding is no longer persisted
+     * @throws WriteNotAllowedException When this process may not change the binding
+     * @throws CreateNotAllowedException When this process may not create the binding
+     * @throws ExternalWriterException When the binding collection has an external writer
+     * @throws ObjectCollectionNullException When the binding has no backing collection
+     * @throws SourceChangeSubscriberException When a binding change subscriber fails
+     * @throws DuplicateIdException When the collection already holds the binding key
+     * @throws TableNameUndeterminedException When the binding table is unknown
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     * @throws NestedTransactionRefusedException When a transaction cannot be opened
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
+     * @throws HilosException When the binding collection refuses a reload or the cart snapshot cannot be read
+     * @throws Throwable When the transaction propagates another failure from the cart operation
+     */
+    private function applyVoucherToSlot(int $sessionId, string $code, bool $allowReplacement): void
+    {
+        if (!Hilos::$db->sessions->isStoredGuest($sessionId)) {
+            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
+        }
+
+        CartVoucherRules::applyVoucher($code, function (int $voucherId) use ($sessionId, $allowReplacement): void {
+            $binding = Hilos::$db->sessionVoucherCarts[$sessionId] ?? null;
+            $previousVoucherId = $binding?->voucherId;
+            if (!$allowReplacement && $previousVoucherId !== null && $previousVoucherId !== $voucherId) {
+                throw new ValidationException(self::FIXTURE_VOUCHER_MISMATCH);
+            }
+            if ($binding === null) {
+                Hilos::$db->sessionVoucherCarts->actions->create($sessionId, $voucherId);
+            } else {
+                $binding->actions->setVoucher($voucherId);
+            }
+
+            if ($previousVoucherId !== $voucherId) {
+                $this->publishCart($sessionId);
+            }
+        });
     }
 
     /**

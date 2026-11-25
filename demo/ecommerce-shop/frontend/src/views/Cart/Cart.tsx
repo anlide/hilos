@@ -1,6 +1,17 @@
-import { registerFocusReturnFallback } from '@hilos/core/base'
+import {
+  createSignal,
+  registerFocusReturnFallback,
+  subscribeSignal,
+} from '@hilos/core/base'
 import { HilosLink, useSignal } from '@hilos/react/base'
-import { Component, createRef, useLayoutEffect, useMemo, useRef } from 'react'
+import {
+  Component,
+  Fragment,
+  createRef,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from 'react'
 
 import { connection } from '../../bootstrap/connection.js'
 import { currentUserId, scopes } from '../../bootstrap/session.js'
@@ -10,6 +21,7 @@ import { CartQuantityControls } from './CartQuantityControls.js'
 import { CartQuantityEditModal } from './CartQuantityEditModal.js'
 import { CartRemoveButton } from './CartRemoveButton.js'
 import CartSkeleton from './CartSkeleton.js'
+import { CartVoucherApplyModal } from './CartVoucherApplyModal.js'
 import { type CartOwnerKind } from './cartActions.js'
 import { createCartPageSignal } from './cartPage.js'
 import { createCartQuantityEdit } from './cartQuantityEdit.js'
@@ -131,6 +143,7 @@ interface CartRowFocus {
 interface CartContentsProps {
   readonly cart: CartSnapshot
   readonly onEdit: (lineId: number) => void
+  readonly onApplyVoucher: () => void
 }
 
 /** Render the accepted snapshot and return focus when it removes a focused row. */
@@ -179,7 +192,7 @@ class CartContents extends Component<CartContentsProps> {
   }
 
   render() {
-    const { cart, onEdit } = this.props
+    const { cart, onEdit, onApplyVoucher } = this.props
     const ownerKind = cart.userId === null ? 'guest' : 'account'
     const owner = cartIdentity(cart)
 
@@ -229,21 +242,39 @@ class CartContents extends Component<CartContentsProps> {
             </div>
             <div className="col-lg-4">
               <div className="card">
-                <dl className="card-body mb-0">
-                  <div className="d-flex justify-content-between gap-2 small mb-1">
-                    <dt className="fw-normal">Items</dt>
-                    <dd className="mb-0">{formatMoney(cart.itemsTotal)}</dd>
+                <div className="card-body">
+                  <dl className="mb-3">
+                    <div className="d-flex justify-content-between gap-2 small mb-1">
+                      <dt className="fw-normal">Items</dt>
+                      <dd className="mb-0">{formatMoney(cart.itemsTotal)}</dd>
+                    </div>
+                    {cart.voucher !== null && (
+                      <CartVoucherRow voucher={cart.voucher} />
+                    )}
+                    <div className="d-flex justify-content-between gap-2 fw-semibold">
+                      <dt>Total</dt>
+                      <dd className="mb-0" data-id="shop-cart-total">
+                        {formatMoney(cart.total)}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="d-grid">
+                    <button
+                      key={owner}
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      data-id="cart-voucher-apply-open"
+                      onClick={(event) => {
+                        event.currentTarget.focus()
+                        onApplyVoucher()
+                      }}
+                    >
+                      {cart.voucher === null
+                        ? 'Apply voucher'
+                        : 'Apply another voucher'}
+                    </button>
                   </div>
-                  {cart.voucher !== null && (
-                    <CartVoucherRow voucher={cart.voucher} />
-                  )}
-                  <div className="d-flex justify-content-between gap-2 fw-semibold">
-                    <dt>Total</dt>
-                    <dd className="mb-0" data-id="shop-cart-total">
-                      {formatMoney(cart.total)}
-                    </dd>
-                  </div>
-                </dl>
+                </div>
               </div>
             </div>
           </div>
@@ -251,6 +282,11 @@ class CartContents extends Component<CartContentsProps> {
       </>
     )
   }
+}
+
+interface CartVoucherOpening {
+  readonly id: number
+  readonly owner: string
 }
 
 /** The current owner's public storefront cart. */
@@ -261,9 +297,37 @@ export default function Cart() {
     [],
   )
   const opened = useSignal(edit.opened)
+  const voucherOpening = useMemo(
+    () => createSignal<CartVoucherOpening | null>(null),
+    [],
+  )
+  const voucher = useSignal(voucherOpening)
+  const nextVoucherId = useRef(0)
   const surface = useRef<HTMLElement>(null)
 
   useLayoutEffect(edit.start, [edit])
+  useLayoutEffect(() => {
+    const close = () => voucherOpening.set(null)
+    const stopCart = subscribeSignal(cartPage, (snapshot) => {
+      const opening = voucherOpening.get()
+      if (
+        opening !== null &&
+        snapshot !== null &&
+        (snapshot.lines.length === 0 ||
+          cartIdentity(snapshot) !== opening.owner)
+      ) {
+        close()
+      }
+    })
+    const stopOwner = subscribeSignal(currentUserId, close)
+    const stopRotation = connection.on('sessionRotate', close)
+
+    return () => {
+      stopCart()
+      stopOwner()
+      stopRotation()
+    }
+  }, [voucherOpening])
   useLayoutEffect(() => {
     const root = surface.current
     if (!root) return
@@ -292,6 +356,38 @@ export default function Cart() {
     )
   }, [])
 
+  function openVoucher(): void {
+    const snapshot = cartPage.get()
+    if (
+      voucherOpening.get() !== null ||
+      snapshot === null ||
+      snapshot.userId !== currentUserId.get() ||
+      snapshot.lines.length === 0
+    ) {
+      return
+    }
+
+    voucherOpening.set({
+      id: ++nextVoucherId.current,
+      owner: cartIdentity(snapshot),
+    })
+  }
+
+  function voucherOwnerKind(opening: CartVoucherOpening): CartOwnerKind | null {
+    const snapshot = cartPage.get()
+    if (
+      voucherOpening.get() !== opening ||
+      snapshot === null ||
+      snapshot.userId !== currentUserId.get() ||
+      snapshot.lines.length === 0 ||
+      cartIdentity(snapshot) !== opening.owner
+    ) {
+      return null
+    }
+
+    return snapshot.userId === null ? 'guest' : 'account'
+  }
+
   return (
     <>
       <section ref={surface} aria-label="Cart" tabIndex={-1}>
@@ -303,10 +399,26 @@ export default function Cart() {
             <CartSkeleton />
           </>
         ) : (
-          <CartContents cart={cart} onEdit={edit.open} />
+          <CartContents
+            cart={cart}
+            onEdit={edit.open}
+            onApplyVoucher={openVoucher}
+          />
         )}
       </section>
       {opened && <CartQuantityEditModal edit={edit} />}
+      {/* Release modal focus after the cart has removed an obsolete opener. */}
+      <Fragment>
+        {voucher !== null && (
+          <CartVoucherApplyModal
+            key={voucher.id}
+            readOwnerKind={() => voucherOwnerKind(voucher)}
+            onClose={() => {
+              if (voucherOpening.get() === voucher) voucherOpening.set(null)
+            }}
+          />
+        )}
+      </Fragment>
     </>
   )
 }

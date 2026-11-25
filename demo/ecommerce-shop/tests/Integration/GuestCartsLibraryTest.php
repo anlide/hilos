@@ -373,6 +373,39 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertSame($voucher->id, self::storedVoucherId($sessionId));
     }
 
+    /** A reused code cannot replace the selected voucher while the cart owner's catalog mirror is stale. */
+    public function testGuestVoucherFixtureRefusesAReusedCodeBeforeCatalogSync(): void
+    {
+        $sessionId = self::guestSessionId();
+        $token = Hilos::$db->sessions[$sessionId]->token;
+        $code = 'ZZE2EV111111111111111111111111';
+        $renamedCode = 'ZZE2EV222222222222222222222222';
+        $voucher = self::createVoucher($code, 10, true);
+        $this->carts()->applyVoucher($sessionId, $code);
+
+        // Simulate catalog writes whose sync frames have yet to reach the cart owner.
+        Database::sqlRun('UPDATE voucher SET code = ? WHERE id = ?', [$renamedCode, $voucher->id]);
+        Database::sqlRun('INSERT INTO voucher (code, discount_percent, active) VALUES (?, ?, ?)', [$code, 15, true]);
+        self::assertSame($code, $this->carts()->cartVoucher($sessionId)?->code);
+
+        // The rollback scope keeps after-commit publications queued. Inspect a copy of that queue.
+        $level = Database::runtimeTransactionLevel();
+        self::assertNotNull($level);
+        $before = (clone $level)->takeHeld();
+
+        $reply = $this->voucherFixture($token, $code, true);
+        self::assertFalse($reply->isOk());
+        self::assertSame([CommandConstants::FIELD_MESSAGE => 'This guest cart holds a different voucher'], $reply->payload);
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+        self::assertSame($before, (clone $level)->takeHeld());
+
+        $reply = $this->voucherFixture($token, $renamedCode, true);
+        self::assertTrue($reply->isOk());
+        self::assertSame(['applied' => true], $reply->payload);
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+        self::assertSame($before, (clone $level)->takeHeld());
+    }
+
     /** @return array<string, array{bool, string}> Whether the node is in test and the expected refusal */
     public static function guestVoucherFixtureAccessRefusals(): array
     {

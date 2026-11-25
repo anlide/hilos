@@ -95,10 +95,11 @@ class Sessions extends Objects
      *
      * @param int $sessionId Session primary key
      * @param ?int $userId Expected bound user, or null for a guest
-     * @return bool Whether the row exists, matches the expected binding and has not expired
+     * @param ?string $token Expected cookie token, or null when rotation is immaterial
+     * @return bool Whether the row exists, matches the expected binding and token, and has not expired
      * @throws DatabaseException When the caller has no row-connection transaction, the lock is busy, or the read fails
      */
-    public function lockStoredActiveSession(int $sessionId, ?int $userId): bool
+    public function lockStoredActiveSession(int $sessionId, ?int $userId, ?string $token = null): bool
     {
         $entity = static::entityClass();
         $index = $entity::getDatabase()->connectionIndex;
@@ -106,7 +107,8 @@ class Sessions extends Objects
             throw new DatabaseException('The active session lock requires the row connection transaction.');
         }
         $row = Database::sql(
-            'SELECT `' . EntitySession::user_id . '`, `' . EntitySession::expires_at . '` FROM ' . $entity::getSqlTableName()
+            'SELECT `' . EntitySession::user_id . '`, `' . EntitySession::expires_at . '`, `' . EntitySession::token . '` FROM '
+            . $entity::getSqlTableName()
             . ' WHERE `' . EntitySession::id . '` = ? LOCK IN SHARE MODE NOWAIT',
             [$sessionId],
             index: $index,
@@ -119,6 +121,7 @@ class Sessions extends Objects
         $expiresAt = $row[EntitySession::expires_at];
 
         return ($storedUserId === null ? null : (int)$storedUserId) === $userId
+            && ($token === null || $row[EntitySession::token] === $token)
             && ($expiresAt === null || (int)$expiresAt > TimeHelper::nowMs());
     }
 

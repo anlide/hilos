@@ -26,6 +26,9 @@ export const CART_STEP_QUANTITY = 'cart_step_quantity'
 /** Action name on the server (EcommerceShopSignalConstants::CART_SET_QUANTITY). */
 export const CART_SET_QUANTITY = 'cart_set_quantity'
 
+/** Action name on the server (EcommerceShopSignalConstants::CART_APPLY_VOUCHER). */
+export const CART_APPLY_VOUCHER = 'cart_apply_voucher'
+
 /** One unit added to or removed from a saved quantity. */
 export type CartQuantityStep = -1 | 1
 
@@ -64,4 +67,17 @@ export function sendCartSetQuantity(
     quantity,
     expectedQuantity,
   })
+}
+
+/**
+ * Apply a voucher to the cart selected by the active Cart subscription.
+ *
+ * @param code The voucher code exactly as entered.
+ * @param ownerKind The kind of cart in the accepted snapshot.
+ */
+export function sendCartApplyVoucher(
+  code: string,
+  ownerKind: CartOwnerKind,
+): ActionHandle {
+  return actions.dispatch(CART_APPLY_VOUCHER, { code, ownerKind })
 }
