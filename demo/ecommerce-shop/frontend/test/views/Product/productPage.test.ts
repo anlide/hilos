@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest'
 import { PAGE_CATEGORY, PAGE_PRODUCT } from '../../../src/pages/keys.js'
 import { router } from '../../../src/pages/routes.js'
 import {
+  createProductCartCountSignal,
   createProductDetailsSignal,
   createProductPageResponseMatcher,
   createProductViewerCountSignal,
@@ -147,6 +148,7 @@ describe('product page navigation', () => {
     })
     const details = createProductDetailsSignal(scopes, navigator.currentRoute)
     const viewers = createProductViewerCountSignal(scopes, details)
+    const carts = createProductCartCountSignal(scopes, details)
     const receive = (type: string, data: Record<string, unknown>) =>
       listeners.get('message')!({ data: JSON.stringify({ type, data }) })
     const pageData = (data: Record<string, unknown>) =>
@@ -174,6 +176,7 @@ describe('product page navigation', () => {
       navigator,
       details,
       viewers,
+      carts,
       receive,
       pageData,
       answer,
@@ -314,6 +317,90 @@ describe('product page navigation', () => {
     expect(viewers.get()).toBeUndefined()
     viewerAnswer(next.slug, 0)
     expect(viewers.get()).toBe(0)
+  })
+
+  it('accepts cart counts only for the displayed slug and product ID', () => {
+    const { details, viewers, carts, pageData } = openProduct(2)
+    expect(carts.get()).toBeUndefined()
+
+    const address = { productId: product.id, slug: product.slug }
+    pageData({ product, productCarts: { ...address, cartCount: 3 } })
+    expect(carts.get()).toBe(3)
+
+    for (const productCarts of [
+      { ...address, slug: 'clay-pot', cartCount: 0 },
+      { ...address, productId: product.id + 1, cartCount: 0 },
+      { ...address, cartCount: -1 },
+      { ...address, cartCount: 1.5 },
+      { ...address, cartCount: '3' },
+    ]) {
+      pageData({ productCarts })
+      expect(carts.get()).toBe(3)
+    }
+
+    const updated = { ...product, price: 42000 }
+    pageData({
+      product: updated,
+      productViewers: { slug: product.slug, otherViewerCount: 4 },
+      productCarts: { ...address, cartCount: -1 },
+    })
+    expect(details.get()).toEqual(updated)
+    expect(viewers.get()).toBe(4)
+    expect(carts.get()).toBe(3)
+
+    pageData({
+      productViewers: { slug: 'clay-pot', otherViewerCount: 0 },
+      productCarts: { ...address, cartCount: 0 },
+    })
+    expect(carts.get()).toBe(0)
+    expect(viewers.get()).toBe(4)
+    expect(details.get()).toEqual(updated)
+
+    const replacement = { ...updated, id: updated.id + 1 }
+    pageData({ product: replacement })
+    expect(details.get()).toEqual(replacement)
+    expect(carts.get()).toBeUndefined()
+  })
+
+  it('waits for a full snapshot after navigation and refusal before accepting carts', () => {
+    const { navigator, details, carts, receive, pageData, answer } =
+      openProduct()
+    pageData({
+      productCarts: { slug: product.slug, productId: product.id, cartCount: 3 },
+    })
+    expect(carts.get()).toBe(3)
+
+    const next = { ...product, id: 9, slug: 'clay-pot', name: 'Clay pot' }
+    const cartUpdate = {
+      productCarts: { slug: next.slug, productId: next.id, cartCount: 2 },
+    }
+    navigator.navigate(`/product/${next.slug}`)
+    pageData(cartUpdate)
+    expect(navigator.pageLoading.get()).toBe(true)
+    expect(details.get()).toBeNull()
+    expect(carts.get()).toBeUndefined()
+
+    answer(next)
+    expect(carts.get()).toBeUndefined()
+    pageData(cartUpdate)
+    expect(carts.get()).toBe(2)
+
+    const refusal = {
+      page: PAGE_PRODUCT,
+      httpCode: 404,
+      errorCode: 'not_found',
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
+    }
+    receive(SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR, refusal)
+    pageData(cartUpdate)
+    expect(navigator.pageError.get()).toEqual(refusal)
+    expect(details.get()).toBeNull()
+    expect(carts.get()).toBeUndefined()
+
+    pageData({ product: next, ...cartUpdate })
+    expect(navigator.pageError.get()).toBeNull()
+    expect(carts.get()).toBe(2)
   })
 })
 

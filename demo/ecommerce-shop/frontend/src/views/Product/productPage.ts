@@ -6,6 +6,10 @@ import {
   type ScopePayload,
 } from '@hilos/core/base'
 
+import {
+  PRODUCT_CARTS_DATA,
+  resolveProductCartCount,
+} from '../../catalog/productCarts.js'
 import { PAGE_PRODUCT } from '../../pages/keys.js'
 import { type ProductDetails } from './types/ProductDetails.js'
 
@@ -121,21 +125,39 @@ export function createProductPageResponseMatcher(scopes: ScopeManager) {
 
     const data = payload.data ?? {}
     const snapshot = data[PRODUCT_DATA]
-    const count = resolveOtherViewerCount(data[PRODUCT_VIEWERS_DATA], slug)
-    if (snapshot !== undefined) {
-      if (resolveProductDetails(snapshot, slug) === null) return false
-
-      return count === undefined && PRODUCT_VIEWERS_DATA in data
-        ? { omitData: [PRODUCT_VIEWERS_DATA] }
-        : true
-    }
+    const product = resolveProductDetails(
+      snapshot === undefined ? productData.get() : snapshot,
+      slug,
+    )
+    if (product === null) return false
 
     // A count alone can only update an answered card. Opening a page or
     // refusing it starts a fresh scope, which still needs the full snapshot.
-    return (
-      count !== undefined &&
-      resolveProductDetails(productData.get(), slug) !== null
+    const otherViewerCount = resolveOtherViewerCount(
+      data[PRODUCT_VIEWERS_DATA],
+      slug,
     )
+    const cartCount = resolveProductCartCount(
+      data[PRODUCT_CARTS_DATA],
+      product.id,
+      slug,
+    )
+    if (
+      snapshot === undefined &&
+      otherViewerCount === undefined &&
+      cartCount === undefined
+    ) {
+      return false
+    }
+
+    const omitData = []
+    if (otherViewerCount === undefined && PRODUCT_VIEWERS_DATA in data) {
+      omitData.push(PRODUCT_VIEWERS_DATA)
+    }
+    if (cartCount === undefined && PRODUCT_CARTS_DATA in data) {
+      omitData.push(PRODUCT_CARTS_DATA)
+    }
+    return omitData.length > 0 ? { omitData } : true
   }
 }
 
@@ -174,5 +196,24 @@ export function createProductViewerCountSignal(
     return product === null
       ? undefined
       : resolveOtherViewerCount(viewerData.get(), product.slug)
+  })
+}
+
+/**
+ * Follow the cart count belonging to the currently displayed storefront card.
+ *
+ * @param scopes The application's page scope manager.
+ * @param details The product snapshot for the current route.
+ */
+export function createProductCartCountSignal(
+  scopes: ScopeManager,
+  details: ReadonlySignal<ProductDetails | null>,
+): ReadonlySignal<number | undefined> {
+  const cartData = scopes.pageDataSignal(PRODUCT_CARTS_DATA)
+  return computedSignal(() => {
+    const product = details.get()
+    return product === null
+      ? undefined
+      : resolveProductCartCount(cartData.get(), product.id, product.slug)
   })
 }

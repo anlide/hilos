@@ -8,6 +8,7 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Collection\Products as EntityProducts;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
+use Generator;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
@@ -28,6 +29,21 @@ final class Products extends Objects
     public const string OBJECT_CLASS = ObjectProduct::class;
     public const string ENTITY_COLLECTION_CLASS = EntityProducts::class;
     public const string COLLECTION_KEY = EcommerceShopDbContext::products;
+
+    /**
+     * @param string $column Product ID or slug column
+     * @param int|string ...$values Exact keys requested by the caller
+     * @return Generator<int, ObjectProduct> Detached product rows keyed by ID
+     * @throws InvalidArgumentException When the column is unknown or the query is invalid
+     * @throws LogicException When the entity collection class is not configured
+     * @throws DatabaseException When the stored rows cannot be read
+     */
+    public function storedProducts(string $column, int|string ...$values): Generator
+    {
+        foreach ($this->readStoredByColumn($column, ...$values) as $id => $entity) {
+            yield $id => ObjectProduct::fromEntity($entity);
+        }
+    }
 
     /**
      * Reads the current category and slug together without refreshing the local product mirror.

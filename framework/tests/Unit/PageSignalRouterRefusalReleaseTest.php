@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\Daemon\PageSubscriptionContext;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
@@ -132,6 +133,26 @@ final class PageSignalRouterRefusalReleaseTest extends TestCase
         $this->assertSame([RefusalReleaseTestSignalRouter::RELEASED], $this->signals->events);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
         $this->assertTrue(Hilos::$sr?->hasPageDeliveryFailure(self::ACCEPT_KEY));
+    }
+
+    public function testASourceProbePermittingMovesKeepsAnAccessRefusalQuiet(): void
+    {
+        $this->asPerson(admin: false);
+        $this->holdSubscription();
+        $this->signals->markPageDeliveryFailure(self::ACCEPT_KEY);
+        $context = new PageSubscriptionContext($this->signals, self::ACCEPT_KEY, $this->signals->pageSubscription(self::ACCEPT_KEY));
+
+        $outcome = $this->signals->withPageFanOutAnswer(
+            $context->forFanOutAnswer(reportMove: true),
+            fn (): PageResendOutcome => $this->router()->resendPage(RefusalReleaseTestPage::PAGE, self::ACCEPT_KEY, []),
+            null,
+        );
+
+        $this->assertSame(PageResendOutcome::Refused, $outcome);
+        $this->assertSame([RefusalReleaseTestSignalRouter::RELEASED], $this->signals->events);
+        $this->assertNull($this->signals->getNextQueuedSignal());
+        $this->assertTrue($this->signals->hasPageDeliveryFailure(self::ACCEPT_KEY));
+        $this->assertSame('', file_get_contents($this->logFile));
     }
 
     public function testAParamChangeRefusalReleasesTheConnection(): void

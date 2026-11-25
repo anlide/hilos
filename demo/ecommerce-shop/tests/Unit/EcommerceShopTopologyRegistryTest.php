@@ -1239,6 +1239,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             EcommerceShopDbContext::productSlugs,
             EcommerceShopDbContext::productWarehouseStocks,
             EcommerceShopDbContext::categories,
+            EcommerceShopDbContext::sessionProductCarts,
+            EcommerceShopDbContext::userProductCarts,
         ], ProductAgent::READS_DB);
         $this->assertSame([], ProductAgent::OWNS_DB);
         $this->assertSame([], ProductAgent::OWNS_DB_ROWS);

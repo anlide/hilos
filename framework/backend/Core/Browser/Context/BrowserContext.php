@@ -538,6 +538,27 @@ abstract class BrowserContext
      */
     public function buildSubscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): PagePayload
     {
+        return $this->withinPageDelivery(
+            $page,
+            fn (): PagePayload => $this->buildBrowserSnapshot($page, $acceptKey, $params),
+        );
+    }
+
+    /**
+     * @param string $page Page name from the subscription request
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PageRouteParams $params Route params for this page subscription
+     * @return PagePayload Browser fragment of the answer
+     * @throws PageInternalErrorException When a page or source declaration is malformed
+     * @throws InvalidArgumentException When a joined database source names a column its entity does not have
+     * @throws DatabaseException When reading a joined database source fails
+     * @throws LogicException When a database collection is not configured with its class constants
+     * @throws CollectionNotManualException When the collection built for a join refuses its own items
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtCollectionNotReadableException When the runtime collection is unreadable
+     */
+    private function buildBrowserSnapshot(string $page, string $acceptKey, PageRouteParams $params): PagePayload
+    {
         if (Hilos::$sr === null) {
             return new PagePayload();
         }
@@ -2024,9 +2045,9 @@ abstract class BrowserContext
      * The new address is the params the subscription holds, as strings, with the address param
      * replaced; a param that does not read as a non-empty string is left out of it. An empty or
      * non-scalar new value cannot name an address, and the page stays where it is. The author
-     * of the update is moved too: nobody else would tell it its address changed. The page's
-     * debt is not consulted; the browser's next subscription at the new address answers it
-     * whole. A moved connection is skipped for the rest of the flush.
+     * of the update is moved too: nobody else would tell it its address changed. A page can opt
+     * into a guarded debt probe at the old address. A direct move sets the connection aside
+     * for the rest of the flush, and a guarded probe uses the whole-answer ledger.
      *
      * @return list<ContainedFailure> Subscriptions whose move failed, in the order they failed
      */
@@ -2041,8 +2062,9 @@ abstract class BrowserContext
             return [];
         }
 
+        $router = Hilos::$sr;
         $contained = [];
-        foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+        foreach ($router->pageSubscriptionRecords() as $acceptKey => $subscription) {
             $subscriber = (string) $acceptKey;
             if ($this->isPageFanOutDeferred($subscriber)) {
                 continue;
@@ -2052,21 +2074,33 @@ abstract class BrowserContext
                 continue;
             }
 
-            $targetParams = $this->renamedAddress(
-                $updates,
-                $resource,
-                $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [],
-            );
+            $targetParams = $this->renamedAddress($updates, $resource, $subscription->params);
             if ($targetParams === null) {
                 continue;
             }
 
+            if ($router->hasPageDeliveryFailure($subscriber) && $this->reportsMoveOnPageRecovery($subscription->page)) {
+                $context = new PageSubscriptionContext($router, $subscriber, $subscription);
+                $contained = [...$contained, ...$this->resendWholePage($context, reportMove: true)];
+                continue;
+            }
+
             $this->skippedForPageResource[$subscriber] = true;
-            $page = (string) $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
-            $contained = [...$contained, ...$this->moveOneRenamedPage($page, $subscriber, $targetParams)];
+            $contained = [...$contained, ...$this->moveOneRenamedPage($subscription->page, $subscriber, $targetParams)];
         }
 
         return $contained;
+    }
+
+    /**
+     * Lets a guarded debt probe finish an obsolete address when a rename or database recovery reaches the page.
+     *
+     * @param string $page Page with an outstanding whole answer
+     * @return bool Whether the probe may report a verified move
+     */
+    protected function reportsMoveOnPageRecovery(string $page): bool
+    {
+        return false;
     }
 
     /**
@@ -2219,6 +2253,28 @@ abstract class BrowserContext
     }
 
     /**
+     * @param string $page Page being delivered
+     * @return ?Closure(Closure(): mixed): mixed Scope that runs one delivery in place, null for direct execution
+     */
+    protected function pageDeliveryScope(string $page): ?Closure
+    {
+        return null;
+    }
+
+    /**
+     * @template T
+     * @param string $page Page being delivered
+     * @param Closure(): T $deliver Synchronous work whose result and exceptions reach its existing caller
+     * @return T Result of the delivery
+     */
+    private function withinPageDelivery(string $page, Closure $deliver): mixed
+    {
+        $scope = $this->pageDeliveryScope($page);
+
+        return $scope === null ? $deliver() : $scope($deliver);
+    }
+
+    /**
      * @template T
      * @param PageSubscriptionContext $context Address whose access is being read
      * @param Closure(): T $judge Synchronous access or viewer evaluation
@@ -2227,7 +2283,9 @@ abstract class BrowserContext
     final public function evaluatePageFanOutAccess(PageSubscriptionContext $context, Closure $judge): mixed
     {
         try {
-            return $judge();
+            $page = $context->subscription?->page;
+
+            return $page === null ? $judge() : $this->withinPageDelivery($page, $judge);
         } finally {
             if ($context->subscription?->deliveryId === null && !$context->isCurrent()) {
                 $this->deferredPageFanOut[$context->acceptKey] = true;
@@ -2439,7 +2497,12 @@ abstract class BrowserContext
                 $previous = $this->activePageFanOut;
                 $this->activePageFanOut = $context;
                 try {
-                    $this->addBrowserChange($signalTables, $guardAllows, $change, $subscriber, $subscription);
+                    $this->withinPageDelivery(
+                        $subscription->page,
+                        function () use (&$signalTables, $guardAllows, $change, $subscriber, $subscription): void {
+                            $this->addBrowserChange($signalTables, $guardAllows, $change, $subscriber, $subscription);
+                        },
+                    );
                 } catch (Throwable $failure) {
                     $this->recordPageFanOutFailure($context, $failure, $skippedSubscriptions, $contained);
                 } finally {
@@ -2464,13 +2527,18 @@ abstract class BrowserContext
                 $previous = $this->activePageFanOut;
                 $this->activePageFanOut = $context;
                 try {
-                    $this->addBrowserStaleness(
-                        $signalTables,
-                        $guardAllows,
-                        (string) $collectionKey,
-                        array_map(strval(...), array_keys($stateIds)),
-                        $subscriber,
-                        $subscription,
+                    $this->withinPageDelivery(
+                        $subscription->page,
+                        function () use (&$signalTables, $guardAllows, $collectionKey, $stateIds, $subscriber, $subscription): void {
+                            $this->addBrowserStaleness(
+                                $signalTables,
+                                $guardAllows,
+                                (string) $collectionKey,
+                                array_map(strval(...), array_keys($stateIds)),
+                                $subscriber,
+                                $subscription,
+                            );
+                        },
                     );
                 } catch (Throwable $failure) {
                     $this->recordPageFanOutFailure($context, $failure, $skippedSubscriptions, $contained);
@@ -2895,13 +2963,14 @@ abstract class BrowserContext
 
     /**
      * @param PageSubscriptionContext $context Subscription selected by the source publisher
+     * @param bool $reportMove Whether the source fact may end an obsolete address with a verified move
      */
-    final protected function resendAddressedPageWhole(PageSubscriptionContext $context): void
+    final protected function resendAddressedPageWhole(PageSubscriptionContext $context, bool $reportMove = false): void
     {
         if ($this->isPageFanOutDeferred($context->acceptKey)) {
             return;
         }
-        foreach ($this->resendWholePage($context) as $contained) {
+        foreach ($this->resendWholePage($context, reportMove: $reportMove) as $contained) {
             Logger::error(
                 "Browser could not re-send page {$context->subscription->page} to {$context->acceptKey}: {$contained->failure->getMessage()}",
             );
@@ -3010,8 +3079,8 @@ abstract class BrowserContext
      * own part, its identity and the browser part. The browser part alone was half a page - the
      * page's own sections were out of reach from here - and the frames the page sends ahead of
      * its answer, wiped with the rest, never came back. The worker does that part
-     * ({@see PageResender}). Only Answered clears the debt. Refused, Failed and Unserved keep
-     * it. Ordinary probes repeat neither the first error nor its log line; a deletion attempt
+     * ({@see PageResender}). A whole answer pays the debt and a move ends it at the previous
+     * address. Ordinary probes repeat neither the first error nor its log line; a deletion attempt
      * may report the current domain refusal. An unserved page or a thrown failure without an
      * existing debt is reported once and starts that debt.
      *
@@ -3021,10 +3090,15 @@ abstract class BrowserContext
      * @param PageSubscriptionContext $context Original address of the owed page
      * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @param bool $fromFanOut Whether this is source delivery during the browser flush
+     * @param bool $reportMove Whether the source fact may end the old address with a verified move
      * @return list<ContainedFailure> A first thrown failure to log; empty for answers and debt probes
      */
-    private function resendWholePage(PageSubscriptionContext $context, bool $reportRefusal = false, bool $fromFanOut = true): array
-    {
+    private function resendWholePage(
+        PageSubscriptionContext $context,
+        bool $reportRefusal = false,
+        bool $fromFanOut = true,
+        bool $reportMove = false,
+    ): array {
         $router = $context->router;
         $acceptKey = $context->acceptKey;
         $subscription = $context->subscription;
@@ -3040,10 +3114,13 @@ abstract class BrowserContext
         $failure = null;
         $previous = $this->activePageFanOut;
         try {
-            $context = $fromFanOut ? $context->forFanOutAnswer() : $context;
+            $context = $fromFanOut ? $context->forFanOutAnswer($reportMove) : $context;
             $this->activePageFanOut = $fromFanOut ? $context : null;
-            $outcome = $this->pageResender?->resendPage($page, $acceptKey, $subscription->stringParams(), $reportRefusal)
-                ?? PageResendOutcome::Unserved;
+            $outcome = $this->withinPageDelivery(
+                $page,
+                fn (): PageResendOutcome => $this->pageResender?->resendPage($page, $acceptKey, $subscription->stringParams(), $reportRefusal)
+                    ?? PageResendOutcome::Unserved,
+            );
         } catch (Throwable $failure) {
             $outcome = PageResendOutcome::Failed;
         } finally {
@@ -3074,7 +3151,7 @@ abstract class BrowserContext
             )];
         }
 
-        if ($outcome === PageResendOutcome::Answered) {
+        if ($outcome === PageResendOutcome::Answered || $outcome === PageResendOutcome::Moved) {
             $router->clearPageDeliveryFailure($acceptKey);
         } elseif ($owed || $outcome === PageResendOutcome::Failed) {
             // The debt survives every unsuccessful probe, including a refused verdict.
@@ -5622,7 +5699,7 @@ abstract class BrowserContext
 
                 if (Hilos::$sr->hasPageDeliveryFailure($subscriber)) {
                     unset($signalTables[$acceptKey]);
-                    $contained = [...$contained, ...$this->resendWholePage($context)];
+                    $contained = [...$contained, ...$this->resendWholePage($context, reportMove: $this->reportsMoveOnPageRecovery($page))];
 
                     continue;
                 }

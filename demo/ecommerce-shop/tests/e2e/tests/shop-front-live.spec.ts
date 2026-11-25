@@ -60,6 +60,9 @@ const CATEGORY_DELETE_COMMAND = 'test:ecommerce-shop:category-delete'
 // EcommerceShopCommandConstants::PRODUCT_TEST_DELETE, request key `name`.
 const PRODUCT_DELETE_COMMAND = 'test:ecommerce-shop:product-delete'
 
+const GUEST_CART_SET_QUANTITY_COMMAND =
+  'test:ecommerce-shop:guest-cart-set-quantity'
+
 // Browser traces can include the guest's session cookie.
 const guestCartTest = test.extend({ trace: 'off' })
 
@@ -122,7 +125,7 @@ guestCartTest(
 
       // An error can arrive after the cart write commits, so remove after either reply.
       try {
-        await command('test:ecommerce-shop:guest-cart-set-quantity', {
+        await command(GUEST_CART_SET_QUANTITY_COMMAND, {
           sessionToken: token,
           productId: morningMeadow.id,
           quantity: 0,
@@ -165,6 +168,105 @@ guestCartTest(
   },
 )
 
+async function createStockProduct(
+  page: Page,
+  name: string,
+  categoryName: string,
+  description: string,
+): Promise<void> {
+  await gotoPage(expect, page, '/hilos/products')
+  const products = page.getByTestId('admin-products-table')
+  await products.getByTestId('hilos-table-main-action').click()
+
+  const dialog = page.getByRole('dialog', {
+    name: 'Add product',
+    exact: true,
+  })
+  await typeInto(
+    dialog.getByRole('textbox', { name: 'Name', exact: true }),
+    name,
+  )
+  await dialog
+    .getByRole('combobox', { name: 'Category' })
+    .selectOption({ label: categoryName })
+  await dialog.getByRole('radio', { name: 'Unique piece' }).press('ArrowRight')
+  await expect(dialog.getByRole('radio', { name: 'Stock item' })).toBeChecked()
+  await typeInto(
+    dialog.getByRole('textbox', { name: moneyFieldLabel('Price') }),
+    '410',
+  )
+  await typeInto(
+    dialog.getByRole('textbox', { name: 'Description' }),
+    description,
+  )
+
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    dialog.getByTestId('admin-products-add-picture').click(),
+  ])
+  await chooser.setFiles({
+    name: 'planter.png',
+    mimeType: 'image/png',
+    buffer: await drawPhotoFixture(page, {
+      width: 320,
+      height: 240,
+      mimeType: 'image/png',
+      rectangles: [{ color: '#246ac4', x: 0, y: 0, width: 320, height: 240 }],
+    }),
+  })
+  await expect(dialog.getByTestId('admin-products-add-preview')).toBeVisible()
+  await clickSubmit(expect, dialog.getByTestId('admin-products-add-submit'))
+  await expect(dialog).toBeHidden()
+  await products.getByRole('link', { name, exact: true }).click()
+  await expectPageReady(expect, page)
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+}
+
+const warehouseRow = (stockPage: Page) =>
+  stockPage
+    .getByTestId('admin-product-stock-table')
+    .getByRole('row')
+    .filter({
+      has: stockPage.getByRole('cell', {
+        name: 'Odesa · Peresyp',
+        exact: true,
+      }),
+    })
+
+const setStock = async (stockPage: Page, units: string) => {
+  const row = warehouseRow(stockPage)
+  const dialog = stockPage.getByRole('dialog', {
+    name: 'Set stock',
+    exact: true,
+  })
+  await row.getByTestId('admin-product-stock-edit-open').click()
+  await typeInto(dialog.getByTestId('admin-product-stock-edit-units'), units)
+  await clickSubmit(
+    expect,
+    dialog.getByTestId('admin-product-stock-edit-submit'),
+  )
+  await expect(dialog).toBeHidden()
+  await expect(
+    row.getByRole('cell', { name: units, exact: true }),
+  ).toBeVisible()
+}
+
+async function withStockPage<T>(
+  page: Page,
+  path: string,
+  read: (stockPage: Page) => Promise<T>,
+): Promise<T> {
+  const stockPage = await page.context().newPage()
+  try {
+    await gotoPage(expect, stockPage, path, PAGE_READY)
+    await expect(warehouseRow(stockPage)).toBeVisible()
+
+    return await read(stockPage)
+  } finally {
+    await stockPage.close()
+  }
+}
+
 test('a guest sees live price, stock, and address changes on a product', async ({
   browser,
   page,
@@ -185,50 +287,6 @@ test('a guest sees live price, stock, and address changes on a product', async (
   let stockWrite: { path: string; since: number } | undefined
   let pendingStockPath: string | undefined
 
-  const warehouseRow = (stockPage: Page) =>
-    stockPage
-      .getByTestId('admin-product-stock-table')
-      .getByRole('row')
-      .filter({
-        has: stockPage.getByRole('cell', {
-          name: 'Odesa · Peresyp',
-          exact: true,
-        }),
-      })
-
-  const setStock = async (stockPage: Page, units: string) => {
-    const row = warehouseRow(stockPage)
-    const dialog = stockPage.getByRole('dialog', {
-      name: 'Set stock',
-      exact: true,
-    })
-    await row.getByTestId('admin-product-stock-edit-open').click()
-    await typeInto(dialog.getByTestId('admin-product-stock-edit-units'), units)
-    await clickSubmit(
-      expect,
-      dialog.getByTestId('admin-product-stock-edit-submit'),
-    )
-    await expect(dialog).toBeHidden()
-    await expect(
-      row.getByRole('cell', { name: units, exact: true }),
-    ).toBeVisible()
-  }
-
-  const withStockPage = async <T>(
-    path: string,
-    read: (stockPage: Page) => Promise<T>,
-  ): Promise<T> => {
-    const stockPage = await page.context().newPage()
-    try {
-      await gotoPage(expect, stockPage, path, PAGE_READY)
-      await expect(warehouseRow(stockPage)).toBeVisible()
-
-      return await read(stockPage)
-    } finally {
-      await stockPage.close()
-    }
-  }
-
   cleanup.defer(() => delivery.stop())
   cleanup.defer(async () => {
     try {
@@ -245,6 +303,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
       // The command wraps database failures. Confirm the late write that
       // now holds the stock foreign key before trying the deletion again.
       const cleared = await withStockPage(
+        page,
         pendingStockPath,
         async (stockPage) => {
           const written = warehouseRow(stockPage).getByRole('cell', {
@@ -277,7 +336,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
     const hasReply = () =>
       trackedActionReplies(delivery, PRODUCT_STOCK_SET_UNITS, since).length > 0
     const repliedBeforeRead = hasReply()
-    await withStockPage(path, async (restorePage) => {
+    await withStockPage(page, path, async (restorePage) => {
       const row = warehouseRow(restorePage)
       let replyMayFollowRead = false
       if (wasSent && !repliedBeforeRead) {
@@ -316,56 +375,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
 
   await grantAdminToSelf(expect, page)
   await test.step('create a stock item through Add product', async () => {
-    await gotoPage(expect, page, '/hilos/products')
-    const products = page.getByTestId('admin-products-table')
-    await products.getByTestId('hilos-table-main-action').click()
-
-    const dialog = page.getByRole('dialog', {
-      name: 'Add product',
-      exact: true,
-    })
-    await typeInto(
-      dialog.getByRole('textbox', { name: 'Name', exact: true }),
-      name,
-    )
-    await dialog
-      .getByRole('combobox', { name: 'Category' })
-      .selectOption({ label: categoryName })
-    await dialog
-      .getByRole('radio', { name: 'Unique piece' })
-      .press('ArrowRight')
-    await expect(
-      dialog.getByRole('radio', { name: 'Stock item' }),
-    ).toBeChecked()
-    await typeInto(
-      dialog.getByRole('textbox', { name: moneyFieldLabel('Price') }),
-      '410',
-    )
-    await typeInto(
-      dialog.getByRole('textbox', { name: 'Description' }),
-      description,
-    )
-
-    const [chooser] = await Promise.all([
-      page.waitForEvent('filechooser'),
-      dialog.getByTestId('admin-products-add-picture').click(),
-    ])
-    await chooser.setFiles({
-      name: 'planter.png',
-      mimeType: 'image/png',
-      buffer: await drawPhotoFixture(page, {
-        width: 320,
-        height: 240,
-        mimeType: 'image/png',
-        rectangles: [{ color: '#246ac4', x: 0, y: 0, width: 320, height: 240 }],
-      }),
-    })
-    await expect(dialog.getByTestId('admin-products-add-preview')).toBeVisible()
-    await clickSubmit(expect, dialog.getByTestId('admin-products-add-submit'))
-    await expect(dialog).toBeHidden()
-    await products.getByRole('link', { name, exact: true }).click()
-    await expectPageReady(expect, page)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+    await createStockProduct(page, name, categoryName, description)
   })
 
   const guestContext = await browser.newContext()
@@ -578,6 +588,179 @@ test('shop.product-viewers: Overview and shop tabs see viewers join and leave li
     await expectDocumentUnchanged(expect, page)
   })
 })
+
+guestCartTest(
+  'shop.product-carts: Overview and the shop product see a guest cart fill and empty live',
+  async ({ browser, page, cleanup }) => {
+    const suffix = randomBytes(6).toString('hex')
+    const name = `e2e product ${suffix}`
+    const productPath = `/product/e2e-product-${suffix}`
+    const nobody = 'In nobody’s cart yet'
+    const command = createStandCommandChannel({ timeoutMs: 5_000 })
+    const deleteProductFailure = `${PRODUCT_DELETE_COMMAND} failed: ${PRODUCT_DELETE_COMMAND} failed: The product fixture could not be deleted`
+    const delivery = watchDeliveryFrames(page)
+    const stockUnits = '8'
+    let pendingStockPath: string | undefined
+
+    cleanup.defer(() => delivery.stop())
+    cleanup.defer(async () => {
+      try {
+        await command(PRODUCT_DELETE_COMMAND, { name })
+      } catch (error) {
+        if (
+          pendingStockPath === undefined ||
+          !(error instanceof Error) ||
+          error.message !== deleteProductFailure
+        ) {
+          throw error
+        }
+
+        // Retry only after a fresh view shows the write that can block deletion.
+        const cleared = await withStockPage(
+          page,
+          pendingStockPath,
+          async (stockPage) => {
+            const written = warehouseRow(stockPage).getByRole('cell', {
+              name: stockUnits,
+              exact: true,
+            })
+            if (!(await written.isVisible())) return false
+
+            await setStock(stockPage, '0')
+
+            return true
+          },
+        )
+        if (!cleared) throw error
+
+        await command(PRODUCT_DELETE_COMMAND, { name })
+      }
+    })
+    await emulateSystemTheme(page, 'light')
+    await grantAdminToSelf(expect, page)
+
+    const { overviewPath, productId } =
+      await test.step('create a stock item and make it available in the shop', async () => {
+        await createStockProduct(
+          page,
+          name,
+          'Pots & planters',
+          'A ceramic planter carried in stock.',
+        )
+        await expect(page).toHaveURL(/\/hilos\/product\/[1-9]\d*$/)
+        const overviewPath = new URL(page.url()).pathname
+        const productId = Number(overviewPath.split('/').at(-1))
+
+        await page
+          .getByTestId(`hilos-page-tab-${PAGE_ADMIN_PRODUCT_STOCK}`)
+          .click()
+        await expectPageReady(expect, page)
+        const stockPath = new URL(page.url()).pathname
+        const zero = warehouseRow(page).getByRole('cell', {
+          name: '0',
+          exact: true,
+        })
+        await expect(zero).toBeVisible()
+        const since = delivery.sent.length
+        const hasReply = () =>
+          trackedActionReplies(delivery, PRODUCT_STOCK_SET_UNITS, since)
+            .length > 0
+        pendingStockPath = stockPath
+        cleanup.defer(async () => {
+          // Preserve the mutation's socket and keep reset replies on their own page.
+          let replyPrecedesSnapshot = hasReply()
+          await withStockPage(page, stockPath, async (stockPage) => {
+            const row = warehouseRow(stockPage)
+            const written = row.getByRole('cell', {
+              name: stockUnits,
+              exact: true,
+            })
+            if (!replyPrecedesSnapshot && !(await written.isVisible())) {
+              try {
+                await expect
+                  .poll(async () => hasReply() || (await written.isVisible()), {
+                    message:
+                      'Stock cleanup waits for the reply or the written units',
+                  })
+                  .toBe(true)
+              } catch (error) {
+                test.info().annotations.push({
+                  type: 'stock-cleanup-wait',
+                  description: String(error),
+                })
+              }
+              // An outcome observed during this subscription cannot settle its zero.
+              if (!(await written.isVisible())) {
+                replyPrecedesSnapshot = hasReply()
+                await gotoPage(expect, stockPage, stockPath, PAGE_READY)
+                await expect(row).toBeVisible()
+              }
+            }
+
+            const empty = row.getByRole('cell', { name: '0', exact: true })
+            if (await written.isVisible()) {
+              await setStock(stockPage, '0')
+            } else if (!replyPrecedesSnapshot || !(await empty.isVisible())) {
+              return
+            }
+            pendingStockPath = undefined
+          })
+        })
+        await setStock(page, stockUnits)
+        await gotoPage(expect, page, overviewPath, PAGE_READY)
+
+        return { overviewPath, productId }
+      })
+
+    const guestContext = await browser.newContext({ colorScheme: 'light' })
+    cleanup.defer(() => guestContext.close())
+    const guest = await guestContext.newPage()
+    const overviewCount = page
+      .getByTestId('admin-product-shop-front')
+      .getByTestId('product-cart-count')
+      .filter({ visible: true })
+    const shopCount = guest
+      .getByTestId('product-cart-count')
+      .filter({ visible: true })
+
+    await test.step('see zero carts in both open product documents', async () => {
+      await gotoPage(expect, guest, productPath, PAGE_READY)
+      await expect(guest.getByRole('heading', { level: 1 })).toHaveText(name)
+      await expect(overviewCount).toHaveText(nobody)
+      await expect(shopCount).toHaveText(nobody)
+      await markDocument(page)
+      await markDocument(guest)
+    })
+
+    const token = await sessionToken(guest)
+    const setQuantity = (quantity: number) =>
+      command(GUEST_CART_SET_QUANTITY_COMMAND, {
+        sessionToken: token,
+        productId,
+        quantity,
+      })
+    cleanup.defer(() => setQuantity(0))
+
+    const expectLiveCount = async (text: string) => {
+      await expect(overviewCount).toHaveText(text)
+      await expect(shopCount).toHaveText(text)
+      await expect(page).toHaveURL(overviewPath)
+      await expect(guest).toHaveURL(productPath)
+      await expectDocumentUnchanged(expect, page)
+      await expectDocumentUnchanged(expect, guest)
+    }
+
+    await test.step('count the cart in both sessions when the guest adds the item', async () => {
+      await setQuantity(1)
+      await expectLiveCount('In 1 cart')
+    })
+
+    await test.step('return to zero in both sessions when the guest removes the item', async () => {
+      await setQuantity(0)
+      await expectLiveCount(nobody)
+    })
+  },
+)
 
 test('shop.categories-add: an admin adds a category with a picture, a second tab sees it arrive last, and a taken name is refused in the window', async ({
   browser,

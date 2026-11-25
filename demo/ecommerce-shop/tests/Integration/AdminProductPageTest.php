@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
@@ -18,6 +19,7 @@ use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock as EntityProductWarehouseStock;
+use Demo\EcommerceShop\Database\Entity\Item\UserProductCart as EntityUserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\Category as ObjectCategory;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
 use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
@@ -26,6 +28,7 @@ use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminProductPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
+use Demo\EcommerceShop\Pages\DTO\AdminProductPageSubscribeParams;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
 use Demo\EcommerceShop\Runtime\State\Item\ProductViewerCount;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -83,6 +86,7 @@ use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Files\HilosFiles;
@@ -92,6 +96,7 @@ use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Testing\IntegrationTest;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -317,6 +322,95 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         self::assertSame(self::stockField(42, 2, null), $card[AdminProductBrowserData::FIELD_STOCK]);
         foreach ($card as $field => $value) {
             self::assertFalse(HiddenValue::isMark($value), "field {$field} is a mark for the viewer");
+        }
+    }
+
+    /** Overview subscribers read and follow the cart aggregate even with the storefront closed. */
+    public function testOverviewShowsStoredCartsToAdminsAndViewers(): void
+    {
+        $productId = $this->bulbs;
+        $userId = self::person('Cart owner', false);
+        $owner = new UserAgent((string) $userId);
+        $ownerConsumer = SourceConsumer::agent($owner->getId());
+        try {
+            OwnershipDeclaration::claimAll($owner);
+            ExecutionContext::run(
+                new ExecutionFrame(agentId: $owner->getId()),
+                static fn () => Hilos::$db->userProductCarts->actions->add($userId, $productId),
+            );
+        } finally {
+            TruthSourceRegistry::unregisterAgent($owner->getId());
+            SourceInterestRegistry::releaseConsumer($ownerConsumer);
+        }
+        $row = Database::sql('SELECT * FROM user_product_cart WHERE user_id = ? AND product_id = ?', [$userId, $productId])->rows()[0];
+        Hilos::$db->productWarehouseStocks->actions->setUnits($productId, $this->kyiv, 0);
+        Hilos::$db->productWarehouseStocks->actions->setUnits($productId, $this->lviv, 0);
+
+        $worker = new EcommerceShopWorkerManager(1);
+        new ReflectionProperty(WorkerManager::class, 'daemonClient')->setValue($worker, new WorkerDaemonClient());
+        $library = new ProductsLibraryAgent();
+        new ReflectionProperty(WorkerManager::class, 'agentManager')->getValue($worker)->addAgent($library->getId(), $library);
+        Hilos::$browser->bindPageResender($worker);
+        $reads = new ReflectionMethod(WorkerManager::class, 'pageSourceReads')->invoke($worker, AdminProductPage::PAGE);
+        $fixture = SourceConsumer::agent(self::class);
+        foreach (Hilos::$db->processWideReadKeys() as $collection) {
+            SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, $fixture);
+            SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+        }
+        foreach ([...$reads[SourceChange::KIND_RT], EcommerceShopRtContext::connections] as $collection) {
+            SourceInterestRegistry::register(SourceChange::KIND_RT, $collection, $fixture);
+            SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collection);
+        }
+        $cartCollections = [EcommerceShopDbContext::sessionProductCarts, EcommerceShopDbContext::userProductCarts];
+        SourceInterestRegistry::readsWhatIsDelivered();
+        try {
+            foreach ([self::ADMIN_KEY, self::VISITOR_KEY] as $acceptKey) {
+                $worker->handleDaemonMessage(new DaemonAgentMessageDTO($library->getId(), new SignalDTO(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                    new SignalName(AdminProductPage::PAGE),
+                    new WebSocketPageSubscribeSignalDTO($acceptKey, AdminProductPage::PAGE, [
+                        AdminProductPageSubscribeParams::PRODUCT_ID => (string) $productId,
+                    ]),
+                )));
+                foreach ($cartCollections as $collection) {
+                    self::assertContains(SourceConsumer::page($acceptKey), SourceInterestRegistry::consumersOf(SourceChange::KIND_DB, $collection));
+                }
+                foreach ($reads[SourceChange::KIND_DB] as $collection) {
+                    SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+                }
+                self::releaseParkedWorkerFrames($worker);
+                $responses = $this->drainResponses($acceptKey);
+                self::assertCount(1, $responses);
+                self::assertSame(self::stockField(0, 0, null), $this->cardOf($responses[0])[AdminProductBrowserData::FIELD_STOCK]);
+                self::assertSame(['productId' => $productId, 'cartCount' => 1], $responses[0]->payload->data['productCarts']);
+            }
+
+            OwnershipDeclaration::claimAll($owner);
+            ExecutionContext::run(
+                new ExecutionFrame(agentId: $owner->getId()),
+                static fn () => Hilos::$db->userProductCarts->actions->remove($userId, $productId),
+            );
+            $worker->handleDaemonMessage(new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(
+                EcommerceShopDbContext::userProductCarts,
+                (string) $row[EntityUserProductCart::id],
+                $row,
+            )));
+            self::assertSame([], Hilos::$browser->flushToSignalRouter());
+            $payload = new PagePayload(data: ['productCarts' => ['productId' => $productId, 'cartCount' => 0]]);
+            foreach ([self::ADMIN_KEY, self::VISITOR_KEY] as $acceptKey) {
+                $signal = self::takeBrowserPayload(SignalTypeConstants::PAGE_RESPONSE, $acceptKey);
+                self::assertInstanceOf(PageResponseSignalData::class, $signal);
+                self::assertSame(AdminProductPage::PAGE, $signal->pageKey);
+                self::assertSame($payload->toArray(), $signal->payload->toArray());
+            }
+        } finally {
+            SourceInterestRegistry::readsWhatItMounts();
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::page(self::ADMIN_KEY));
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::page(self::VISITOR_KEY));
+            SourceInterestRegistry::releaseConsumer($fixture);
+            TruthSourceRegistry::unregisterAgent($owner->getId());
+            SourceInterestRegistry::releaseConsumer($ownerConsumer);
         }
     }
 

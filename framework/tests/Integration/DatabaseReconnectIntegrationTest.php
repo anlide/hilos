@@ -7,11 +7,17 @@ namespace Hilos\Tests\Integration;
 use ErrorException;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\Daemon\BaseManager;
+use Hilos\Database\ConnectionReadBoundary;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\DatabaseConnectionException;
+use Hilos\Database\Exception\DatabaseRuntimeException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\SqlConnection\CantConnectToMysqlServerException;
+use Hilos\Database\Exception\SqlRuntime\GoneAwayException;
+use Hilos\Database\Exception\SqlRuntime\LostConnectionException;
 use Hilos\Database\Exception\SqlRuntime\TableNotFoundException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
@@ -73,6 +79,177 @@ final class DatabaseReconnectIntegrationTest extends FrameworkIntegrationTestCas
         $this->assertSame(1, (int) $row['v']);
 
         $this->assertNotSame($killedId, $this->currentConnectionId(), 'Query must run on a reopened connection');
+    }
+
+    /** The first physical loss holds for later reads in the same delivery and releases on the next delivery. */
+    public function testReadBoundaryParksTheLostLinkUntilTheNextDelivery(): void
+    {
+        $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $killedId = $this->currentConnectionId();
+        $this->killConnection($killedId);
+        $boundary = new ConnectionReadBoundary();
+
+        Database::withSqlReadBoundary($index, $boundary, static function () use ($boundary, $index): void {
+            try {
+                Database::sql('SELECT 1');
+                self::fail('The first read should report the lost link');
+            } catch (GoneAwayException | LostConnectionException $failure) {
+                self::assertSame($failure, $boundary->failure());
+            }
+            self::assertFalse(Database::isConnected($index));
+            try {
+                Database::sql('SELECT 1');
+                self::fail('The second read should leave the link closed');
+            } catch (GoneAwayException | LostConnectionException $failure) {
+                self::assertSame($boundary->failure(), $failure);
+            }
+            self::assertFalse(Database::isConnected($index));
+        });
+
+        $fresh = new ConnectionReadBoundary();
+        $value = Database::withSqlReadBoundary($index, $fresh, static fn (): int => (int) Database::sql('SELECT 42 AS v')->field('v'));
+        self::assertSame(42, $value);
+        self::assertNull($fresh->failure());
+        self::assertNotSame($killedId, $this->currentConnectionId());
+    }
+
+    /** The first loss is discovered by the physical rollback after a local refusal. */
+    public function testReadBoundaryHoldsTheConnectionLossFromSilentSnapshotRollback(): void
+    {
+        $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $boundary = new ConnectionReadBoundary();
+        $refusal = new DbCollectionNotReadableException('The source is not wired');
+        $killedId = $this->currentConnectionId();
+        $returns = Database::returnsAfterLoss();
+        $this->captureLog();
+
+        Database::withSqlReadBoundary($index, $boundary, function () use ($refusal, $killedId, $boundary, $index, $returns): void {
+            try {
+                Database::readSnapshot(DatabaseNames::PRIMARY, function () use ($refusal, $killedId): never {
+                    self::assertSame($killedId, $this->currentConnectionId());
+                    $this->killConnection($killedId);
+                    throw $refusal;
+                });
+                self::fail('The snapshot must raise the local refusal');
+            } catch (DbCollectionNotReadableException $failure) {
+                self::assertSame($refusal, $failure);
+            }
+
+            $log = (string) file_get_contents($this->logFile);
+            self::assertStringContainsString('A silent transaction rollback failed:', $log);
+            self::assertStringContainsString('Query: ROLLBACK', $log);
+            self::assertFalse(Database::isConnected($index));
+            $loss = $boundary->failure();
+            self::assertTrue($loss instanceof GoneAwayException || $loss instanceof LostConnectionException);
+            self::assertSame('ROLLBACK', $loss->getQuery());
+            try {
+                Database::sql('SELECT 1');
+                self::fail('The next read must leave the link closed');
+            } catch (GoneAwayException | LostConnectionException $failure) {
+                self::assertSame($loss, $failure);
+            }
+            self::assertFalse(Database::isConnected($index));
+            self::assertSame($returns, Database::returnsAfterLoss());
+        });
+
+        $fresh = new ConnectionReadBoundary();
+        self::assertNotSame($killedId, Database::withSqlReadBoundary($index, $fresh, $this->currentConnectionId(...)));
+        self::assertNull($fresh->failure());
+        self::assertSame($returns + 1, Database::returnsAfterLoss());
+    }
+
+    /** A loss during memory rollback must leave the original RELEASE failure visible to the caller. */
+    public function testFailedReleaseKeepsItsSqlFailureWhenRollbackCallbackLosesTheLink(): void
+    {
+        $index = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $readerId = $this->currentConnectionId();
+        $boundary = new ConnectionReadBoundary();
+        $returns = Database::returnsAfterLoss();
+
+        Database::withSqlReadBoundary($index, $boundary, function () use ($index, $readerId, $boundary, $returns): void {
+            $restored = false;
+            $announced = false;
+            $connectedBeforeKill = false;
+            Database::transactionStartNestable($index);
+            try {
+                Database::transactionStartNestable($index);
+                self::assertSame($readerId, $this->currentConnectionId());
+                Database::sql('RELEASE SAVEPOINT hilos_tx_2', index: $index);
+                Database::afterCommit(static function () use (&$announced): void { $announced = true; }, $index);
+                Database::onRollback(static function () use (&$restored): void { $restored = true; }, $index);
+                Database::onRollback(function () use ($index, $readerId, $boundary, &$connectedBeforeKill): void {
+                    $connectedBeforeKill = Database::isConnected($index) && $boundary->failure() === null;
+                    $this->killConnection($readerId);
+                    Database::sql('SELECT 1 AS rollback_probe', index: $index);
+                }, $index);
+
+                try {
+                    Database::transactionCommit($index);
+                    self::fail('The missing savepoint must refuse RELEASE');
+                } catch (DatabaseRuntimeException $failure) {
+                    self::assertSame(DatabaseRuntimeException::class, $failure::class);
+                    self::assertSame(1305, $failure->getCode());
+                    self::assertSame('RELEASE SAVEPOINT', $failure->getQuery());
+                }
+
+                self::assertTrue($connectedBeforeKill);
+                self::assertTrue($restored);
+                $loss = $boundary->failure();
+                self::assertTrue($loss instanceof GoneAwayException || $loss instanceof LostConnectionException);
+                self::assertSame('SELECT 1 AS rollback_probe', $loss->getQuery());
+
+                self::assertTrue(Database::hasOpenTransactions());
+                Database::transactionRollback($index);
+                self::assertTrue(Database::hasOpenTransactions(), 'Rolling back the failed child must leave its parent open');
+                Database::transactionRollback($index);
+            } finally {
+                Database::transactionRollbackSilent($index);
+                Database::transactionRollbackSilent($index);
+            }
+            self::assertFalse(Database::hasOpenTransactions());
+            self::assertFalse($announced);
+
+            try {
+                Database::sql('SELECT 1', index: $index);
+                self::fail('The next read must leave the link closed');
+            } catch (GoneAwayException | LostConnectionException $failure) {
+                self::assertSame($loss, $failure);
+            }
+            self::assertFalse(Database::isConnected($index));
+            self::assertSame($returns, Database::returnsAfterLoss());
+        });
+
+        $fresh = new ConnectionReadBoundary();
+        self::assertNotSame($readerId, Database::withSqlReadBoundary($index, $fresh, $this->currentConnectionId(...)));
+        self::assertNull($fresh->failure());
+        self::assertSame($returns + 1, Database::returnsAfterLoss());
+    }
+
+    /** A local refusal followed by a successful rollback leaves the same delivery open. */
+    public function testSuccessfulSnapshotRollbackKeepsTheReadBoundaryOpen(): void
+    {
+        $boundary = new ConnectionReadBoundary();
+        $refusal = new DbCollectionNotReadableException('The source is not wired');
+        $connectionId = $this->currentConnectionId();
+
+        Database::withSqlReadBoundary(
+            DatabaseConnectionDefaults::PRIMARY_INDEX,
+            $boundary,
+            function () use ($boundary, $refusal, $connectionId): void {
+                try {
+                    Database::readSnapshot(DatabaseNames::PRIMARY, function () use ($refusal, $connectionId): never {
+                        self::assertSame($connectionId, $this->currentConnectionId());
+                        throw $refusal;
+                    });
+                    self::fail('The snapshot must raise the local refusal');
+                } catch (DbCollectionNotReadableException $failure) {
+                    self::assertSame($refusal, $failure);
+                }
+
+                self::assertNull($boundary->failure());
+                self::assertSame($connectionId, $this->currentConnectionId());
+            },
+        );
     }
 
     /**

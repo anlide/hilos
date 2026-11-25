@@ -36,18 +36,28 @@ final class ProductWarehouseStocks extends Objects
      * @return int Stored units, zero when no warehouse keeps the product
      * @throws DatabaseException When the stock rows cannot be read
      * @throws InvalidArgumentException When the Entity query is invalid
+     * @throws LogicException When the entity collection class is not configured
      */
     public function storedUnitsOfProduct(int $productId): int
     {
-        $stocks = static::entityClass()::get( // fresh-sql: a cart increase can arrive before the worker receives the stock update.
-            [EntityProductWarehouseStock::product_id => $productId],
-        );
-        $units = 0;
-        foreach ($stocks as $stock) {
-            $units += $stock->units;
+        return $this->storedUnitsOfProducts($productId)[$productId];
+    }
+
+    /**
+     * @param int ...$productIds Product primary keys
+     * @return array<int, int> Persisted warehouse totals, including zero for any requested product without stock
+     * @throws DatabaseException When the stock rows cannot be read
+     * @throws InvalidArgumentException When the Entity query is invalid
+     * @throws LogicException When the entity collection class is not configured
+     */
+    public function storedUnitsOfProducts(int ...$productIds): array
+    {
+        $totals = array_fill_keys($productIds, 0);
+        foreach ($this->readStoredByColumn(EntityProductWarehouseStock::product_id, ...$productIds) as $stock) {
+            $totals[$stock->product_id] += $stock->units;
         }
 
-        return $units;
+        return $totals;
     }
 
     /**

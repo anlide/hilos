@@ -100,6 +100,24 @@ export function resolveAdminProduct(raw: unknown): AdminProduct | null {
   }
 }
 
+/**
+ * Read the card belonging to a product address.
+ *
+ * @param raw The raw adminProduct page data.
+ * @param productId The product ID from the current route.
+ */
+export function resolveAddressedAdminProduct(
+  raw: unknown,
+  productId: unknown,
+): AdminProduct | null {
+  // The server's positive decimal route allows a plus sign and leading zeros.
+  if (typeof productId !== 'string' || !/^\+?0*[1-9]\d*$/.test(productId)) {
+    return null
+  }
+  const current = resolveAdminProduct(raw)
+  return current?.productId === Number(productId) ? current : null
+}
+
 /** The addressed product and its live name for the shared entity head. */
 export interface AdminProductCardSignals {
   /** The product, or null until the current page has the matching card. */
@@ -124,13 +142,10 @@ export function createAdminProductCardSignals(
   const product = computedSignal(() => {
     const route = currentRoute.get()
     if (route.page !== page || scopes.page()?.key !== page) return null
-
-    const { productId } = route.params
-    // The server's positive decimal route allows a plus sign and leading zeros.
-    if (!/^\+?0*[1-9]\d*$/.test(productId)) return null
-
-    const current = resolveAdminProduct(productData.get())
-    return current?.productId === Number(productId) ? current : null
+    return resolveAddressedAdminProduct(
+      productData.get(),
+      route.params.productId,
+    )
   })
   const name = computedSignal(() => product.get()?.name)
   return { product, name }

@@ -66,6 +66,14 @@ collection, and affected-row reads stay on that connection rather than following
 a changed ambient index. The connection index stays local to ORM and source
 routing; DB sync frames do not carry it as a field.
 
+For related nonlocking reads on the same connection, use
+`Database::readSnapshot(string $database, Closure $read): mixed`. It follows
+the same named transaction and cleanup rules. At the first query it applies
+`REPEATABLE READ` for that transaction alone, even when the session uses
+`READ COMMITTED`. Ordinary transactions keep their session default. The
+synthetic rollback root uses the same one-shot isolation when it opens so a
+snapshot savepoint can share it after earlier fixture SQL.
+
 The transaction belongs to a row connection, not to a schema name. Different
 schemas on one row connection share its transaction, in-memory rollback journal,
 runtime changes, and deferred announcements. A read through another connection

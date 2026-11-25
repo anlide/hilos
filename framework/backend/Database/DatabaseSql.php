@@ -39,6 +39,8 @@ final class DatabaseSql
 
     public const string ROLLBACK_TO_SAVEPOINT = 'ROLLBACK TO SAVEPOINT';
 
+    public const string NEXT_TRANSACTION_REPEATABLE_READ = 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ';
+
     public const string SESSION_MAX_STATEMENT_TIME_GET = 'SELECT @@max_statement_time';
 
     public const string SESSION_FACTS = 'SELECT CONNECTION_ID() AS connection_id, @@hostname AS member, '

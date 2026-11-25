@@ -12,14 +12,18 @@ use Hilos\Core\Browser\Context\BrowserContext;
  * A page is re-sent after its delivery failed: the client was told its page could not be
  * delivered and wiped it, so the first delivery that succeeds afterwards owes the page whole.
  * The re-send runs the frame a subscribe runs - the verdict and then the page's own answer -
- * and only Answered pays the debt. Ordinary probes of an existing debt repeat no error or log
- * line. A deletion attempt may report a current domain refusal while keeping that same debt
+ * and Answered pays the debt. A source probe permitted to send a verified move ends the debt
+ * at the old address. Ordinary probes repeat no error or log line. A deletion attempt may
+ * report a current domain refusal while keeping the debt
  * ({@see BrowserContext::resendWholePage()}).
  */
 enum PageResendOutcome
 {
     /** A page_response went out: the page is whole again on the client. */
     case Answered;
+
+    /** A permitted source probe sent page_moved, ending recovery at the previous address. */
+    case Moved;
 
     /** An existing debt remains; ordinary probes are silent, deletion attempts may report the refusal. */
     case Refused;

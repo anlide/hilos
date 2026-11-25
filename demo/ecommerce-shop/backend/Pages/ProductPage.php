@@ -18,6 +18,7 @@ use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\ProductAddToCartActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPageSubscribeParams;
+use Demo\EcommerceShop\ShopFront\ProductCartCount;
 use Demo\EcommerceShop\ShopFront\ProductReading;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -78,6 +79,8 @@ final class ProductPage extends AbstractPage
     public const string DATA_PRODUCT = 'product';
 
     public const string DATA_PRODUCT_VIEWERS = 'productViewers';
+
+    public const string DATA_PRODUCT_CARTS = 'productCarts';
 
     private const string PRODUCT_UNAVAILABLE = 'This product is no longer available on this page.';
 
@@ -188,7 +191,7 @@ final class ProductPage extends AbstractPage
      * @throws PageInternalErrorException When the resource or its address declaration is invalid
      * @throws InvalidArgumentException When the catalog picture variant is misconfigured
      * @throws RtActionsStateCollectionNullException When the connections collection is unavailable
-     * @throws HilosException When the catalog reading fails
+     * @throws HilosException When the catalog or cart reading fails
      */
     protected function prepareResourceAnswer(string $acceptKey, PageRouteParams $params): PageResourceAnswer
     {
@@ -215,6 +218,11 @@ final class ProductPage extends AbstractPage
                 self::categorySlug => $reading->category->slug,
             ],
             self::DATA_PRODUCT_VIEWERS => self::viewerData($product->slug, $audience?->otherViewers ?? 0),
+            self::DATA_PRODUCT_CARTS => ProductCartCount::data(
+                $product->id,
+                Hilos::$browser?->productCartCount($product->id) ?? ProductCartCount::forProduct($product->id),
+                $product->slug,
+            ),
         ]);
 
         return new PageResourceAnswer($resource, $payload, static function () use ($resource, $basis, $agent, $acceptKey, $audience): void {

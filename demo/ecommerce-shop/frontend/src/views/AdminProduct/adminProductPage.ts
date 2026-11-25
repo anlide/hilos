@@ -6,6 +6,8 @@ import {
   subscribeSignal,
   type HilosRouter,
   type ReadonlySignal,
+  type ScopeManager,
+  type ScopePayload,
 } from '@hilos/core/base'
 
 import { connection } from '../../bootstrap/connection.js'
@@ -13,6 +15,7 @@ import { scopes } from '../../bootstrap/session.js'
 import {
   ADMIN_PRODUCT_DATA,
   createAdminProductCardSignals,
+  resolveAddressedAdminProduct,
   type AdminProductCardSignals,
 } from '../../catalog/adminProductCard.js'
 import {
@@ -20,8 +23,13 @@ import {
   categoryNameOf,
   categoryOptions,
 } from '../../catalog/catalog.js'
+import {
+  PRODUCT_CARTS_DATA,
+  resolveProductCartCount,
+} from '../../catalog/productCarts.js'
 import { type EntityFieldsResolver } from '../../entityFields/entityFields.js'
 import { PAGE_ADMIN_PRODUCT } from '../../pages/keys.js'
+import { type AdminProduct } from '../../types/AdminProduct.js'
 import {
   ADMIN_PRODUCT_WAREHOUSES_LIST,
   warehouseNameOf,
@@ -37,8 +45,64 @@ const warehouseItems = scopes.pageListSignal(ADMIN_PRODUCT_WAREHOUSES_LIST)
 const fieldsOf: EntityFieldsResolver = (ref) =>
   scopes.entitySignal(ref).get()?.fields
 
+/**
+ * Admit an addressed Overview and counts for an Overview already in scope.
+ *
+ * @param scopes The application's page scope manager.
+ */
+export function createAdminProductPageResponseMatcher(scopes: ScopeManager) {
+  const productData = scopes.pageDataSignal(ADMIN_PRODUCT_DATA)
+
+  return function matchesAdminProductPageResponse(
+    params: Readonly<Record<string, unknown>>,
+    payload: Readonly<ScopePayload>,
+  ) {
+    const data = payload.data ?? {}
+    const snapshot = data[ADMIN_PRODUCT_DATA]
+    if (snapshot === undefined && !(PRODUCT_CARTS_DATA in data)) return true
+
+    const product = resolveAddressedAdminProduct(
+      snapshot === undefined ? productData.get() : snapshot,
+      params.productId,
+    )
+    if (product === null) return false
+
+    const cartCount = resolveProductCartCount(
+      data[PRODUCT_CARTS_DATA],
+      product.productId,
+    )
+    if (cartCount !== undefined) return true
+    if (snapshot === undefined) return false
+
+    return PRODUCT_CARTS_DATA in data
+      ? { omitData: [PRODUCT_CARTS_DATA] }
+      : true
+  }
+}
+
+/**
+ * Follow the cart count for the addressed Overview card.
+ *
+ * @param scopes The application's page scope manager.
+ * @param product The product snapshot for the current Overview route.
+ */
+export function createAdminProductCartCountSignal(
+  scopes: ScopeManager,
+  product: ReadonlySignal<AdminProduct | null>,
+): ReadonlySignal<number | undefined> {
+  const cartData = scopes.pageDataSignal(PRODUCT_CARTS_DATA)
+  return computedSignal(() => {
+    const current = product.get()
+    return current === null
+      ? undefined
+      : resolveProductCartCount(cartData.get(), current.productId)
+  })
+}
+
 /** The product the page shows and the live names its head, tab and card read. */
 export interface AdminProductSignals extends AdminProductCardSignals {
+  /** The aggregate cart count for the current Overview card. */
+  readonly cartCount: ReadonlySignal<number | undefined>
   /** The card's live Category choices in catalog order. */
   readonly categories: ReadonlySignal<ReturnType<typeof categoryOptions>>
   /** The card's live Warehouse choices in list order. */
@@ -120,6 +184,7 @@ export function createAdminProductSignals(
 
   return {
     product,
+    cartCount: createAdminProductCartCountSignal(scopes, product),
     categories,
     warehouses,
     editCard,

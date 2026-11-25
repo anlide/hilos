@@ -23,6 +23,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
+use Hilos\Database\DatabaseSql;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\ObjectCollectionNotFoundException;
@@ -551,6 +553,64 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
 
         self::assertSame([], Database::handlerEnd());
         Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
+    }
+
+    /** Empty snapshots stay lazy, and an exception closes the snapshot without changing the next transaction. */
+    public function testReadSnapshotKeepsTheSessionIsolationAndRestoresTheTransactionScope(): void
+    {
+        Database::close();
+        self::assertSame(42, Database::readSnapshot(DatabaseNames::PRIMARY, static fn (): int => 42));
+        self::assertFalse(Database::isConnected());
+        Database::connect();
+
+        $this->configureNamedRowConnection();
+        Database::sql('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
+        try {
+            $connection = Database::sql('SELECT CONNECTION_ID() AS id')->field('id');
+            $failure = new RuntimeException('The snapshot read failed');
+            $undone = false;
+            try {
+                Database::readSnapshot(DatabaseNames::PRIMARY, static function () use ($failure, &$undone): void {
+                    self::assertSame(1, (int) Database::sql('SELECT @@in_transaction AS active')->field('active'));
+                    Database::onRollback(static function () use (&$undone): void {
+                        $undone = true;
+                    });
+                    throw $failure;
+                });
+                self::fail('The snapshot should preserve its callback failure');
+            } catch (RuntimeException $caught) {
+                self::assertSame($failure, $caught);
+            }
+            self::assertTrue($undone);
+            self::assertFalse(Database::hasOpenTransactions());
+            self::assertSame($connection, Database::sql('SELECT CONNECTION_ID() AS id')->field('id'));
+            Database::transaction(DatabaseNames::PRIMARY, static function (): void {
+                $read = static fn (): int => (int) Database::sql('SELECT COUNT(*) AS total FROM hilos_user')->field('total');
+                $before = $read();
+                Database::sql('INSERT INTO hilos_user (name) VALUES (?)', ['Committed between reads'], index: self::KILLER_INDEX);
+                self::assertSame($before + 1, $read());
+            });
+        } finally {
+            Database::close();
+            Database::connect();
+        }
+    }
+
+    /** Failure to open a snapshot leaves no application level and allows the next query to get a live session. */
+    public function testReadSnapshotCanRecoverAfterItsOpeningStatementFails(): void
+    {
+        $connection = (int) Database::sql('SELECT CONNECTION_ID() AS id')->field('id');
+        $this->killFromAnotherSession($connection);
+
+        try {
+            Database::readSnapshot(DatabaseNames::PRIMARY, static fn () => Database::sql('SELECT 1'));
+            self::fail('A dead session must refuse the snapshot start');
+        } catch (DatabaseRuntimeException $failure) {
+            self::assertStringContainsString(DatabaseSql::NEXT_TRANSACTION_REPEATABLE_READ, $failure->getMessage());
+        }
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertNotSame($connection, (int) Database::sql('SELECT CONNECTION_ID() AS id')->field('id'));
+        self::assertSame([], Database::handlerEnd());
     }
 
     /**

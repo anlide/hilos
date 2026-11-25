@@ -14,9 +14,10 @@ import { createRoot } from 'react-dom/client'
 
 import App from '../App.js'
 import { pageEntityTypes } from '../pages/entityTypes.js'
-import { PAGE_PRODUCT } from '../pages/keys.js'
+import { PAGE_ADMIN_PRODUCT, PAGE_PRODUCT } from '../pages/keys.js'
 import { appName, pageTitles } from '../pages/pageTitles.js'
 import { router } from '../pages/routes.js'
+import { createAdminProductPageResponseMatcher } from '../views/AdminProduct/adminProductPage.js'
 import { createProductPageResponseMatcher } from '../views/Product/productPage.js'
 import { bindCart } from './cart.js'
 import { actions, connection } from './connection.js'
@@ -35,6 +36,7 @@ const hilosRouter = bootHilos({
   pageEntityTypes,
   pageResponseMatchers: new Map([
     [PAGE_PRODUCT, createProductPageResponseMatcher(scopes)],
+    [PAGE_ADMIN_PRODUCT, createAdminProductPageResponseMatcher(scopes)],
   ]),
   pageTitles,
   appName,

@@ -11,6 +11,7 @@ use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\TestRollbackRefusedException;
@@ -99,6 +100,31 @@ final class TestRollbackScopeIntegrationTest extends HilosSessionIntegrationTest
         self::assertNull(Hilos::$db->accountDeletions->liveOf(1562));
         self::assertSame([], Database::handlerEnd());
         $this->assertNothingPublished();
+    }
+
+    /** An already opened rollback root can host a snapshot savepoint under an external READ COMMITTED default. */
+    public function testReadSnapshotSharesTheRollbackRootWithoutChangingTheSessionDefault(): void
+    {
+        Database::sql('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
+        try {
+            $this->scope = Database::beginRollbackScopeForTest();
+            self::assertSame([100], self::localUsers());
+            $this->observer->query(
+                'INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) VALUES (1562, 1767225600000, 1798761600000)',
+            );
+            self::assertSame([100, 1562], $this->persistedUsers());
+            self::assertSame([100], Database::readSnapshot(DatabaseNames::PRIMARY, self::localUsers(...)));
+            $this->scope->rollback();
+            $this->scope = null;
+            self::assertSame('READ-COMMITTED', Database::sql('SELECT @@tx_isolation AS isolation_level')->field('isolation_level'));
+        } finally {
+            try {
+                $this->scope?->rollback();
+            } finally {
+                Database::close();
+                Database::connect();
+            }
+        }
     }
 
     /** Inner rollback undoes its savepoint while direct writes still belong to the root. */

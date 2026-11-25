@@ -42,10 +42,23 @@ final class ProductWarehouseStocks extends DbCollection
      * @return int Stored units, zero when no warehouse keeps the product
      * @throws DatabaseException When the stock rows cannot be read
      * @throws InvalidArgumentException When the Entity query is invalid
+     * @throws LogicException When the entity collection class is not configured
      */
     public function storedUnitsOfProduct(int $productId): int
     {
         return $this->objectCollection->storedUnitsOfProduct($productId);
+    }
+
+    /**
+     * @param int ...$productIds Product primary keys
+     * @return array<int, int> Persisted warehouse totals by product ID, including zero when there is no stock
+     * @throws DatabaseException When the stock rows cannot be read
+     * @throws InvalidArgumentException When the Entity query is invalid
+     * @throws LogicException When the entity collection class is not configured
+     */
+    public function storedUnitsOfProducts(int ...$productIds): array
+    {
+        return $this->objectCollection->storedUnitsOfProducts(...$productIds);
     }
 
     /**

@@ -294,6 +294,7 @@ class PageSignalRouter
      * And it does not park: the connection was answered once already, so who sent it is known.
      * An existing debt makes an ordinary failed probe silent. A deletion attempt may report its
      * current domain refusal, without repeating internal failures or the original diagnostic.
+     * A browser source answer may also permit a verified move while keeping refusals quiet.
      *
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the page is owed to
@@ -314,6 +315,7 @@ class PageSignalRouter
             recordVisit: false,
             reportFailure: !$owed,
             reportRefusal: $reportRefusal,
+            reportMove: $router?->pageFanOutAnswer($acceptKey)?->reportMove === true,
         );
 
         // The answer pays the debt before after-response hooks run. A hook throwing after it
@@ -509,8 +511,8 @@ class PageSignalRouter
      * refusals release the page in full, with the subscription registration still held.
      *
      * A page that lives at another address ({@see PageMovedException}) is answered with a
-     * page_moved frame under the same switches as a refusal, and it sets no debt. A move to
-     * no address or to the address it was judged at is answered as an internal failure.
+     * page_moved frame when reporting failures or when the probe permits a move. A move to no
+     * address or to the address it was judged at is answered as an internal failure.
      *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
@@ -518,7 +520,8 @@ class PageSignalRouter
      * @param bool $recordVisit Whether an accepted answer records a new page visit
      * @param bool $reportFailure Whether a refusal or failure must be reported to the connection and log
      * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
-     * @return PageResendOutcome Whether the whole page was answered, refused, failed, or unserved
+     * @param bool $reportMove Whether a source probe may report a verified move and end the previous address
+     * @return PageResendOutcome Whether the page was answered, moved, refused, failed, or unserved
      * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      */
     private function runPageSubscribeFrame(
@@ -528,6 +531,7 @@ class PageSignalRouter
         bool $recordVisit = true,
         bool $reportFailure = true,
         bool $reportRefusal = false,
+        bool $reportMove = false,
     ): PageResendOutcome {
         $page = $data->page ?? $name;
         $router = Hilos::$sr;
@@ -648,7 +652,7 @@ class PageSignalRouter
                 if ($router?->isPageAnswerCurrent($data->acceptKey) === false) {
                     return PageResendOutcome::Unserved;
                 }
-                if (!$reportFailure && !$reportRefusal) {
+                if (!$reportFailure && !$reportRefusal && !($reportMove && $e instanceof PageMovedException)) {
                     return PageResendOutcome::Refused;
                 }
                 if ($e instanceof PageMovedException) {
@@ -667,7 +671,7 @@ class PageSignalRouter
                         $e->targetParams,
                     );
 
-                    return PageResendOutcome::Refused;
+                    return $reportMove ? PageResendOutcome::Moved : PageResendOutcome::Refused;
                 }
                 // The subscription registration is intentionally KEPT alive, not torn down.
                 // What stays alive is that registration, not what the page held for the

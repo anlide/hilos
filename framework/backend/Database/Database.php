@@ -105,6 +105,9 @@ class Database
     /** @var array<int, true> Connections with reconnect retries disabled for the current synchronous operation */
     private static array $reconnectWithoutRetry = [];
 
+    /** @var array<int, ConnectionReadBoundary> SQL boundaries held only while a caller is delivering a read */
+    private static array $sqlReadBoundaries = [];
+
     /** How many times in this process a connection that did not reach the server then ran a statement; only grows */
     private static int $returnsAfterLoss = 0;
 
@@ -609,6 +612,28 @@ class Database
     }
 
     /**
+     * Maps a driver failure from transaction control and lets the connection's delivery observe it.
+     * The boundary sees only the mapped driver failure, even when cleanup keeps a different error.
+     * Transaction control itself runs independently of whether the boundary still admits reads.
+     *
+     * @param int $index Connection that ran the statement
+     * @param mysqli_sql_exception $failure Driver failure from the statement
+     * @param string $statement Transaction control statement
+     * @return DatabaseRuntimeException Mapped failure for the caller to report or discard
+     */
+    private static function mapTransactionSqlFailure(int $index, mysqli_sql_exception $failure, string $statement): DatabaseRuntimeException
+    {
+        $map = static fn (): never => MysqlExceptionMapper::runtimeException($failure->getCode(), $failure->getMessage(), $statement);
+        $boundary = self::$sqlReadBoundaries[$index] ?? null;
+        try {
+            $boundary?->observe($map);
+            $map();
+        } catch (DatabaseRuntimeException $mapped) {
+            return $mapped;
+        }
+    }
+
+    /**
      * Counts a return when the connection had not reached the server before this statement succeeded.
      *
      * @param int $index Connection index
@@ -673,6 +698,28 @@ class Database
     }
 
     /**
+     * Shares the connection verdict at the SQL entrance. Reads served by the ORM from memory
+     * can still complete. A failing statement reaches its caller before any replay.
+     *
+     * @template T
+     * @param int $index Physical connection of the SQL reads
+     * @param ConnectionReadBoundary $boundary Shared verdict owned by the delivery
+     * @param Closure(): T $read Synchronous delivery work
+     * @return T Result of the work
+     * @throws Throwable Whatever the work raises
+     */
+    public static function withSqlReadBoundary(int $index, ConnectionReadBoundary $boundary, Closure $read): mixed
+    {
+        $previous = self::$sqlReadBoundaries;
+        self::$sqlReadBoundaries[$index] = $boundary;
+        try {
+            return self::withoutReconnectRetries($read, $index);
+        } finally {
+            self::$sqlReadBoundaries = $previous;
+        }
+    }
+
+    /**
      * Sets attribution on an existing primary link; reconnects read the active scope themselves.
      * A failed SET discards the link so another operation cannot inherit its old value.
      *
@@ -730,6 +777,28 @@ class Database
         ?int $index = null,
     ): ResultSetCollection {
         $index ??= self::$currentIndex;
+        $boundary = self::$sqlReadBoundaries[$index] ?? null;
+        if ($boundary === null) {
+            return self::executeSql($sql, $params, $tryReconnect, $index);
+        }
+
+        $boundary->assertAvailable();
+
+        return $boundary->observe(static fn (): ResultSetCollection => self::executeSql($sql, $params, $tryReconnect, $index));
+    }
+
+    /**
+     * @param string $sql SQL with ? placeholders
+     * @param array|SqlParamCollection|null $params Bound parameters
+     * @param bool $tryReconnect Whether to reconnect on connection loss
+     * @param int $index Physical connection of the statement
+     * @return ResultSetCollection First result set collection
+     * @throws DatabaseConnectionException When not connected or reconnect fails
+     * @throws DatabaseParamsException When parameters are invalid or placeholder count mismatches
+     * @throws DatabaseRuntimeException When execution fails or active test-scope SQL admission refuses
+     */
+    private static function executeSql(string $sql, array|SqlParamCollection|null $params, bool $tryReconnect, int $index): ResultSetCollection
+    {
         if (self::$testRollbackScope !== null) {
             if (self::$cleaningTestScope) {
                 throw new TestRollbackSqlRefusedException('SQL is refused while a test rollback scope is closing');
@@ -1076,12 +1145,52 @@ class Database
      */
     public static function transaction(string $database, Closure $operation): mixed
     {
+        return self::runTransaction($database, $operation, repeatableRead: false);
+    }
+
+    /**
+     * Runs related nonlocking reads in one repeatable-read snapshot of a named database.
+     * The isolation applies to this transaction alone. A synthetic rollback root
+     * already has the required isolation so its application savepoint can share it.
+     *
+     * @template TResult
+     * @param string $database Logical database name
+     * @param Closure(): TResult $read Reads on the named row connection
+     * @return TResult Callback result
+     * @throws NamedDatabaseException When the logical database cannot be resolved
+     * @throws NestedTransactionRefusedException When the target already has an application transaction
+     * @throws TransactionNotOpenException When the callback closed or replaced its level, or that level failed
+     * @throws DatabaseConnectionException When a read or the commit cannot reach the connection
+     * @throws DatabaseRuntimeException When the snapshot cannot open, a read fails, or the commit fails
+     * @throws AnnouncementFailedException When a released announcement fails outside a handler
+     * @throws Throwable Whatever the callback raises, preserved through cleanup
+     */
+    public static function readSnapshot(string $database, Closure $read): mixed
+    {
+        return self::runTransaction($database, $read, repeatableRead: true);
+    }
+
+    /**
+     * @param string $database Logical database name
+     * @param Closure $operation Work whose result is returned after commit
+     * @param bool $repeatableRead Whether the transaction needs a stable snapshot
+     * @return mixed Callback result
+     * @throws NamedDatabaseException When the logical database cannot be resolved
+     * @throws NestedTransactionRefusedException When the target already has an application transaction
+     * @throws TransactionNotOpenException When the callback closed or replaced its level, or that level failed
+     * @throws DatabaseConnectionException When the commit cannot reach its connection
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When a released announcement fails outside a handler
+     * @throws Throwable Whatever the callback raises, preserved through cleanup
+     */
+    private static function runTransaction(string $database, Closure $operation, bool $repeatableRead): mixed
+    {
         $index = self::getDatabase($database)->connectionIndex;
         $previousIndex = self::$transactionIndex;
         $level = null;
         self::$transactionIndex = $index;
         try {
-            self::transactionStart($index);
+            self::startTransaction($index, $repeatableRead);
             $level = self::$transactions[$index][array_key_last(self::$transactions[$index])];
             $value = $operation();
             $levels = self::$transactions[$index] ?? [];
@@ -1145,7 +1254,16 @@ class Database
      */
     public static function transactionStart(?int $index = null): void
     {
-        $index ??= self::$transactionIndex ?? self::$currentIndex;
+        self::startTransaction($index ?? self::$transactionIndex ?? self::$currentIndex, repeatableRead: false);
+    }
+
+    /**
+     * @param int $index Connection selected by the caller
+     * @param bool $repeatableRead Whether a new SQL transaction needs a stable snapshot
+     * @throws NestedTransactionRefusedException When an application level is already open, or test cleanup is running
+     */
+    private static function startTransaction(int $index, bool $repeatableRead): void
+    {
         if (self::$cleaningTestScope) {
             throw new NestedTransactionRefusedException('Cannot start a transaction while a test rollback scope is closing');
         }
@@ -1162,6 +1280,7 @@ class Database
             nestable: false,
             savepoint: $depth === 0 ? null : TransactionLevel::SAVEPOINT_PREFIX . ($depth + 1),
             parent: self::$transactions[$index][$depth - 1] ?? null,
+            repeatableRead: $depth === 0 && $repeatableRead,
         );
     }
 
@@ -1254,13 +1373,14 @@ class Database
                     mysqli_release_savepoint($mysqli, $level->savepoint);
                 }
             } catch (mysqli_sql_exception $e) {
-                self::markUnreachable($index, $e->getCode());
-                self::rollBackFailedCommit($mysqli, $index, $depth, $level);
-                MysqlExceptionMapper::runtimeException(
-                    $e->getCode(),
-                    $e->getMessage(),
+                $failure = self::mapTransactionSqlFailure(
+                    $index,
+                    $e,
                     $level->savepoint === null ? DatabaseSql::COMMIT : DatabaseSql::RELEASE_SAVEPOINT,
                 );
+                self::markUnreachable($index, $e->getCode());
+                self::rollBackFailedCommit($mysqli, $index, $depth, $level);
+                throw $failure;
             }
         }
 
@@ -1676,12 +1796,13 @@ class Database
                     mysqli_release_savepoint($mysqli, $level->savepoint);
                 }
             } catch (mysqli_sql_exception $e) {
-                self::markUnreachable($index, $e->getCode());
-                MysqlExceptionMapper::runtimeException(
-                    $e->getCode(),
-                    $e->getMessage(),
+                $failure = self::mapTransactionSqlFailure(
+                    $index,
+                    $e,
                     $level->savepoint === null ? DatabaseSql::ROLLBACK : DatabaseSql::ROLLBACK_TO_SAVEPOINT,
                 );
+                self::markUnreachable($index, $e->getCode());
+                throw $failure;
             }
         }
 
@@ -1705,6 +1826,7 @@ class Database
                 nestable: false,
                 savepoint: null,
                 testScope: self::$testRollbackScope,
+                repeatableRead: true,
             )];
         }
     }
@@ -1792,6 +1914,9 @@ class Database
                         mysqli_rollback($mysqli);
                     }
                 } catch (Throwable $failure) {
+                    if ($failure instanceof mysqli_sql_exception) {
+                        self::mapTransactionSqlFailure($index, $failure, DatabaseSql::ROLLBACK);
+                    }
                     $firstFailure ??= $failure;
                     // Discard a link whose rollback was not confirmed before the next case can use it.
                     try {
@@ -1839,19 +1964,26 @@ class Database
             if ($level->isOpened() || $level->isFailed()) {
                 continue;
             }
+            $statement = $level->savepoint === null ? DatabaseSql::START_TRANSACTION : DatabaseSql::SAVEPOINT;
             try {
                 if ($level->savepoint === null) {
+                    if ($level->repeatableRead) {
+                        $statement = DatabaseSql::NEXT_TRANSACTION_REPEATABLE_READ;
+                        mysqli_multi_query($mysqli, $statement);
+                        $statement = DatabaseSql::START_TRANSACTION;
+                    }
                     mysqli_begin_transaction($mysqli);
                 } else {
                     mysqli_savepoint($mysqli, $level->savepoint);
                 }
             } catch (mysqli_sql_exception $e) {
+                $failure = self::mapTransactionSqlFailure($index, $e, $statement);
                 self::markUnreachable($index, $e->getCode());
-                MysqlExceptionMapper::runtimeException(
-                    $e->getCode(),
-                    $e->getMessage(),
-                    $level->savepoint === null ? DatabaseSql::START_TRANSACTION : DatabaseSql::SAVEPOINT,
-                );
+                if ($level->repeatableRead) {
+                    // A refused start may leave the one-shot isolation pending on this session.
+                    self::dropLink($index);
+                }
+                throw $failure;
             }
             $level->markOpened();
         }
@@ -1877,13 +2009,24 @@ class Database
         $level->dropHeld();
         $level->markFailed();
         self::restoreMemory($index, $depth, $level);
+
+        // An undo step can discover a connection loss and drop the link.
+        if ((self::$connections[$index] ?? null) !== $mysqli) {
+            return;
+        }
+
+        $statement = $level->savepoint === null ? DatabaseSql::ROLLBACK : DatabaseSql::rollbackToSavepoint($level->savepoint);
         try {
             if ($level->savepoint === null) {
                 mysqli_rollback($mysqli);
             } else {
-                mysqli_query($mysqli, DatabaseSql::rollbackToSavepoint($level->savepoint));
+                mysqli_query($mysqli, $statement);
             }
-        } catch (mysqli_sql_exception) {
+        } catch (mysqli_sql_exception $failure) {
+            if (MysqlClientErrorCode::isConnectionLost($failure->getCode())) {
+                self::mapTransactionSqlFailure($index, $failure, $statement);
+                self::markUnreachable($index, $failure->getCode());
+            }
             // The caller is owed the failure of the commit, not of this cleanup
         }
     }
@@ -1982,12 +2125,9 @@ class Database
                 try {
                     mysqli_rollback($mysqli);
                 } catch (mysqli_sql_exception $e) {
+                    $failure = self::mapTransactionSqlFailure($index, $e, DatabaseSql::ROLLBACK);
                     self::markUnreachable($index, $e->getCode());
-                    try {
-                        MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), DatabaseSql::ROLLBACK);
-                    } catch (DatabaseRuntimeException $mapped) {
-                        $rollbackFailure ??= $mapped;
-                    }
+                    $rollbackFailure ??= $failure;
                 }
             }
             self::$transactions[$index] = [];

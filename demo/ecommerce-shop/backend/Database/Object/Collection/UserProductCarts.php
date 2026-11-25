@@ -8,6 +8,8 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Collection\UserProductCarts as EntityUserProductCarts;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart as EntityUserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\UserProductCart as ObjectUserProductCart;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
 
@@ -26,6 +28,18 @@ final class UserProductCarts extends Objects
     public const string OBJECT_CLASS = ObjectUserProductCart::class;
     public const string ENTITY_COLLECTION_CLASS = EntityUserProductCarts::class;
     public const string COLLECTION_KEY = EcommerceShopDbContext::userProductCarts;
+
+    /**
+     * @param int $productId Product primary id
+     * @return int Number of account carts containing the product
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
+     */
+    public function countForProduct(int $productId): int
+    {
+        return $this->countByColumn(EntityUserProductCart::product_id, $productId);
+    }
 
     /**
      * Checks the cart's owner/product index without walking the held rows or loading new objects.

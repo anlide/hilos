@@ -16,6 +16,8 @@ use Demo\EcommerceShop\Money\Money;
 use Demo\EcommerceShop\Pages\DTO\AdminProductPageSubscribeParams;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
+use Demo\EcommerceShop\ShopFront\ProductCartCount;
+use Hilos\AdminViewMode\WireField;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -28,6 +30,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
@@ -77,6 +80,12 @@ final class AdminProductPage extends AbstractPage
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::PRODUCTS_LIBRARY;
 
+    /** @var list<string> Cart collections read by the Overview subscription */
+    public const array READS_DB = [
+        EcommerceShopDbContext::sessionProductCarts,
+        EcommerceShopDbContext::userProductCarts,
+    ];
+
     public const array ACTIONS = [
         EcommerceShopSignalConstants::PRODUCT_UPDATE => ProductUpdateActionDTO::class,
         EcommerceShopSignalConstants::PRODUCT_WAREHOUSE_PLACE => ProductWarehousePlaceActionDTO::class,
@@ -91,6 +100,16 @@ final class AdminProductPage extends AbstractPage
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCT,
     ];
+
+    public const string DATA_PRODUCT_CARTS = 'productCarts';
+
+    /**
+     * @return array<string, WireField> Viewer declaration shared by whole and partial Overview answers
+     */
+    public static function productCartsFields(): array
+    {
+        return [self::DATA_PRODUCT_CARTS => WireField::notPersonal()];
+    }
 
     /**
      * Answers a move to another product with the whole page under the new number.
@@ -185,15 +204,45 @@ final class AdminProductPage extends AbstractPage
      * @throws LogicException When the products collection class constants are not configured
      * @throws InvalidArgumentException When a loaded product does not match the collection
      * @throws DatabaseException When the product cannot be looked up
+     * @throws HilosException When the browser read fails during a flush
      */
     protected function resolvePageResource(string $acceptKey, PageRouteParams $params): PageResource
     {
         $address = AdminProductPageSubscribeParams::fromPageRouteParams($params);
-        if (!isset(Hilos::$db->products[$address->productId])) {
+        if (!(Hilos::$browser?->overviewProductExists($address->productId) ?? isset(Hilos::$db->products[$address->productId]))) {
             throw new PageResourceNotFoundException('Unknown product: ' . $address->productId);
         }
 
         return PageResource::db(EcommerceShopDbContext::products, $address->productId);
+    }
+
+    /**
+     * @param string $acceptKey Subscribing connection, unused
+     * @param PageRouteParams $params Address already checked by the resource resolver
+     * @return PagePayload Aggregate cart count for the Overview
+     * @throws MissingPageRouteParamException When the product id is absent or empty
+     * @throws InvalidPageRouteParamException When the product id is not a positive integer
+     * @throws HilosException When the cart reading fails
+     */
+    protected function buildPagePayload(string $acceptKey, PageRouteParams $params): PagePayload
+    {
+        $address = AdminProductPageSubscribeParams::fromPageRouteParams($params);
+        Hilos::$browser?->assertOverviewSnapshotAvailable();
+
+        return new PagePayload(data: [
+            self::DATA_PRODUCT_CARTS => ProductCartCount::data(
+                $address->productId,
+                Hilos::$browser?->productCartCount($address->productId) ?? ProductCartCount::forProduct($address->productId),
+            ),
+        ]);
+    }
+
+    /**
+     * @return array<string, WireField> Own page data visible in admin view mode
+     */
+    protected function dataFields(): array
+    {
+        return self::productCartsFields();
     }
 
     /**

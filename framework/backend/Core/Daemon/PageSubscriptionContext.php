@@ -17,12 +17,14 @@ final readonly class PageSubscriptionContext
      * @param string $acceptKey Original connection key
      * @param ?PageSubscription $subscription Original subscription, absent before its first subscribe
      * @param ?Closure(PageSubscription): bool $answerAdmission Captured identity of a source answer
+     * @param bool $reportMove Whether a source probe may answer with a verified move
      */
     public function __construct(
         public SignalRouter $router,
         public string $acceptKey,
         public ?PageSubscription $subscription,
         private ?Closure $answerAdmission = null,
+        public bool $reportMove = false,
     ) {
     }
 
@@ -39,9 +41,10 @@ final readonly class PageSubscriptionContext
     }
 
     /**
+     * @param bool $reportMove Whether a source probe may answer with a verified move
      * @return self Exact assembly address with the identity evidence used through delivery
      */
-    public function forFanOutAnswer(): self
+    public function forFanOutAnswer(bool $reportMove = false): self
     {
         $acceptKey = $this->acceptKey;
         $proof = $this->subscription?->admittedIdentity;
@@ -55,7 +58,7 @@ final readonly class PageSubscriptionContext
                 && ($session !== null || $identity == Hilos::$browser?->connectionIdentity($acceptKey));
         }
 
-        return new self($this->router, $acceptKey, $this->subscription, $admission);
+        return new self($this->router, $acceptKey, $this->subscription, $admission, $reportMove);
     }
 
     /**

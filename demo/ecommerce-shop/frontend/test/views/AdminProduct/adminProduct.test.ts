@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  HilosConnection,
+  PageSubscription,
   Scope,
   ScopeManager,
   createSignal,
@@ -23,6 +25,10 @@ import {
   stockParts,
   warehouseNameOf,
 } from '../../../src/views/AdminProduct/adminProduct.js'
+import {
+  createAdminProductCartCountSignal,
+  createAdminProductPageResponseMatcher,
+} from '../../../src/views/AdminProduct/adminProductPage.js'
 
 function warehousesScope(): Scope {
   const scope = new Scope('page', PAGE_ADMIN_PRODUCT)
@@ -122,6 +128,91 @@ describe('one product admin page', () => {
       ingest(scope, { data: { [ADMIN_PRODUCT_DATA]: { ...pot, viewerCount } } })
       expect(overview.product.get()).toEqual(pot)
     }
+  })
+
+  it('keeps the Overview card and admits only its addressed cart count', () => {
+    const scopes = new ScopeManager()
+    const route = createSignal<PageRouteMatch>({
+      page: PAGE_ADMIN_PRODUCT,
+      params: { productId: `+0${pot.productId}` },
+      admin: true,
+    })
+    const pages = new PageSubscription(
+      new HilosConnection({ url: 'ws://test/ws' }),
+      scopes,
+      undefined,
+      new Map([
+        [PAGE_ADMIN_PRODUCT, createAdminProductPageResponseMatcher(scopes)],
+      ]),
+    )
+    const { product } = createAdminProductCardSignals(
+      scopes,
+      route,
+      PAGE_ADMIN_PRODUCT,
+    )
+    const carts = createAdminProductCartCountSignal(scopes, product)
+    const answer = (data: Record<string, unknown>) =>
+      pages.ingestPageResponse(PAGE_ADMIN_PRODUCT, { data })
+    const potCarts = { productId: pot.productId, cartCount: 3 }
+    const vaseCarts = { productId: vase.productId, cartCount: 0 }
+
+    pages.subscribe(PAGE_ADMIN_PRODUCT, route.get().params)
+    expect(answer({ productCarts: potCarts })).toBe(false)
+    expect(pages.pageLoading.get()).toBe(true)
+    expect(carts.get()).toBeUndefined()
+
+    expect(answer({ [ADMIN_PRODUCT_DATA]: pot, productCarts: vaseCarts })).toBe(
+      true,
+    )
+    expect(product.get()).toEqual(pot)
+    expect(carts.get()).toBeUndefined()
+
+    expect(answer({ productCarts: potCarts })).toBe(true)
+    expect(answer({ productCarts: vaseCarts })).toBe(false)
+    expect(carts.get()).toBe(3)
+
+    const updated = {
+      ...pot,
+      stock: { units: 0, warehouses: 0, warehouseId: null },
+    }
+    answer({
+      [ADMIN_PRODUCT_DATA]: updated,
+      productCarts: { ...potCarts, cartCount: 1.5 },
+    })
+    expect(product.get()).toEqual(updated)
+    expect(carts.get()).toBe(3)
+
+    answer({ productCarts: { ...potCarts, cartCount: 0 } })
+    expect(product.get()).toEqual(updated)
+    expect(carts.get()).toBe(0)
+
+    const refusal = {
+      page: PAGE_ADMIN_PRODUCT,
+      httpCode: 404,
+      errorCode: 'not_found',
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
+    }
+    pages.handleSubscriptionError(refusal)
+    expect(answer({ productCarts: potCarts })).toBe(false)
+    expect(pages.pageError.get()).toEqual(refusal)
+    expect(product.get()).toBeNull()
+    expect(carts.get()).toBeUndefined()
+
+    answer({ [ADMIN_PRODUCT_DATA]: pot, productCarts: potCarts })
+    expect(pages.pageError.get()).toBeNull()
+    expect(carts.get()).toBe(3)
+
+    route.set({ ...route.get(), params: { productId: String(vase.productId) } })
+    pages.subscribe(PAGE_ADMIN_PRODUCT, route.get().params)
+    expect(answer({ [ADMIN_PRODUCT_DATA]: pot, productCarts: potCarts })).toBe(
+      false,
+    )
+    expect(answer({ productCarts: vaseCarts })).toBe(false)
+    expect(carts.get()).toBeUndefined()
+    answer({ [ADMIN_PRODUCT_DATA]: vase, productCarts: vaseCarts })
+    expect(product.get()).toEqual(vase)
+    expect(carts.get()).toBe(0)
   })
 
   it('shares the card only when its scope, page and product address match', () => {

@@ -337,21 +337,37 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
         }
 
         $objectClass = static::OBJECT_CLASS;
-        $entityClass = static::entityClass();
-
-        $entityCollection = count($values) === 1
-            ? $entityClass::get([$resolvedColumn => $values[0]])
-            : $entityClass::get(
-                filters: $this->columnInCondition($resolvedColumn, count($values)),
-                filtersParam: array_values($values),
-            );
-
-        foreach ($entityCollection as $key => $entity) {
+        foreach ($this->readStoredByColumn($resolvedColumn, ...$values) as $key => $entity) {
             if (!isset($this->objects[$key])) {
                 $this->hydrate($key, $objectClass::fromEntity($entity));
             }
             yield $key;
         }
+    }
+
+    /**
+     * Reads persisted rows for a bounded set of values without consulting or updating the mirror.
+     *
+     * @param string $column Entity column or mapped object field
+     * @param int|string ...$values Values to match, empty to read nothing
+     * @return Generator<int|string, Entity> Rows keyed by their primary key
+     * @throws InvalidArgumentException When the column is unknown or the query is invalid
+     * @throws LogicException When the entity collection class is not configured
+     * @throws DatabaseException When the lookup query fails
+     */
+    protected function readStoredByColumn(string $column, int|string ...$values): Generator
+    {
+        if ($values === []) {
+            return;
+        }
+        $resolvedColumn = $this->requireColumn($column);
+        $entityClass = static::entityClass();
+        yield from count($values) === 1
+            ? $entityClass::get([$resolvedColumn => $values[0]])
+            : $entityClass::get(
+                filters: $this->columnInCondition($resolvedColumn, count($values)),
+                filtersParam: array_values($values),
+            );
     }
 
     /**

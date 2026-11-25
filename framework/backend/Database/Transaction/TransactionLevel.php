@@ -54,12 +54,14 @@ final class TransactionLevel
      * @param ?string $savepoint Savepoint this level stands on, or null for the outermost level
      * @param ?TestRollbackScope $testScope Owner of a synthetic test root; null on application levels
      * @param ?self $parent Previous level on this connection, never a foreign connection's level
+     * @param bool $repeatableRead Whether to set one-shot isolation when opening the root
      */
     public function __construct(
         public readonly bool $nestable,
         public readonly ?string $savepoint,
         public readonly ?TestRollbackScope $testScope = null,
         public readonly ?self $parent = null,
+        public readonly bool $repeatableRead = false,
     ) {
     }
 

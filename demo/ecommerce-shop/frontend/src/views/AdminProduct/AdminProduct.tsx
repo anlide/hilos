@@ -9,6 +9,7 @@ import {
 import { HilosLink, HilosRouterContext, useSignal } from '@hilos/react/base'
 
 import { AdminProductHead } from '../../catalog/AdminProductHead.js'
+import { ProductCartCount } from '../../catalog/ProductCartCount.js'
 import { ProductViewerCount } from '../../catalog/ProductViewerCount.js'
 import { formatMoney } from '../../money/money.js'
 import { PAGE_ADMIN_PRODUCT, PAGE_PRODUCT } from '../../pages/keys.js'
@@ -71,6 +72,7 @@ function ProductCard({ productId }: { productId: number }) {
   }, [edit, signals, warehouseEdit])
 
   const product = useSignal(signals.product)
+  const cartCount = useSignal(signals.cartCount)
   const categoryName = useSignal(signals.categoryName)
   const warehouseName = useSignal(signals.warehouseName)
   const canOpenEdit = useSignal(edit.canOpen)
@@ -177,11 +179,17 @@ function ProductCard({ productId }: { productId: number }) {
                     <dt className="col-4 fw-normal text-body-secondary">
                       On the shop front
                     </dt>
-                    <dd className="col-8 mb-0">
-                      <ProductViewerCount
-                        count={product.viewerCount}
-                        surface="admin"
-                      />
+                    <dd
+                      className="col-8 mb-0"
+                      data-id="admin-product-shop-front"
+                    >
+                      <div className="d-flex flex-wrap gap-3">
+                        <ProductViewerCount
+                          count={product.viewerCount}
+                          surface="admin"
+                        />
+                        <ProductCartCount cartCount={cartCount} />
+                      </div>
                     </dd>
                   </dl>
                 </div>

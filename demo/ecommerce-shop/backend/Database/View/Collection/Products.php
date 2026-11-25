@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Database\View\Collection;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductsActions;
 use Demo\EcommerceShop\Database\Object\Collection\Products as ObjectProducts;
 use Demo\EcommerceShop\Database\View\Item\Product;
+use Generator;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
@@ -28,6 +29,21 @@ final class Products extends DbCollection
 {
     public const string DB_ITEM_CLASS = Product::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectProducts::class;
+
+    /**
+     * @param string $column Product ID or slug column
+     * @param int|string ...$values Exact keys requested by the caller
+     * @return Generator<int, Product> Product snapshots from the stored rows, keyed by ID
+     * @throws InvalidArgumentException When the column is unknown or the query is invalid
+     * @throws LogicException When the entity collection class is not configured
+     * @throws DatabaseException When the stored rows cannot be read
+     */
+    public function storedProducts(string $column, int|string ...$values): Generator
+    {
+        foreach ($this->objectCollection->storedProducts($column, ...$values) as $id => $product) {
+            yield $id => new Product($product);
+        }
+    }
 
     /**
      * Reads the product's slug only if its stored row still belongs to the category.

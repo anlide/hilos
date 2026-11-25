@@ -9,8 +9,6 @@ use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\ProductAvailability;
 use Demo\EcommerceShop\Core\Router\DTO\CartAddProductDoneSignalData;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
-use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
-use Demo\EcommerceShop\Database\Entity\Item\ProductSlug as EntityProductSlug;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -39,9 +37,6 @@ use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
-use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
-use Hilos\Database\Exception\View\CollectionNotManualException;
-use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\RtWriteBackpressureException;
@@ -59,13 +54,15 @@ use Throwable;
 final class ProductAgent extends AbstractAgent
 {
     /**
-     * @var list<string> The catalog rows read for the product page
+     * @var list<string> The catalog and cart collections read for the product page
      */
     public const array READS_DB = [
         EcommerceShopDbContext::products,
         EcommerceShopDbContext::productSlugs,
         EcommerceShopDbContext::productWarehouseStocks,
         EcommerceShopDbContext::categories,
+        EcommerceShopDbContext::sessionProductCarts,
+        EcommerceShopDbContext::userProductCarts,
     ];
 
     public const string AGENT_TYPE = AgentType::PRODUCT;
@@ -150,35 +147,14 @@ final class ProductAgent extends AbstractAgent
     }
 
     /**
-     * Reads the product the address names, its category and stock, anew on every call.
-     *
-     * Looks for an exact current address first, then an exact former address. The returned
-     * product's slug tells the two apart ({@see ProductReading}).
-     *
-     * @return ?ProductReading The catalog reading, or null when the address names no product
-     * @throws LogicException When a collection's class constants are not configured
-     * @throws InvalidArgumentException When a column names no field of its entity, or a loaded object does not match
-     * @throws DatabaseException When the rows cannot be read
-     * @throws ItemNotFoundException When a required product or category is missing
-     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
-     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
-     * @throws HilosException When the database context or an item getter refuses the read
+     * @return ?ProductReading Persisted product, category and visibility at this address
+     * @throws HilosException When a catalog collection or the transaction refuses the read
      */
     public function reading(): ?ProductReading
     {
-        $product = Hilos::$db->products->whereColumnIs(EntityProduct::slug, $this->address)->first();
-        // A database comparison can match even when the route carries extra trailing spaces.
-        if ($product === null || $product->slug !== $this->address) {
-            $formerAddress = Hilos::$db->productSlugs->whereColumnIs(EntityProductSlug::slug, $this->address)->first();
-            if ($formerAddress === null || $formerAddress->slug !== $this->address) {
-                return null;
-            }
-            $product = Hilos::$db->products[$formerAddress->productId];
-        }
-
-        $units = Hilos::$db->productWarehouseStocks->totalsOfProducts($product->id)->of($product->id)->unitCount;
-
-        return new ProductReading($product, Hilos::$db->categories[$product->categoryId], $units);
+        return Hilos::$browser === null
+            ? ProductReading::atAddress($this->address)
+            : Hilos::$browser->productReading($this->address);
     }
 
     /**

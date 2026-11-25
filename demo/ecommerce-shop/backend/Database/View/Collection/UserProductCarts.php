@@ -7,6 +7,8 @@ namespace Demo\EcommerceShop\Database\View\Collection;
 use Demo\EcommerceShop\Database\Actions\Collection\UserProductCartsActions;
 use Demo\EcommerceShop\Database\Object\Collection\UserProductCarts as ObjectUserProductCarts;
 use Demo\EcommerceShop\Database\View\Item\UserProductCart;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
@@ -27,6 +29,18 @@ final class UserProductCarts extends DbCollection
 {
     public const string DB_ITEM_CLASS = UserProductCart::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectUserProductCarts::class;
+
+    /**
+     * @param int $productId Product primary id
+     * @return int Number of account carts containing the product
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
+     */
+    public function countForProduct(int $productId): int
+    {
+        return $this->objectCollection->countForProduct($productId);
+    }
 
     /**
      * @param int $userId Cart owner

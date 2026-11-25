@@ -9,6 +9,8 @@ use Demo\EcommerceShop\Database\Entity\Collection\SessionProductCarts as EntityS
 use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart as EntitySessionProductCart;
 use Demo\EcommerceShop\Database\Entity\Item\SessionVoucherCart as EntitySessionVoucherCart;
 use Demo\EcommerceShop\Database\Object\Item\SessionProductCart as ObjectSessionProductCart;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
@@ -31,6 +33,18 @@ final class SessionProductCarts extends Objects
     public const string OBJECT_CLASS = ObjectSessionProductCart::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySessionProductCarts::class;
     public const string COLLECTION_KEY = EcommerceShopDbContext::sessionProductCarts;
+
+    /**
+     * @param int $productId Product primary id
+     * @return int Number of guest carts containing the product
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
+     */
+    public function countForProduct(int $productId): int
+    {
+        return $this->countByColumn(EntitySessionProductCart::product_id, $productId);
+    }
 
     private const string CART_KEY = 'cart_key';
     private const string SESSION_MISSING = 'session_missing';
