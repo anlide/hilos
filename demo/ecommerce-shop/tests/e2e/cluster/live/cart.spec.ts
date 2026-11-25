@@ -48,12 +48,17 @@ const stand = readClusterBrowserStand()
 const guestAgent = 'guest_carts_library'
 const rtAgent = 'ecommerce_shop'
 const cartPath = '/cart'
+const productPath = '/product/pine-bark-5-l'
 const product = { productId: 16, name: 'Pine bark 5 L' }
 const guestProduct = { ...product, quantity: 3 }
 const accountProduct = { ...product, quantity: 1 }
 const combinedProduct = {
   ...product,
   quantity: accountProduct.quantity + guestProduct.quantity,
+}
+const addedProduct = {
+  ...product,
+  quantity: combinedProduct.quantity + 1,
 }
 
 // Sign-in traffic and the session cookie must stay out of browser traces.
@@ -315,13 +320,25 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
   }
 
   const master = stand.follower
+  expect(stand.leader).not.toBe(master)
   const setup = await newClusterMasterPage(browser, stand, stand.leader)
   cleanup.defer(() => setup.context().close())
-  const user = await createTestUser(expect, setup, {
-    commandHost: clusterNodeHost(stand, stand.leader),
-  })
-  await test.step('add one unit to the account cart', async () => {
-    await gotoPage(expect, setup, '/product/pine-bark-5-l')
+  const setupUpgrades = await watchClusterMasterUpgrades(
+    expect,
+    setup,
+    stand,
+    stand.leader,
+  )
+  cleanup.defer(setupUpgrades.stop)
+  const productCartCount = setup
+    .getByTestId('product-cart-count')
+    .filter({ visible: true })
+  const expectProductCartCount = async (text: string) => {
+    await expect(productCartCount).toHaveText(text)
+    await expect(setup).toHaveURL(productPath)
+    await expectDocumentUnchanged(expect, setup)
+  }
+  const addAccountUnit = async (expectedQuantity: number) => {
     const addButton = setup.getByTestId('shop-product-add-to-cart')
     await addButton.click()
     await expect(
@@ -329,9 +346,23 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
     ).toHaveCount(0)
     await expect(
       setup.getByTestId('nav-cart').getByTestId('cart-badge'),
-    ).toHaveText(String(accountProduct.quantity))
+    ).toHaveText(String(expectedQuantity))
+  }
+  const user = await createTestUser(expect, setup, {
+    commandHost: clusterNodeHost(stand, stand.leader),
+  })
+  await test.step('add one unit to the account cart', async () => {
+    await gotoPage(expect, setup, productPath, PAGE_READY)
+    await addAccountUnit(accountProduct.quantity)
     await gotoPage(expect, setup, cartPath, PAGE_READY)
     await expectProductLine(setup, accountProduct.quantity)
+    await gotoPage(expect, setup, productPath, PAGE_READY)
+    await expect(setup.getByRole('heading', { level: 1 })).toHaveText(
+      product.name,
+    )
+    await markDocument(setup)
+    await expectProductCartCount('In 1 cart')
+    await setupUpgrades.assert()
   })
   const page = await newClusterMasterPage(browser, stand, master)
   cleanup.defer(() => page.context().close())
@@ -383,9 +414,11 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
     })
   })
   const recordPlacement = async (phase: string, agent: string) => {
+    await setupUpgrades.assert()
     await upgrades.assert()
     await expectClusterSingleAgents(expect, stand, [agent])
     const serving = await clusterPlacementNode(expect, stand, agent)
+    expect(stand.slaves).toContain(serving)
     const sources = Object.entries(stand.nodeLogs).flatMap(([node, path]) =>
       activeClusterAgents(path, [rtAgent]).map(() => node),
     )
@@ -403,6 +436,7 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
   }
 
   await test.step('open the saved guest cart', async () => {
+    await expectProductCartCount('In 2 carts')
     await gotoPage(expect, page, cartPath, PAGE_READY)
     await expectProductLine(page, guestProduct.quantity)
     await markDocument(page)
@@ -457,7 +491,68 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
     await expectProductLine(page, combinedProduct.quantity)
     await expectDocumentUnchanged(expect, page)
     expect(new URL(page.url()).pathname).toBe(cartPath)
+    await expectProductCartCount('In 1 cart')
     await recordPlacement('sign-in', `hilos_user:${user.userId}`)
+  })
+
+  const beforeAddTraffic = readCartTraffic(delivery)
+  const beforeAddAccount = beforeAddTraffic.epochs[2]
+  const accountSocket = beforeAddAccount?.socket
+  const transferAnswers = beforeAddAccount?.answers ?? []
+  const transferAnswerCount = transferAnswers.length
+  const beforeAddObservationCount = (await readObservations()).length
+  expect(accountSocket).toBe(2)
+  expect(beforeAddTraffic.subscriptions.map(({ socket }) => socket)).toEqual([
+    1, 2,
+  ])
+  expect(transferAnswerCount).toBeGreaterThan(0)
+  expect(transferAnswers.at(-1)?.cart?.lines).toMatchObject([combinedProduct])
+
+  await test.step('add another unit on the leader and update the open follower cart', async () => {
+    await addAccountUnit(addedProduct.quantity)
+    await expect
+      .poll(
+        async () => {
+          const { epochs, subscriptions } = readCartTraffic(delivery)
+          const account = epochs[2]
+          if (
+            account?.socket !== accountSocket ||
+            account.userId !== user.userId ||
+            subscriptions.length !== 2
+          )
+            return false
+
+          const postAddAnswers = account.answers.slice(transferAnswerCount)
+          if (postAddAnswers.length === 0) return false
+
+          return (await readObservations())
+            .slice(beforeAddObservationCount)
+            .some((sample) => {
+              const answer = cartAnswerAt(postAddAnswers, sample)
+              const cart = answer?.cart
+              return (
+                answer !== undefined &&
+                answer.socket === accountSocket &&
+                cart?.userId === user.userId &&
+                cart.guestCartKey === null &&
+                cart.lines.length === 1 &&
+                cart.lines[0].productId === product.productId &&
+                cart.lines[0].quantity === addedProduct.quantity &&
+                showsCart(sample, cart)
+              )
+            })
+        },
+        {
+          message:
+            'The cross-master addition rendered on the existing account socket',
+        },
+      )
+      .toBe(true)
+    await expectProductLine(page, addedProduct.quantity)
+    await expectDocumentUnchanged(expect, page)
+    expect(new URL(page.url()).pathname).toBe(cartPath)
+    await expectProductCartCount('In 1 cart')
+    await recordPlacement('add', `hilos_user:${user.userId}`)
   })
 
   await test.step('sign out and see a new empty guest cart on the same page', async () => {
@@ -512,12 +607,13 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
       expect(answer.cart?.userId).toBe(epoch.userId)
       if (epoch.userId !== null) {
         expect(answer.cart?.guestCartKey).toBeNull()
+        const afterAdd = epoch === signedIn && index >= transferAnswerCount
         // The first whole can still show the account's original quantity.
         const pending =
           index === 0 &&
           answer.cart?.lines[0]?.quantity === accountProduct.quantity
         expect(answer.cart?.lines).toMatchObject([
-          pending ? accountProduct : combinedProduct,
+          afterAdd ? addedProduct : pending ? accountProduct : combinedProduct,
         ])
       } else if (epoch !== initial) {
         expect(answer.cart?.guestCartKey).toBeTruthy()
@@ -526,6 +622,14 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
       }
     }
   }
+
+  const preAddAnswers = signedIn.answers.slice(0, transferAnswerCount)
+  const postAddAnswers = signedIn.answers.slice(transferAnswerCount)
+  expect(preAddAnswers).toEqual(transferAnswers)
+  expect(postAddAnswers.length).toBeGreaterThan(0)
+  expect(postAddAnswers.every(({ socket }) => socket === accountSocket)).toBe(
+    true,
+  )
 
   const signInStart = confirmationStart(observations, signingIn)
   const signOutStart = confirmationStart(observations, signingOut)
@@ -539,13 +643,25 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
   expect(cartAnswerAt(initial.answers, initialPaint)?.cart).toEqual(initialCart)
   expect(showsCart(initialPaint, initialCart)).toBe(true)
 
+  const transferObservations = observations.slice(
+    signInStart,
+    beforeAddObservationCount,
+  )
+  expectCartOwnerChange(transferObservations, preAddAnswers, initialPaint)
+  const transferredPaint = transferObservations.at(-1)
+  const transferred = preAddAnswers.at(-1)?.cart
+  expect(transferred?.lines).toMatchObject([combinedProduct])
+  if (!transferredPaint || !transferred)
+    throw new Error('Missing transferred cart')
+  expect(showsCart(transferredPaint, transferred)).toBe(true)
+
   const accountObservations = observations.slice(signInStart, signOutStart)
   expectCartOwnerChange(accountObservations, signedIn.answers, initialPaint)
   const accountPaint = accountObservations.at(-1)
-  const transferred = signedIn.answers.at(-1)?.cart
-  expect(transferred?.lines).toMatchObject([combinedProduct])
-  if (!accountPaint || !transferred) throw new Error('Missing transferred cart')
-  expect(showsCart(accountPaint, transferred)).toBe(true)
+  const added = postAddAnswers.at(-1)?.cart
+  expect(added?.lines).toMatchObject([addedProduct])
+  if (!accountPaint || !added) throw new Error('Missing added cart')
+  expect(showsCart(accountPaint, added)).toBe(true)
   expectCartOwnerChange(
     observations.slice(signOutStart),
     signedOut.answers,
