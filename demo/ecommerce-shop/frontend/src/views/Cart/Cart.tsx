@@ -1,16 +1,20 @@
+import { registerFocusReturnFallback } from '@hilos/core/base'
 import { HilosLink, useSignal } from '@hilos/react/base'
-import { Component, createRef } from 'react'
+import { Component, createRef, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { connection } from '../../bootstrap/connection.js'
 import { currentUserId, scopes } from '../../bootstrap/session.js'
 import { availabilityText } from '../../catalog/productAvailability.js'
 import { formatDeduction, formatMoney } from '../../money/money.js'
 import { CartQuantityControls } from './CartQuantityControls.js'
+import { CartQuantityEditModal } from './CartQuantityEditModal.js'
 import { CartRemoveButton } from './CartRemoveButton.js'
 import CartSkeleton from './CartSkeleton.js'
 import { type CartOwnerKind } from './cartActions.js'
 import { createCartPageSignal } from './cartPage.js'
+import { createCartQuantityEdit } from './cartQuantityEdit.js'
 import {
+  cartIdentity,
   type CartLine,
   type CartSnapshot,
   type CartVoucher,
@@ -22,9 +26,11 @@ const cartPage = createCartPageSignal(scopes, currentUserId, connection)
 function CartItem({
   line,
   ownerKind,
+  onEdit,
 }: {
   line: CartLine
   ownerKind: CartOwnerKind
+  onEdit: () => void
 }) {
   const unavailable = line.availableQuantity === 0
   const limited = line.availableQuantity < line.quantity
@@ -35,6 +41,7 @@ function CartItem({
     <li
       className={`list-group-item d-flex flex-wrap align-items-center gap-3 py-3${unavailable ? ' bg-body-tertiary text-body-secondary' : ''}`}
       data-id="shop-cart-line"
+      data-line-id={line.lineId}
     >
       <img
         src={line.pictureUrl}
@@ -60,7 +67,11 @@ function CartItem({
         {line.kind === 'unique' ? (
           <span>1 · one of a kind</span>
         ) : (
-          <CartQuantityControls line={line} ownerKind={ownerKind} />
+          <CartQuantityControls
+            line={line}
+            ownerKind={ownerKind}
+            onEdit={onEdit}
+          />
         )}
         {(limited || atLimit) && (
           <span
@@ -117,25 +128,13 @@ interface CartRowFocus {
   readonly neighbors: readonly Element[]
 }
 
-/** The current owner's public storefront cart. */
-export default function Cart() {
-  const cart = useSignal(cartPage)
-  if (cart === null) {
-    return (
-      <>
-        <span className="visually-hidden" role="status">
-          Loading cart…
-        </span>
-        <CartSkeleton />
-      </>
-    )
-  }
-
-  return <CartContents cart={cart} />
+interface CartContentsProps {
+  readonly cart: CartSnapshot
+  readonly onEdit: (lineId: number) => void
 }
 
 /** Render the accepted snapshot and return focus when it removes a focused row. */
-class CartContents extends Component<{ cart: CartSnapshot }> {
+class CartContents extends Component<CartContentsProps> {
   private readonly list = createRef<HTMLUListElement>()
   private readonly empty = createRef<HTMLDivElement>()
 
@@ -162,7 +161,7 @@ class CartContents extends Component<{ cart: CartSnapshot }> {
   }
 
   componentDidUpdate(
-    _previous: Readonly<{ cart: CartSnapshot }>,
+    _previous: Readonly<CartContentsProps>,
     _state: unknown,
     focus: CartRowFocus | null,
   ) {
@@ -180,8 +179,9 @@ class CartContents extends Component<{ cart: CartSnapshot }> {
   }
 
   render() {
-    const { cart } = this.props
+    const { cart, onEdit } = this.props
     const ownerKind = cart.userId === null ? 'guest' : 'account'
+    const owner = cartIdentity(cart)
 
     return (
       <>
@@ -219,9 +219,10 @@ class CartContents extends Component<{ cart: CartSnapshot }> {
               >
                 {cart.lines.map((line) => (
                   <CartItem
-                    key={`${ownerKind}:${line.lineId}`}
+                    key={`${owner}:${line.lineId}`}
                     line={line}
                     ownerKind={ownerKind}
+                    onEdit={() => onEdit(line.lineId)}
                   />
                 ))}
               </ul>
@@ -250,4 +251,62 @@ class CartContents extends Component<{ cart: CartSnapshot }> {
       </>
     )
   }
+}
+
+/** The current owner's public storefront cart. */
+export default function Cart() {
+  const cart = useSignal(cartPage)
+  const edit = useMemo(
+    () => createCartQuantityEdit(cartPage, currentUserId, connection),
+    [],
+  )
+  const opened = useSignal(edit.opened)
+  const surface = useRef<HTMLElement>(null)
+
+  useLayoutEffect(edit.start, [edit])
+  useLayoutEffect(() => {
+    const root = surface.current
+    if (!root) return
+
+    const quantityButton = '[data-id="shop-cart-quantity"]'
+    return registerFocusReturnFallback(
+      root,
+      () => root,
+      (opener) => {
+        if (!opener.matches(quantityButton)) return null
+        const snapshot = cartPage.get()
+        const lineId =
+          opener.closest<HTMLElement>('[data-line-id]')?.dataset.lineId
+        if (snapshot === null || lineId === undefined) return null
+        const owner = cartIdentity(snapshot)
+
+        return () => {
+          const current = cartPage.get()
+          if (current === null || cartIdentity(current) !== owner) return null
+
+          return root.querySelector<HTMLButtonElement>(
+            `[data-line-id="${lineId}"] ${quantityButton}`,
+          )
+        }
+      },
+    )
+  }, [])
+
+  return (
+    <>
+      <section ref={surface} aria-label="Cart" tabIndex={-1}>
+        {cart === null ? (
+          <>
+            <span className="visually-hidden" role="status">
+              Loading cart…
+            </span>
+            <CartSkeleton />
+          </>
+        ) : (
+          <CartContents cart={cart} onEdit={edit.open} />
+        )}
+      </section>
+      {opened && <CartQuantityEditModal edit={edit} />}
+    </>
+  )
 }

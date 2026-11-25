@@ -31,13 +31,14 @@ const line: CartLine = {
 }
 const guestCart: CartSnapshot = {
   userId: null,
+  guestCartKey: 'guest-cart',
   lines: [line],
   itemsTotal: '24000',
   voucher: null,
   total: '24000',
 }
 const emptyCart: CartSnapshot = {
-  userId: null,
+  ...guestCart,
   lines: [],
   itemsTotal: '0',
   voucher: null,
@@ -119,13 +120,38 @@ describe('Cart page projection', () => {
     answer({ ...guestCart, itemsTotal: 0.5 })
     expect(snapshot.get()).toBeNull()
 
-    answer({ userId: null, lines: [], itemsTotal: '0', voucher: null })
+    const { total, ...withoutTotal } = emptyCart
+    answer(withoutTotal)
     expect(snapshot.get()).toBeNull()
-    answer({ userId: null, lines: [], itemsTotal: '0', total: '0' })
+    const { voucher, ...withoutVoucher } = emptyCart
+    answer(withoutVoucher)
     expect(snapshot.get()).toBeNull()
 
     answer(emptyCart)
+    expect(snapshot.get()).toEqual({ ...withoutTotal, total, voucher })
+  })
+
+  it('requires a nonempty guest key for guests and an explicit null for accounts', () => {
+    const { snapshot, person, answer } = openCart()
+    const { guestCartKey, ...withoutKey } = emptyCart
+
+    answer(withoutKey)
+    expect(snapshot.get()).toBeNull()
+    for (const invalidKey of [null, '', 12, true]) {
+      answer({ ...emptyCart, guestCartKey: invalidKey })
+      expect(snapshot.get()).toBeNull()
+    }
+    answer({ ...withoutKey, guestCartKey })
     expect(snapshot.get()).toEqual(emptyCart)
+
+    person.set(9)
+    const account = { ...withoutKey, userId: 9 }
+    answer(account)
+    expect(snapshot.get()).toBeNull()
+    answer({ ...account, guestCartKey })
+    expect(snapshot.get()).toBeNull()
+    answer({ ...account, guestCartKey: null })
+    expect(snapshot.get()).toEqual({ ...account, guestCartKey: null })
   })
 
   it('requires a positive integer lineId on every line of the snapshot', () => {
@@ -317,7 +343,7 @@ describe('Cart page projection', () => {
     answer(voucherCart)
     expect(snapshot.get()).toEqual(voucherCart)
 
-    const accountCart = { ...emptyCart, userId: 9 }
+    const accountCart = { ...emptyCart, userId: 9, guestCartKey: null }
     person.set(accountCart.userId)
     expect(snapshot.get()).toBeNull()
     answer({ ...voucherCart })
@@ -331,7 +357,7 @@ describe('Cart page projection', () => {
     expect(snapshot.get()).toBeNull()
     answer({ ...accountCart })
     expect(snapshot.get()).toBeNull()
-    const nextGuest = { ...emptyCart }
+    const nextGuest = { ...emptyCart, guestCartKey: 'next-guest-cart' }
     answer(nextGuest)
     expect(snapshot.get()).toEqual(nextGuest)
   })
@@ -355,7 +381,7 @@ describe('Cart page projection', () => {
     handshake()
     expect(snapshot.get()).toBeNull()
 
-    const nextGuest = { ...emptyCart }
+    const nextGuest = { ...emptyCart, guestCartKey: 'next-guest-cart' }
     answer(nextGuest)
     expect(snapshot.get()).toEqual(nextGuest)
   })
@@ -376,7 +402,7 @@ describe('Cart page projection', () => {
   })
 
   it('clears an account cart on a socket drop even if the owner stays the same', () => {
-    const accountCart = { ...guestCart, userId: 9 }
+    const accountCart = { ...guestCart, userId: 9, guestCartKey: null }
     const { snapshot, answer, changeState } = openCart(accountCart.userId)
     answer(accountCart)
     expect(snapshot.get()).toEqual(accountCart)

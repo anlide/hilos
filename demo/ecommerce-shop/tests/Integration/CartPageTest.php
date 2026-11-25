@@ -83,6 +83,7 @@ use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Testing\IntegrationTest;
+use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -231,17 +232,20 @@ final class CartPageTest extends CartPageEnvironment
     /** Two guest sessions and an account get distinct carts, and a settled empty session gets a complete answer. */
     public function testEachOwnerGetsItsOwnCartAndAnEmptyCartStillAnswers(): void
     {
+        $emptySessionId = self::storedSession();
+        $otherSessionId = self::storedSession();
+        $sessionId = self::storedSession();
         $firstProduct = self::product(ProductKind::STOCK);
         $secondProduct = self::product(ProductKind::STOCK);
         $userId = self::person();
-        $firstLine = self::guestLine(101, $secondProduct, 2);
-        $secondLine = self::guestLine(101, $firstProduct, 3);
-        $otherLine = self::guestLine(102, $firstProduct, 1);
+        $firstLine = self::guestLine($sessionId, $secondProduct, 2);
+        $secondLine = self::guestLine($sessionId, $firstProduct, 3);
+        $otherLine = self::guestLine($otherSessionId, $firstProduct, 1);
         $accountLine = self::accountLine($userId, $secondProduct, 5);
-        self::connect(self::FIRST, null, 101);
-        self::connect(self::SECOND, null, 102);
-        self::connect(self::ACCOUNT, $userId, 103);
-        self::connect(self::EMPTY, null, 104);
+        self::connect(self::FIRST, null, $sessionId);
+        self::connect(self::SECOND, null, $otherSessionId);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
+        self::connect(self::EMPTY, null, $emptySessionId);
 
         $guest = new GuestCartsLibraryAgent();
         $this->subscribe($guest, self::FIRST);
@@ -259,12 +263,43 @@ final class CartPageTest extends CartPageEnvironment
         $this->subscribe(new UserAgent((string)$userId), self::ACCOUNT);
         $account = $this->cart(self::ACCOUNT);
         self::assertSame($userId, $account['userId']);
+        self::assertNull($account['guestCartKey']);
         self::assertSame([$accountLine], array_column($account['lines'], 'lineId'));
         self::assertSame([$secondProduct], array_column($account['lines'], 'productId'));
         self::assertSame([5], array_column($account['lines'], 'quantity'));
 
         $this->subscribe($guest, self::EMPTY);
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::EMPTY));
+        self::assertSame([
+            'userId' => null,
+            'guestCartKey' => self::expectedGuestCartKey($emptySessionId),
+            'lines' => [],
+            'itemsTotal' => '0',
+            'voucher' => null,
+            'total' => '0',
+        ], $this->cart(self::EMPTY));
+    }
+
+    /** Empty guest carts differ by session, and another connection of the same session sees the same cart. */
+    public function testEmptyGuestCartIdentitySurvivesAChangeOfConnection(): void
+    {
+        $sessionId = self::storedSession();
+        $otherSessionId = self::storedSession();
+        $guest = new GuestCartsLibraryAgent();
+        self::connect(self::FIRST, null, $sessionId);
+        self::connect(self::SECOND, null, $otherSessionId);
+        self::connect(self::EMPTY, null, $sessionId);
+
+        $this->subscribe($guest, self::FIRST);
+        $first = $this->cart(self::FIRST);
+        self::assertSame([], $first['lines']);
+        self::assertSame(self::expectedGuestCartKey($sessionId), $first['guestCartKey']);
+        $this->subscribe($guest, self::SECOND);
+        $second = $this->cart(self::SECOND);
+        self::assertSame([...$first, 'guestCartKey' => self::expectedGuestCartKey($otherSessionId)], $second);
+        self::assertNotSame($first['guestCartKey'], $second['guestCartKey']);
+
+        $this->subscribe($guest, self::EMPTY);
+        self::assertSame($first, $this->cart(self::EMPTY));
     }
 
     /** A fallback cannot guess the owner while identity is pending, missing a session, or already tied to an account. */
@@ -287,8 +322,9 @@ final class CartPageTest extends CartPageEnvironment
         $this->assertRefusal(self::SECOND);
 
         $userId = self::person();
-        self::connect(self::ACCOUNT, $userId, 103);
-        self::guestLine(103, self::product(ProductKind::STOCK), 1);
+        $accountSessionId = self::storedSession($userId);
+        self::connect(self::ACCOUNT, $userId, $accountSessionId);
+        self::guestLine($accountSessionId, self::product(ProductKind::STOCK), 1);
         $this->subscribe($guest, self::ACCOUNT);
         $this->assertRefusal(self::ACCOUNT);
 
@@ -299,18 +335,19 @@ final class CartPageTest extends CartPageEnvironment
     /** The same page key and connection get a whole cart from each new owner after the runtime identity changes. */
     public function testIdentityReassessmentReplacesTheCartOnTheSamePage(): void
     {
+        $sessionId = self::storedSession();
         $guestProduct = self::product(ProductKind::STOCK);
         $accountProduct = self::product(ProductKind::STOCK);
         $userId = self::person();
-        self::guestLine(101, $guestProduct, 1);
+        self::guestLine($sessionId, $guestProduct, 1);
         self::accountLine($userId, $accountProduct, 2);
         $warehouse = self::warehouse();
         self::stock($guestProduct, $warehouse, 5);
         self::stock($accountProduct, $warehouse, 5);
         $guestVoucher = $this->voucher('CARTGUEST10', 10);
-        self::guestVoucher(101, $guestVoucher->id);
+        self::guestVoucher($sessionId, $guestVoucher->id);
         self::accountVoucher($userId, $this->voucher('CARTOWNER20', 20)->id);
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $guest = new GuestCartsLibraryAgent();
         $account = new UserAgent((string)$userId);
         $this->subscribe($guest, self::FIRST);
@@ -370,11 +407,11 @@ final class CartPageTest extends CartPageEnvironment
     {
         $product = self::product(ProductKind::STOCK);
         $otherProduct = self::product(ProductKind::STOCK);
-        $sessionId = 101;
         $userId = $registered ? self::person() : null;
+        $sessionId = self::storedSession($userId);
         if ($userId === null) {
             self::guestLine($sessionId, $product, 1);
-            self::guestLine(102, $otherProduct, 1);
+            self::guestLine(self::storedSession(), $otherProduct, 1);
             $owner = new GuestCartsLibraryAgent();
         } else {
             self::accountLine($userId, $product, 1);
@@ -447,10 +484,12 @@ final class CartPageTest extends CartPageEnvironment
     /** A loaded guest row can name the wrong session, even though the user and serving agent agree. */
     public function testGuestHandoffWaitsForItsSessionBeforeAnsweringAnEmptyCart(): void
     {
-        self::connect(self::FIRST, null, 101);
-        self::guestLine(101, self::product(ProductKind::STOCK), 1);
+        $sessionId = self::storedSession();
+        $otherSessionId = self::storedSession();
+        self::connect(self::FIRST, null, $sessionId);
+        self::guestLine($sessionId, self::product(ProductKind::STOCK), 1);
         $guest = new GuestCartsLibraryAgent();
-        $expected = new PageHandoffIdentity(EcommerceShopRtContext::connections, null, 102);
+        $expected = new PageHandoffIdentity(EcommerceShopRtContext::connections, null, $otherSessionId);
         $this->deliver(
             $guest, SignalTypeConstants::PAGE_ACCESS_REASSESS,
             new WebSocketPageSubscribeSignalDTO(self::FIRST, CartPage::PAGE),
@@ -460,22 +499,66 @@ final class CartPageTest extends CartPageEnvironment
         self::assertNull(Hilos::$sr->pageSubscription(self::FIRST));
 
         $this->applyCartConnectionFact(new RtSyncUpdatedSignalData(
-            EcommerceShopRtContext::connections, self::FIRST, [StateHilosSessionConnection::sessionId => 102],
+            EcommerceShopRtContext::connections,
+            self::FIRST,
+            [
+                StateHilosSessionConnection::sessionId => $otherSessionId,
+                StateHilosSessionConnection::sessionToken => Hilos::$db->sessions[$otherSessionId]->token,
+            ],
         ));
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::FIRST));
+        self::assertSame([
+            'userId' => null,
+            'guestCartKey' => self::expectedGuestCartKey($otherSessionId),
+            'lines' => [],
+            'itemsTotal' => '0',
+            'voucher' => null,
+            'total' => '0',
+        ], $this->cart(self::FIRST));
+    }
+
+    /** An expired saved guest session cannot answer even if its RT token still matches. */
+    public function testExpiredGuestSessionCannotAnswer(): void
+    {
+        $sessionId = self::storedSession();
+        self::connect(self::FIRST, null, $sessionId);
+        Database::sql('UPDATE hilos_session SET expires_at = ? WHERE id = ?', [TimeHelper::nowMs(), $sessionId]);
+
+        $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
+        $this->assertRefusal(self::FIRST);
+    }
+
+    /** A token rotation during the stock read prevents the assembled snapshot from being sent. */
+    public function testGuestSnapshotRefusesABindingChangedDuringAssembly(): void
+    {
+        $sessionId = self::storedSession();
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 2);
+        self::guestLine($sessionId, $product, 2);
+        self::connect(self::FIRST, null, $sessionId);
+        $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
+        self::assertSame(self::expectedGuestCartKey($sessionId), $this->cart(self::FIRST)['guestCartKey']);
+
+        $rotate = static function () use ($sessionId): void {
+            Database::sql('UPDATE hilos_session SET token = ? WHERE id = ?', [SessionToken::mint(), $sessionId]);
+        };
+        self::assertSame([], $this->flushBeforeStockRead($rotate, false, self::productPriceFact($product, 9000)));
+        $this->assertRefusal(self::FIRST);
     }
 
     /** Grouped stock, price and quantity facts refresh only their owner's cart, with final values. */
     public function testLiveCartFactsAreAddressedAndGrouped(): void
     {
+        $unrelatedSessionId = self::storedSession();
+        $otherSessionId = self::storedSession();
+        $sessionId = self::storedSession();
         $guestProduct = self::product(ProductKind::STOCK);
         $otherProduct = self::product(ProductKind::STOCK);
         $accountProduct = self::product(ProductKind::STOCK);
         $unrelatedProduct = self::product(ProductKind::STOCK);
         $userId = self::person();
-        $guestLine = self::guestLine(101, $guestProduct, 2);
-        self::guestLine(102, $otherProduct, 1);
-        $unrelatedLine = self::guestLine(104, $guestProduct, 1);
+        $guestLine = self::guestLine($sessionId, $guestProduct, 2);
+        self::guestLine($otherSessionId, $otherProduct, 1);
+        $unrelatedLine = self::guestLine($unrelatedSessionId, $guestProduct, 1);
         $accountLine = self::accountLine($userId, $accountProduct, 2);
         $warehouse = self::warehouse();
         self::stock($guestProduct, $warehouse, 5);
@@ -484,13 +567,13 @@ final class CartPageTest extends CartPageEnvironment
         $accountStock = Database::lastInsertId();
 
         $guest = new GuestCartsLibraryAgent();
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe($guest, self::FIRST);
         self::assertSame('24000', $this->cart(self::FIRST)['itemsTotal']);
-        self::connect(self::SECOND, null, 102);
+        self::connect(self::SECOND, null, $otherSessionId);
         $this->subscribe($guest, self::SECOND);
         $this->cart(self::SECOND);
-        self::connect(self::ACCOUNT, $userId, 103);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         self::assertSame('24000', $this->cart(self::ACCOUNT)['itemsTotal']);
 
@@ -527,7 +610,14 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(
             EcommerceShopDbContext::userProductCarts, (string) $accountLine, [ObjectUserProductCart::userId => $userId],
         ))));
-        self::assertSame(['userId' => $userId, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::ACCOUNT));
+        self::assertSame([
+            'userId' => $userId,
+            'guestCartKey' => null,
+            'lines' => [],
+            'itemsTotal' => '0',
+            'voucher' => null,
+            'total' => '0',
+        ], $this->cart(self::ACCOUNT));
 
         $lineId = self::accountLine($userId, $otherProduct, 3);
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData(
@@ -538,14 +628,22 @@ final class CartPageTest extends CartPageEnvironment
         ))));
         self::assertSame([$otherProduct], array_column($this->cart(self::ACCOUNT)['lines'], 'productId'));
 
-        Database::sql('UPDATE session_product_cart SET session_id = ? WHERE id = ?', [105, $guestLine]);
+        $recipientSessionId = self::storedSession();
+        Database::sql('UPDATE session_product_cart SET session_id = ? WHERE id = ?', [$recipientSessionId, $guestLine]);
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
             EcommerceShopDbContext::sessionProductCarts,
             (string) $guestLine,
-            [SessionProductCart::session_id => 105],
-            previous: [SessionProductCart::session_id => 101],
+            [SessionProductCart::session_id => $recipientSessionId],
+            previous: [SessionProductCart::session_id => $sessionId],
         ))));
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::FIRST));
+        self::assertSame([
+            'userId' => null,
+            'guestCartKey' => self::expectedGuestCartKey($sessionId),
+            'lines' => [],
+            'itemsTotal' => '0',
+            'voucher' => null,
+            'total' => '0',
+        ], $this->cart(self::FIRST));
     }
 
     /** Guest Remove deletes the selected line without changing other lines or stock. */
@@ -741,16 +839,17 @@ final class CartPageTest extends CartPageEnvironment
     /** A clear affects the corresponding owner type, even when its current cart is already empty. */
     public function testCartAndStockClearsAreScoped(): void
     {
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
-        self::guestLine(101, $product, 2);
+        self::guestLine($sessionId, $product, 2);
         $userId = self::person();
         self::accountLine($userId, $product, 1);
 
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
         self::assertSame('24000', $this->cart(self::FIRST)['itemsTotal']);
-        self::connect(self::ACCOUNT, $userId, 103);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         self::assertSame('12000', $this->cart(self::ACCOUNT)['itemsTotal']);
 
@@ -758,7 +857,14 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
             new DbSyncClearedSignalData(EcommerceShopDbContext::sessionProductCarts),
         )));
-        self::assertSame(['userId' => null, 'lines' => [], 'itemsTotal' => '0', 'voucher' => null, 'total' => '0'], $this->cart(self::FIRST));
+        self::assertSame([
+            'userId' => null,
+            'guestCartKey' => self::expectedGuestCartKey($sessionId),
+            'lines' => [],
+            'itemsTotal' => '0',
+            'voucher' => null,
+            'total' => '0',
+        ], $this->cart(self::FIRST));
 
         Database::sql('DELETE FROM product_warehouse_stock');
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
@@ -773,16 +879,17 @@ final class CartPageTest extends CartPageEnvironment
     /** A sparse fact can fail for one subscriber while another is served, then recover on DB-back. */
     public function testFailedStockMembershipRecoversWithoutResubscribing(): void
     {
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 1);
         $stockId = Database::lastInsertId();
         $userId = self::person();
-        self::guestLine(101, $product, 3);
+        self::guestLine($sessionId, $product, 3);
         self::accountLine($userId, $product, 3);
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
         self::assertSame('12000', $this->cart(self::FIRST)['itemsTotal']);
-        self::connect(self::ACCOUNT, $userId, 103);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         self::assertSame('12000', $this->cart(self::ACCOUNT)['itemsTotal']);
 
@@ -809,10 +916,11 @@ final class CartPageTest extends CartPageEnvironment
     /** A failed full answer leaves a debt that the next matching fact pays with the same page response. */
     public function testFailedCartSnapshotRecoversOnItsNextFact(): void
     {
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
-        self::guestLine(101, $product, 2);
-        self::connect(self::FIRST, null, 101);
+        self::guestLine($sessionId, $product, 2);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
         self::assertSame('24000', $this->cart(self::FIRST)['itemsTotal']);
 
@@ -827,9 +935,73 @@ final class CartPageTest extends CartPageEnvironment
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
     }
 
+    /** A price fact refuses a signed-out account until its saved session is bound again. */
+    public function testAccountSnapshotRefusesAnUnboundSessionAndRecoversOnItsNextFact(): void
+    {
+        $userId = self::person();
+        $sessionId = self::storedSession($userId);
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 2);
+        $lineId = self::accountLine($userId, $product, 2);
+        self::accountVoucher($userId, $this->voucher('CARTLIVE20', 20)->id);
+        self::connect(self::FIRST, $userId, $sessionId);
+        $this->subscribe(new UserAgent((string)$userId), self::FIRST);
+        $cart = $this->cart(self::FIRST);
+        self::assertSame([$lineId], array_column($cart['lines'], 'lineId'));
+        self::assertSame('19200', $cart['total']);
+        $subscription = Hilos::$sr->pageSubscription(self::FIRST);
+        self::assertNotNull($subscription);
+
+        Database::sql('UPDATE hilos_session SET user_id = NULL WHERE id = ?', [$sessionId]);
+        self::assertSame($userId, Hilos::$rt->connections[self::FIRST]?->userId);
+        self::assertSame($sessionId, Hilos::$rt->connections[self::FIRST]?->sessionId);
+        self::assertSame($subscription, Hilos::$sr->pageSubscription(self::FIRST));
+
+        $readStock = false;
+        $markStockRead = static function () use (&$readStock): void {
+            $readStock = true;
+        };
+        self::assertSame([], $this->flushBeforeStockRead($markStockRead, false, self::productPriceFact($product, 7000)));
+        $this->assertRefusal(self::FIRST);
+        self::assertFalse($readStock);
+        self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
+
+        Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [$userId, $sessionId]);
+        self::assertSame([], $this->flushCartFacts(self::productPriceFact($product, 9000)));
+        $cart = $this->cart(self::FIRST);
+        self::assertSame($userId, $cart['userId']);
+        self::assertNull($cart['guestCartKey']);
+        self::assertSame([$lineId], array_column($cart['lines'], 'lineId'));
+        self::assertSame([9000], array_column($cart['lines'], 'price'));
+        self::assertSame('18000', $cart['itemsTotal']);
+        self::assertSame(['code' => 'CARTLIVE20', 'active' => true, 'discount' => '3600'], $cart['voucher']);
+        self::assertSame('14400', $cart['total']);
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
+    }
+
+    /** A saved sign-out during the stock read prevents the assembled account snapshot from being sent. */
+    public function testAccountSnapshotRefusesABindingChangedDuringAssembly(): void
+    {
+        $userId = self::person();
+        $sessionId = self::storedSession($userId);
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 2);
+        $lineId = self::accountLine($userId, $product, 2);
+        self::connect(self::FIRST, $userId, $sessionId);
+        $this->subscribe(new UserAgent((string)$userId), self::FIRST);
+        self::assertSame([$lineId], array_column($this->cart(self::FIRST)['lines'], 'lineId'));
+
+        $unbind = static function () use ($sessionId): void {
+            Database::sql('UPDATE hilos_session SET user_id = NULL WHERE id = ?', [$sessionId]);
+        };
+        self::assertSame([], $this->flushBeforeStockRead($unbind, false, self::productPriceFact($product, 9000)));
+        $this->assertRefusal(self::FIRST);
+    }
+
     /** Saved quantities survive 5 → 2 → 0 → 5 availability, and unavailable unique pieces still appear at zero. */
     public function testTotalsUseCurrentStockAndPriceWithoutChangingTheSelection(): void
     {
+        $sessionId = self::storedSession();
         $stockProductId = self::product(ProductKind::STOCK);
         $uniqueProductId = self::product(ProductKind::UNIQUE);
         $firstWarehouse = self::warehouse();
@@ -838,9 +1010,9 @@ final class CartPageTest extends CartPageEnvironment
         $firstStock = Database::lastInsertId();
         self::stock($stockProductId, $secondWarehouse, 2);
         $secondStock = Database::lastInsertId();
-        $stockLine = self::guestLine(101, $stockProductId, 5);
-        self::guestLine(101, $uniqueProductId, 1);
-        self::connect(self::FIRST, null, 101);
+        $stockLine = self::guestLine($sessionId, $stockProductId, 5);
+        self::guestLine($sessionId, $uniqueProductId, 1);
+        self::connect(self::FIRST, null, $sessionId);
         $guest = new GuestCartsLibraryAgent();
         $stock = Hilos::$db->productWarehouseStocks->getObjectCollection();
         self::assertNotNull($stock);
@@ -889,7 +1061,7 @@ final class CartPageTest extends CartPageEnvironment
             self::assertSame($total, $cart['itemsTotal']);
             self::assertSame(5, (int)Database::sql(
                 'SELECT quantity FROM session_product_cart WHERE session_id = ? AND product_id = ?',
-                [101, $stockProductId],
+                [$sessionId, $stockProductId],
             )->field('quantity'));
         }
         self::assertFalse($stock->isAllLoaded());
@@ -898,18 +1070,19 @@ final class CartPageTest extends CartPageEnvironment
     /** The whole cart keeps the last kopeck when its total exceeds the browser's safe integer range. */
     public function testLargeTotalsStayExactInTheFirstAndLiveAnswers(): void
     {
+        $sessionId = self::storedSession();
         $firstProduct = self::product(ProductKind::STOCK);
         $secondProduct = self::product(ProductKind::STOCK);
         $warehouse = self::warehouse();
         self::stock($firstProduct, $warehouse, 50_000_000);
         self::stock($secondProduct, $warehouse, 50_000_001);
-        self::guestLine(101, $firstProduct, 50_000_000);
-        self::guestLine(101, $secondProduct, 50_000_001);
+        self::guestLine($sessionId, $firstProduct, 50_000_000);
+        self::guestLine($sessionId, $secondProduct, 50_000_001);
         self::productPriceFact($firstProduct, ProductFields::PRICE_MAX);
         self::productPriceFact($secondProduct, ProductFields::PRICE_MAX);
         $voucher = $this->voucher('CARTPAGE1', 1);
-        self::guestVoucher(101, $voucher->id);
-        self::connect(self::FIRST, null, 101);
+        self::guestVoucher($sessionId, $voucher->id);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
 
         $cart = $this->cart(self::FIRST);
@@ -933,7 +1106,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame('9999999899999999', $cart['total']);
         self::assertSame($cart['itemsTotal'], $cart['total']);
 
-        self::assertSame([], $this->flushCartFacts(self::guestVoucherRemoved(101)));
+        self::assertSame([], $this->flushCartFacts(self::guestVoucherRemoved($sessionId)));
         $cart = $this->cart(self::FIRST);
         self::assertNull($cart['voucher']);
         self::assertSame('9999999899999999', $cart['total']);
@@ -943,6 +1116,9 @@ final class CartPageTest extends CartPageEnvironment
     /** Cold answers carry the selected voucher exactly: active, switched off, over a partial and over a zero remainder. */
     public function testFirstAnswersCarryTheVoucherAndTheExactTotal(): void
     {
+        $unrelatedSessionId = self::storedSession();
+        $otherSessionId = self::storedSession();
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         $unavailable = self::product(ProductKind::STOCK);
         self::productPriceFact($product, 1002);
@@ -951,30 +1127,30 @@ final class CartPageTest extends CartPageEnvironment
         $active = $this->voucher('CARTPAGE25', 25);
         $inactive = $this->voucher('CARTPAGEOFF10', 10);
         $this->voucherFacts(static fn () => $inactive->actions->setActive(false));
-        self::guestLine(101, $product, 1);
-        self::guestVoucher(101, $active->id);
+        self::guestLine($sessionId, $product, 1);
+        self::guestVoucher($sessionId, $active->id);
         self::accountLine($userId, $product, 1);
         self::accountVoucher($userId, $inactive->id);
-        self::guestLine(102, $product, 7);
-        self::guestVoucher(102, $active->id);
-        self::guestLine(104, $unavailable, 2);
-        self::guestVoucher(104, $active->id);
+        self::guestLine($otherSessionId, $product, 7);
+        self::guestVoucher($otherSessionId, $active->id);
+        self::guestLine($unrelatedSessionId, $unavailable, 2);
+        self::guestVoucher($unrelatedSessionId, $active->id);
         $guest = new GuestCartsLibraryAgent();
 
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe($guest, self::FIRST);
         $cart = $this->cart(self::FIRST);
         self::assertSame('1002', $cart['itemsTotal']);
         self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '251'], $cart['voucher']);
         self::assertSame('751', $cart['total']);
 
-        self::connect(self::ACCOUNT, $userId, 103);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         $cart = $this->cart(self::ACCOUNT);
         self::assertSame(['code' => 'CARTPAGEOFF10', 'active' => false, 'discount' => '0'], $cart['voucher']);
         self::assertSame('1002', $cart['total']);
 
-        self::connect(self::SECOND, null, 102);
+        self::connect(self::SECOND, null, $otherSessionId);
         $this->subscribe($guest, self::SECOND);
         $cart = $this->cart(self::SECOND);
         self::assertSame([7], array_column($cart['lines'], 'quantity'));
@@ -982,7 +1158,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '1253'], $cart['voucher']);
         self::assertSame('3757', $cart['total']);
 
-        self::connect(self::EMPTY, null, 104);
+        self::connect(self::EMPTY, null, $unrelatedSessionId);
         $this->subscribe($guest, self::EMPTY);
         $cart = $this->cart(self::EMPTY);
         self::assertSame([0], array_column($cart['lines'], 'availableQuantity'));
@@ -994,6 +1170,8 @@ final class CartPageTest extends CartPageEnvironment
     /** The catalog writer's edits re-answer, once a flush, exactly the open carts holding that voucher. */
     public function testVoucherCatalogChangesReanswerOnlyTheCartsHoldingIt(): void
     {
+        $otherSessionId = self::storedSession();
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         $otherProduct = self::product(ProductKind::STOCK);
         $warehouse = self::warehouse();
@@ -1003,20 +1181,20 @@ final class CartPageTest extends CartPageEnvironment
         $userId = self::person();
         $shared = $this->voucher('CARTPAGE25', 25);
         $other = $this->voucher('CARTPAGE10', 10);
-        self::guestLine(101, $product, 2);
-        self::guestVoucher(101, $shared->id);
+        self::guestLine($sessionId, $product, 2);
+        self::guestVoucher($sessionId, $shared->id);
         self::accountLine($userId, $product, 2);
         self::accountVoucher($userId, $shared->id);
-        self::guestLine(102, $otherProduct, 2);
-        self::guestVoucher(102, $other->id);
+        self::guestLine($otherSessionId, $otherProduct, 2);
+        self::guestVoucher($otherSessionId, $other->id);
         $guest = new GuestCartsLibraryAgent();
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe($guest, self::FIRST);
         self::assertSame('18000', $this->cart(self::FIRST)['total']);
-        self::connect(self::ACCOUNT, $userId, 103);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         self::assertSame('18000', $this->cart(self::ACCOUNT)['total']);
-        self::connect(self::SECOND, null, 102);
+        self::connect(self::SECOND, null, $otherSessionId);
         $this->subscribe($guest, self::SECOND);
         self::assertSame('21600', $this->cart(self::SECOND)['total']);
         self::assertContains(
@@ -1053,30 +1231,32 @@ final class CartPageTest extends CartPageEnvironment
     /** A binding fact names its owner by key, so only that owner's cart is answered; a clear answers its whole kind. */
     public function testVoucherBindingFactsAreAddressedToTheirOwner(): void
     {
+        $otherSessionId = self::storedSession();
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 5);
         $userId = self::person();
         $first = $this->voucher('CARTPAGE25', 25);
         $second = $this->voucher('CARTPAGE50', 50);
-        self::guestLine(101, $product, 1);
-        self::guestLine(102, $product, 1);
+        self::guestLine($sessionId, $product, 1);
+        self::guestLine($otherSessionId, $product, 1);
         self::accountLine($userId, $product, 1);
         $guest = new GuestCartsLibraryAgent();
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe($guest, self::FIRST);
         self::assertNull($this->cart(self::FIRST)['voucher']);
-        self::connect(self::SECOND, null, 102);
+        self::connect(self::SECOND, null, $otherSessionId);
         $this->subscribe($guest, self::SECOND);
         self::assertNull($this->cart(self::SECOND)['voucher']);
-        self::connect(self::ACCOUNT, $userId, 103);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         self::assertSame('12000', $this->cart(self::ACCOUNT)['total']);
 
-        self::guestVoucher(102, $first->id);
+        self::guestVoucher($otherSessionId, $first->id);
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData(
             EcommerceShopDbContext::sessionVoucherCarts,
-            '102',
-            [SessionVoucherCart::session_id => 102, SessionVoucherCart::voucher_id => $first->id],
+            (string)$otherSessionId,
+            [SessionVoucherCart::session_id => $otherSessionId, SessionVoucherCart::voucher_id => $first->id],
         ))));
         $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
         self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '3000'], $cart['voucher']);
@@ -1105,10 +1285,10 @@ final class CartPageTest extends CartPageEnvironment
         $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
         self::assertSame(['code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
 
-        Database::sql('UPDATE session_voucher_cart SET voucher_id = ? WHERE session_id = ?', [$second->id, 102]);
+        Database::sql('UPDATE session_voucher_cart SET voucher_id = ? WHERE session_id = ?', [$second->id, $otherSessionId]);
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
             EcommerceShopDbContext::sessionVoucherCarts,
-            '102',
+            (string)$otherSessionId,
             [SessionVoucherCart::voucher_id => $second->id],
             previous: [SessionVoucherCart::voucher_id => $first->id],
         ))));
@@ -1116,7 +1296,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame(['code' => 'CARTPAGE50', 'active' => true, 'discount' => '6000'], $cart['voucher']);
         self::assertSame('6000', $cart['total']);
 
-        self::assertSame([], $this->flushCartFacts(self::guestVoucherRemoved(102)));
+        self::assertSame([], $this->flushCartFacts(self::guestVoucherRemoved($otherSessionId)));
         $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
         self::assertNull($cart['voucher']);
         self::assertSame('12000', $cart['total']);
@@ -1126,7 +1306,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertNull($cart['voucher']);
         self::assertSame('12000', $cart['total']);
 
-        self::guestVoucher(101, $second->id);
+        self::guestVoucher($sessionId, $second->id);
         Database::sql('DELETE FROM session_voucher_cart');
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncClearedMessageDTO(
             new DbSyncClearedSignalData(EcommerceShopDbContext::sessionVoucherCarts),
@@ -1140,23 +1320,25 @@ final class CartPageTest extends CartPageEnvironment
     /** A catalog clear answers only the carts holding a voucher; a binding clear answers every cart of its kind, binding already gone. */
     public function testVoucherClearsAnswerTheirCarts(): void
     {
+        $otherSessionId = self::storedSession();
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 5);
         $userId = self::person();
         $voucher = $this->voucher('CARTPAGE25', 25);
-        self::guestLine(101, $product, 1);
-        self::guestVoucher(101, $voucher->id);
-        self::guestLine(102, $product, 1);
+        self::guestLine($sessionId, $product, 1);
+        self::guestVoucher($sessionId, $voucher->id);
+        self::guestLine($otherSessionId, $product, 1);
         self::accountLine($userId, $product, 1);
         self::accountVoucher($userId, $voucher->id);
         $guest = new GuestCartsLibraryAgent();
-        self::connect(self::FIRST, null, 101);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe($guest, self::FIRST);
         self::assertSame('9000', $this->cart(self::FIRST)['total']);
-        self::connect(self::SECOND, null, 102);
+        self::connect(self::SECOND, null, $otherSessionId);
         $this->subscribe($guest, self::SECOND);
         self::assertNull($this->cart(self::SECOND)['voucher']);
-        self::connect(self::ACCOUNT, $userId, 103);
+        self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         self::assertSame('9000', $this->cart(self::ACCOUNT)['total']);
 
@@ -1180,12 +1362,13 @@ final class CartPageTest extends CartPageEnvironment
     /** A voucher fact whose answer fails leaves the usual debt, and the next voucher fact pays it with the whole cart. */
     public function testFailedVoucherAnswerRecoversOnItsNextFact(): void
     {
+        $sessionId = self::storedSession();
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
-        self::guestLine(101, $product, 2);
+        self::guestLine($sessionId, $product, 2);
         $voucher = $this->voucher('CARTPAGE25', 25);
-        self::guestVoucher(101, $voucher->id);
-        self::connect(self::FIRST, null, 101);
+        self::guestVoucher($sessionId, $voucher->id);
+        self::connect(self::FIRST, null, $sessionId);
         $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
         self::assertSame('18000', $this->cart(self::FIRST)['total']);
 
@@ -1211,8 +1394,9 @@ final class CartPageTest extends CartPageEnvironment
      */
     private static function connect(string $acceptKey, ?int $userId, ?int $sessionId): void
     {
-        ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $userId, $sessionId): void {
-            Hilos::$rt->connections->actions->register($acceptKey, $userId, sessionId: $sessionId);
+        $token = $sessionId === null ? null : Hilos::$db->sessions[$sessionId]->token;
+        ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $userId, $sessionId, $token): void {
+            Hilos::$rt->connections->actions->register($acceptKey, $userId, $token, $sessionId);
         });
     }
 
@@ -1236,6 +1420,15 @@ final class CartPageTest extends CartPageEnvironment
         );
 
         return Database::lastInsertId();
+    }
+
+    /**
+     * @param int $sessionId Saved guest session
+     * @return string Expected opaque key of its active cart
+     */
+    private static function expectedGuestCartKey(int $sessionId): string
+    {
+        return hash_hmac('sha256', "ecommerce-shop:guest-cart:v1:$sessionId:0", Hilos::$db->sessions[$sessionId]->token);
     }
 
     /**
@@ -1422,6 +1615,8 @@ final class CartPageTest extends CartPageEnvironment
     /** @param ?int $userId New identity on the existing connection */
     private static function bindFirstUser(?int $userId): void
     {
+        $sessionId = Hilos::$rt->connections[self::FIRST]->sessionId;
+        Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [$userId, $sessionId]);
         ExecutionContext::run(new ExecutionFrame(), static function () use ($userId): void {
             Hilos::$rt->connections[self::FIRST]->actions->bindUser($userId);
         });
@@ -1434,25 +1629,38 @@ final class CartPageTest extends CartPageEnvironment
      */
     private function flushWithStockReadFailure(bool $duringMembership, WorkerDTO ...$facts): array
     {
+        return $this->flushBeforeStockRead(static function (): never {
+            throw new DatabaseException('The cart stock read failed');
+        }, $duringMembership, ...$facts);
+    }
+
+    /**
+     * @param Closure(): void $beforeRead Work to run once before the stock lookup
+     * @param bool $duringMembership Whether to intercept membership instead of snapshot assembly
+     * @param WorkerDTO ...$facts Worker messages leading to the stock read
+     * @return list<ContainedFailure> Failures recorded by the browser subscription trap
+     */
+    private function flushBeforeStockRead(Closure $beforeRead, bool $duringMembership, WorkerDTO ...$facts): array
+    {
         $views = new ReflectionProperty(DbContext::class, '_dbItemCollections');
         $db = Hilos::$db;
         $original = $views->getValue($db);
-        $fail = static function () use ($views, $db, $original): never {
+        $beforeReadOnce = static function () use ($views, $db, $original, $beforeRead): void {
             $views->setValue($db, $original);
-            throw new DatabaseException('The cart stock read failed');
+            $beforeRead();
         };
-        $failingView = new class ($original[EcommerceShopDbContext::productWarehouseStocks], $duringMembership, $fail) extends DbCollection {
+        $stockView = new class ($original[EcommerceShopDbContext::productWarehouseStocks], $duringMembership, $beforeReadOnce) extends DbCollection {
             public function __construct(
                 private readonly ProductWarehouseStocks $original,
                 private readonly bool $duringMembership,
-                private readonly Closure $fail,
+                private readonly Closure $beforeRead,
             ) {
             }
 
             public function productIdAtStockKey(int $stockId): ?int
             {
                 if ($this->duringMembership) {
-                    ($this->fail)();
+                    ($this->beforeRead)();
                 }
 
                 return $this->original->productIdAtStockKey($stockId);
@@ -1460,10 +1668,14 @@ final class CartPageTest extends CartPageEnvironment
 
             public function totalsOfProducts(int ...$productIds): ProductStockTotalsCollection
             {
-                ($this->fail)();
+                if (!$this->duringMembership) {
+                    ($this->beforeRead)();
+                }
+
+                return $this->original->totalsOfProducts(...$productIds);
             }
         };
-        $views->setValue($db, array_replace($original, [EcommerceShopDbContext::productWarehouseStocks => $failingView]));
+        $views->setValue($db, array_replace($original, [EcommerceShopDbContext::productWarehouseStocks => $stockView]));
         try {
             return $this->flushCartFacts(...$facts);
         } finally {
@@ -1590,7 +1802,7 @@ final class CartPageTest extends CartPageEnvironment
     /**
      * @param string $acceptKey Connection expecting a full cart
      * @return array{
-     *     userId: ?int, lines: list<array<string, mixed>>, itemsTotal: string,
+     *     userId: ?int, guestCartKey: ?string, lines: list<array<string, mixed>>, itemsTotal: string,
      *     voucher: ?array{code: string, active: bool, discount: string}, total: string
      * } The wire cart
      */

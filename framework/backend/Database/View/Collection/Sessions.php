@@ -63,13 +63,14 @@ class Sessions extends DbCollection
 
     /**
      * @param int $sessionId Session primary key
-     * @return bool Whether the persisted session is still an active guest
+     * @param ?string $token Expected cookie token, or null when rotation is immaterial
+     * @return bool Whether the persisted session is active and matches the guest binding
      * @throws DatabaseException When the primary-key read fails
      * @throws InvalidArgumentException When the entity query is invalid
      */
-    public function isStoredActiveGuest(int $sessionId): bool
+    public function isStoredActiveGuest(int $sessionId, ?string $token = null): bool
     {
-        return $this->objectCollection->isStoredActiveGuest($sessionId);
+        return $this->objectCollection->isStoredActiveGuest($sessionId, $token);
     }
 
     /**
@@ -110,6 +111,19 @@ class Sessions extends DbCollection
     public function lockStoredAuthor(int $sessionId, int $userId): bool
     {
         return $this->objectCollection->lockStoredAuthor($sessionId, $userId);
+    }
+
+    /**
+     * Checks the active stored binding and holds a shared row lock until the caller's transaction ends.
+     *
+     * @param int $sessionId Session primary key
+     * @param ?int $userId Expected bound user, or null for a guest
+     * @return bool Whether the row exists, matches the expected binding and has not expired
+     * @throws DatabaseException When the caller has no row-connection transaction, the lock is busy, or the read fails
+     */
+    public function lockStoredActiveSession(int $sessionId, ?int $userId): bool
+    {
+        return $this->objectCollection->lockStoredActiveSession($sessionId, $userId);
     }
 
     /**

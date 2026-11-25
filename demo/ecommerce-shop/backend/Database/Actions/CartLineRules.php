@@ -39,8 +39,13 @@ final class CartLineRules
     /** Fewest units a line keeps: below it the line is taken out, not kept empty. */
     public const int QUANTITY_MIN = 1;
 
+    /** Largest quantity the cart tables' unsigned INT columns can store. */
+    public const int QUANTITY_MAX = 4_294_967_295;
+
     /** Refusal shared by stale cart bindings and lines outside the current cart. */
     public const string LINE_UNAVAILABLE = 'This cart item is no longer available.';
+
+    private const string QUANTITY_BELOW_MINIMUM = 'A cart line keeps one unit at least: Remove takes it out';
 
     /**
      * Returns the quantity of a line after one unit of its product is put in the cart.
@@ -121,6 +126,7 @@ final class CartLineRules
      * @param int $productId Id of the product
      * @param ?int $quantity Quantity of its line now, or null when the cart has none
      * @param int $wanted Number of units the line is to hold
+     * @param bool $readStoredStock Read storage independently of the worker's stock mirror
      * @return int Quantity of the line from now on
      * @throws ValidationException When the product does not exist, is a unique piece or is not in the cart, the number
      *     is below one unit, or it is above the stock
@@ -131,16 +137,41 @@ final class CartLineRules
      * @throws CollectionNotManualException When a matched stock item is rejected by a non-manual collection
      * @throws HilosException When the products cannot be read
      */
-    public static function exact(int $productId, ?int $quantity, int $wanted): int
+    public static function exact(int $productId, ?int $quantity, int $wanted, bool $readStoredStock = false): int
     {
         $current = self::currentQuantity($productId, $quantity);
         $kept = self::keptQuantity($wanted);
         if ($kept === $current) {
             return $current;
         }
-        self::checkInStock($productId, $kept);
+        self::checkInStock($productId, $kept, $readStoredStock);
 
         return $kept;
+    }
+
+    /**
+     * Checks the edit's starting quantity before applying the exact quantity rules against stored stock.
+     *
+     * @param int $productId Id of the product
+     * @param int $currentQuantity Saved quantity of the addressed line
+     * @param int $expectedQuantity Saved quantity the edit started from
+     * @param string $quantity Original quantity text from the form
+     * @return int Quantity of the line from now on
+     * @throws ValidationException When the edit is stale, the input is invalid or the product or stock refuses the change
+     * @throws LogicException When the stock collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded stock object does not match its collection
+     * @throws DatabaseException When the stock cannot be read
+     * @throws ObjectGetIdStringNotImplementedException If a matched stock item's Object does not implement getIdString()
+     * @throws CollectionNotManualException When a matched stock item is rejected by a non-manual collection
+     * @throws HilosException When the products cannot be read
+     */
+    public static function exactFrom(int $productId, int $currentQuantity, int $expectedQuantity, string $quantity): int
+    {
+        if ($currentQuantity !== $expectedQuantity) {
+            throw new ValidationException('The cart quantity changed. Review it and try again.');
+        }
+
+        return self::exact($productId, $currentQuantity, self::parseQuantity($quantity), readStoredStock: true);
     }
 
     /**
@@ -198,10 +229,36 @@ final class CartLineRules
     private static function keptQuantity(int $quantity): int
     {
         if ($quantity < self::QUANTITY_MIN) {
-            throw new ValidationException('A cart line keeps one unit at least: Remove takes it out');
+            throw new ValidationException(self::QUANTITY_BELOW_MINIMUM);
         }
 
         return $quantity;
+    }
+
+    /**
+     * Parses a decimal integer and checks the column limit before casting.
+     *
+     * @param string $quantity Original quantity text from the form
+     * @return int Quantity within the storage range
+     * @throws ValidationException When the text is malformed or the quantity lies outside the cart range
+     */
+    private static function parseQuantity(string $quantity): int
+    {
+        $quantity = trim($quantity);
+        if (preg_match('/\A-?[0-9]+\z/', $quantity) !== 1) {
+            throw new ValidationException('Enter a whole number of units.');
+        }
+        if ($quantity[0] === '-') {
+            throw new ValidationException(self::QUANTITY_BELOW_MINIMUM);
+        }
+
+        $digits = ltrim($quantity, '0');
+        $limit = (string) self::QUANTITY_MAX;
+        if (strlen($digits) > strlen($limit) || (strlen($digits) === strlen($limit) && strcmp($digits, $limit) > 0)) {
+            throw new ValidationException('That quantity is too large.');
+        }
+
+        return self::keptQuantity((int) $digits);
     }
 
     /**

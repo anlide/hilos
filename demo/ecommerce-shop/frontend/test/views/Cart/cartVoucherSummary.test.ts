@@ -28,6 +28,7 @@ vi.mock('../../../src/bootstrap/connection.js', () => ({
 
 const cart: CartSnapshot = {
   userId: null,
+  guestCartKey: 'guest-cart',
   lines: [
     {
       lineId: 19,

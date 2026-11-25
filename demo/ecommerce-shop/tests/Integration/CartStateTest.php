@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Closure;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\CLI\DTO\GuestCartSetQuantityCommandData;
@@ -57,13 +58,22 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseNames;
+use Hilos\Database\Exception\SqlRuntime\LockWaitTimeoutException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -74,6 +84,9 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
+use mysqli;
+use mysqli_sql_exception;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionMethod;
 use ReflectionProperty;
 use RuntimeException;
@@ -97,6 +110,7 @@ final class CartStateTest extends IntegrationTestCase
     private const string OTHER_TAB = 'cart-step-other';
     private const string CONNECTIONS_OWNER = 'cart-step-test';
     private const string STEP_ACTION = EcommerceShopSignalConstants::CART_STEP_QUANTITY;
+    private const string SET_ACTION = EcommerceShopSignalConstants::CART_SET_QUANTITY;
     private const string LINE_UNAVAILABLE = 'This cart item is no longer available.';
 
     /** @var list<int> People the case created, removed after it */
@@ -112,7 +126,7 @@ final class CartStateTest extends IntegrationTestCase
     private ?EcommerceShopWorkerManager $cartWorker = null;
     private ?BrowserContext $previousBrowser = null;
 
-    /** @var array{id: int, units: int}|null Stock row changed by the account step case */
+    /** @var array{id: int, units: int}|null Stock row changed by an account action case */
     private ?array $previousStock = null;
 
     /** Mounts the shop's router, so the frames the owners send have somewhere to queue. */
@@ -170,14 +184,15 @@ final class CartStateTest extends IntegrationTestCase
     {
         $productId = self::seededProduct('ceramic-pot-18-cm-sand');
         $sessionId = $this->storedGuestSession();
+        $otherSessionId = $this->storedGuestSession();
         $lineId = self::guestLine($sessionId, $productId, 2);
-        $otherLineId = self::guestLine(self::OTHER_SESSION, $productId, 1);
+        $otherLineId = self::guestLine($otherSessionId, $productId, 1);
         $voucher = $this->createVoucher('CARTSTEP10', 10);
         Database::sql('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucher->id]);
         $this->startCartWorker();
         $guest = $this->guestCarts();
         $this->connectCartTab(self::FIRST_TAB, null, $sessionId);
-        $this->connectCartTab(self::OTHER_TAB, null, self::OTHER_SESSION);
+        $this->connectCartTab(self::OTHER_TAB, null, $otherSessionId);
         $this->subscribeCart($guest, self::FIRST_TAB);
         $initial = $this->takeCartPage(self::FIRST_TAB);
         self::assertSame([$lineId], array_column($initial['lines'], 'lineId'));
@@ -185,13 +200,13 @@ final class CartStateTest extends IntegrationTestCase
         self::assertSame([$otherLineId], array_column($this->takeCartPage(self::OTHER_TAB)['lines'], 'lineId'));
         $group = CartGroup::forSession($sessionId);
         Hilos::$sr->subscribeToGroup($group, new WebSocketGroupSubscribeSignalDTO(self::FIRST_TAB, $group));
-        $otherGroup = CartGroup::forSession(self::OTHER_SESSION);
+        $otherGroup = CartGroup::forSession($otherSessionId);
         Hilos::$sr->subscribeToGroup($otherGroup, new WebSocketGroupSubscribeSignalDTO(self::OTHER_TAB, $otherGroup));
 
         foreach ([CartLineRules::STEP_UP => 3, CartLineRules::STEP_DOWN => 2] as $step => $quantity) {
             $requestId = $step === CartLineRules::STEP_UP ? 'guest-plus' : 'guest-minus';
             $this->dispatchCartStep($guest, $requestId, $lineId, CartStepQuantityActionDTO::GUEST, $step);
-            [$facts, $states, $reply] = $this->takeStepOutcome($requestId);
+            [$facts, $states, $reply] = $this->takeCartActionOutcome($requestId);
             self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
             self::assertNull($reply->message);
             self::assertNull($reply->reply);
@@ -235,14 +250,14 @@ final class CartStateTest extends IntegrationTestCase
         $stockFact = $this->lowerStock($productId, 2);
         self::assertSame($initial['lines'][0]['availableQuantity'], Hilos::$db->productWarehouseStocks[$stockFact->idString]->units);
         $this->dispatchCartStep($owner, 'account-plus', $lineId, CartStepQuantityActionDTO::ACCOUNT, CartLineRules::STEP_UP);
-        $this->assertStepRefused('account-plus', 'Only 2 in stock');
+        $this->assertCartActionRefused('account-plus', 'Only 2 in stock');
         self::assertSame(5, self::storedQuantity(UserProductCart::_table, $lineId));
 
         $this->flushCartUpdates($stockFact);
         self::assertSame(2, $this->takeCartPage(self::FIRST_TAB)['lines'][0]['availableQuantity']);
 
         $this->dispatchCartStep($owner, 'account-minus', $lineId, CartStepQuantityActionDTO::ACCOUNT, CartLineRules::STEP_DOWN);
-        [$facts, $states, $reply] = $this->takeStepOutcome('account-minus');
+        [$facts, $states, $reply] = $this->takeCartActionOutcome('account-minus');
         self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
         self::assertCount(1, $facts);
         self::assertSame(EcommerceShopDbContext::userProductCarts, $facts[0]->collectionKey);
@@ -271,11 +286,11 @@ final class CartStateTest extends IntegrationTestCase
         $group = CartGroup::forUser($userId);
         Hilos::$sr->subscribeToGroup($group, new WebSocketGroupSubscribeSignalDTO(self::FIRST_TAB, $group));
 
-        Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [$otherUserId, $sessionId]);
+        $this->rebindStoredSession($sessionId, $otherUserId);
         self::assertSame($userId, Hilos::$db->sessions[$sessionId]->userId);
 
         $this->dispatchCartStep($owner, 'account-rebound', $lineId, CartStepQuantityActionDTO::ACCOUNT, CartLineRules::STEP_DOWN);
-        $this->assertStepRefused('account-rebound', self::LINE_UNAVAILABLE);
+        $this->assertCartActionRefused('account-rebound', self::LINE_UNAVAILABLE);
         self::assertSame(2, self::storedQuantity(UserProductCart::_table, $lineId));
     }
 
@@ -283,15 +298,24 @@ final class CartStateTest extends IntegrationTestCase
     {
         $productId = self::seededProduct('ceramic-pot-18-cm-sand');
         $userId = $this->person('Cart step shopper');
+        $sessionId = $this->storedGuestSession();
+        Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
         $lineId = self::accountLine($userId, $productId, 2);
         $this->startCartWorker();
         $owner = $this->personAgent($userId);
-        $this->connectCartTab(self::FIRST_TAB, $userId, null);
+        $this->connectCartTab(self::FIRST_TAB, $userId, $sessionId);
         $this->subscribeCart($owner, self::FIRST_TAB);
         self::assertSame([$lineId], array_column($this->takeCartPage(self::FIRST_TAB)['lines'], 'lineId'));
 
-        $this->dispatchCartStep($owner, 'account-no-session', $lineId, CartStepQuantityActionDTO::ACCOUNT, CartLineRules::STEP_DOWN);
-        $this->assertStepRefused('account-no-session', self::LINE_UNAVAILABLE);
+        $addressed = self::cartStepSignal('account-no-session', $lineId, CartStepQuantityActionDTO::ACCOUNT, CartLineRules::STEP_DOWN);
+        self::assertEquals([new AgentDestination($owner->getType(), $owner->getIndex())], Hilos::$sr->getDestinations($addressed));
+        ExecutionContext::run(new ExecutionFrame(), static function () use ($sessionId): void {
+            Hilos::$rt->connections->actions->repointSessionToken(self::FIRST_TAB, Hilos::$db->sessions[$sessionId]->token, null);
+        });
+        self::assertSame($userId, Hilos::$rt->connections[self::FIRST_TAB]?->userId);
+        self::assertNull(Hilos::$rt->connections[self::FIRST_TAB]?->sessionId);
+        $this->deliverCartFrame($owner, $addressed);
+        $this->assertCartActionRefused('account-no-session', self::LINE_UNAVAILABLE);
         self::assertSame(2, self::storedQuantity(UserProductCart::_table, $lineId));
     }
 
@@ -313,7 +337,7 @@ final class CartStateTest extends IntegrationTestCase
         $this->takeCartPage(self::FIRST_TAB);
 
         $this->dispatchCartStep($guest, 'foreign', $foreignLineId, CartStepQuantityActionDTO::GUEST, CartLineRules::STEP_UP);
-        $this->assertStepRefused('foreign', self::LINE_UNAVAILABLE);
+        $this->assertCartActionRefused('foreign', self::LINE_UNAVAILABLE);
         self::assertSame(2, self::storedQuantity(SessionProductCart::_table, $foreignLineId));
 
         $this->underAgent($guest, static function () use ($sessionId, $productId): void {
@@ -327,40 +351,366 @@ final class CartStateTest extends IntegrationTestCase
         self::assertNotSame($lineId, $replacement);
 
         $this->dispatchCartStep($guest, 'deleted', $lineId, CartStepQuantityActionDTO::GUEST, CartLineRules::STEP_UP);
-        $this->assertStepRefused('deleted', self::LINE_UNAVAILABLE);
+        $this->assertCartActionRefused('deleted', self::LINE_UNAVAILABLE);
         self::assertSame(1, self::storedQuantity(SessionProductCart::_table, $replacement));
         $this->dispatchCartStep($guest, 'fresh', $replacement, CartStepQuantityActionDTO::GUEST, CartLineRules::STEP_UP);
-        [, , $reply] = $this->takeStepOutcome('fresh');
+        [, , $reply] = $this->takeCartActionOutcome('fresh');
         self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
         self::assertSame(2, self::storedQuantity(SessionProductCart::_table, $replacement));
 
         Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
         $this->drainSignals();
         $this->dispatchCartStep($guest, 'stored-owner-changed', $replacement, CartStepQuantityActionDTO::GUEST, CartLineRules::STEP_UP);
-        $this->assertStepRefused('stored-owner-changed', self::LINE_UNAVAILABLE);
+        $this->assertCartActionRefused('stored-owner-changed', self::LINE_UNAVAILABLE);
 
         $oldAction = self::cartStepSignal('before-handoff', $replacement, CartStepQuantityActionDTO::GUEST, CartLineRules::STEP_UP);
         ExecutionContext::run(new ExecutionFrame(), static function () use ($userId): void {
             Hilos::$rt->connections[self::FIRST_TAB]->actions->bindUser($userId);
         });
         $this->deliverCartFrame($guest, $oldAction);
-        $this->assertStepRefused('before-handoff', self::LINE_UNAVAILABLE);
+        $this->assertCartActionRefused('before-handoff', self::LINE_UNAVAILABLE);
 
         $owner = $this->personAgent($userId);
         $this->subscribeCart($owner, self::FIRST_TAB);
         $cart = $this->takeCartPage(self::FIRST_TAB);
         self::assertSame([$accountLineId], array_column($cart['lines'], 'lineId'));
         $this->dispatchCartStep($owner, 'after-handoff', $accountLineId, CartStepQuantityActionDTO::GUEST, CartLineRules::STEP_UP);
-        $this->assertStepRefused('after-handoff', self::LINE_UNAVAILABLE);
+        $this->assertCartActionRefused('after-handoff', self::LINE_UNAVAILABLE);
 
         $afterDeparture = self::cartStepSignal('after-departure', $accountLineId, CartStepQuantityActionDTO::ACCOUNT, CartLineRules::STEP_UP);
         $this->deliverCartFrame($owner, self::webSocketFrame(
             SignalTypeConstants::PAGE_UNSUBSCRIBE, CartPage::PAGE, new WebSocketPageUnsubscribeSignalDTO(self::FIRST_TAB),
         ));
         $this->deliverCartFrame($owner, $afterDeparture);
-        $this->assertStepRefused('after-departure', self::LINE_UNAVAILABLE);
+        $this->assertCartActionRefused('after-departure', self::LINE_UNAVAILABLE);
         self::assertSame(2, self::storedQuantity(UserProductCart::_table, $accountLineId));
         self::assertSame(2, self::storedQuantity(SessionProductCart::_table, $replacement));
+    }
+
+    public function testGuestSetsExactQuantityAndPublishesOnlyTheFirstChangeToItsSession(): void
+    {
+        $productId = self::seededProduct('ceramic-pot-18-cm-sand');
+        $sessionId = $this->storedGuestSession();
+        $otherSessionId = $this->storedGuestSession();
+        $lineId = self::guestLine($sessionId, $productId, 2);
+        $otherLineId = self::guestLine($otherSessionId, $productId, 1);
+        $voucher = $this->createVoucher('CARTEXACT10', 10);
+        Database::sql('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucher->id]);
+        $this->startCartWorker();
+        $guest = $this->guestCarts();
+        $this->connectCartTab(self::FIRST_TAB, null, $sessionId);
+        $this->connectCartTab(self::OTHER_TAB, null, $otherSessionId);
+        $this->subscribeCart($guest, self::FIRST_TAB);
+        $initial = $this->takeCartPage(self::FIRST_TAB);
+        self::assertSame([$lineId], array_column($initial['lines'], 'lineId'));
+        self::assertSame([2], array_column($initial['lines'], 'quantity'));
+        $this->subscribeCart($guest, self::OTHER_TAB);
+        self::assertSame([$otherLineId], array_column($this->takeCartPage(self::OTHER_TAB)['lines'], 'lineId'));
+        $group = CartGroup::forSession($sessionId);
+        Hilos::$sr->subscribeToGroup($group, new WebSocketGroupSubscribeSignalDTO(self::FIRST_TAB, $group));
+        $otherGroup = CartGroup::forSession($otherSessionId);
+        Hilos::$sr->subscribeToGroup($otherGroup, new WebSocketGroupSubscribeSignalDTO(self::OTHER_TAB, $otherGroup));
+
+        $addressed = self::cartSetQuantitySignal('set-before-pause', $lineId, CartStepQuantityActionDTO::GUEST, '5', 2);
+        self::assertEquals([new AgentDestination($guest->getType(), $guest->getIndex())], Hilos::$sr->getDestinations($addressed));
+        $subscription = Hilos::$sr->pageSubscription(self::FIRST_TAB);
+        self::assertNotNull($subscription);
+        $subscription->retainedForRestart = true;
+        try {
+            self::assertFalse($subscription->admitsPageAnswer(self::FIRST_TAB));
+            $this->deliverCartFrame($guest, $addressed);
+            $this->assertCartActionRefused('set-before-pause', self::LINE_UNAVAILABLE, self::SET_ACTION);
+            self::assertSame(2, self::storedQuantity(SessionProductCart::_table, $lineId));
+        } finally {
+            $subscription->retainedForRestart = false;
+        }
+        self::assertTrue($subscription->admitsPageAnswer(self::FIRST_TAB));
+
+        $this->dispatchCartSetQuantity($guest, 'guest-set', $lineId, CartStepQuantityActionDTO::GUEST, '5', 2);
+        [$facts, $states, $reply] = $this->takeCartActionOutcome('guest-set', self::SET_ACTION);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertNull($reply->message);
+        self::assertNull($reply->reply);
+        self::assertCount(1, $facts);
+        self::assertSame(EcommerceShopDbContext::sessionProductCarts, $facts[0]->collectionKey);
+        self::assertSame((string)$lineId, $facts[0]->idString);
+        self::assertSame([SessionProductCart::quantity => 5], $facts[0]->row);
+        self::assertSame('guest-set', $facts[0]->originRequestId);
+        self::assertSame(5, self::storedQuantity(SessionProductCart::_table, $lineId));
+        self::assertSame(1, self::storedQuantity(SessionProductCart::_table, $otherLineId));
+        self::assertSame([[$group, [
+            'userId' => null,
+            'lines' => [['productId' => $productId, 'quantity' => 5]],
+            'voucherId' => $voucher->id,
+        ], [self::FIRST_TAB]]], $states);
+
+        $this->flushCartUpdates(...$facts);
+        $cart = $this->takeCartPage(self::FIRST_TAB);
+        self::assertNull($cart['userId']);
+        self::assertNotEmpty($initial['guestCartKey']);
+        self::assertSame($initial['guestCartKey'], $cart['guestCartKey']);
+        self::assertSame([[...$initial['lines'][0], 'quantity' => 5, 'lineTotal' => '160000']], $cart['lines']);
+        self::assertSame('160000', $cart['itemsTotal']);
+        self::assertSame('144000', $cart['total']);
+
+        $this->dispatchCartSetQuantity($guest, 'guest-set-again', $lineId, CartStepQuantityActionDTO::GUEST, '5', $cart['lines'][0]['quantity']);
+        $this->flushCartUpdates();
+        [$facts, $states, $reply] = $this->takeCartActionOutcome('guest-set-again', self::SET_ACTION);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertNull($reply->message);
+        self::assertNull($reply->reply);
+        self::assertSame([], $facts);
+        self::assertSame([], $states);
+        self::assertSame(5, self::storedQuantity(SessionProductCart::_table, $lineId));
+    }
+
+    public function testAccountSetsExactQuantityAgainstStoredStockAndKeepsTheLineOnRefusal(): void
+    {
+        $productId = self::seededProduct('hanging-planter-cotton-cord');
+        $soldOutProductId = self::seededProduct('orchid-fertilizer-250-ml');
+        $userId = $this->person('Cart quantity shopper');
+        $sessionId = $this->storedGuestSession();
+        Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
+        $lineId = self::accountLine($userId, $productId, 5);
+        $soldOutLineId = self::accountLine($userId, $soldOutProductId, 2);
+        $this->startCartWorker();
+        $owner = $this->personAgent($userId);
+        $this->connectCartTab(self::FIRST_TAB, $userId, $sessionId);
+        $this->subscribeCart($owner, self::FIRST_TAB);
+        $initial = $this->takeCartPage(self::FIRST_TAB);
+        self::assertSame([$lineId, $soldOutLineId], array_column($initial['lines'], 'lineId'));
+        self::assertSame([5, 2], array_column($initial['lines'], 'quantity'));
+        self::assertGreaterThanOrEqual(6, $initial['lines'][0]['availableQuantity']);
+        self::assertSame(0, $initial['lines'][1]['availableQuantity']);
+        $group = CartGroup::forUser($userId);
+        Hilos::$sr->subscribeToGroup($group, new WebSocketGroupSubscribeSignalDTO(self::FIRST_TAB, $group));
+
+        $stockFact = $this->lowerStock($productId, 2);
+        self::assertSame($initial['lines'][0]['availableQuantity'], Hilos::$db->productWarehouseStocks[$stockFact->idString]->units);
+        $this->dispatchCartSetQuantity($owner, 'fallen-stock', $lineId, CartStepQuantityActionDTO::ACCOUNT, '6', 5);
+        $this->assertCartActionRefused('fallen-stock', 'Only 2 in stock', self::SET_ACTION);
+        self::assertSame(5, self::storedQuantity(UserProductCart::_table, $lineId));
+
+        $this->flushCartUpdates($stockFact);
+        $cartAfterStock = $this->takeCartPage(self::FIRST_TAB);
+        self::assertSame([
+            [...$initial['lines'][0], 'availableQuantity' => 2, 'lineTotal' => '52000'],
+            $initial['lines'][1],
+        ], $cartAfterStock['lines']);
+        self::assertSame('52000', $cartAfterStock['itemsTotal']);
+
+        $this->dispatchCartSetQuantity($owner, 'zero-stock', $soldOutLineId, CartStepQuantityActionDTO::ACCOUNT, '1', 2);
+        $this->assertCartActionRefused('zero-stock', 'This product is out of stock', self::SET_ACTION);
+        self::assertSame(2, self::storedQuantity(UserProductCart::_table, $soldOutLineId));
+
+        foreach ([
+            ['fractional-quantity', '1.5', 'Enter a whole number of units.'],
+            ['zero-quantity', '0', 'A cart line keeps one unit at least: Remove takes it out'],
+        ] as [$requestId, $quantity, $reason]) {
+            $this->dispatchCartSetQuantity($owner, $requestId, $lineId, CartStepQuantityActionDTO::ACCOUNT, $quantity, 5);
+            $this->assertCartActionRefused($requestId, $reason, self::SET_ACTION);
+            self::assertSame(5, self::storedQuantity(UserProductCart::_table, $lineId));
+        }
+
+        $this->dispatchCartSetQuantity($owner, 'account-set', $lineId, CartStepQuantityActionDTO::ACCOUNT, '2', 5);
+        [$facts, $states, $reply] = $this->takeCartActionOutcome('account-set', self::SET_ACTION);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertCount(1, $facts);
+        self::assertSame(EcommerceShopDbContext::userProductCarts, $facts[0]->collectionKey);
+        self::assertSame((string)$lineId, $facts[0]->idString);
+        self::assertSame([UserProductCart::quantity => 2], $facts[0]->row);
+        self::assertSame('account-set', $facts[0]->originRequestId);
+        self::assertSame(2, self::storedQuantity(UserProductCart::_table, $lineId));
+        self::assertSame([[$group, [
+            'userId' => $userId,
+            'lines' => [
+                ['productId' => $productId, 'quantity' => 2],
+                ['productId' => $soldOutProductId, 'quantity' => 2],
+            ],
+            'voucherId' => null,
+        ], [self::FIRST_TAB]]], $states);
+        $this->flushCartUpdates(...$facts);
+        $cart = $this->takeCartPage(self::FIRST_TAB);
+        self::assertSame($userId, $cart['userId']);
+        self::assertNull($cart['guestCartKey']);
+        self::assertSame([[...$cartAfterStock['lines'][0], 'quantity' => 2], $cartAfterStock['lines'][1]], $cart['lines']);
+    }
+
+    public function testExactQuantityRefusesAStaleEditForeignOrRecreatedLineAndReboundSession(): void
+    {
+        $productId = self::seededProduct('ceramic-pot-18-cm-sand');
+        $sessionId = $this->storedGuestSession();
+        $userId = $this->person('Cart quantity editor');
+        $otherUserId = $this->person('Other cart owner');
+        Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
+        $lineId = self::accountLine($userId, $productId, 2);
+        $foreignLineId = self::accountLine($otherUserId, $productId, 2);
+        $this->startCartWorker();
+        $owner = $this->personAgent($userId);
+        $this->connectCartTab(self::FIRST_TAB, $userId, $sessionId);
+        self::assertSame([], Hilos::$sr->getDestinations(self::cartSetQuantitySignal(
+            'set-unsubscribed', $lineId, CartStepQuantityActionDTO::ACCOUNT, '4', 2,
+        )));
+        $this->subscribeCart($owner, self::FIRST_TAB);
+        $initial = $this->takeCartPage(self::FIRST_TAB);
+        self::assertSame([$lineId], array_column($initial['lines'], 'lineId'));
+        self::assertSame([2], array_column($initial['lines'], 'quantity'));
+
+        $this->dispatchCartStep($owner, 'intervening-minus', $lineId, CartStepQuantityActionDTO::ACCOUNT, CartLineRules::STEP_DOWN);
+        [$facts, , $reply] = $this->takeCartActionOutcome('intervening-minus');
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        $this->flushCartUpdates(...$facts);
+        self::assertSame([1], array_column($this->takeCartPage(self::FIRST_TAB)['lines'], 'quantity'));
+
+        $this->dispatchCartSetQuantity($owner, 'stale-quantity', $lineId, CartStepQuantityActionDTO::ACCOUNT, '4', $initial['lines'][0]['quantity']);
+        $this->assertCartActionRefused('stale-quantity', 'The cart quantity changed. Review it and try again.', self::SET_ACTION);
+        self::assertSame(1, self::storedQuantity(UserProductCart::_table, $lineId));
+
+        $this->dispatchCartSetQuantity($owner, 'foreign-line', $foreignLineId, CartStepQuantityActionDTO::ACCOUNT, '4', 2);
+        $this->assertCartActionRefused('foreign-line', self::LINE_UNAVAILABLE, self::SET_ACTION);
+        self::assertSame(2, self::storedQuantity(UserProductCart::_table, $foreignLineId));
+        self::assertSame(1, self::storedQuantity(UserProductCart::_table, $lineId));
+
+        $this->underAgent($owner, static function () use ($userId, $productId): void {
+            Hilos::$db->userProductCarts->actions->remove($userId, $productId);
+            Hilos::$db->userProductCarts->actions->add($userId, $productId);
+        });
+        $this->drainSignals();
+        $this->connectCartTab(self::OTHER_TAB, $userId, $sessionId);
+        $this->subscribeCart($owner, self::OTHER_TAB);
+        $replacement = $this->takeCartPage(self::OTHER_TAB)['lines'][0]['lineId'];
+        self::assertNotSame($lineId, $replacement);
+        $this->dispatchCartSetQuantity($owner, 'deleted-line', $lineId, CartStepQuantityActionDTO::ACCOUNT, '4', 1);
+        $this->assertCartActionRefused('deleted-line', self::LINE_UNAVAILABLE, self::SET_ACTION);
+        self::assertSame(1, self::storedQuantity(UserProductCart::_table, $replacement));
+
+        $this->rebindStoredSession($sessionId, $otherUserId);
+        self::assertSame($userId, Hilos::$db->sessions[$sessionId]->userId);
+        $this->dispatchCartSetQuantity($owner, 'rebound-session', $replacement, CartStepQuantityActionDTO::ACCOUNT, '4', 1);
+        $this->assertCartActionRefused('rebound-session', self::LINE_UNAVAILABLE, self::SET_ACTION);
+        self::assertSame(1, self::storedQuantity(UserProductCart::_table, $replacement));
+        self::assertSame(2, self::storedQuantity(UserProductCart::_table, $foreignLineId));
+    }
+
+    /** A guest with a still-active connection mirror cannot edit after persisted expiry or rebinding. */
+    public function testGuestExactQuantityRefusesAnExpiredOrReboundStoredSessionBeforeSweep(): void
+    {
+        $productId = self::seededProduct('ceramic-pot-18-cm-sand');
+        $sessionId = $this->storedGuestSession();
+        $session = Hilos::$db->sessions[$sessionId];
+        $lineId = self::guestLine($sessionId, $productId, 2);
+        $this->startCartWorker();
+        $owner = $this->guestCarts();
+        $this->connectCartTab(self::FIRST_TAB, null, $sessionId);
+        $this->subscribeCart($owner, self::FIRST_TAB);
+        self::assertSame([$lineId], array_column($this->takeCartPage(self::FIRST_TAB)['lines'], 'lineId'));
+
+        $expiresAt = TimeHelper::nowMs();
+        Database::sqlRun('UPDATE hilos_session SET expires_at = ? WHERE id = ?', [$expiresAt, $sessionId]);
+        self::assertTrue($session->expiresAt === null || $session->expiresAt > $expiresAt);
+        $this->dispatchCartSetQuantity($owner, 'expired-guest-set', $lineId, CartStepQuantityActionDTO::GUEST, '4', 2);
+        $this->assertCartActionRefused('expired-guest-set', self::LINE_UNAVAILABLE, self::SET_ACTION);
+        self::assertSame(2, self::storedQuantity(SessionProductCart::_table, $lineId));
+
+        Database::sqlRun('UPDATE hilos_session SET expires_at = ? WHERE id = ?', [$session->expiresAt, $sessionId]);
+        $this->rebindStoredSession($sessionId, $this->person('Rebound guest'));
+        self::assertNull($session->userId);
+        $this->drainSignals();
+        $this->dispatchCartSetQuantity($owner, 'rebound-guest-set', $lineId, CartStepQuantityActionDTO::GUEST, '4', 2);
+        $this->assertCartActionRefused('rebound-guest-set', self::LINE_UNAVAILABLE, self::SET_ACTION);
+        self::assertSame(2, self::storedQuantity(SessionProductCart::_table, $lineId));
+    }
+
+    /** @param bool $registered Whether the action serves an account or a guest cart */
+    #[DataProvider('exactQuantityOwners')]
+    public function testExactQuantityHoldsTheSessionThroughTheWrite(bool $registered): void
+    {
+        $productId = self::seededProduct('ceramic-pot-18-cm-sand');
+        $sessionId = $this->storedGuestSession();
+        $this->startCartWorker();
+        if ($registered) {
+            $userId = $this->person('Session lock holder');
+            Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
+            $lineId = self::accountLine($userId, $productId, 2);
+            $owner = $this->personAgent($userId);
+            $ownerKind = CartStepQuantityActionDTO::ACCOUNT;
+            $table = UserProductCart::_table;
+            $collection = EcommerceShopDbContext::userProductCarts;
+        } else {
+            $userId = null;
+            $lineId = self::guestLine($sessionId, $productId, 2);
+            $owner = $this->guestCarts();
+            $ownerKind = CartStepQuantityActionDTO::GUEST;
+            $table = SessionProductCart::_table;
+            $collection = EcommerceShopDbContext::sessionProductCarts;
+        }
+        $this->connectCartTab(self::FIRST_TAB, $userId, $sessionId);
+        $this->subscribeCart($owner, self::FIRST_TAB);
+        self::assertSame([$lineId], array_column($this->takeCartPage(self::FIRST_TAB)['lines'], 'lineId'));
+
+        $primary = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        $peer = new mysqli($primary->host, $primary->user, $primary->password, $primary->database, $primary->port, $primary->socket);
+        $mirror = new class ($collection, (string)$lineId) implements SourceMirrorSubscriberInterface {
+            public ?Closure $probe = null;
+
+            public function __construct(private readonly string $collection, private readonly string $lineId)
+            {
+            }
+
+            public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+            {
+                if ($change->sourceKey === $this->collection && $change->sourceId === $this->lineId
+                    && $change->mutationType === TableMutationType::Update
+                ) {
+                    ($this->probe)?->__invoke();
+                }
+            }
+        };
+        $lockSession = static fn () => $peer->execute_query('SELECT id FROM hilos_session WHERE id = ? FOR UPDATE NOWAIT', [$sessionId]);
+        $probeErrors = [];
+        $mirror->probe = static function () use ($peer, $lockSession, &$probeErrors): void {
+            $peer->begin_transaction();
+            try {
+                $lockSession()->free();
+                $probeErrors[] = null;
+            } catch (mysqli_sql_exception $failure) {
+                $probeErrors[] = $failure->getCode();
+            } finally {
+                $peer->rollback();
+            }
+        };
+        SourceChangeBus::subscribe($mirror);
+        try {
+            $this->dispatchCartSetQuantity($owner, 'set-with-session-lock', $lineId, $ownerKind, '4', 2);
+            [$facts, , $reply] = $this->takeCartActionOutcome('set-with-session-lock', self::SET_ACTION);
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+            self::assertCount(1, $facts);
+            self::assertSame(4, self::storedQuantity($table, $lineId));
+            self::assertSame([LockWaitTimeoutException::MYSQL_ERROR_CODE], $probeErrors);
+            $mirror->probe = null;
+
+            $peer->begin_transaction();
+            try {
+                $result = $lockSession();
+                self::assertSame($sessionId, (int)$result->fetch_column());
+                $result->free();
+                $this->dispatchCartSetQuantity($owner, 'set-with-busy-session', $lineId, $ownerKind, '5', 4);
+                $this->assertCartActionRefused('set-with-busy-session', self::LINE_UNAVAILABLE, self::SET_ACTION);
+                self::assertSame(4, self::storedQuantity($table, $lineId));
+            } finally {
+                $peer->rollback();
+            }
+        } finally {
+            $mirror->probe = null;
+            $peer->close();
+        }
+    }
+
+    /** @return iterable<string, array{bool}> Both transactional cart writers */
+    public static function exactQuantityOwners(): iterable
+    {
+        yield 'guest' => [false];
+        yield 'account' => [true];
     }
 
     /** Asked for a session's cart, the library tells the session's group every line, in the order put in, and no line of another session. */
@@ -686,6 +1036,8 @@ final class CartStateTest extends IntegrationTestCase
         self::assertSame('61000', $before['itemsTotal']);
         self::assertSame('54900', $before['total']);
         self::assertNull($after['userId']);
+        self::assertNotEmpty($before['guestCartKey']);
+        self::assertSame($before['guestCartKey'], $after['guestCartKey']);
         self::assertSame([$remainingLine], array_column($after['lines'], 'lineId'));
         self::assertSame([$remainingProduct], array_column($after['lines'], 'productId'));
         self::assertSame('32000', $after['itemsTotal']);
@@ -718,6 +1070,7 @@ final class CartStateTest extends IntegrationTestCase
         self::assertSame([0], array_column($before['lines'], 'availableQuantity'));
         self::assertSame([
             'userId' => $userId,
+            'guestCartKey' => null,
             'lines' => [],
             'itemsTotal' => '0',
             'voucher' => ['code' => 'CART10', 'active' => true, 'discount' => '0'],
@@ -841,9 +1194,7 @@ final class CartStateTest extends IntegrationTestCase
      */
     private function subscribeForRemoval(WorkerManager $worker, AgentInterface $owner, string $acceptKey, int $sessionId, ?int $userId): array
     {
-        ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $userId, $sessionId): void {
-            Hilos::$rt->connections->actions->register($acceptKey, $userId, sessionId: $sessionId);
-        });
+        $this->connectCartTab($acceptKey, $userId, $sessionId);
         $worker->handleDaemonMessage(new DaemonAgentMessageDTO($owner->getId(), new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
@@ -974,6 +1325,17 @@ final class CartStateTest extends IntegrationTestCase
         return $sessionId;
     }
 
+    /**
+     * Changes the saved owner before the session and connection mirrors receive the change.
+     *
+     * @param int $sessionId Session whose object is already loaded
+     * @param int $userId New persisted owner
+     */
+    private function rebindStoredSession(int $sessionId, int $userId): void
+    {
+        Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [$userId, $sessionId]);
+    }
+
     /** Mounts the worker and source fan-out for the tests that dispatch cart page actions. */
     private function startCartWorker(): void
     {
@@ -984,7 +1346,7 @@ final class CartStateTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(EcommerceShopRtContext::connections, TruthSourceKeys::all(), self::CONNECTIONS_OWNER);
     }
 
-    /** Releases the step cases' tabs and restores the browser context. */
+    /** Releases the cart action tabs and restores the browser context. */
     private function releaseCartWorker(): void
     {
         try {
@@ -1011,8 +1373,9 @@ final class CartStateTest extends IntegrationTestCase
      */
     private function connectCartTab(string $acceptKey, ?int $userId, ?int $sessionId): void
     {
-        ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $userId, $sessionId): void {
-            Hilos::$rt->connections->actions->register($acceptKey, $userId, sessionId: $sessionId);
+        $token = $sessionId === null ? null : Hilos::$db->sessions[$sessionId]->token;
+        ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $userId, $sessionId, $token): void {
+            Hilos::$rt->connections->actions->register($acceptKey, $userId, $token, $sessionId);
         });
     }
 
@@ -1038,7 +1401,34 @@ final class CartStateTest extends IntegrationTestCase
      */
     private function dispatchCartStep(AgentInterface $owner, string $requestId, int $lineId, string $kind, int $step): void
     {
-        $signal = self::cartStepSignal($requestId, $lineId, $kind, $step);
+        $this->dispatchCartAction($owner, self::cartStepSignal($requestId, $lineId, $kind, $step));
+    }
+
+    /**
+     * @param AgentInterface $owner Expected destination of the subscribed action
+     * @param string $requestId Request correlation
+     * @param int $lineId Saved line PK
+     * @param string $kind Owner kind captured by the caller
+     * @param string $quantity Original quantity text
+     * @param int $expectedQuantity Saved quantity the edit started from
+     */
+    private function dispatchCartSetQuantity(
+        AgentInterface $owner,
+        string $requestId,
+        int $lineId,
+        string $kind,
+        string $quantity,
+        int $expectedQuantity,
+    ): void {
+        $this->dispatchCartAction($owner, self::cartSetQuantitySignal($requestId, $lineId, $kind, $quantity, $expectedQuantity));
+    }
+
+    /**
+     * @param AgentInterface $owner Expected destination of the subscribed action
+     * @param SignalDTO $signal Browser action to route
+     */
+    private function dispatchCartAction(AgentInterface $owner, SignalDTO $signal): void
+    {
         self::assertEquals([new AgentDestination($owner->getType(), $owner->getIndex())], Hilos::$sr->getDestinations($signal));
         $this->deliverCartFrame($owner, $signal);
     }
@@ -1054,6 +1444,24 @@ final class CartStateTest extends IntegrationTestCase
     {
         return self::webSocketFrame(SignalTypeConstants::ACTION, self::STEP_ACTION, new WebSocketActionSignalDTO(
             self::FIRST_TAB, self::STEP_ACTION, ['lineId' => $lineId, 'ownerKind' => $kind, 'step' => $step], $requestId,
+        ));
+    }
+
+    /**
+     * @param string $requestId Request correlation
+     * @param int $lineId Saved line PK
+     * @param string $kind Owner kind captured by the caller
+     * @param string $quantity Original quantity text
+     * @param int $expectedQuantity Saved quantity the edit started from
+     * @return SignalDTO Browser action for the production dispatcher
+     */
+    private static function cartSetQuantitySignal(string $requestId, int $lineId, string $kind, string $quantity, int $expectedQuantity): SignalDTO
+    {
+        return self::webSocketFrame(SignalTypeConstants::ACTION, self::SET_ACTION, new WebSocketActionSignalDTO(
+            self::FIRST_TAB,
+            self::SET_ACTION,
+            ['lineId' => $lineId, 'ownerKind' => $kind, 'quantity' => $quantity, 'expectedQuantity' => $expectedQuantity],
+            $requestId,
         ));
     }
 
@@ -1081,10 +1489,11 @@ final class CartStateTest extends IntegrationTestCase
 
     /**
      * @param string $requestId Request expected to receive the sole personal reply
+     * @param string $action Cart action expected in the reply
      * @return array{list<DbSyncUpdatedSignalData>, list<array{string, array<string, mixed>, list<string>}>,
      *     PageActionSuccessSignalData|PageActionErrorSignalData} Persisted facts, group delivery and ack
      */
-    private function takeStepOutcome(string $requestId): array
+    private function takeCartActionOutcome(string $requestId, string $action = self::STEP_ACTION): array
     {
         $facts = [];
         $states = [];
@@ -1093,6 +1502,13 @@ final class CartStateTest extends IntegrationTestCase
             $frame = $signal->data;
             if ($frame instanceof DbSyncUpdatedSignalData) {
                 $facts[] = $frame;
+            } elseif ($frame instanceof DbSyncSignalDataInterface || $frame instanceof DbSyncClearedSignalData) {
+                self::assertNotContains($frame->collectionKey, [
+                    EcommerceShopDbContext::sessionProductCarts,
+                    EcommerceShopDbContext::sessionVoucherCarts,
+                    EcommerceShopDbContext::userProductCarts,
+                    EcommerceShopDbContext::userVoucherCarts,
+                ]);
             }
             if (!$frame instanceof WebSocketSignalData) {
                 continue;
@@ -1100,12 +1516,14 @@ final class CartStateTest extends IntegrationTestCase
             self::assertNotInstanceOf(PageResponseSignalData::class, $frame->data);
             if ($frame->data instanceof PageActionSuccessSignalData || $frame->data instanceof PageActionErrorSignalData) {
                 self::assertSame(self::FIRST_TAB, $frame->targetAcceptKey);
-                $expectedSignal = $frame->data instanceof PageActionSuccessSignalData
-                    ? SignalConstants::ACTION_SUCCESS
-                    : SignalConstants::ACTION_ERROR;
+                [$expectedSignal, $outcome] = $frame->data instanceof PageActionSuccessSignalData
+                    ? [SignalConstants::ACTION_SUCCESS, 'success']
+                    : [SignalConstants::ACTION_ERROR, 'fail'];
                 self::assertSame($expectedSignal, $signal->signalName->getName());
-                self::assertSame(self::STEP_ACTION, $frame->data->action);
+                self::assertSame($action, $frame->data->action);
                 self::assertSame($requestId, $frame->data->requestId);
+                self::assertSame($outcome, $frame->data->getEnvelopeOutcome());
+                self::assertSame($requestId, $frame->data->getEnvelopeRequestId());
                 $replies[] = $frame->data;
             }
             if ($frame->data instanceof CartStateSignalData) {
@@ -1125,10 +1543,12 @@ final class CartStateTest extends IntegrationTestCase
     /**
      * @param string $requestId Refused action
      * @param string $reason Server's reason for refusing
+     * @param string $action Cart action expected in the reply
      */
-    private function assertStepRefused(string $requestId, string $reason): void
+    private function assertCartActionRefused(string $requestId, string $reason, string $action = self::STEP_ACTION): void
     {
-        [$facts, $states, $reply] = $this->takeStepOutcome($requestId);
+        $this->flushCartUpdates();
+        [$facts, $states, $reply] = $this->takeCartActionOutcome($requestId, $action);
         self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
         self::assertSame($reason, $reply->reason);
         self::assertSame([], $facts);

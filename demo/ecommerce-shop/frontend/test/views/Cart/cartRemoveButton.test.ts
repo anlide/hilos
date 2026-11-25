@@ -97,10 +97,12 @@ afterEach(async () => {
 })
 
 function answer(lines: CartLine[], itemsTotal: string): void {
+  const userId = currentUserId.get()
   ingest(scopes.page()!, {
     data: {
       cart: {
-        userId: currentUserId.get(),
+        userId,
+        guestCartKey: userId === null ? 'guest-cart' : null,
         lines,
         itemsTotal,
         voucher: null,

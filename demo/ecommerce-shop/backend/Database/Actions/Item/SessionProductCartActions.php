@@ -85,4 +85,37 @@ final class SessionProductCartActions extends DbActions
         $this->object->quantity = $quantity;
         $this->object->sync();
     }
+
+    /**
+     * Sets the quantity of this saved line from the quantity the editor saw.
+     *
+     * @param int $expectedQuantity Saved quantity the edit started from
+     * @param string $quantity Original quantity text from the form
+     * @throws ValidationException When the line is gone, the edit is stale or the quantity is refused
+     * @throws InvalidArgumentException When a stock object or its sync signal is invalid
+     * @throws LogicException When the stock collection classes are not configured
+     * @throws DatabaseException When checking the stock or saving the line fails
+     * @throws ObjectGetIdStringNotImplementedException When a cart or stock row cannot provide its key
+     * @throws CollectionNotManualException When a matched stock row cannot join the selection
+     * @throws ObjectCollectionNullException When the line has no backing collection
+     * @throws WriteNotAllowedException When this process cannot update the line
+     * @throws CreateNotAllowedException When the write guard refuses a new row
+     * @throws SourceChangeSubscriberException When a DB change subscriber fails
+     * @throws HilosException When the catalog product cannot be read
+     */
+    public function setQuantityFrom(int $expectedQuantity, string $quantity): void
+    {
+        if (!$this->object->isRelated()) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        $wanted = CartLineRules::exactFrom($this->object->productId, $this->object->quantity, $expectedQuantity, $quantity);
+        if ($wanted === $this->object->quantity) {
+            return;
+        }
+
+        $this->ensureCanWrite();
+        $this->object->quantity = $wanted;
+        $this->object->sync();
+    }
 }

@@ -18,6 +18,7 @@ use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\CartPageData;
 use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CartSetQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Runtime\View\Item\Connection;
@@ -68,6 +69,7 @@ final class CartPage extends AbstractPage
     public const array ACTIONS = [
         EcommerceShopSignalConstants::CART_REMOVE_LINE => CartRemoveLineActionDTO::class,
         EcommerceShopSignalConstants::CART_STEP_QUANTITY => CartStepQuantityActionDTO::class,
+        EcommerceShopSignalConstants::CART_SET_QUANTITY => CartSetQuantityActionDTO::class,
     ];
 
     /**
@@ -87,6 +89,8 @@ final class CartPage extends AbstractPage
     public const array READS_RT = [EcommerceShopRtContext::connections];
 
     public const string DATA_CART = 'cart';
+
+    private const string GUEST_CART_KEY_MESSAGE = 'ecommerce-shop:guest-cart:v1:%d:0';
 
     /**
      * @param string $acceptKey Acting connection
@@ -125,6 +129,14 @@ final class CartPage extends AbstractPage
 
                 return null;
 
+            case EcommerceShopSignalConstants::CART_SET_QUANTITY:
+                if (!$dto instanceof CartSetQuantityActionDTO) {
+                    throw new InvalidActionPayloadException($action, CartSetQuantityActionDTO::class, $dto);
+                }
+                $this->handleSetQuantity($acceptKey, $dto);
+
+                return null;
+
             default:
                 throw new AgentUnknownActionException(sprintf('Unknown action %s', $action));
         }
@@ -148,11 +160,11 @@ final class CartPage extends AbstractPage
      * @param string $acceptKey Subscribing connection supplied by the router
      * @param PageRouteParams $params Route parameters, unused
      * @return PagePayload A complete cart for the confirmed owner
-     * @throws PageConflictException When the connection's identity is unconfirmed or the cart owner changed
+     * @throws PageConflictException When the active session does not confirm the connection's cart owner
      * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
-     * @throws InvalidArgumentException When a collection, stock total or picture variant is misconfigured
+     * @throws InvalidArgumentException When a session query, collection, stock total or picture variant is invalid
      * @throws LogicException When a line has no ID, the collection classes are not configured or a monetary amount is invalid
-     * @throws DatabaseException When a cart, its products, its stock or its voucher cannot be read
+     * @throws DatabaseException When the session, cart, products, stock or voucher cannot be read
      * @throws ItemNotFoundException When the saved voucher is missing or the binding disappears during its keyed read
      * @throws ObjectGetIdStringNotImplementedException When a matched row cannot provide a key
      * @throws CollectionNotManualException When a selection refuses a matched row
@@ -163,6 +175,14 @@ final class CartPage extends AbstractPage
         $connection = $this->requireConnection($acceptKey);
         $userId = $connection->userId;
         $sessionId = $connection->sessionId;
+        $sessionToken = $userId === null ? $connection->sessionToken : null;
+        if (!$this->isActiveCartBinding($sessionId, $userId, $sessionToken)) {
+            throw new PageConflictException('The cart owner is not available yet');
+        }
+
+        $guestCartKey = $sessionToken === null
+            ? null
+            : hash_hmac('sha256', sprintf(self::GUEST_CART_KEY_MESSAGE, $sessionId), $sessionToken);
         $cartLines = $userId === null
             ? Hilos::$db->sessionProductCarts->whereColumnIs(SessionProductCart::sessionId, $sessionId)
             : Hilos::$db->userProductCarts->whereColumnIs(UserProductCart::user_id, $userId);
@@ -191,14 +211,19 @@ final class CartPage extends AbstractPage
                 $stock->of($line->productId)->unitCount,
             );
         }
-        $cart = new CartPageData($userId, $lines, $this->cartVoucher($sessionId));
+        $cart = new CartPageData($userId, $guestCartKey, $lines, $this->cartVoucher($sessionId));
+        $payload = new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
 
         $current = $this->requireConnection($acceptKey);
-        if ($current->userId !== $userId || $current->sessionId !== $sessionId) {
+        if (
+            $current->userId !== $userId || $current->sessionId !== $sessionId
+            || ($userId === null && $current->sessionToken !== $sessionToken)
+            || !$this->isActiveCartBinding($sessionId, $userId, $sessionToken)
+        ) {
             throw new PageConflictException('The cart owner has changed');
         }
 
-        return new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
+        return $payload;
     }
 
     /**
@@ -270,25 +295,12 @@ final class CartPage extends AbstractPage
      */
     private function handleStepQuantity(string $acceptKey, CartStepQuantityActionDTO $dto): void
     {
-        try {
-            $connection = $this->requireConnection($acceptKey);
-        } catch (PageConflictException $failure) {
-            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
-        }
-
-        $sessionId = $connection->sessionId;
+        $sessionId = $this->requireActionConnection($acceptKey)->sessionId;
         if ($sessionId === null || $sessionId <= 0) {
             throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
         }
 
         $agent = $this->getAgent();
-        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
-        if (!$agent instanceof AgentInterface || $subscription?->page !== self::PAGE
-            || $subscription->agentType !== $agent->getType() || $subscription->agentIndex !== $agent->getIndex()
-        ) {
-            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
-        }
-
         try {
             if ($agent instanceof GuestCartsLibraryAgent && $dto->ownerKind === CartStepQuantityActionDTO::GUEST) {
                 $agent->stepProductLine($sessionId, $dto->lineId, $dto->step);
@@ -307,6 +319,71 @@ final class CartPage extends AbstractPage
         }
 
         throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+    }
+
+    /**
+     * @param string $acceptKey Connection invoking the action
+     * @param CartSetQuantityActionDTO $dto Target, original quantity text and saved edit base
+     * @throws ValidationException When ownership changed, the edit is stale or the requested quantity is refused
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
+     * @throws LogicException When the cart operation raises an unexpected failure
+     * @throws HilosException When the runtime, database or cart sources cannot complete the action
+     */
+    private function handleSetQuantity(string $acceptKey, CartSetQuantityActionDTO $dto): void
+    {
+        $connection = $this->requireActionConnection($acceptKey);
+        $sessionId = $connection->sessionId;
+        if ($sessionId === null || $sessionId <= 0
+            || !Hilos::$sr?->pageSubscription($acceptKey)?->admitsPageAnswer($acceptKey)
+        ) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        $agent = $this->getAgent();
+        try {
+            if ($agent instanceof GuestCartsLibraryAgent && $dto->ownerKind === CartStepQuantityActionDTO::GUEST) {
+                $agent->setProductLineQuantity($sessionId, $dto->lineId, $dto->quantity, $dto->expectedQuantity);
+
+                return;
+            }
+            if ($agent instanceof UserAgent && $dto->ownerKind === CartStepQuantityActionDTO::ACCOUNT) {
+                $agent->setProductLineQuantity($sessionId, $dto->lineId, $dto->quantity, $dto->expectedQuantity);
+
+                return;
+            }
+        } catch (HilosException $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new LogicException('Failed to set the cart line quantity', previous: $failure);
+        }
+
+        throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+    }
+
+    /**
+     * @param string $acceptKey Connection invoking the action
+     * @return Connection Current connection whose active cart subscription agrees with the serving agent
+     * @throws ValidationException When the connection or its cart subscription no longer belongs to the agent
+     * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
+     * @throws HilosException When the runtime context refuses the read
+     */
+    private function requireActionConnection(string $acceptKey): Connection
+    {
+        try {
+            $connection = $this->requireConnection($acceptKey);
+        } catch (PageConflictException $failure) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
+        }
+
+        $agent = $this->getAgent();
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if (!$agent instanceof AgentInterface || $subscription?->page !== self::PAGE
+            || $subscription->agentType !== $agent->getType() || $subscription->agentIndex !== $agent->getIndex()
+        ) {
+            throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+        }
+
+        return $connection;
     }
 
     /**
@@ -351,5 +428,26 @@ final class CartPage extends AbstractPage
         }
 
         return $connection;
+    }
+
+    /**
+     * @param ?int $sessionId Session ID from the current runtime binding
+     * @param ?int $userId Bound account ID, or null for a guest
+     * @param ?string $sessionToken Guest cookie token from the same binding
+     * @return bool Whether storage confirms this exact active cart binding
+     * @throws DatabaseException When the persisted session cannot be read
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    private function isActiveCartBinding(?int $sessionId, ?int $userId, ?string $sessionToken): bool
+    {
+        if ($sessionId === null) {
+            return false;
+        }
+        if ($userId !== null) {
+            return Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId);
+        }
+
+        return $sessionToken !== null && $sessionToken !== ''
+            && Hilos::$db->sessions->isStoredActiveGuest($sessionId, $sessionToken);
     }
 }

@@ -91,6 +91,38 @@ class Sessions extends Objects
     }
 
     /**
+     * Checks the stored session under a shared row lock held until the caller's transaction ends.
+     *
+     * @param int $sessionId Session primary key
+     * @param ?int $userId Expected bound user, or null for a guest
+     * @return bool Whether the row exists, matches the expected binding and has not expired
+     * @throws DatabaseException When the caller has no row-connection transaction, the lock is busy, or the read fails
+     */
+    public function lockStoredActiveSession(int $sessionId, ?int $userId): bool
+    {
+        $entity = static::entityClass();
+        $index = $entity::getDatabase()->connectionIndex;
+        if (Database::runtimeTransactionLevel($index) === null) {
+            throw new DatabaseException('The active session lock requires the row connection transaction.');
+        }
+        $row = Database::sql(
+            'SELECT `' . EntitySession::user_id . '`, `' . EntitySession::expires_at . '` FROM ' . $entity::getSqlTableName()
+            . ' WHERE `' . EntitySession::id . '` = ? LOCK IN SHARE MODE NOWAIT',
+            [$sessionId],
+            index: $index,
+        )->firstRow();
+        if ($row === null) {
+            return false;
+        }
+
+        $storedUserId = $row[EntitySession::user_id];
+        $expiresAt = $row[EntitySession::expires_at];
+
+        return ($storedUserId === null ? null : (int)$storedUserId) === $userId
+            && ($expiresAt === null || (int)$expiresAt > TimeHelper::nowMs());
+    }
+
+    /**
      * Reads the current binding because the session mirror can lag behind a committed change.
      * The shared row lock keeps the binding in place for the rest of the caller's transaction.
      *
@@ -113,15 +145,17 @@ class Sessions extends Objects
 
     /**
      * @param int $sessionId Session primary key
-     * @return bool Whether storage holds an unexpired session without a bound user
+     * @param ?string $token Expected cookie token, or null when rotation is immaterial
+     * @return bool Whether storage holds an unexpired session matching the guest binding
      * @throws DatabaseException When the primary-key read fails
      * @throws InvalidArgumentException When the entity query is invalid
      */
-    public function isStoredActiveGuest(int $sessionId): bool
+    public function isStoredActiveGuest(int $sessionId, ?string $token = null): bool
     {
         $session = static::entityClass()::getById($sessionId);
 
         return $session !== null && $session->user_id === null
+            && ($token === null || $session->token === $token)
             && ($session->expires_at === null || $session->expires_at > TimeHelper::nowMs());
     }
 

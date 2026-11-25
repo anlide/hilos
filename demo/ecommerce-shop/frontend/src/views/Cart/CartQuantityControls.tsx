@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useTrackedAction } from '@hilos/react/base'
 
 import {
@@ -9,18 +9,21 @@ import {
 import { type CartLine } from './types/Cart.js'
 
 /**
- * One-step quantity controls for a saved stock line.
+ * Quantity controls for a saved stock line.
  *
- * @param props The confirmed line and the kind of cart that owns it.
+ * @param props The confirmed line, its owner kind, and the exact-quantity opener.
  */
 export function CartQuantityControls({
   line,
   ownerKind,
+  onEdit,
 }: {
   line: CartLine
   ownerKind: CartOwnerKind
+  onEdit: () => void
 }) {
   const action = useTrackedAction()
+  const quantityId = useId()
   const pending = useRef(false)
   const group = useRef<HTMLDivElement>(null)
   const lessButton = useRef<HTMLButtonElement>(null)
@@ -83,10 +86,22 @@ export function CartQuantityControls({
       >
         <i className="bi bi-dash" aria-hidden="true" />
       </button>
-      <span className="input-group-text px-3" data-id="shop-cart-quantity">
-        <span className="visually-hidden">Quantity: </span>
-        {line.quantity}
-      </span>
+      <button
+        type="button"
+        className="btn btn-outline-secondary px-3"
+        aria-label="Set quantity"
+        aria-describedby={quantityId}
+        data-id="shop-cart-quantity"
+        onClick={(event) => {
+          event.currentTarget.focus()
+          onEdit()
+        }}
+      >
+        <span id={quantityId}>
+          <span className="visually-hidden">Quantity: </span>
+          {line.quantity}
+        </span>
+      </button>
       <button
         type="button"
         className={buttonClass}

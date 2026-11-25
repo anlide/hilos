@@ -359,7 +359,19 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
   const [initial, signedIn, signedOut] = [epochs[0], epochs[2], epochs[4]].map(
     ({ answers }) => answers[0],
   )
-  expect(signedOut.cart).toEqual(initial.cart)
+  if (!initial.cart || !signedOut.cart) {
+    throw new Error('Expected full guest cart snapshots')
+  }
+  const { guestCartKey: initialGuestCartKey, ...initialCart } = initial.cart
+  const { guestCartKey: signedOutGuestCartKey, ...signedOutCart } =
+    signedOut.cart
+
+  // Session token rotation changes the guest key even when the cart is restored.
+  expect(initialGuestCartKey).toBeTruthy()
+  expect(signedOutGuestCartKey).toBeTruthy()
+  expect(signedOutGuestCartKey).not.toBe(initialGuestCartKey)
+  expect(signedIn.cart?.guestCartKey).toBeNull()
+  expect(signedOutCart).toStrictEqual(initialCart)
 
   expectCartOwnerChange(
     observations,

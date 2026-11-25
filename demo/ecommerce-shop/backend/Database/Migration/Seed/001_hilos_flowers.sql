@@ -8,8 +8,8 @@
 -- With the checks off the database cascades nothing, so the copies of a picture go by hand.
 
 SET FOREIGN_KEY_CHECKS = 0;
-TRUNCATE TABLE `session_product_cart`;
-TRUNCATE TABLE `user_product_cart`;
+DELETE FROM `session_product_cart`;
+DELETE FROM `user_product_cart`;
 DELETE FROM `hilos_file_variant` WHERE `file_id` IN (
     SELECT `picture_file_id` FROM `category`
     UNION SELECT `picture_file_id` FROM `product`

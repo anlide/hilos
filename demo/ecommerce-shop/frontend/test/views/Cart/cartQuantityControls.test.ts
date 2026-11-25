@@ -89,6 +89,7 @@ async function answer(
           voucher: null,
           total: itemsTotal,
           userId,
+          guestCartKey: userId === null ? 'guest-cart' : null,
         },
       },
     })
@@ -114,11 +115,11 @@ function quantityControls(name = 'Pine bark') {
   }
 }
 
-it('shows a named pair of native buttons and applies each live stock limit', async () => {
+it('shows named quantity buttons and applies each live stock limit', async () => {
   await mountCart()
   await answer([{ ...stockLine, quantity: 1, lineTotal: '12000' }], '12000')
   const { group, less, more, quantity, row } = quantityControls()
-  expect(group.querySelectorAll('button')).toHaveLength(2)
+  expect(group.querySelectorAll('button')).toHaveLength(3)
   for (const button of [less, more]) {
     expect(button.type).toBe('button')
     expect(button.firstElementChild?.getAttribute('aria-hidden')).toBe('true')
@@ -275,6 +276,7 @@ it('resets the row controls when its cart kind or saved line changes', async () 
           voucher: null,
           total: '60000',
           userId: 9,
+          guestCartKey: null,
         },
       },
     })

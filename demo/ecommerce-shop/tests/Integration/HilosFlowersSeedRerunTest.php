@@ -85,7 +85,9 @@ final class HilosFlowersSeedRerunTest extends TestCase
             // The guest cart stores a soft session reference.
             $sessionId = 1;
             Database::sql('INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (?, ?, 1)', [$sessionId, $productId]);
+            $guestLineId = Database::lastInsertId();
             Database::sql('INSERT INTO user_product_cart (user_id, product_id, quantity) VALUES (?, ?, 1)', [$userId, $productId]);
+            $accountLineId = Database::lastInsertId();
             self::assertCount(1, Database::sql('SELECT id FROM session_product_cart')->rows(), 'Guest cart before rerun');
             self::assertCount(1, Database::sql('SELECT id FROM user_product_cart')->rows(), 'Account cart before rerun');
 
@@ -108,6 +110,12 @@ final class HilosFlowersSeedRerunTest extends TestCase
                 (string)$voucherId,
                 Database::sql('SELECT voucher_id FROM user_voucher_cart WHERE user_id = ?', [$userId])->field('voucher_id'),
             );
+
+            Database::sql('INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (?, ?, 1)', [$sessionId, $productId]);
+            $replacementGuestLineId = Database::lastInsertId();
+            Database::sql('INSERT INTO user_product_cart (user_id, product_id, quantity) VALUES (?, ?, 1)', [$userId, $productId]);
+            self::assertGreaterThan($accountLineId, Database::lastInsertId(), 'New account line gets a new primary key');
+            self::assertGreaterThan($guestLineId, $replacementGuestLineId, 'New guest line gets a new primary key');
         } finally {
             try {
                 Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);

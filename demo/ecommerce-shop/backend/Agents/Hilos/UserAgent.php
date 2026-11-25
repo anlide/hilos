@@ -206,6 +206,64 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
+     * Sets the exact quantity of a saved line and publishes the cart when the quantity changes.
+     *
+     * @param int $sessionId Browser session confirmed by the cart page
+     * @param int $lineId Primary key of the saved line
+     * @param string $quantity Original quantity text from the form
+     * @param int $expectedQuantity Saved quantity the edit started from
+     * @throws ValidationException When the cart line cannot be addressed or the quantity is refused
+     * @throws InvalidArgumentException When a database read or sync signal is invalid
+     * @throws LogicException When a configured collection cannot provide its item class
+     * @throws DatabaseException When a read, write or commit fails
+     * @throws ObjectGetIdStringNotImplementedException When a cart or stock row cannot provide its key
+     * @throws CollectionNotManualException When a stock selection refuses a matched row
+     * @throws ItemNotFoundException When a keyed row disappears during its read
+     * @throws ObjectCollectionNullException When the line has no backing collection
+     * @throws WriteNotAllowedException When this process cannot update the line
+     * @throws CreateNotAllowedException When the write guard refuses a new row
+     * @throws SourceChangeSubscriberException When a DB change subscriber fails
+     * @throws NamedDatabaseException When the primary database is not configured
+     * @throws NestedTransactionRefusedException When the primary database already has an application transaction
+     * @throws TransactionNotOpenException When the level is no longer open at commit
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the database refuses the commit
+     * @throws AnnouncementFailedException When a commit announcement fails outside a handler
+     * @throws HilosException When the configured cart sources cannot be read
+     * @throws Throwable When the transaction propagates another failure from the cart operation
+     */
+    public function setProductLineQuantity(int $sessionId, int $lineId, string $quantity, int $expectedQuantity): void
+    {
+        $userId = (int)$this->getIndex();
+        Database::transaction(DatabaseNames::PRIMARY, function () use ($sessionId, $userId, $lineId, $quantity, $expectedQuantity): void {
+            try {
+                $sessionActive = Hilos::$db->sessions->lockStoredActiveSession($sessionId, $userId);
+            } catch (DatabaseException $failure) {
+                throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
+            }
+            if (!$sessionActive) {
+                throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+            }
+
+            try {
+                AddressablePerson::require($userId);
+            } catch (ValidationException $failure) {
+                throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
+            }
+
+            $line = Hilos::$db->userProductCarts[$lineId] ?? null;
+            if ($line === null || $line->userId !== $userId) {
+                throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
+            }
+
+            $line->actions->setQuantityFrom($expectedQuantity, $quantity);
+            if ($line->quantity !== $expectedQuantity) {
+                $this->publishCart($userId);
+            }
+        });
+    }
+
+    /**
      * Assigns an active voucher to this person's cart, even when it has no product lines.
      * Interface actions will call this entry point once wired.
      *

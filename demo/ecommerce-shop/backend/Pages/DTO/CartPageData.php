@@ -36,6 +36,7 @@ final readonly class CartPageData
     private const string availableQuantity = 'availableQuantity';
     private const string lineTotal = 'lineTotal';
     private const string userId = 'userId';
+    private const string guestCartKey = 'guestCartKey';
     private const string lines = 'lines';
     private const string itemsTotal = 'itemsTotal';
     private const string voucher = 'voucher';
@@ -44,11 +45,16 @@ final readonly class CartPageData
 
     /**
      * @param ?int $userId The owning account, or null for a guest
+     * @param ?string $guestCartKey The opaque guest cart identity, or null for an account
      * @param list<CartLine> $lines Cart lines in insertion order
      * @param ?Voucher $voucher The selected catalog voucher, including an inactive one, or null when none is selected
      */
-    public function __construct(private ?int $userId, private array $lines, private ?Voucher $voucher)
-    {
+    public function __construct(
+        private ?int $userId,
+        private ?string $guestCartKey,
+        private array $lines,
+        private ?Voucher $voucher,
+    ) {
     }
 
     /**
@@ -83,7 +89,7 @@ final readonly class CartPageData
     /**
      * The items are summed once; an inactive voucher takes nothing off, so the total is then the items.
      *
-     * @return array{userId: ?int, lines: list<CartLine>, itemsTotal: string, voucher: ?CartVoucher, total: string}
+     * @return array{userId: ?int, guestCartKey: ?string, lines: list<CartLine>, itemsTotal: string, voucher: ?CartVoucher, total: string}
      *     Page data sent to the browser
      * @throws LogicException When a line total is not a canonical decimal string or the discount is outside the items
      */
@@ -94,6 +100,7 @@ final readonly class CartPageData
 
         return [
             self::userId => $this->userId,
+            self::guestCartKey => $this->guestCartKey,
             self::lines => $this->lines,
             self::itemsTotal => $items,
             self::voucher => $this->voucher === null ? null : [

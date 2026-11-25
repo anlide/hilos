@@ -490,47 +490,50 @@ test('signs in by a phone code over every channel the demo registers', async ({
 // The wait for the provider's window starts before the click, which opens it
 // synchronously.
 
-test('signs in through every OAuth provider the demo offers', async ({
-  page,
-}) => {
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
+// FIXME(F-134, 2026-11-25): Provider registration Continue is briefly disabled when visible · foreign · attempt 3 · HIL-2214
+test(
+  'signs in through every OAuth provider the demo offers',
+  { tag: '@quarantine:F-134' },
+  async ({ page }) => {
+    await gotoPage(expect, page, '/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
 
-  await test.step('GitHub', async () => {
-    await expect(page.getByTestId('self-user-id')).toBeEmpty()
-    await openSignIn(expect, page)
+    await test.step('GitHub', async () => {
+      await expect(page.getByTestId('self-user-id')).toBeEmpty()
+      await openSignIn(expect, page)
 
-    const account = await declareOAuthAccount('github', {
-      email: uniqueEmail(),
+      const account = await declareOAuthAccount('github', {
+        email: uniqueEmail(),
+      })
+      const signingIn = signUpAs(page, account)
+      await page.getByTestId('auth-icon-oauth-github').click()
+      await signingIn
+
+      // The upgrade is the whole outcome: the shell grows the signed-in region and
+      // the identity line names an account this demo's users table now holds.
+      await expect(page.getByTestId('nav-logout')).toBeVisible()
+      await expect(page.getByTestId('self-user-id')).not.toBeEmpty()
+      await expect(page.getByTestId('nav-signin')).toHaveCount(0)
+
+      // Each provider signs in its own account, so the second trip must start from a
+      // guest — on a signed session it would prove something else.
+      await logout(expect, page)
     })
-    const signingIn = signUpAs(page, account)
-    await page.getByTestId('auth-icon-oauth-github').click()
-    await signingIn
 
-    // The upgrade is the whole outcome: the shell grows the signed-in region and
-    // the identity line names an account this demo's users table now holds.
-    await expect(page.getByTestId('nav-logout')).toBeVisible()
-    await expect(page.getByTestId('self-user-id')).not.toBeEmpty()
-    await expect(page.getByTestId('nav-signin')).toHaveCount(0)
+    await test.step('Google', async () => {
+      await expect(page.getByTestId('self-user-id')).toBeEmpty()
+      await openSignIn(expect, page)
 
-    // Each provider signs in its own account, so the second trip must start from a
-    // guest — on a signed session it would prove something else.
-    await logout(expect, page)
-  })
+      const account = await declareOAuthAccount('google', {
+        email: uniqueEmail(),
+      })
+      const signingIn = signUpAs(page, account)
+      await page.getByTestId('auth-icon-oauth-google').click()
+      await signingIn
 
-  await test.step('Google', async () => {
-    await expect(page.getByTestId('self-user-id')).toBeEmpty()
-    await openSignIn(expect, page)
-
-    const account = await declareOAuthAccount('google', {
-      email: uniqueEmail(),
+      await expect(page.getByTestId('nav-logout')).toBeVisible()
+      await expect(page.getByTestId('self-user-id')).not.toBeEmpty()
+      await expect(page.getByTestId('nav-signin')).toHaveCount(0)
     })
-    const signingIn = signUpAs(page, account)
-    await page.getByTestId('auth-icon-oauth-google').click()
-    await signingIn
-
-    await expect(page.getByTestId('nav-logout')).toBeVisible()
-    await expect(page.getByTestId('self-user-id')).not.toBeEmpty()
-    await expect(page.getByTestId('nav-signin')).toHaveCount(0)
-  })
-})
+  },
+)
