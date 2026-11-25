@@ -6,19 +6,23 @@ namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\CLI\DTO\VoucherFixtureCreateCommandData;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Hilos;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
@@ -127,7 +131,7 @@ final class VoucherFixtureCommandsTest extends VouchersLibraryEnvironment
         $this->command(EcommerceShopCommandConstants::VOUCHER_FIXTURE_UPDATE, ['code' => $this->unusedCode()]);
     }
 
-    /** A cart's foreign key keeps both the voucher and its binding in place. */
+    /** The fixture stays referenced by a pending cart even after its session is swept. */
     public function testDeleteRefusesAVoucherHeldByACart(): void
     {
         $code = $this->unusedCode();
@@ -148,7 +152,7 @@ final class VoucherFixtureCommandsTest extends VouchersLibraryEnvironment
         self::assertIsInt($sessionId);
         self::asOwner(
             new GuestCartsLibraryAgent(),
-            static fn () => Hilos::$db->sessionVoucherCarts->actions->create($sessionId, $voucherId),
+            static fn () => Hilos::$db->sessionVoucherCarts->actions->create($sessionId, 0, $voucherId),
         );
 
         self::assertRefusal(
@@ -156,7 +160,27 @@ final class VoucherFixtureCommandsTest extends VouchersLibraryEnvironment
             'This voucher is in a cart and cannot be deleted',
         );
         $this->assertResult(EcommerceShopCommandConstants::VOUCHER_FIXTURE_GET, ['code' => $code], $created->payload);
-        self::assertSame($voucherId, Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId);
+        self::assertSame($voucherId, Hilos::$db->sessionVoucherCarts->storedVoucherId($sessionId, 0));
+
+        $recipient = self::asOwner(new UsersLibraryAgent(), static fn () => Hilos::$db->users->actions->createWithName('Voucher recipient'));
+        self::asOwner(new SessionsLibraryAgent(), static function () use ($session, $recipient): void {
+            $session->actions->bindUser($recipient->id);
+            $session->actions->delete();
+        });
+        $carts = new GuestCartsLibraryAgent();
+        self::asOwner($carts, static fn () => $carts->onSignalAgent(
+            new AgentSignalData(new SessionsSweptSignalData([$session->token], [$sessionId])),
+            '',
+            HilosSignalConstants::HILOS_SESSIONS_SWEPT,
+        ));
+
+        self::assertNull(Hilos::$db->sessions->findByToken($session->token));
+        self::assertSame($voucherId, Hilos::$db->sessionVoucherCarts->storedVoucherId($sessionId, 0));
+        $this->assertRefusal(
+            $this->command(EcommerceShopCommandConstants::VOUCHER_FIXTURE_DELETE, ['code' => $code]),
+            'This voucher is in a cart and cannot be deleted',
+        );
+        $this->assertResult(EcommerceShopCommandConstants::VOUCHER_FIXTURE_GET, ['code' => $code], $created->payload);
     }
 
     /** A dev node can pass the shared socket gate and is still refused by the fixture handler. */

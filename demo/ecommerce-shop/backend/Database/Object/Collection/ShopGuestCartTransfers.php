@@ -60,16 +60,44 @@ final class ShopGuestCartTransfers extends Objects
             return null;
         }
 
-        $held = $this->objects[$transferId] ?? null;
-        if ($held !== null) {
-            $held->acceptStored($stored);
-            return $held;
+        return $this->holdStored($stored);
+    }
+
+    /**
+     * Locks the recipient's pending choices against concurrent assignments.
+     *
+     * @param int $userId Recipient who owns the updates
+     * @param ?int $beforeTransferId Exclusive upper bound for a choice from another transfer
+     * @return list<int> Keys of locked and refreshed pending transfers whose vouchers can still be superseded
+     * @throws HilosException When the locking read or reconciliation fails
+     */
+    public function lockPendingVoucherTransferIds(int $userId, ?int $beforeTransferId): array
+    {
+        $index = EntityShopGuestCartTransfer::getDatabase()->connectionIndex;
+        if (Database::runtimeTransactionLevel($index) === null) {
+            throw new DatabaseException('Superseding guest vouchers requires a PRIMARY transaction.');
         }
 
-        $transfer = ObjectShopGuestCartTransfer::fromEntity($stored);
-        $this->hydrate($transferId, $transfer);
+        $sql = 'SELECT * FROM ' . EntityShopGuestCartTransfer::getSqlTableName() . ' FORCE INDEX (idx_shop_guest_cart_transfer_user)'
+            . ' WHERE `user_id` = ? AND `received` = FALSE AND `voucher_superseded` = FALSE';
+        $params = [$userId];
+        if ($beforeTransferId !== null) {
+            $sql .= ' AND `id` < ?';
+            $params[] = $beforeTransferId;
+        }
+        $rows = Database::sql(
+            $sql . ' ORDER BY `id` FOR UPDATE',
+            $params,
+            index: $index,
+        )->rows();
+        $ids = [];
+        foreach ($rows as $row) {
+            $stored = EntityShopGuestCartTransfer::fromRow($row);
+            $this->holdStored($stored);
+            $ids[] = $stored->id;
+        }
 
-        return $transfer;
+        return $ids;
     }
 
     /**
@@ -144,5 +172,25 @@ final class ShopGuestCartTransfers extends Objects
         $transfer = EntityShopGuestCartTransfer::getById($transferId);
 
         return $transfer?->user_id === $userId ? $transfer->received : null;
+    }
+
+    /**
+     * @param EntityShopGuestCartTransfer $stored Assignment read from PRIMARY
+     * @return ObjectShopGuestCartTransfer Held object with the saved baseline
+     * @throws DatabaseException When the object or its database cannot be resolved
+     */
+    private function holdStored(EntityShopGuestCartTransfer $stored): ObjectShopGuestCartTransfer
+    {
+        $transferId = $stored->id;
+        $held = $this->objects[$transferId] ?? null;
+        if ($held !== null) {
+            $held->acceptStored($stored);
+            return $held;
+        }
+
+        $transfer = ObjectShopGuestCartTransfer::fromEntity($stored);
+        $this->hydrate($transferId, $transfer);
+
+        return $transfer;
     }
 }

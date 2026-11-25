@@ -11,6 +11,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
 
 /**
  * Guest cart transfers keyed by their primary ID.
@@ -54,6 +55,17 @@ final class ShopGuestCartTransfers extends DbCollection
         $transfer = $this->objectCollection->loadStoredForRecipient($transferId, $userId);
 
         return $transfer === null ? null : $this->getOrCreateItemForLoadedObject($transferId, $transfer);
+    }
+
+    /**
+     * @param int $userId Recipient who owns the updates
+     * @param ?int $beforeTransferId Exclusive upper bound, or null to keep all pending choices in scope
+     * @return list<int> Keys for item access to locked pending assignments whose vouchers can still be superseded
+     * @throws HilosException When the locking read or reconciliation fails
+     */
+    public function lockPendingVoucherTransferIds(int $userId, ?int $beforeTransferId): array
+    {
+        return $this->objectCollection->lockPendingVoucherTransferIds($userId, $beforeTransferId);
     }
 
     /**

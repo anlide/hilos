@@ -22,7 +22,6 @@ use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
 use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
-use Demo\EcommerceShop\Database\Object\Item\SessionVoucherCart;
 use Demo\EcommerceShop\Database\Object\Item\Voucher as ObjectVoucher;
 use Demo\EcommerceShop\Database\View\Item\SessionProductCart as CartLine;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
@@ -65,7 +64,6 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\NamedDatabaseException;
@@ -97,7 +95,7 @@ use Throwable;
  * chooses its node. The library alone holds the carts whole; everybody else reads one row by
  * key or queries the database (docs/agents/architecture/entity-libraries.md). The carts grow
  * with the visitors and are bounded by the sweep of the sessions: when the sessions library
- * removes ended sessions, it tells this library which. Assigned product carts survive that
+ * removes ended sessions, it tells this library which. Assigned carts survive that
  * sweep until receipt by their account. The library tells each session's tabs its active cart.
  *
  * SCAFFOLD: Browser cart actions will call the voucher methods when the voucher controls are wired.
@@ -154,14 +152,14 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     private const string RECOVERY_CRON = '* * * * *';
     private const int RECOVERY_ROWS_PER_TABLE = 25;
     private const int TRANSFERS_PER_PAGE = 25;
-    private const int RECEIVED_LINES_PER_ATTEMPT = 25;
+    private const int RECEIVED_ROWS_PER_ATTEMPT = 25;
     private const string GUEST_SESSION_UNAVAILABLE = 'This guest session is no longer available';
     private const string FIXTURE_VOUCHER_MISMATCH = 'This guest cart holds a different voucher';
 
     private ?CronRule $recoveryRule = null;
     private bool $recoverOnFirstTick = true;
     private int $recoveryAfterLineId = 0;
-    private int $recoveryAfterVoucherSessionId = 0;
+    private int $recoveryAfterVoucherId = 0;
     private int $recoveryAfterTransferId = 0;
     private ?int $recoveryThroughTransferId = null;
 
@@ -363,7 +361,10 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      */
     public function applyVoucher(int $sessionId, string $code): void
     {
-        $this->applyVoucherToSlot($sessionId, $code, allowReplacement: true);
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($sessionId, $code): void {
+            $cartEpoch = $this->requireActiveVoucherCartEpoch($sessionId);
+            $this->applyVoucherToSlot($sessionId, $cartEpoch, $code, allowReplacement: true);
+        });
     }
 
     /**
@@ -379,17 +380,29 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @throws ObjectCollectionNullException When the binding has no backing collection
      * @throws ObjectGetIdStringNotImplementedException When the binding cannot be keyed
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
+     * @throws ValidationException When the session is no longer an active guest
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     * @throws NestedTransactionRefusedException When a transaction cannot be opened
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
      * @throws HilosException When the cart snapshot cannot be read
+     * @throws Throwable When the transaction propagates another failure from the cart operation
      */
     public function removeVoucher(int $sessionId): void
     {
-        $binding = Hilos::$db->sessionVoucherCarts[$sessionId] ?? null;
-        if ($binding === null) {
-            return;
-        }
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($sessionId): void {
+            $cartEpoch = $this->requireActiveVoucherCartEpoch($sessionId);
+            $binding = Hilos::$db->sessionVoucherCarts->storedSlot($sessionId, $cartEpoch);
+            if ($binding === null) {
+                return;
+            }
 
-        $binding->actions->remove();
-        $this->publishCurrentCart($sessionId);
+            $binding->actions->remove();
+            $this->publishCart($sessionId, $cartEpoch);
+        });
     }
 
     /**
@@ -432,17 +445,18 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * Reads the current catalog row of the voucher selected for a guest cart.
      *
      * @param int $sessionId Browser session ID
+     * @param int $cartEpoch Number of the guest cart
      * @return ?Voucher Current catalog voucher, including inactive vouchers, or null when no voucher is selected
      * @throws LogicException When the catalog or binding collection is misconfigured
      * @throws InvalidArgumentException When a loaded object does not match its collection
      * @throws DatabaseException When the binding or catalog read fails
      * @throws ItemNotFoundException When a saved voucher ID is missing or the binding disappears during a keyed read
      */
-    public function cartVoucher(int $sessionId): ?Voucher
+    public function cartVoucher(int $sessionId, int $cartEpoch): ?Voucher
     {
-        $binding = Hilos::$db->sessionVoucherCarts[$sessionId] ?? null;
+        $voucherId = Hilos::$db->sessionVoucherCarts->storedVoucherId($sessionId, $cartEpoch);
 
-        return $binding === null ? null : Hilos::$db->vouchers[$binding->voucherId];
+        return $voucherId === null ? null : Hilos::$db->vouchers[$voucherId];
     }
 
     /**
@@ -645,16 +659,18 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      */
     private function setFixtureVoucher(GuestCartSetVoucherCommandData $query): void
     {
-        $sessionId = $this->fixtureGuestSessionId($query->sessionToken);
-        $code = VoucherFixture::code($query->code);
-        if ($query->applied) {
-            $this->applyVoucherToSlot($sessionId, $code, allowReplacement: false);
+        $sessionId = Hilos::$db->sessions->findByToken($query->sessionToken)?->id
+            ?? throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($sessionId, $query): void {
+            $cartEpoch = $this->requireActiveVoucherCartEpoch($sessionId, $query->sessionToken);
+            $code = VoucherFixture::code($query->code);
+            if ($query->applied) {
+                $this->applyVoucherToSlot($sessionId, $cartEpoch, $code, allowReplacement: false);
 
-            return;
-        }
+                return;
+            }
 
-        Database::transaction(DatabaseNames::PRIMARY, function () use ($sessionId, $code): void {
-            $binding = Hilos::$db->sessionVoucherCarts->storedSlot($sessionId);
+            $binding = Hilos::$db->sessionVoucherCarts->storedSlot($sessionId, $cartEpoch);
             if ($binding === null) {
                 return;
             }
@@ -665,14 +681,15 @@ final class GuestCartsLibraryAgent extends AbstractAgent
             }
 
             $binding->actions->remove();
-            $this->publishCurrentCart($sessionId);
+            $this->publishCart($sessionId, $cartEpoch);
         });
     }
 
     /**
      * Checks and writes the binding with the voucher ID selected under the catalog lock.
      *
-     * @param int $sessionId Browser session ID
+     * @param int $sessionId Browser session already locked by the caller
+     * @param int $cartEpoch Number of the active guest cart under that lock
      * @param string $code Voucher code as entered
      * @param bool $allowReplacement Whether the operation may replace another voucher
      * @throws EmptyValueException When the trimmed code is empty
@@ -702,16 +719,12 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @throws HilosException When the binding collection refuses a reload or the cart snapshot cannot be read
      * @throws Throwable When the transaction propagates another failure from the cart operation
      */
-    private function applyVoucherToSlot(int $sessionId, string $code, bool $allowReplacement): void
+    private function applyVoucherToSlot(int $sessionId, int $cartEpoch, string $code, bool $allowReplacement): void
     {
-        if (!Hilos::$db->sessions->isStoredGuest($sessionId)) {
-            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
-        }
-
-        CartVoucherRules::applyVoucher($code, function (int $voucherId) use ($sessionId, $allowReplacement): void {
-            $binding = Hilos::$db->sessionVoucherCarts->storedSlot($sessionId);
+        CartVoucherRules::applyVoucher($code, function (int $voucherId) use ($sessionId, $cartEpoch, $allowReplacement): void {
+            $binding = Hilos::$db->sessionVoucherCarts->storedSlot($sessionId, $cartEpoch);
             if ($binding === null) {
-                Hilos::$db->sessionVoucherCarts->actions->create($sessionId, $voucherId);
+                Hilos::$db->sessionVoucherCarts->actions->create($sessionId, $cartEpoch, $voucherId);
             } elseif ($binding->voucherId === $voucherId) {
                 return;
             } elseif ($allowReplacement) {
@@ -719,31 +732,21 @@ final class GuestCartsLibraryAgent extends AbstractAgent
             } else {
                 throw new ValidationException(self::FIXTURE_VOUCHER_MISMATCH);
             }
-            $this->publishCurrentCart($sessionId);
+            $this->publishCart($sessionId, $cartEpoch);
         });
     }
 
     /**
-     * Resolves a fixture's token and confirms the guest is still active in storage.
-     *
-     * @param string $sessionToken Existing guest session's cookie token
-     * @return int Active guest session ID
+     * @param int $sessionId Browser session ID
+     * @param ?string $token The fixture's session token when present
+     * @return int Current cart epoch under the session lock
      * @throws ValidationException When the session is no longer available as an active guest
-     * @throws LogicException When the session collection is misconfigured
-     * @throws InvalidArgumentException When a loaded object or session query is invalid
-     * @throws DatabaseException When the session cannot be read
+     * @throws HilosException When the locking read fails
      */
-    private function fixtureGuestSessionId(string $sessionToken): int
+    private function requireActiveVoucherCartEpoch(int $sessionId, ?string $token = null): int
     {
-        $session = Hilos::$db->sessions->findByToken($sessionToken);
-        $sessionId = $session?->id;
-        if ($sessionId === null || $session->token !== $sessionToken || $session->userAtKeyboard() !== null
-            || !Hilos::$db->sessions->isStoredActiveGuest($sessionId)
-        ) {
-            throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
-        }
-
-        return $sessionId;
+        return Hilos::$db->sessions->lockActiveGuestCartEpoch($sessionId, $token)
+            ?? throw new ValidationException(self::GUEST_SESSION_UNAVAILABLE);
     }
 
     /**
@@ -835,7 +838,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
                 throw new AgentException('Guest cart transfer receipts require the assigned user agent as the sender.');
             }
             if ($received) {
-                $this->clearTransferSource($receipt->transferId, $userId, $sessionId, $cartEpoch, self::RECEIVED_LINES_PER_ATTEMPT);
+                $this->clearTransferSource($receipt->transferId, $userId, $sessionId, $cartEpoch, self::RECEIVED_ROWS_PER_ATTEMPT);
             }
         });
     }
@@ -856,7 +859,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Attempts an ordered prefix of assignments within a shared received-line budget.
+     * Attempts an ordered prefix of assignments within a shared received-source row budget.
      *
      * @param list<int> $transferIds Saved assignments to resume in order
      * @return list<int> Prefix attempted before the budget ran out
@@ -865,7 +868,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      */
     private function deliverStoredTransfers(array $transferIds): array
     {
-        $remaining = self::RECEIVED_LINES_PER_ATTEMPT;
+        $remaining = self::RECEIVED_ROWS_PER_ATTEMPT;
         foreach ($transferIds as $offset => $transferId) {
             $remaining -= $this->deliverStoredTransfer($transferId, $remaining);
             if ($remaining === 0) {
@@ -880,8 +883,8 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * Offers a saved assignment or advances a durable receipt.
      *
      * @param int $transferId Saved assignment to resume
-     * @param int $limit Remaining received-line budget
-     * @return int Received lines locked during this attempt
+     * @param int $limit Remaining received-source row budget
+     * @return int Received source rows locked during this attempt
      * @throws HilosException When storage, payload construction or delivery fails
      * @throws Throwable When an acknowledged source cannot be cleared
      */
@@ -909,8 +912,8 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @param int $userId Assigned recipient
      * @param int $sessionId Source session
      * @param int $cartEpoch Number of the assigned guest cart
-     * @param int $limit Remaining received-line budget
-     * @return int Lines locked from this exact pair
+     * @param int $limit Remaining received-source row budget
+     * @return int Source rows locked from this exact pair
      * @throws HilosException When storage, payload construction or delivery fails
      * @throws Throwable When the cleanup transaction or its announcement fails
      */
@@ -955,35 +958,30 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     private function recoverCartPage(CronRule $rule, bool $scheduled): void
     {
         $this->recoveryHorizons ??= Hilos::$db->sessionProductCarts->cartRecoveryHorizons();
-        [$throughLineId, $throughVoucherSessionId] = $this->recoveryHorizons;
+        [$throughLineId, $throughVoucherId] = $this->recoveryHorizons;
         [$lineAbsences, $voucherAbsences] = Hilos::$db->sessionProductCarts->cartRowAbsencesAfter(
             $this->recoveryAfterLineId,
             $throughLineId,
-            $this->recoveryAfterVoucherSessionId,
-            $throughVoucherSessionId,
+            $this->recoveryAfterVoucherId,
+            $throughVoucherId,
             self::RECOVERY_ROWS_PER_TABLE,
         );
         $orphanLineIds = array_keys(array_filter($lineAbsences));
-        $orphanVoucherSessionIds = array_keys(array_filter($voucherAbsences));
+        $orphanVoucherIds = array_keys(array_filter($voucherAbsences));
         $transfers = Hilos::$db->shopGuestCartTransfers;
         $this->recoveryThroughTransferId ??= $transfers->latestStoredTransferId();
         $transferIds = $transfers->storedTransferIdsAfter(self::TRANSFERS_PER_PAGE, $this->recoveryAfterTransferId, $this->recoveryThroughTransferId);
         $transferPageSize = count($transferIds);
-        $hasOrphans = $orphanLineIds !== [] || $orphanVoucherSessionIds !== [];
+        $hasOrphans = $orphanLineIds !== [] || $orphanVoucherIds !== [];
         if ($hasOrphans || $transferIds !== []) {
             $receipt = $scheduled
                 ? JournalReceiptData::cron($rule->name, $rule->expression, $this->getId())
                 : JournalReceiptData::agent(self::RECOVERY_RULE, $this->getId());
             $transferIds = JournalReceiptScope::run(
                 $receipt,
-                function () use ($hasOrphans, $orphanLineIds, $orphanVoucherSessionIds, $transferIds): array {
+                function () use ($hasOrphans, $orphanLineIds, $orphanVoucherIds, $transferIds): array {
                     if ($hasOrphans) {
-                        Database::transaction(DatabaseNames::PRIMARY, static function () use ($orphanLineIds, $orphanVoucherSessionIds): void {
-                            Hilos::$db->sessionProductCarts->actions->deleteRecoveryLines($orphanLineIds);
-                            foreach ($orphanVoucherSessionIds as $sessionId) {
-                                Hilos::$db->sessionVoucherCarts[$sessionId]->actions->remove();
-                            }
-                        });
+                        Hilos::$db->sessionProductCarts->actions->sweepRecoveryRows($orphanLineIds, $orphanVoucherIds);
                     }
 
                     return $this->deliverStoredTransfers($transferIds);
@@ -993,12 +991,12 @@ final class GuestCartsLibraryAgent extends AbstractAgent
 
         $this->advanceTransferRecovery($transferIds, $transferPageSize);
         $this->recoveryAfterLineId = count($lineAbsences) === self::RECOVERY_ROWS_PER_TABLE ? array_key_last($lineAbsences) : $throughLineId;
-        $this->recoveryAfterVoucherSessionId = count($voucherAbsences) === self::RECOVERY_ROWS_PER_TABLE
+        $this->recoveryAfterVoucherId = count($voucherAbsences) === self::RECOVERY_ROWS_PER_TABLE
             ? array_key_last($voucherAbsences)
-            : $throughVoucherSessionId;
-        if ($this->recoveryAfterLineId === $throughLineId && $this->recoveryAfterVoucherSessionId === $throughVoucherSessionId) {
+            : $throughVoucherId;
+        if ($this->recoveryAfterLineId === $throughLineId && $this->recoveryAfterVoucherId === $throughVoucherId) {
             $this->recoveryAfterLineId = 0;
-            $this->recoveryAfterVoucherSessionId = 0;
+            $this->recoveryAfterVoucherId = 0;
             $this->recoveryHorizons = null;
         }
     }
@@ -1018,17 +1016,8 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      */
     private function sweepCarts(array $sessionIds): void
     {
-        if ($sessionIds === []) {
-            return;
-        }
-
         try {
-            Database::transaction(DatabaseNames::PRIMARY, static function () use ($sessionIds): void {
-                Hilos::$db->sessionProductCarts->actions->deleteForSessions($sessionIds);
-                foreach (Hilos::$db->sessionVoucherCarts->whereColumnIn(SessionVoucherCart::sessionId, ...$sessionIds) as $binding) {
-                    $binding->actions->remove();
-                }
-            });
+            Hilos::$db->sessionProductCarts->actions->sweepForSessions($sessionIds);
         } catch (HilosException $failure) {
             throw $failure;
         } catch (Throwable $failure) {
@@ -1073,20 +1062,6 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Resolves the address of a guest cart after its session-keyed voucher changes.
-     *
-     * @param int $sessionId Row holding the voucher
-     * @throws HilosException When the session or cart cannot be read
-     */
-    private function publishCurrentCart(int $sessionId): void
-    {
-        $cartEpoch = Hilos::$db->sessions->activeGuestCartEpoch($sessionId);
-        if ($cartEpoch !== null) {
-            $this->publishCart($sessionId, $cartEpoch);
-        }
-    }
-
-    /**
      * Sends a committed snapshot only while the addressed guest cart is still active.
      *
      * @param int $sessionId Row of the session whose cart is told
@@ -1105,7 +1080,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
             foreach (Hilos::$db->sessionProductCarts->storedCartLines($sessionId, $cartEpoch) as [$productId, $quantity]) {
                 $lines[] = [CartStateSignalData::PRODUCT_ID => $productId, CartStateSignalData::QUANTITY => $quantity];
             }
-            $frame = new CartStateSignalData(null, $lines, (Hilos::$db->sessionVoucherCarts[$sessionId] ?? null)?->voucherId);
+            $frame = new CartStateSignalData(null, $lines, Hilos::$db->sessionVoucherCarts->storedVoucherId($sessionId, $cartEpoch));
 
             if (Hilos::$db->sessions->activeGuestCartEpoch($sessionId) === $cartEpoch) {
                 $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forSession($sessionId, $cartEpoch), $frame);

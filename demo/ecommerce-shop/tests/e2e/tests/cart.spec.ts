@@ -337,11 +337,22 @@ test('signing in combines the guest and account carts and signing out opens an e
   }
   const meadow = { id: 1, slug: 'morning-meadow', name: 'Morning meadow' }
   const products = [chamomile, meadow]
+  const accountVoucher = 'SPRING10'
+  const guestVoucher = 'WEDDING15'
   const cartLink = page.getByTestId('nav-cart')
   const badge = cartLink.getByTestId('cart-badge')
+  const openVoucherForm = page.getByTestId('cart-voucher-apply-open')
+  const voucherForm = page.getByTestId('cart-voucher-apply')
+  const voucherRow = page.getByTestId('shop-cart-voucher')
+  const items = page
+    .getByText('Items', { exact: true })
+    .locator('..')
+    .locator('dd')
+  const total = page.getByTestId('shop-cart-total')
+  const command = createStandCommandChannel({ timeoutMs: 5_000 })
 
-  const addProducts = async () => {
-    for (const [index, { slug }] of products.entries()) {
+  const addProducts = async (cartProducts = products) => {
+    for (const [index, { slug }] of cartProducts.entries()) {
       await gotoPage(expect, page, `/product/${slug}`)
       const addButton = page.getByTestId('shop-product-add-to-cart')
       await addButton.click()
@@ -352,18 +363,28 @@ test('signing in combines the guest and account carts and signing out opens an e
     }
   }
 
-  const user = await createTestUser(expect, page)
-  await test.step('add both products to the account cart', addProducts)
+  const openCart = async () => {
+    await cartLink.click()
+    await expect(page).toHaveURL('/cart')
+    await expectPageReady(expect, page)
+  }
 
-  await test.step('sign out and add both products to the guest cart', async () => {
-    await logout(expect, page)
-    await expect(badge).toHaveText('0')
+  const applyVoucher = async (code: string) => {
+    await openVoucherForm.click()
+    await typeInto(voucherForm.getByTestId('cart-voucher-apply-code'), code)
+    await clickSubmit(expect, page.getByTestId('cart-voucher-apply-submit'))
+    await expect(voucherForm).toBeHidden()
+    await expect(voucherRow.locator('dt')).toHaveText(`Voucher ${code}`)
+  }
 
+  const deferGuestCartCleanup = async (
+    cartProducts: typeof products,
+    code?: string,
+  ) => {
     const guestToken = await sessionToken(page)
-    const command = createStandCommandChannel({ timeoutMs: 5_000 })
-    for (const { id: productId } of products) {
+    // The transfer owns these bindings after sign-in rotates the guest token.
+    for (const { id: productId } of cartProducts) {
       cleanup.defer(async () => {
-        // The transfer owns this cart after sign-in rotates the guest token.
         if ((await sessionToken(page)) !== guestToken) return
         await command('test:ecommerce-shop:guest-cart-set-quantity', {
           sessionToken: guestToken,
@@ -372,19 +393,41 @@ test('signing in combines the guest and account carts and signing out opens an e
         })
       })
     }
+    if (code !== undefined) {
+      cleanup.defer(async () => {
+        if ((await sessionToken(page)) !== guestToken) return
+        await command('test:ecommerce-shop:guest-cart-set-voucher', {
+          sessionToken: guestToken,
+          code,
+          applied: false,
+        })
+      })
+    }
+  }
 
+  const user = await createTestUser(expect, page)
+  await test.step('add both products and apply a voucher to the account cart', async () => {
     await addProducts()
+    await openCart()
+    await applyVoucher(accountVoucher)
   })
 
-  await test.step('sign in with a password and see the combined quantities', async () => {
+  await test.step('sign out, add both products, and apply a guest voucher', async () => {
+    await logout(expect, page)
+    await expect(badge).toHaveText('0')
+    await deferGuestCartCleanup(products, guestVoucher)
+    await addProducts()
+    await openCart()
+    await applyVoucher(guestVoucher)
+  })
+
+  await test.step('sign in with a password and see the combined cart with the guest voucher', async () => {
     await openSignIn(expect, page)
     await login(expect, page, user.email)
     await expect(page.getByTestId('nav-profile-name')).toBeVisible()
     await expect(badge).toHaveText('3')
 
-    await cartLink.click()
-    await expect(page).toHaveURL('/cart')
-    await expectPageReady(expect, page)
+    await openCart()
     const lines = page.getByTestId('shop-cart-line')
     await expect(lines).toHaveCount(2)
     const chamomileLine = lines.filter({
@@ -399,11 +442,25 @@ test('signing in combines the guest and account carts and signing out opens an e
     await expect(
       meadowLine.getByText('1 · one of a kind', { exact: true }),
     ).toBeVisible()
+    await expect(voucherRow.locator('dt')).toHaveText(`Voucher ${guestVoucher}`)
+    await expect(items).toHaveText('₴2,410')
+    await expect(total).toHaveText('₴2,048.50')
   })
 
   await test.step('sign out and see an empty cart', async () => {
     await logout(expect, page)
     await expect(page.getByTestId('shop-cart-empty')).toBeVisible()
     await expect(badge).toHaveText('0')
+  })
+
+  await test.step('add a product to the new guest cart and see the undiscounted total', async () => {
+    await deferGuestCartCleanup([chamomile])
+    await addProducts([chamomile])
+    await openCart()
+    await expect(openVoucherForm).toBeVisible()
+    await expect(openVoucherForm).toBeEnabled()
+    await expect(openVoucherForm).toHaveText('Apply voucher')
+    await expect(items).toHaveText('₴280')
+    await expect(total).toHaveText('₴280')
   })
 })

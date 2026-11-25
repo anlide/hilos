@@ -15,9 +15,11 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock as EntityProductWarehouseStock;
 use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart as EntitySessionProductCart;
+use Demo\EcommerceShop\Database\Entity\Item\SessionVoucherCart as EntitySessionVoucherCart;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart as EntityUserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
 use Demo\EcommerceShop\Database\Object\Item\SessionProductCart as ObjectSessionProductCart;
+use Demo\EcommerceShop\Database\Object\Item\SessionVoucherCart as ObjectSessionVoucherCart;
 use Demo\EcommerceShop\Database\Object\Item\UserProductCart as ObjectUserProductCart;
 use Demo\EcommerceShop\Database\View\Item\Product;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
@@ -467,25 +469,23 @@ final class EcommerceShopBrowserContext extends BrowserContext
             }
         }
 
-        if ($change->sourceKey === EcommerceShopDbContext::sessionProductCarts) {
-            return $cartEpoch !== null && $this->guestCartLineChangeMatches($change, $sessionId, $cartEpoch);
+        if ($change->sourceKey === EcommerceShopDbContext::sessionProductCarts
+            || $change->sourceKey === EcommerceShopDbContext::sessionVoucherCarts
+        ) {
+            return $cartEpoch !== null && $this->guestCartChangeMatches($change, $sessionId, $cartEpoch);
         }
         if ($change->sourceKey === EcommerceShopDbContext::userProductCarts) {
             return $userId !== null && $this->cartLineChangeMatchesOwner($change, $userId);
-        }
-        if ($change->sourceKey === EcommerceShopDbContext::sessionVoucherCarts) {
-            return $userId === null && ($change->mutationType === TableMutationType::Clear || (int) $change->sourceId === $sessionId);
         }
         if ($change->sourceKey === EcommerceShopDbContext::userVoucherCarts) {
             return $userId !== null && ($change->mutationType === TableMutationType::Clear || (int) $change->sourceId === $userId);
         }
         if ($change->sourceKey === EcommerceShopDbContext::vouchers) {
-            $binding = $userId === null
-                ? Hilos::$db->sessionVoucherCarts[$sessionId] ?? null
-                : Hilos::$db->userVoucherCarts[$userId] ?? null;
+            $voucherId = $cartEpoch !== null
+                ? Hilos::$db->sessionVoucherCarts->storedVoucherId($sessionId, $cartEpoch)
+                : Hilos::$db->userVoucherCarts->storedVoucherId($userId);
 
-            return $binding !== null
-                && ($change->mutationType === TableMutationType::Clear || $binding->voucherId === (int) $change->sourceId);
+            return $voucherId !== null && ($change->mutationType === TableMutationType::Clear || $voucherId === (int)$change->sourceId);
         }
 
         $hasCartLine = $cartEpoch !== null
@@ -996,29 +996,32 @@ final class EcommerceShopBrowserContext extends BrowserContext
     /**
      * Resolves a guest cart fact against the active pair, keeping the pair from each image together.
      *
-     * @param SourceChange $change Guest cart line fact
+     * @param SourceChange $change Guest cart line or voucher fact
      * @param int $sessionId Owner of the active guest cart
      * @param int $cartEpoch Epoch of the active guest cart
      * @return bool Whether the fact belongs to the active pair
      * @throws HilosException When a sparse fact cannot be read
      */
-    private function guestCartLineChangeMatches(SourceChange $change, int $sessionId, int $cartEpoch): bool
+    private function guestCartChangeMatches(SourceChange $change, int $sessionId, int $cartEpoch): bool
     {
         if ($change->mutationType === TableMutationType::Clear) {
             return true;
         }
 
-        [$owner, $epoch] = self::guestLineCoordinate($change->row);
-        [$previousOwner, $previousEpoch] = self::guestLineCoordinate($change->previous);
+        $isVoucher = $change->sourceKey === EcommerceShopDbContext::sessionVoucherCarts;
+        [$owner, $epoch] = self::guestCartCoordinate($change->row, $isVoucher);
+        [$previousOwner, $previousEpoch] = self::guestCartCoordinate($change->previous, $isVoucher);
         if ($previousOwner === $sessionId && $previousEpoch === $cartEpoch) {
             return true;
         }
 
         if ($owner === null || $epoch === null) {
-            if ($change->mutationType === TableMutationType::Delete) {
+            if ($change->mutationType === TableMutationType::Delete || ($isVoucher && $change->mutationType !== TableMutationType::Update)) {
                 return false;
             }
-            $stored = Hilos::$db->sessionProductCarts->storedLineCoordinate((int)$change->sourceId);
+            $stored = $isVoucher
+                ? Hilos::$db->sessionVoucherCarts->storedSlotCoordinate((int)$change->sourceId)
+                : Hilos::$db->sessionProductCarts->storedLineCoordinate((int)$change->sourceId);
             if ($stored === null || ($owner !== null && $owner !== $stored[0]) || ($epoch !== null && $epoch !== $stored[1])) {
                 return false;
             }
@@ -1030,13 +1033,18 @@ final class EcommerceShopBrowserContext extends BrowserContext
     }
 
     /**
-     * @param array<string, mixed> Image or diff of a guest cart line
+     * @param array<string, mixed> Image or diff of a guest cart row
+     * @param bool $isVoucher Whether the row is a voucher binding
      * @return array{?int, ?int} Session and epoch provided by this image
      */
-    private static function guestLineCoordinate(array $row): array
+    private static function guestCartCoordinate(array $row, bool $isVoucher): array
     {
-        $owner = $row[ObjectSessionProductCart::sessionId] ?? $row[EntitySessionProductCart::session_id] ?? null;
-        $epoch = $row[ObjectSessionProductCart::cartEpoch] ?? $row[EntitySessionProductCart::cart_epoch] ?? null;
+        $owner = $isVoucher
+            ? ($row[ObjectSessionVoucherCart::sessionId] ?? $row[EntitySessionVoucherCart::session_id] ?? null)
+            : ($row[ObjectSessionProductCart::sessionId] ?? $row[EntitySessionProductCart::session_id] ?? null);
+        $epoch = $isVoucher
+            ? ($row[ObjectSessionVoucherCart::cartEpoch] ?? $row[EntitySessionVoucherCart::cart_epoch] ?? null)
+            : ($row[ObjectSessionProductCart::cartEpoch] ?? $row[EntitySessionProductCart::cart_epoch] ?? null);
 
         return [$owner === null ? null : (int)$owner, $epoch === null ? null : (int)$epoch];
     }

@@ -227,7 +227,7 @@ final class CartPage extends AbstractPage
 
             $lines[] = CartPageData::line($lineId, $product, $quantity, $stock->of($productId)->unitCount);
         }
-        $cart = new CartPageData($userId, $guestCartKey, $lines, $this->cartVoucher($sessionId));
+        $cart = new CartPageData($userId, $guestCartKey, $lines, $this->cartVoucher($sessionId, $cartEpoch));
         $payload = new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
 
         $current = $this->requireConnection($acceptKey);
@@ -412,7 +412,9 @@ final class CartPage extends AbstractPage
         try {
             Database::transaction(DatabaseNames::PRIMARY, static function () use ($agent, $sessionId, $userId, $guestToken, $dto): void {
                 try {
-                    $sessionActive = Hilos::$db->sessions->lockStoredActiveSession($sessionId, $userId, $guestToken);
+                    $sessionActive = $userId === null
+                        ? Hilos::$db->sessions->lockActiveGuestCartEpoch($sessionId, $guestToken, waitForLock: false) !== null
+                        : Hilos::$db->sessions->lockStoredActiveSession($sessionId, $userId);
                 } catch (DatabaseException $failure) {
                     throw new ValidationException(self::CART_UNAVAILABLE, previous: $failure);
                 }
@@ -465,7 +467,8 @@ final class CartPage extends AbstractPage
     /**
      * Asks the confirmed cart owner for its voucher, read by the saved ID so a switched-off voucher still comes back.
      *
-     * @param ?int $sessionId Current session of the connection, which keys a guest's voucher
+     * @param int $sessionId Current session of the connection
+     * @param ?int $cartEpoch Number of the guest cart used for the product lines
      * @return ?Voucher Current catalog voucher, including an inactive one, or null when none is selected
      * @throws PageConflictException When the serving agent cannot hold a cart
      * @throws LogicException When a voucher collection is misconfigured
@@ -473,13 +476,13 @@ final class CartPage extends AbstractPage
      * @throws DatabaseException When the binding or catalog read fails
      * @throws ItemNotFoundException When the saved voucher is missing or the binding disappears during its keyed read
      */
-    private function cartVoucher(?int $sessionId): ?Voucher
+    private function cartVoucher(int $sessionId, ?int $cartEpoch): ?Voucher
     {
         $agent = $this->getAgent();
 
         return match (true) {
             $agent instanceof UserAgent => $agent->cartVoucher(),
-            $agent instanceof GuestCartsLibraryAgent && $sessionId !== null => $agent->cartVoucher($sessionId),
+            $agent instanceof GuestCartsLibraryAgent && $cartEpoch !== null => $agent->cartVoucher($sessionId, $cartEpoch),
             default => throw new PageConflictException('The cart owner is not available at this agent'),
         };
     }

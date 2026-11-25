@@ -22,6 +22,7 @@ use Hilos\HilosException;
  * @property-read int $cartEpoch Number of the source cart
  * @property-read int $userId Recipient account ID
  * @property-read bool $received Whether the recipient has saved the cart
+ * @property-read bool $voucherSuperseded Whether a later choice has precedence over the source voucher
  * @property-read ShopGuestCartTransferActions $actions Writes for the recipient's agent
  */
 final class ShopGuestCartTransfer extends DbItem
@@ -43,6 +44,7 @@ final class ShopGuestCartTransfer extends DbItem
             ObjectShopGuestCartTransfer::cartEpoch => $this->_object->cartEpoch,
             ObjectShopGuestCartTransfer::userId => $this->_object->userId,
             ObjectShopGuestCartTransfer::received => $this->_object->received,
+            ObjectShopGuestCartTransfer::voucherSuperseded => $this->_object->voucherSuperseded,
             default => parent::__get($name),
         };
     }

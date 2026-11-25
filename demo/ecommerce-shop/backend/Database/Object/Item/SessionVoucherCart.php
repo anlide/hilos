@@ -13,7 +13,9 @@ use Hilos\Database\Object\Item\Object_;
 
 /**
  * @extends Object_<EntitySessionVoucherCart>
+ * @property-read ?int $id
  * @property int $sessionId
+ * @property int $cartEpoch
  * @property int $voucherId
  */
 final class SessionVoucherCart extends Object_
@@ -21,7 +23,9 @@ final class SessionVoucherCart extends Object_
     public const string ENTITY_CLASS = EntitySessionVoucherCart::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectSessionVoucherCarts::class;
 
+    public const string id = 'id';
     public const string sessionId = 'sessionId';
+    public const string cartEpoch = 'cartEpoch';
     public const string voucherId = 'voucherId';
 
     /**
@@ -33,7 +37,9 @@ final class SessionVoucherCart extends Object_
     public function __get(string $property): mixed
     {
         return match ($property) {
+            self::id => $this->entity->id,
             self::sessionId => $this->entity->session_id,
+            self::cartEpoch => $this->entity->cart_epoch,
             self::voucherId => $this->entity->voucher_id,
             default => parent::__get($property),
         };
@@ -48,6 +54,7 @@ final class SessionVoucherCart extends Object_
     {
         match ($property) {
             self::sessionId => $this->entity->session_id = (int)$value,
+            self::cartEpoch => $this->entity->cart_epoch = (int)$value,
             self::voucherId => $this->entity->voucher_id = (int)$value,
             default => parent::__set($property, $value),
         };
@@ -61,23 +68,26 @@ final class SessionVoucherCart extends Object_
      */
     public function acceptStored(EntitySessionVoucherCart $stored): void
     {
-        if ($this->entitySync->voucher_id === $stored->voucher_id) {
+        $before = $this->entitySync->toArray();
+        $after = $stored->toArray();
+        if ($before === $after) {
             return;
         }
 
-        $before = $this->entitySync->toArray();
         Database::onRollback(
             fn () => $this->restoreSaved($before, related: true),
             index: $stored::getDatabase()->connectionIndex,
         );
-        $this->restoreSaved($stored->toArray(), related: true);
+        $this->restoreSaved($after, related: true);
     }
 
-    /** @return array<string, int> Cart owner and voucher keys */
+    /** @return array<string, int|null> Binding key, cart coordinate and voucher key */
     public function toArray(): array
     {
         return [
+            self::id => $this->entity->id,
             self::sessionId => $this->entity->session_id,
+            self::cartEpoch => $this->entity->cart_epoch,
             self::voucherId => $this->entity->voucher_id,
         ];
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Database\Object\Item;
 
+use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\Entity\Item\UserVoucherCart as EntityUserVoucherCart;
 use Demo\EcommerceShop\Database\Object\Collection\UserVoucherCarts as ObjectUserVoucherCarts;
 use Hilos\Database\DatabaseException;
@@ -50,6 +51,27 @@ final class UserVoucherCart extends Object_
             self::voucherId => $this->entity->voucher_id = (int)$value,
             default => parent::__set($property, $value),
         };
+    }
+
+    /**
+     * Refreshes this binding and its sync baseline inside the owner's transaction.
+     *
+     * @param EntityUserVoucherCart $stored Binding read from PRIMARY
+     * @throws DatabaseException When the backing database cannot be resolved
+     */
+    public function acceptStored(EntityUserVoucherCart $stored): void
+    {
+        $before = $this->entitySync->toArray();
+        $after = $stored->toArray();
+        if ($before === $after) {
+            return;
+        }
+
+        Database::onRollback(
+            fn () => $this->restoreSaved($before, related: true),
+            index: $stored::getDatabase()->connectionIndex,
+        );
+        $this->restoreSaved($after, related: true);
     }
 
     /** @return array<string, int> Cart owner and voucher keys */

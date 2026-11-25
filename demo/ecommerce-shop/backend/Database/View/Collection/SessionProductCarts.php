@@ -112,6 +112,17 @@ final class SessionProductCarts extends DbCollection
     }
 
     /**
+     * @param int $sessionId Session whose source row the caller has locked
+     * @param int $cartEpoch Number of the source cart
+     * @return bool Whether the exact pair has a pending or received transfer
+     * @throws HilosException When the locking read fails
+     */
+    public function hasLockedTransfer(int $sessionId, int $cartEpoch): bool
+    {
+        return $this->objectCollection->hasLockedTransfer($sessionId, $cartEpoch);
+    }
+
+    /**
      * @param int $sessionId Source session
      * @param int $cartEpoch Source cart number
      * @return array<int, int> Stored quantities keyed by product ID
@@ -159,7 +170,7 @@ final class SessionProductCarts extends DbCollection
     }
 
     /**
-     * @return array{int, int} Greatest product line ID and voucher binding session ID, zero for an empty table
+     * @return array{int, int} Greatest product line ID and voucher binding ID, zero for an empty table
      * @throws NamedDatabaseException When a table or its database cannot be resolved
      * @throws DatabaseException When the query fails
      */
@@ -171,25 +182,25 @@ final class SessionProductCarts extends DbCollection
     /**
      * @param int $afterLineId Exclusive lower bound for product line IDs
      * @param int $throughLineId Inclusive upper bound for product line IDs
-     * @param int $afterVoucherSessionId Exclusive lower bound for voucher binding session IDs
-     * @param int $throughVoucherSessionId Inclusive upper bound for voucher binding session IDs
+     * @param int $afterVoucherId Exclusive lower bound for voucher binding IDs
+     * @param int $throughVoucherId Inclusive upper bound for voucher binding IDs
      * @param int $limit Maximum number of rows per table
-     * @return array{array<int, bool>, array<int, bool>} Ordered cleanup candidate flags by product line ID and voucher binding session ID
+     * @return array{array<int, bool>, array<int, bool>} Ordered cleanup candidate flags by product line ID and voucher binding ID
      * @throws NamedDatabaseException When a table or its database cannot be resolved
      * @throws DatabaseException When a page query or its parameters are refused
      */
     public function cartRowAbsencesAfter(
         int $afterLineId,
         int $throughLineId,
-        int $afterVoucherSessionId,
-        int $throughVoucherSessionId,
+        int $afterVoucherId,
+        int $throughVoucherId,
         int $limit,
     ): array {
         return $this->objectCollection->cartRowAbsencesAfter(
             $afterLineId,
             $throughLineId,
-            $afterVoucherSessionId,
-            $throughVoucherSessionId,
+            $afterVoucherId,
+            $throughVoucherId,
             $limit,
         );
     }

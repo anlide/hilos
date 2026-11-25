@@ -16,6 +16,7 @@ use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferOfferSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferReceivedSignalData;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
+use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\ShopGuestCartTransfer;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
@@ -92,7 +93,7 @@ final class UserAgent extends AbstractUserAgent
     ];
 
     /**
-     * @var list<string> Framework reads plus catalog entries, stock and guest product lines checked by cart operations
+     * @var list<string> Framework reads plus catalog entries, stock and the saved guest cart sources
      */
     public const array READS_DB = [
         ...parent::READS_DB,
@@ -100,6 +101,7 @@ final class UserAgent extends AbstractUserAgent
         EcommerceShopDbContext::productWarehouseStocks,
         EcommerceShopDbContext::vouchers,
         EcommerceShopDbContext::sessionProductCarts,
+        EcommerceShopDbContext::sessionVoucherCarts,
     ];
 
     public const array READS_RT = [
@@ -308,8 +310,7 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
-     * Assigns an active voucher to this person's cart, even when it has no product lines.
-     * Interface actions will call this entry point once wired.
+     * Selects an active voucher and supersedes earlier guest choices in the same transaction.
      *
      * @param string $code Voucher code as entered
      * @throws EmptyValueException When the trimmed code is empty
@@ -337,7 +338,7 @@ final class UserAgent extends AbstractUserAgent
      * @throws DatabaseConnectionException When the commit cannot reach the database
      * @throws DatabaseRuntimeException When the commit fails
      * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
-     * @throws HilosException When the binding collection refuses a reload or the cart snapshot cannot be read
+     * @throws HilosException When the binding, pending transfers or the cart snapshot cannot be read or saved
      * @throws Throwable When the transaction propagates another failure from the cart operation
      */
     public function applyVoucher(string $code): void
@@ -346,14 +347,8 @@ final class UserAgent extends AbstractUserAgent
         AddressablePerson::require($userId);
 
         CartVoucherRules::applyVoucher($code, function (int $voucherId) use ($userId): void {
-            $binding = Hilos::$db->userVoucherCarts[$userId] ?? null;
-            $previousVoucherId = $binding?->voucherId;
-            if ($binding === null) {
-                Hilos::$db->userVoucherCarts->actions->create($userId, $voucherId);
-            } else {
-                $binding->actions->setVoucher($voucherId);
-            }
-
+            $previousVoucherId = $this->saveCartVoucher($userId, $voucherId);
+            $this->supersedePendingGuestVouchers($userId);
             if ($previousVoucherId !== $voucherId) {
                 $this->publishCart($userId);
             }
@@ -361,7 +356,7 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
-     * Clears this person's voucher slot if it is occupied. Interface actions will call this entry point once wired.
+     * Clears the voucher slot and supersedes pending guest choices at the caller's PRIMARY boundary when present.
      *
      * @throws ValidationException When the person was merged
      * @throws AccountErasingException When the person's erasure has begun
@@ -375,20 +370,28 @@ final class UserAgent extends AbstractUserAgent
      * @throws ObjectCollectionNullException When the binding has no backing collection
      * @throws ObjectGetIdStringNotImplementedException When the binding cannot be keyed
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
-     * @throws HilosException When the cart snapshot cannot be read
+     * @throws NamedDatabaseException When the primary database cannot be resolved
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
+     * @throws HilosException When pending transfers or the cart snapshot cannot be read or updated
+     * @throws Throwable When the transaction propagates another failure from the cart operation
      */
     public function removeVoucher(): void
     {
         $userId = (int)$this->getIndex();
-        AddressablePerson::require($userId);
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($userId): void {
+            AddressablePerson::require($userId);
 
-        $binding = Hilos::$db->userVoucherCarts[$userId] ?? null;
-        if ($binding === null) {
-            return;
-        }
-
-        $binding->actions->remove();
-        $this->publishCart($userId);
+            $binding = Hilos::$db->userVoucherCarts->storedSlot($userId);
+            $binding?->actions->remove();
+            $this->supersedePendingGuestVouchers($userId);
+            if ($binding !== null) {
+                $this->publishCart($userId);
+            }
+        });
     }
 
     /**
@@ -438,9 +441,9 @@ final class UserAgent extends AbstractUserAgent
      */
     public function cartVoucher(): ?Voucher
     {
-        $binding = Hilos::$db->userVoucherCarts[(int)$this->getIndex()] ?? null;
+        $voucherId = Hilos::$db->userVoucherCarts->storedVoucherId((int)$this->getIndex());
 
-        return $binding === null ? null : Hilos::$db->vouchers[$binding->voucherId];
+        return $voucherId === null ? null : Hilos::$db->vouchers[$voucherId];
     }
 
     /**
@@ -563,6 +566,42 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
+     * Selects an already resolved voucher ID at the caller's transaction boundary.
+     *
+     * @param int $userId Cart owner
+     * @param int $voucherId Saved voucher ID
+     * @return ?int Previous voucher ID, or null when the slot was empty
+     * @throws HilosException When the slot cannot be read or saved
+     */
+    private function saveCartVoucher(int $userId, int $voucherId): ?int
+    {
+        $binding = Hilos::$db->userVoucherCarts->storedSlot($userId);
+        if ($binding === null) {
+            Hilos::$db->userVoucherCarts->actions->create($userId, $voucherId);
+
+            return null;
+        }
+
+        $previousVoucherId = $binding->voucherId;
+        $binding->actions->setVoucher($voucherId);
+
+        return $previousVoucherId;
+    }
+
+    /**
+     * @param int $userId Cart owner and recipient of the pending transfers
+     * @param ?int $beforeTransferId Exclusive bound for a transfer choice, or null for a manual choice
+     * @throws HilosException When a pending transfer cannot be read or updated
+     */
+    private function supersedePendingGuestVouchers(int $userId, ?int $beforeTransferId = null): void
+    {
+        $transfers = Hilos::$db->shopGuestCartTransfers;
+        foreach ($transfers->lockPendingVoucherTransferIds($userId, $beforeTransferId) as $id) {
+            $transfers[$id]->actions->markVoucherSuperseded();
+        }
+    }
+
+    /**
      * Commits the saved source and its receipt together, or repeats an already committed receipt.
      *
      * @param GuestCartTransferOfferSignalData $offer Offer addressed to this person by the library
@@ -578,7 +617,8 @@ final class UserAgent extends AbstractUserAgent
 
             if (!$transfer->received) {
                 $quantities = Hilos::$db->sessionProductCarts->storedCartQuantityPage($transfer->sessionId, $transfer->cartEpoch, 0);
-                if ($quantities === []) {
+                $voucherId = Hilos::$db->sessionVoucherCarts->storedVoucherId($transfer->sessionId, $transfer->cartEpoch);
+                if ($quantities === [] && $voucherId === null) {
                     return;
                 }
 
@@ -586,7 +626,7 @@ final class UserAgent extends AbstractUserAgent
                 if (AccountMergeAccess::reservation($offer->userId) !== null) {
                     throw new ValidationException(AccountMergeAccess::REFUSED_MESSAGE);
                 }
-                do {
+                while ($quantities !== []) {
                     foreach ($quantities as $productId => $quantity) {
                         Hilos::$db->userProductCarts->actions->mergeLine($offer->userId, $productId, $quantity);
                     }
@@ -595,8 +635,12 @@ final class UserAgent extends AbstractUserAgent
                         $transfer->cartEpoch,
                         $productId,
                     );
-                } while ($quantities !== []);
+                }
 
+                if ($voucherId !== null && !$transfer->voucherSuperseded) {
+                    $this->saveCartVoucher($offer->userId, $voucherId);
+                    $this->supersedePendingGuestVouchers($offer->userId, $offer->transferId);
+                }
                 $transfer->actions->markReceived();
                 $this->publishCart($offer->userId);
             }
@@ -620,7 +664,10 @@ final class UserAgent extends AbstractUserAgent
             }
 
             $transfer = Hilos::$db->shopGuestCartTransfers[$cleared->transferId];
-            if (!Hilos::$db->sessionProductCarts->hasCartLine($transfer->sessionId, $transfer->cartEpoch)) {
+            if (
+                !Hilos::$db->sessionProductCarts->hasCartLine($transfer->sessionId, $transfer->cartEpoch)
+                && Hilos::$db->sessionVoucherCarts->storedVoucherId($transfer->sessionId, $transfer->cartEpoch) === null
+            ) {
                 $transfer->actions->remove();
             }
         });
@@ -662,7 +709,7 @@ final class UserAgent extends AbstractUserAgent
         $frame = new CartStateSignalData(
             $userId,
             $lines,
-            (Hilos::$db->userVoucherCarts[$userId] ?? null)?->voucherId,
+            Hilos::$db->userVoucherCarts->storedVoucherId($userId),
         );
         Database::afterCommit(fn () => $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forUser($userId), $frame));
     }

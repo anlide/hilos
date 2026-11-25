@@ -30,6 +30,7 @@ final class SessionVoucherCartsActions extends DbActions
      * Saves the cart's first voucher binding.
      *
      * @param int $sessionId Cart owner ID
+     * @param int $cartEpoch Number of the guest cart
      * @param int $voucherId Voucher ID
      * @throws CreateNotAllowedException When this process may not create the binding
      * @throws ExternalWriterException When the collection has an external writer
@@ -43,12 +44,13 @@ final class SessionVoucherCartsActions extends DbActions
      * @throws LogicException When the collection Entity is unavailable for reload
      * @throws HilosException When the collection refuses a reload after database replacement
      */
-    public function create(int $sessionId, int $voucherId): void
+    public function create(int $sessionId, int $cartEpoch, int $voucherId): void
     {
         $this->ensureCanCreate();
 
         $binding = ObjectSessionVoucherCart::create();
         $binding->sessionId = $sessionId;
+        $binding->cartEpoch = $cartEpoch;
         $binding->voucherId = $voucherId;
         $binding->sync();
         $this->addObjectToCollection($binding);

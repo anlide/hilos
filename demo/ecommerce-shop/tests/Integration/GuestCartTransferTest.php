@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Closure;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
@@ -13,8 +14,11 @@ use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferReceivedSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferWakeSignalData;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Entity\Item\ShopGuestCartTransfer;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
 use Demo\EcommerceShop\Database\View\Item\Session;
+use Demo\EcommerceShop\Database\Object\Item\SessionVoucherCart;
 use Demo\EcommerceShop\Database\View\Item\SessionProductCart;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
@@ -31,15 +35,24 @@ use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\DatabaseNames;
 use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 
 /** Session assignment and transfer delivery run under the agents' actual ownership claims. */
@@ -74,12 +87,14 @@ final class GuestCartTransferTest extends IntegrationTestCase
             foreach ([self::SOURCE_SESSION, ...$this->sessionIds] as $sessionId) {
                 Database::sqlRun('DELETE FROM shop_guest_cart_transfer WHERE session_id = ?', [$sessionId]);
                 Database::sqlRun('DELETE FROM session_product_cart WHERE session_id = ?', [$sessionId]);
+                Database::sqlRun('DELETE FROM session_voucher_cart WHERE session_id = ?', [$sessionId]);
             }
             foreach ($this->sessionIds as $sessionId) {
                 Database::sqlRun('DELETE FROM hilos_session WHERE id = ?', [$sessionId]);
             }
             foreach ($this->userIds as $userId) {
                 Database::sqlRun('DELETE FROM user_product_cart WHERE user_id = ?', [$userId]);
+                Database::sqlRun('DELETE FROM user_voucher_cart WHERE user_id = ?', [$userId]);
                 Database::sqlRun('DELETE FROM hilos_account_deletion WHERE user_id = ?', [$userId]);
                 Database::sqlRun('DELETE FROM hilos_user WHERE id = ?', [$userId]);
             }
@@ -260,6 +275,8 @@ final class GuestCartTransferTest extends IntegrationTestCase
         $first = $this->person('First recipient after sweep');
         $second = $this->person('Second recipient after sweep');
         $stock = self::product('pine-bark-5-l');
+        $firstVoucher = self::voucherId('SPRING10');
+        $secondVoucher = self::voucherId('WEDDING15');
         $session = $this->guest();
         self::assertNotNull($session->id);
         $carts = $this->startGuestCarts();
@@ -267,6 +284,9 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::addAccountLine($first, $stock, 2);
         self::addAccountLine($second, $stock, 5);
         self::addSourceLine(self::SOURCE_EPOCH, $stock, 3, $session->id);
+        $this->underAgent($carts, static fn () => Hilos::$db->sessionVoucherCarts->actions->create(
+            $session->id, self::SOURCE_EPOCH, $firstVoucher,
+        ));
 
         $this->underAgent($library, static fn () => $session->actions->bindUser($first));
         $firstTransfer = self::savedAssignment($session->id, self::SOURCE_EPOCH);
@@ -276,8 +296,12 @@ final class GuestCartTransferTest extends IntegrationTestCase
         $this->underAgent($library, static fn () => $session->actions->unbindUser());
         self::assertSame(self::NEXT_EPOCH, Hilos::$db->sessions->activeGuestCartEpoch($session->id, $session->token));
         self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::NEXT_EPOCH));
+        self::assertNull(Hilos::$db->sessionVoucherCarts->storedVoucherId($session->id, self::NEXT_EPOCH));
 
         self::addSourceLine(self::NEXT_EPOCH, $stock, 4, $session->id);
+        $this->underAgent($carts, static fn () => Hilos::$db->sessionVoucherCarts->actions->create(
+            $session->id, self::NEXT_EPOCH, $secondVoucher,
+        ));
         $this->underAgent($library, static fn () => $session->actions->bindUser($second));
         $secondTransfer = self::savedAssignment($session->id, self::NEXT_EPOCH);
         self::assertNotNull($secondTransfer);
@@ -288,6 +312,9 @@ final class GuestCartTransferTest extends IntegrationTestCase
         $live = $this->guest();
         self::assertNotNull($live->id);
         self::addSourceLine(self::SOURCE_EPOCH, $stock, 7, $live->id);
+        $this->underAgent($carts, static fn () => Hilos::$db->sessionVoucherCarts->actions->create(
+            $live->id, self::SOURCE_EPOCH, $secondVoucher,
+        ));
         $this->drainSignals();
         self::assertNotNull($library->armCronRuleForTest(CronRule::FRAMEWORK_NAME_PREFIX . 'sessions_expire'));
         $this->underAgent($library, $library->onTick(...));
@@ -300,26 +327,47 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::assertSame([$session->id, self::NEXT_EPOCH, $second, false], Hilos::$db->shopGuestCartTransfers->storedTransfer($secondTransfer));
         self::assertSame([$stock => 3], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::SOURCE_EPOCH));
         self::assertSame([$stock => 4], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::NEXT_EPOCH));
+        self::assertSame($firstVoucher, Hilos::$db->sessionVoucherCarts->storedVoucherId($session->id, self::SOURCE_EPOCH));
+        self::assertSame($secondVoucher, Hilos::$db->sessionVoucherCarts->storedVoucherId($session->id, self::NEXT_EPOCH));
         self::assertSame([$stock => 2], self::accountLines($first));
         self::assertSame([$stock => 5], self::accountLines($second));
 
         $this->runRecoveryTick($carts);
-        $offers = [$this->queuedTransferFrame(self::OFFER), $this->queuedTransferFrame(self::OFFER)];
-        foreach ([[$firstTransfer, $first], [$secondTransfer, $second]] as $index => [$transferId, $userId]) {
-            $offer = $offers[$index]->data->data;
-            self::assertEquals(new GuestCartTransferOfferSignalData($transferId, $userId), $offer);
-            $this->deliver($userId, self::OFFER, $offer);
-            $this->dispatchSourceFrame($carts, $this->queuedTransferFrame(self::RECEIVED));
-            $this->deliver($userId, self::CLEARED, $this->queuedTransferFrame(self::CLEARED)->data->data);
-            self::assertNull(Hilos::$db->shopGuestCartTransfers->storedTransfer($transferId));
-        }
+        $firstOffer = $this->queuedTransferFrame(self::OFFER);
+        $secondOffer = $this->queuedTransferFrame(self::OFFER);
+        self::assertEquals(new GuestCartTransferOfferSignalData($firstTransfer, $first), $firstOffer->data->data);
+        self::assertEquals(new GuestCartTransferOfferSignalData($secondTransfer, $second), $secondOffer->data->data);
+        $this->deliver($first, self::OFFER, $firstOffer->data->data);
+        $this->queuedTransferFrame(self::RECEIVED);
+        $this->dispatchSourceFrame($carts, $swept);
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($firstTransfer, $first));
+        self::assertSame([$stock => 3], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::SOURCE_EPOCH));
+        self::assertSame($firstVoucher, Hilos::$db->sessionVoucherCarts->storedVoucherId($session->id, self::SOURCE_EPOCH));
+
+        $this->deliver($first, self::OFFER, $firstOffer->data->data);
+        $this->dispatchSourceFrame($carts, $this->queuedTransferFrame(self::RECEIVED));
+        $this->deliver($first, self::CLEARED, $this->queuedTransferFrame(self::CLEARED)->data->data);
+        self::assertNull(Hilos::$db->shopGuestCartTransfers->storedTransfer($firstTransfer));
+        self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::SOURCE_EPOCH));
+        self::assertNull(Hilos::$db->sessionVoucherCarts->storedVoucherId($session->id, self::SOURCE_EPOCH));
+        self::assertFalse(Hilos::$db->shopGuestCartTransfers->storedReceipt($secondTransfer, $second));
+        self::assertSame([$stock => 4], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::NEXT_EPOCH));
+        self::assertSame($secondVoucher, Hilos::$db->sessionVoucherCarts->storedVoucherId($session->id, self::NEXT_EPOCH));
+
+        $this->deliver($second, self::OFFER, $secondOffer->data->data);
+        $this->dispatchSourceFrame($carts, $this->queuedTransferFrame(self::RECEIVED));
+        $this->deliver($second, self::CLEARED, $this->queuedTransferFrame(self::CLEARED)->data->data);
+        self::assertNull(Hilos::$db->shopGuestCartTransfers->storedTransfer($secondTransfer));
 
         self::assertSame([$stock => 5], self::accountLines($first));
         self::assertSame([$stock => 9], self::accountLines($second));
-        self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::SOURCE_EPOCH));
+        self::assertSame($firstVoucher, self::accountVoucherId($first));
+        self::assertSame($secondVoucher, self::accountVoucherId($second));
         self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::NEXT_EPOCH));
+        self::assertNull(Hilos::$db->sessionVoucherCarts->storedVoucherId($session->id, self::NEXT_EPOCH));
         self::assertSame(self::SOURCE_EPOCH, Hilos::$db->sessions->activeGuestCartEpoch($live->id, $live->token));
         self::assertSame([$stock => 7], Hilos::$db->sessionProductCarts->storedCartQuantities($live->id, self::SOURCE_EPOCH));
+        self::assertSame($secondVoucher, Hilos::$db->sessionVoucherCarts->storedVoucherId($live->id, self::SOURCE_EPOCH));
     }
 
     public function testOffersOnlyTheSavedAddressForSmallAndLargeCarts(): void
@@ -338,8 +386,10 @@ final class GuestCartTransferTest extends IntegrationTestCase
         $this->runRecoveryTick($carts);
 
         foreach ([$small, $large] as $transferId) {
-            $offer = $this->queuedTransferFrame(self::OFFER)->data->data;
-            self::assertSame(['transferId' => $transferId, 'userId' => $userId], $offer->toArray());
+            $offer = $this->queuedTransferFrame(self::OFFER);
+            self::assertSame(['transferId' => $transferId, 'userId' => $userId], $offer->data->data->toArray());
+            $recipient = $this->personAgent($userId);
+            self::assertEquals([new AgentDestination($recipient->getType(), $recipient->getIndex())], Hilos::$sr->getDestinations($offer));
         }
     }
 
@@ -390,6 +440,11 @@ final class GuestCartTransferTest extends IntegrationTestCase
         foreach ($products as $productId) {
             self::addSourceLine(self::NEXT_EPOCH, $productId, 1);
         }
+        $voucherId = (int)Database::sql('SELECT id FROM voucher WHERE code = ?', ['SPRING10'])->field('id');
+        Database::sqlRun(
+            'INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, ?, ?), (?, ?, ?)',
+            [self::SOURCE_SESSION, self::SOURCE_EPOCH, $voucherId, self::SOURCE_SESSION, self::NEXT_EPOCH, $voucherId],
+        );
         self::addSourceLine(self::SOURCE_EPOCH, $products[0], 4, $session->id);
         self::addAccountLine($first, $products[0], 5);
         self::addAccountLine($second, $products[0], 9);
@@ -403,7 +458,9 @@ final class GuestCartTransferTest extends IntegrationTestCase
 
         $this->runRecoveryTick($carts);
         self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::SOURCE_EPOCH));
-        self::assertCount(10, Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
+        self::assertNull(Hilos::$db->sessionVoucherCarts->storedVoucherId(self::SOURCE_SESSION, self::SOURCE_EPOCH));
+        self::assertCount(11, Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
+        self::assertSame($voucherId, Hilos::$db->sessionVoucherCarts->storedVoucherId(self::SOURCE_SESSION, self::NEXT_EPOCH));
         $firstClear = $this->queuedTransferFrame(self::CLEARED);
         self::assertEquals(new GuestCartTransferClearedSignalData($firstTransfer, $first), $firstClear->data->data);
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
@@ -416,11 +473,12 @@ final class GuestCartTransferTest extends IntegrationTestCase
         $this->deliver($first, self::CLEARED, $firstClear->data->data);
 
         $this->runRecoveryTick($carts);
-        self::assertCount(10, Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
+        self::assertCount(11, Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
         self::assertSame([$pendingTransfer], $this->queuedOfferIds());
 
         $this->runRecoveryTick($carts);
         self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
+        self::assertNull(Hilos::$db->sessionVoucherCarts->storedVoucherId(self::SOURCE_SESSION, self::NEXT_EPOCH));
         $secondClear = $this->queuedTransferFrame(self::CLEARED);
         self::assertEquals(new GuestCartTransferClearedSignalData($secondTransfer, $second), $secondClear->data->data);
 
@@ -432,6 +490,47 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::assertNull(Hilos::$db->shopGuestCartTransfers->storedTransfer($secondTransfer));
         self::assertSame([$products[0] => 4], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::SOURCE_EPOCH));
         self::assertSame([$products[0] => 9], self::accountLines($second));
+    }
+
+    /** Empty and product-only receipts clear even while unrelated voucher objects await DB sync. */
+    public function testRecoveryClearsVoucherlessReceiptsWithALargeHeldVoucherMirror(): void
+    {
+        $unrelated = $this->guest()->id;
+        $voucherId = self::voucherId('SPRING10');
+        $product = self::product('pine-bark-5-l');
+        Database::sqlRun(
+            'INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) SELECT ?, seq, ? FROM seq_1_to_512',
+            [$unrelated, $voucherId],
+        );
+        $vouchers = Hilos::$db->sessionVoucherCarts;
+        $heldCount = 0;
+        foreach ($vouchers->whereColumnIs(SessionVoucherCart::sessionId, $unrelated) as $binding) {
+            self::assertSame($voucherId, $binding->voucherId);
+            ++$heldCount;
+        }
+        self::assertSame(512, $heldCount);
+        Database::sqlRun('DELETE FROM session_voucher_cart WHERE session_id = ?', [$unrelated]);
+
+        $userId = $this->person('Recipient of voucherless carts');
+        $transfers = [];
+        foreach ([0, 1, 2, 3] as $epoch) {
+            $transfers[] = $this->assign($userId, $epoch);
+        }
+        foreach ([1, 3] as $epoch) {
+            self::addSourceLine($epoch, $product, 1);
+        }
+        Database::sqlRun('UPDATE shop_guest_cart_transfer SET received = TRUE WHERE session_id = ?', [self::SOURCE_SESSION]);
+        $carts = $this->startGuestCarts();
+        $this->drainSignals();
+
+        $this->runRecoveryTick($carts);
+        foreach ($transfers as $epoch => $transferId) {
+            self::assertEquals(
+                new GuestCartTransferClearedSignalData($transferId, $userId),
+                $this->queuedTransferFrame(self::CLEARED)->data->data,
+            );
+            self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, $epoch));
+        }
     }
 
     public function testAppliesOnceAndClearsOnlyWhenTheReceivedEpochIsEmpty(): void
@@ -449,6 +548,8 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::addSourceLine(self::SOURCE_EPOCH, $stock, 2);
         self::addSourceLine(self::SOURCE_EPOCH, $unique, 1);
         self::addSourceLine(self::NEXT_EPOCH, $stock, 4);
+        $voucherId = self::voucherId('SPRING10');
+        self::addSourceVoucher(self::SOURCE_EPOCH, $voucherId);
         Hilos::$db->sessionProductCarts->objectCollection->preloadAll();
         Hilos::$db->shopGuestCartTransfers->objectCollection->preloadAll();
         Database::sqlRun(
@@ -477,7 +578,7 @@ final class GuestCartTransferTest extends IntegrationTestCase
             [EcommerceShopSignalConstants::CART_STATE, [
                 'userId' => $userId,
                 'lines' => [['productId' => $stock, 'quantity' => self::MAX_CART_QUANTITY], ['productId' => $unique, 'quantity' => 1]],
-                'voucherId' => null,
+                'voucherId' => $voucherId,
             ]],
             [self::RECEIVED, $receipt],
         ], $this->transferFrames($userId));
@@ -494,6 +595,9 @@ final class GuestCartTransferTest extends IntegrationTestCase
         $this->deliver($userId, self::CLEARED, $clear);
         self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $userId));
         self::deleteSource();
+        $this->deliver($userId, self::CLEARED, $clear);
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $userId));
+        Database::sqlRun('DELETE FROM session_voucher_cart WHERE session_id = ? AND cart_epoch = ?', [self::SOURCE_SESSION, self::SOURCE_EPOCH]);
         $this->deliver($userId, self::OFFER, $offer);
         self::assertSame([[self::RECEIVED, $receipt]], $this->transferFrames($userId));
         $otherId = $this->person('Different clearance recipient');
@@ -507,6 +611,7 @@ final class GuestCartTransferTest extends IntegrationTestCase
         $this->deliver($userId, self::OFFER, $offer);
         self::assertSame([], $this->transferFrames($userId));
         self::assertSame([$stock => self::MAX_CART_QUANTITY, $unique => 1], self::accountLines($userId));
+        self::assertSame($voucherId, self::accountVoucherId($userId));
     }
 
     public function testRejectsTheWrongSenderAddressPayloadAndStoredSource(): void
@@ -613,6 +718,280 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::assertSame([$receipt], $this->transferFrames($userId));
         self::assertEquals($expected, self::accountLines($userId));
         self::assertSame([$last => 7], Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
+    }
+
+    /** A receipt write failure rolls back the already written cart and restores the same held objects. */
+    public function testReceiptFailureRollsBackProductsVoucherAndReceiptBeforeReplay(): void
+    {
+        $userId = $this->person('Recipient with an interrupted receipt');
+        $product = self::product('pine-bark-5-l');
+        $previous = self::voucherId('SPRING10');
+        $incoming = self::voucherId('WEDDING15');
+        $owner = $this->personAgent($userId);
+        $this->underAgent($owner, static fn () => $owner->applyVoucher('WEDDING15'));
+        self::addAccountLine($userId, $product, 2);
+        self::addSourceLine(self::SOURCE_EPOCH, $product, 3);
+        self::addSourceVoucher(self::SOURCE_EPOCH, $incoming);
+        $transferId = $this->assign($userId);
+        $offer = new GuestCartTransferOfferSignalData($transferId, $userId);
+        $heldLine = Hilos::$db->userProductCarts->whereColumnIs(UserProductCart::user_id, $userId)->first();
+        self::assertNotNull($heldLine);
+        $heldVoucher = Hilos::$db->userVoucherCarts[$userId]->getObject();
+        $heldTransfer = Hilos::$db->shopGuestCartTransfers[$transferId]->getObject();
+        Database::sqlRun('UPDATE user_voucher_cart SET voucher_id = ? WHERE user_id = ?', [$previous, $userId]);
+        self::assertSame($incoming, $heldVoucher->voucherId);
+        $this->drainSignals();
+
+        $probe = new class ((string)$transferId) implements SourceMirrorSubscriberInterface {
+            public ?Closure $beforeRollback = null;
+
+            /** @param string $transferKey Row whose receipt is interrupted */
+            public function __construct(private readonly string $transferKey)
+            {
+            }
+
+            /**
+             * @param SourceChange $change Mutation reaching the mirror inside PRIMARY
+             * @param SourceChangeProvenance $provenance Origin of the mutation
+             */
+            public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+            {
+                if ($change->sourceKey === EcommerceShopDbContext::shopGuestCartTransfers && $change->sourceId === $this->transferKey
+                    && $change->mutationType === TableMutationType::Update && $this->beforeRollback !== null
+                ) {
+                    $check = $this->beforeRollback;
+                    $this->beforeRollback = null;
+                    $check();
+                    throw new RuntimeException('Injected guest cart receipt failure');
+                }
+            }
+        };
+        $probe->beforeRollback = static function () use ($userId, $product, $incoming, $transferId): void {
+            self::assertSame([$product => 5], self::accountLines($userId));
+            self::assertSame($incoming, self::accountVoucherId($userId));
+            self::assertTrue(ShopGuestCartTransfer::getById($transferId)?->received);
+        };
+        SourceChangeBus::subscribe($probe);
+        try {
+            $this->deliver($userId, self::OFFER, $offer);
+            self::fail('The receipt failure did not reach the transfer handler.');
+        } catch (AgentException $failure) {
+            self::assertInstanceOf(SourceChangeSubscriberException::class, $failure->getPrevious());
+            self::assertSame('Injected guest cart receipt failure', $failure->getPrevious()->getPrevious()?->getMessage());
+        } finally {
+            $probe->beforeRollback = null;
+        }
+
+        self::assertSame([$product => 2], self::accountLines($userId));
+        self::assertSame($previous, self::accountVoucherId($userId));
+        self::assertFalse(ShopGuestCartTransfer::getById($transferId)?->received);
+        self::assertSame(2, $heldLine->quantity);
+        self::assertSame($heldVoucher, Hilos::$db->userVoucherCarts[$userId]->getObject());
+        self::assertSame($incoming, $heldVoucher->voucherId);
+        self::assertSame($heldTransfer, Hilos::$db->shopGuestCartTransfers[$transferId]->getObject());
+        self::assertFalse($heldTransfer->received);
+        self::assertSame([$product => 3], Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::SOURCE_EPOCH));
+        self::assertSame($incoming, Hilos::$db->sessionVoucherCarts->storedVoucherId(self::SOURCE_SESSION, self::SOURCE_EPOCH));
+        self::assertSame([], $this->transferFrames($userId, expectNoVoucherWrite: true));
+
+        $receipt = [self::RECEIVED, ['transferId' => $transferId, 'userId' => $userId]];
+        $this->deliver($userId, self::OFFER, $offer);
+        self::assertSame([
+            [EcommerceShopSignalConstants::CART_STATE, [
+                'userId' => $userId, 'lines' => [['productId' => $product, 'quantity' => 5]], 'voucherId' => $incoming,
+            ]],
+            $receipt,
+        ], $this->transferFrames($userId));
+        self::assertSame(5, $heldLine->quantity);
+        self::assertSame($incoming, $heldVoucher->voucherId);
+        self::assertSame($incoming, self::accountVoucherId($userId));
+        self::assertTrue($heldTransfer->received);
+
+        $this->deliver($userId, self::OFFER, $offer);
+        self::assertSame([$receipt], $this->transferFrames($userId, expectNoVoucherWrite: true));
+        self::assertSame([$product => 5], self::accountLines($userId));
+        self::assertSame($incoming, self::accountVoucherId($userId));
+    }
+
+    /** Manual confirmation, recreation and removal use the saved slot even before a mirror update. */
+    public function testManualVoucherWritesReconcileTheSavedSlot(): void
+    {
+        $userId = $this->person('Account with a stale voucher slot');
+        $owner = $this->personAgent($userId);
+        $selected = self::voucherId('SPRING10');
+        $other = self::voucherId('WEDDING15');
+        $apply = fn () => $this->underAgent($owner, static fn () => $owner->applyVoucher('SPRING10'));
+        $apply();
+        $this->drainSignals();
+
+        $held = Hilos::$db->userVoucherCarts[$userId]->getObject();
+        Database::sqlRun('UPDATE user_voucher_cart SET voucher_id = ? WHERE user_id = ?', [$other, $userId]);
+        self::assertSame($selected, $held->voucherId);
+        $apply();
+        $selectedFrame = [EcommerceShopSignalConstants::CART_STATE, ['userId' => $userId, 'lines' => [], 'voucherId' => $selected]];
+        self::assertSame([$selectedFrame], $this->transferFrames($userId));
+        self::assertSame($selected, self::accountVoucherId($userId));
+
+        $apply();
+        self::assertSame([], $this->transferFrames($userId, expectNoVoucherWrite: true));
+
+        Database::sqlRun('DELETE FROM user_voucher_cart WHERE user_id = ?', [$userId]);
+        self::assertSame($held, Hilos::$db->userVoucherCarts[$userId]->getObject());
+        $stop = new RuntimeException('Roll back the recreated voucher slot');
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, static function () use ($apply, $selected, $userId, $stop): void {
+                $apply();
+                self::assertSame($selected, self::accountVoucherId($userId));
+                throw $stop;
+            });
+        } catch (RuntimeException $failure) {
+            self::assertSame($stop, $failure);
+        }
+        self::assertSame([], $this->transferFrames($userId, expectNoVoucherWrite: true));
+        self::assertNull(self::accountVoucherId($userId));
+        self::assertSame($held, Hilos::$db->userVoucherCarts[$userId]->getObject());
+
+        $apply();
+        self::assertSame([$selectedFrame], $this->transferFrames($userId));
+        self::assertSame($selected, self::accountVoucherId($userId));
+        self::assertNotSame($held, Hilos::$db->userVoucherCarts[$userId]->getObject());
+
+        $this->underAgent($owner, $owner->removeVoucher(...));
+        $this->drainSignals();
+        self::assertFalse(isset(Hilos::$db->userVoucherCarts[$userId]));
+        Database::sqlRun('INSERT INTO user_voucher_cart (user_id, voucher_id) VALUES (?, ?)', [$userId, $other]);
+        $this->underAgent($owner, $owner->removeVoucher(...));
+        self::assertNull(self::accountVoucherId($userId));
+        self::assertSame([
+            [EcommerceShopSignalConstants::CART_STATE, ['userId' => $userId, 'lines' => [], 'voucherId' => null]],
+        ], $this->transferFrames($userId));
+    }
+
+    /** @return iterable<string, array{?string, ?string, bool, ?string}> Original slot, applied code, refusal, final code */
+    public static function manualVoucherChoices(): iterable
+    {
+        yield 'apply a different code' => ['WEDDING15', 'SPRING10', false, 'SPRING10'];
+        yield 'confirm the same code' => ['SPRING10', 'SPRING10', false, 'SPRING10'];
+        yield 'remove the selected code' => ['SPRING10', null, false, null];
+        yield 'remove from an empty slot' => [null, null, false, null];
+        yield 'apply an inactive code' => ['SPRING10', 'WELCOME5', true, 'WEDDING15'];
+    }
+
+    /**
+     * @param ?string $previousCode Code selected before the guest assignment
+     * @param ?string $apply Code to apply manually, or null for Remove
+     * @param bool $refused Whether the manual choice fails
+     * @param ?string $finalCode Code after receipt of the guest cart
+     */
+    #[DataProvider('manualVoucherChoices')]
+    public function testManualVoucherChoicesSetPrecedenceForPendingOffers(
+        ?string $previousCode,
+        ?string $apply,
+        bool $refused,
+        ?string $finalCode,
+    ): void {
+        $userId = $this->person('Recipient who chooses a voucher');
+        $owner = $this->personAgent($userId);
+        if ($previousCode !== null) {
+            $this->underAgent($owner, static fn () => $owner->applyVoucher($previousCode));
+        }
+        $product = self::product('pine-bark-5-l');
+        self::addSourceLine(self::SOURCE_EPOCH, $product, 1);
+        self::addSourceVoucher(self::SOURCE_EPOCH, self::voucherId('WEDDING15'));
+        $transferId = $this->assign($userId);
+        self::assertFalse(ShopGuestCartTransfer::getById($transferId)?->voucher_superseded);
+        $this->drainSignals();
+
+        try {
+            $this->underAgent($owner, $apply === null ? $owner->removeVoucher(...) : static fn () => $owner->applyVoucher($apply));
+            self::assertFalse($refused);
+        } catch (ValidationException $failure) {
+            self::assertTrue($refused);
+            self::assertSame('This voucher is inactive', $failure->getMessage());
+        }
+        self::assertSame(!$refused, ShopGuestCartTransfer::getById($transferId)?->voucher_superseded);
+        $manuallyChosen = $refused ? $previousCode : $apply;
+        $manualVoucher = $manuallyChosen === null ? null : self::voucherId($manuallyChosen);
+        self::assertSame($manualVoucher, self::accountVoucherId($userId));
+        $unchanged = $manuallyChosen === $previousCode;
+        self::assertSame($unchanged ? [] : [
+            [EcommerceShopSignalConstants::CART_STATE, ['userId' => $userId, 'lines' => [], 'voucherId' => $manualVoucher]],
+        ], $this->transferFrames($userId, expectNoVoucherWrite: $unchanged));
+
+        $this->deliver($userId, self::OFFER, new GuestCartTransferOfferSignalData($transferId, $userId));
+        $finalVoucher = $finalCode === null ? null : self::voucherId($finalCode);
+        self::assertSame([
+            [EcommerceShopSignalConstants::CART_STATE, [
+                'userId' => $userId, 'lines' => [['productId' => $product, 'quantity' => 1]], 'voucherId' => $finalVoucher,
+            ]],
+            [self::RECEIVED, ['transferId' => $transferId, 'userId' => $userId]],
+        ], $this->transferFrames($userId));
+        self::assertSame($finalVoucher, self::accountVoucherId($userId));
+    }
+
+    /** @return iterable<string, array{?string, bool}> Later raw voucher choice and whether the receipt is already saved */
+    public static function laterGuestVoucherOffers(): iterable
+    {
+        yield 'fresh offer with a different ID' => ['WELCOME5', false];
+        yield 'fresh offer with the selected ID' => ['SPRING10', false];
+        yield 'fresh offer without a voucher' => [null, false];
+        yield 'replayed receipt' => ['WELCOME5', true];
+    }
+
+    /**
+     * @param ?string $laterCode Voucher on the later source, or null for products only
+     * @param bool $received Whether this offer is a replay of a saved receipt
+     */
+    #[DataProvider('laterGuestVoucherOffers')]
+    public function testLaterOffersOnlySupersedeEarlierVouchersOnAFreshVoucherChoice(?string $laterCode, bool $received): void
+    {
+        $userId = $this->person('Recipient of out-of-order vouchers');
+        $product = self::product('pine-bark-5-l');
+        $owner = $this->personAgent($userId);
+        $this->underAgent($owner, static fn () => $owner->applyVoucher('SPRING10'));
+        $earlierVoucher = self::voucherId('WEDDING15');
+        $currentVoucher = self::voucherId('SPRING10');
+        self::addSourceLine(self::SOURCE_EPOCH, $product, 2);
+        self::addSourceVoucher(self::SOURCE_EPOCH, $earlierVoucher);
+        $earlier = $this->assign($userId);
+        self::addSourceLine(self::NEXT_EPOCH, $product, 3);
+        $laterVoucher = $laterCode === null ? null : self::voucherId($laterCode);
+        if ($laterVoucher !== null) {
+            self::addSourceVoucher(self::NEXT_EPOCH, $laterVoucher);
+        }
+        $later = $this->assign($userId, self::NEXT_EPOCH);
+        if ($received) {
+            // Storage already has the later cart and receipt while this worker still has its pending mirror.
+            self::addAccountLine($userId, $product, 3);
+            Database::sqlRun('UPDATE shop_guest_cart_transfer SET received = TRUE WHERE id = ?', [$later]);
+        }
+        $this->drainSignals();
+
+        $this->deliver($userId, self::OFFER, new GuestCartTransferOfferSignalData($later, $userId));
+        $laterReceipt = [self::RECEIVED, ['transferId' => $later, 'userId' => $userId]];
+        $superseded = $laterVoucher !== null && !$received;
+        $chosenByLater = $superseded ? $laterVoucher : $currentVoucher;
+        $laterCart = [EcommerceShopSignalConstants::CART_STATE, [
+            'userId' => $userId, 'lines' => [['productId' => $product, 'quantity' => 3]], 'voucherId' => $chosenByLater,
+        ]];
+        self::assertSame(
+            $received ? [$laterReceipt] : [$laterCart, $laterReceipt],
+            $this->transferFrames($userId, expectNoVoucherWrite: $chosenByLater === $currentVoucher),
+        );
+        self::assertSame($superseded, ShopGuestCartTransfer::getById($earlier)?->voucher_superseded);
+        self::assertTrue(ShopGuestCartTransfer::getById($later)?->received);
+        self::assertSame($chosenByLater, self::accountVoucherId($userId));
+
+        $this->deliver($userId, self::OFFER, new GuestCartTransferOfferSignalData($earlier, $userId));
+        $finalVoucher = $superseded ? $chosenByLater : $earlierVoucher;
+        self::assertSame([
+            [EcommerceShopSignalConstants::CART_STATE, [
+                'userId' => $userId, 'lines' => [['productId' => $product, 'quantity' => 5]], 'voucherId' => $finalVoucher,
+            ]],
+            [self::RECEIVED, ['transferId' => $earlier, 'userId' => $userId]],
+        ], $this->transferFrames($userId, expectNoVoucherWrite: $superseded));
+        self::assertSame([$product => 5], self::accountLines($userId));
+        self::assertSame($finalVoucher, self::accountVoucherId($userId));
     }
 
     public function testErasureRefusesFreshWritesAndStillAllowsAnExistingReceipt(): void
@@ -741,8 +1120,12 @@ final class GuestCartTransferTest extends IntegrationTestCase
         ));
     }
 
-    /** @return list<array{string, array<string, mixed>}> The receipt and cart state announced by the recipient */
-    private function transferFrames(int $userId): array
+    /**
+     * @param int $userId Recipient whose frames are expected
+     * @param bool $expectNoVoucherWrite Whether emitting a voucher slot fact fails the test
+     * @return list<array{string, array<string, mixed>}> The receipt and cart state announced by the recipient
+     */
+    private function transferFrames(int $userId, bool $expectNoVoucherWrite = false): array
     {
         $frames = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
@@ -755,6 +1138,8 @@ final class GuestCartTransferTest extends IntegrationTestCase
                 self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
                 self::assertSame(CartGroup::forUser($userId), $signal->data->targetGroup);
                 $frames[] = [$name, $signal->data->data->toArray()];
+            } elseif ($expectNoVoucherWrite && $signal->data instanceof DbSyncSignalDataInterface) {
+                self::assertNotSame(EcommerceShopDbContext::userVoucherCarts, $signal->data->collectionKey);
             }
         }
 
@@ -822,6 +1207,41 @@ final class GuestCartTransferTest extends IntegrationTestCase
             'INSERT INTO session_product_cart (session_id, cart_epoch, product_id, quantity) VALUES (?, ?, ?, ?)',
             [$sessionId, $epoch, $productId, $quantity],
         );
+    }
+
+    /**
+     * @param int $epoch Source epoch of the binding
+     * @param int $voucherId Catalog choice saved on the source
+     */
+    private static function addSourceVoucher(int $epoch, int $voucherId): void
+    {
+        Database::sqlRun(
+            'INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, ?, ?)',
+            [self::SOURCE_SESSION, $epoch, $voucherId],
+        );
+    }
+
+    /**
+     * @param string $code Seeded voucher code
+     * @return int Persisted voucher ID
+     */
+    private static function voucherId(string $code): int
+    {
+        $id = Database::sql('SELECT id FROM voucher WHERE code = ?', [$code])->field('id');
+        self::assertNotNull($id);
+
+        return (int)$id;
+    }
+
+    /**
+     * @param int $userId Account with the voucher slot
+     * @return ?int Persisted selection, or null for an empty slot
+     */
+    private static function accountVoucherId(int $userId): ?int
+    {
+        $id = Database::sql('SELECT voucher_id FROM user_voucher_cart WHERE user_id = ?', [$userId])->field('voucher_id');
+
+        return $id === null ? null : (int)$id;
     }
 
     private static function addAccountLine(int $userId, int $productId, int $quantity): void

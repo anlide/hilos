@@ -1295,6 +1295,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 EcommerceShopDbContext::productWarehouseStocks,
                 EcommerceShopDbContext::vouchers,
                 EcommerceShopDbContext::sessionProductCarts,
+                EcommerceShopDbContext::sessionVoucherCarts,
             ],
             UserAgent::READS_DB,
         );
@@ -1318,6 +1319,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             OwnershipDeclaration::dbCollectionsOf(SessionsLibraryAgent::class)[$collection]->asList(),
         );
         self::assertContains(EcommerceShopDbContext::sessionProductCarts, SessionsLibraryAgent::readDbCollections());
+        self::assertContains(EcommerceShopDbContext::sessionVoucherCarts, SessionsLibraryAgent::readDbCollections());
         self::assertArrayNotHasKey($collection, OwnershipDeclaration::dbCollectionsOf(UserAgent::class));
         self::assertSame(
             [TruthSourceOperation::Update, TruthSourceOperation::Remove],

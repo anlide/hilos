@@ -21,6 +21,7 @@ use Hilos\Database\Object\Item\Object_;
  * @property int $cartEpoch
  * @property int $userId
  * @property bool $received
+ * @property bool $voucherSuperseded
  */
 final class ShopGuestCartTransfer extends Object_
 {
@@ -32,11 +33,12 @@ final class ShopGuestCartTransfer extends Object_
     public const string cartEpoch = 'cartEpoch';
     public const string userId = 'userId';
     public const string received = 'received';
+    public const string voucherSuperseded = 'voucherSuperseded';
 
     /**
      * Returns the value of a transfer object property by name.
      *
-     * @param string $property Property name (id, sessionId, cartEpoch, userId, received)
+     * @param string $property Property name (id, sessionId, cartEpoch, userId, received, voucherSuperseded)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity or collection access fails
      * @throws PropertyNotAccessibleException When the property does not exist or is not accessible
@@ -49,6 +51,7 @@ final class ShopGuestCartTransfer extends Object_
             self::cartEpoch => $this->entity->cart_epoch,
             self::userId => $this->entity->user_id,
             self::received => $this->entity->received,
+            self::voucherSuperseded => $this->entity->voucher_superseded,
             default => parent::__get($property),
         };
     }
@@ -56,7 +59,7 @@ final class ShopGuestCartTransfer extends Object_
     /**
      * Sets the value of a transfer object property.
      *
-     * @param string $property Property name to set (sessionId, cartEpoch, userId, received)
+     * @param string $property Property name to set (sessionId, cartEpoch, userId, received, voucherSuperseded)
      * @param mixed $value New value
      * @throws DatabaseException If entity or collection access fails
      */
@@ -67,6 +70,7 @@ final class ShopGuestCartTransfer extends Object_
             self::cartEpoch => $this->entity->cart_epoch = (int)$value,
             self::userId => $this->entity->user_id = (int)$value,
             self::received => $this->entity->received = (bool)$value,
+            self::voucherSuperseded => $this->entity->voucher_superseded = (bool)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -105,6 +109,7 @@ final class ShopGuestCartTransfer extends Object_
             self::cartEpoch => $this->entity->cart_epoch,
             self::userId => $this->entity->user_id,
             self::received => $this->entity->received,
+            self::voucherSuperseded => $this->entity->voucher_superseded,
         ];
     }
 }

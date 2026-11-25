@@ -43,7 +43,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     ];
 
     /**
-     * Registration holds read at handshake and guest product lines read when assigning a transfer.
+     * Registration holds read at handshake and guest cart contents checked when assigning a transfer.
      *
      * Only the users library writes these holds (HIL-1411). The read is declared in the project
      * because only {@see AuthFeature::mount()} mounts the registration reservation table.
@@ -54,6 +54,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         ...parent::READS_DB,
         HilosDbContext::registrationReservations,
         EcommerceShopDbContext::sessionProductCarts,
+        EcommerceShopDbContext::sessionVoucherCarts,
     ];
 
     /**

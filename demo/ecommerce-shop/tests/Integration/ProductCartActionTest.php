@@ -162,7 +162,7 @@ final class ProductCartActionTest extends IntegrationTestCase
         $productId = $this->subscribe(self::CLICKER, self::UNIQUE_SLUG);
         $otherProductId = $this->subscribe(self::OTHER_TAB, self::STOCK_SLUG);
         $voucherId = $this->voucher($sessionId);
-        Database::sqlRun('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucherId]);
+        Database::sqlRun('INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, 0, ?)', [$sessionId, $voucherId]);
         Database::sqlRun('INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (?, ?, 2)', [$otherSessionId, $otherProductId]);
         $guestOwner = $this->guestOwner();
         $this->drainSignals();

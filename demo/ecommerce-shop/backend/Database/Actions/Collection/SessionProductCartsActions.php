@@ -197,70 +197,49 @@ final class SessionProductCartsActions extends DbActions
     }
 
     /**
-     * Removes eligible lines of the carts of swept sessions.
+     * Sweeps the inactive, unassigned pairs of the sessions named by the session library.
      *
-     * The library holds every row, so the lines are picked from memory; no line of those sessions
-     * removes nothing and asks for no right.
-     *
-     * @param list<int> $sessionIds Numbers of the swept browser sessions
-     * @return int Number of lines removed
-     * @throws WriteNotAllowedException When this process may not remove a line
-     * @throws LogicException When collection class constants are not configured
-     * @throws InvalidArgumentException When a loaded object does not match its collection
-     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
-     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
-     * @throws DatabaseException When the rows cannot be read, or the database refuses the delete
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws HilosException When the right, the database or the collection refuses the delete
+     * @param list<int> $sessionIds Swept session IDs
+     * @throws HilosException When the candidates cannot be read or removed
+     * @throws Throwable When an orphan pair's transaction fails
      */
-    public function deleteForSessions(array $sessionIds): int
+    public function sweepForSessions(array $sessionIds): void
     {
-        $lines = [];
-        foreach ($this->collection->whereColumnIn(ObjectSessionProductCart::sessionId, ...$sessionIds) as $line) {
-            $orphan = $this->lockOrphanedLine($line->id, $line->sessionId, $line->cartEpoch);
-            if ($orphan !== null) {
-                $lines[] = $orphan;
-            }
-        }
-        if ($lines === []) {
-            return 0;
-        }
-
-        $this->ensureCanWrite(TruthSourceOperation::Remove);
-        foreach ($lines as $line) {
-            $this->deleteLine($line);
-        }
-
-        return count($lines);
+        $this->sweepOrphanPairs(
+            $this->objectCollection->storedLineIdsByPair($sessionIds),
+            Hilos::$db->sessionVoucherCarts->storedSlotIdsByPair($sessionIds),
+        );
     }
 
     /**
-     * Removes a recovery batch by primary key without walking the mirror or a whole session's cart.
+     * Sweeps only the physical rows chosen by the bounded recovery window.
      *
-     * @param list<int> $lineIds Persisted orphan line IDs selected for this recovery batch
-     * @throws WriteNotAllowedException When this process may not remove a line
-     * @throws ItemNotFoundException When a selected line does not resolve by key
-     * @throws LogicException When collection class constants are not configured
-     * @throws InvalidArgumentException When a loaded object does not match its collection
-     * @throws DatabaseException When a row cannot be read or deleted
-     * @throws SourceChangeSubscriberException When a change subscriber fails
-     * @throws HilosException When the collection refuses the delete
+     * @param list<int> $lineIds Persisted orphan line candidates
+     * @param list<int> $bindingIds Persisted orphan voucher candidates
+     * @throws HilosException When the candidates cannot be read or removed
+     * @throws Throwable When an orphan pair's transaction fails
      */
-    public function deleteRecoveryLines(array $lineIds): void
+    public function sweepRecoveryRows(array $lineIds, array $bindingIds): void
     {
-        if ($lineIds === []) {
-            return;
-        }
-
+        $lines = [];
         foreach ($lineIds as $lineId) {
             $coordinate = $this->objectCollection->storedLineCoordinate($lineId);
-            if ($coordinate === null) {
-                continue;
-            }
-            if ($this->lockOrphanedLine($lineId, ...$coordinate) !== null) {
-                $this->collection[$lineId]->actions->remove();
+            if ($coordinate !== null) {
+                [$sessionId, $cartEpoch] = $coordinate;
+                $lines[$sessionId][$cartEpoch][] = $lineId;
             }
         }
+
+        $bindings = [];
+        foreach ($bindingIds as $bindingId) {
+            $coordinate = Hilos::$db->sessionVoucherCarts->storedSlotCoordinate($bindingId);
+            if ($coordinate !== null) {
+                [$sessionId, $cartEpoch] = $coordinate;
+                $bindings[$sessionId][$cartEpoch] = $bindingId;
+            }
+        }
+
+        $this->sweepOrphanPairs($lines, $bindings);
     }
 
     /**
@@ -270,9 +249,9 @@ final class SessionProductCartsActions extends DbActions
      * @param int $cartEpoch Number of the assigned guest cart
      * @param int $transferId Saved transfer that authorizes clearing the pair
      * @param int $userId Recipient named in that transfer
-     * @param int $limit Remaining line budget
+     * @param int $limit Remaining source-row budget
      * @param Closure(): void $cleared Announcement to release when the entire pair is empty
-     * @return int Number of lines locked, including when the receipt no longer authorizes deletion
+     * @return int Number of source rows locked, including when the receipt no longer authorizes deletion
      * @throws HilosException When storage or the ORM write guard refuses the operation
      * @throws Throwable When the transaction or its announcement fails
      */
@@ -284,6 +263,10 @@ final class SessionProductCartsActions extends DbActions
             }
             $lineIds = $this->objectCollection->lockCartLineIds($sessionId, $cartEpoch, $limit);
             $count = count($lineIds);
+            $binding = $count < $limit ? Hilos::$db->sessionVoucherCarts->storedSlot($sessionId, $cartEpoch) : null;
+            if ($binding !== null) {
+                ++$count;
+            }
             if (!ObjectShopGuestCartTransfers::lockReceivedTransfer($transferId, $userId, $sessionId, $cartEpoch)) {
                 return $count;
             }
@@ -291,6 +274,7 @@ final class SessionProductCartsActions extends DbActions
             foreach ($lineIds as $lineId) {
                 $this->collection[$lineId]->actions->remove();
             }
+            $binding?->actions->remove();
             // A full portion leaves emptiness to a new attempt with the same durable receipt.
             if ($count < $limit) {
                 Database::afterCommit($cleared, DatabaseConnectionDefaults::PRIMARY_INDEX);
@@ -301,20 +285,58 @@ final class SessionProductCartsActions extends DbActions
     }
 
     /**
-     * @param int $lineId Primary key of the candidate
-     * @param int $sessionId Cart owner
-     * @param int $cartEpoch Candidate's stored epoch
-     * @return ?ObjectSessionProductCart The locked line if it still belongs to an inactive, unassigned pair
-     * @throws HilosException When a storage check fails
+     * Commits a pair before acquiring another session lock. On a transfer miss,
+     * InnoDB can retain a gap lock that also covers another session's insertion.
+     *
+     * @param array<int, array<int, list<int>>> $lineIds Physical line candidates by session and epoch
+     * @param array<int, array<int, int>> $bindingIds Physical binding candidates by session and epoch
+     * @throws HilosException When the pair cannot be checked or removed
+     * @throws Throwable When an orphan pair's transaction fails
      */
-    private function lockOrphanedLine(int $lineId, int $sessionId, int $cartEpoch): ?ObjectSessionProductCart
+    private function sweepOrphanPairs(array $lineIds, array $bindingIds): void
+    {
+        foreach (array_keys($lineIds + $bindingIds) as $sessionId) {
+            $sessionLines = $lineIds[$sessionId] ?? [];
+            $sessionBindings = $bindingIds[$sessionId] ?? [];
+            foreach (array_keys($sessionLines + $sessionBindings) as $cartEpoch) {
+                Database::transaction(
+                    DatabaseNames::PRIMARY,
+                    fn () => $this->sweepOrphanPair($sessionId, $cartEpoch, $sessionLines[$cartEpoch] ?? [], $sessionBindings[$cartEpoch] ?? null),
+                );
+            }
+        }
+    }
+
+    /**
+     * Rechecks both source families before locking the transfer key for this pair.
+     *
+     * @param int $sessionId Cart owner
+     * @param int $cartEpoch Epoch of the cart to sweep
+     * @param list<int> $lineIds Physical line candidates
+     * @param ?int $bindingId Physical binding candidate, if selected
+     * @throws HilosException When a storage check or removal fails
+     */
+    private function sweepOrphanPair(int $sessionId, int $cartEpoch, array $lineIds, ?int $bindingId): void
     {
         if (Hilos::$db->sessions->lockCartEpoch($sessionId) === $cartEpoch) {
-            return null;
+            return;
         }
 
-        $line = $this->objectCollection->lockCartLine($sessionId, $cartEpoch, $lineId);
-        return $line !== null && !$this->objectCollection->hasLockedTransfer($sessionId, $cartEpoch) ? $line : null;
+        $lockedIds = [];
+        foreach ($lineIds as $lineId) {
+            if ($this->objectCollection->lockCartLine($sessionId, $cartEpoch, $lineId) !== null) {
+                $lockedIds[] = $lineId;
+            }
+        }
+        $binding = $bindingId === null ? null : Hilos::$db->sessionVoucherCarts->storedSlot($sessionId, $cartEpoch, $bindingId);
+        if (($lockedIds === [] && $binding === null) || $this->objectCollection->hasLockedTransfer($sessionId, $cartEpoch)) {
+            return;
+        }
+
+        foreach ($lockedIds as $lineId) {
+            $this->collection[$lineId]->actions->remove();
+        }
+        $binding?->actions->remove();
     }
 
     /**
@@ -374,20 +396,5 @@ final class SessionProductCartsActions extends DbActions
         $this->ensureCanWrite(TruthSourceOperation::Update);
         $line->quantity = $quantity;
         $line->sync();
-    }
-
-    /**
-     * Deletes a line and lets the collection forget it.
-     *
-     * @param ObjectSessionProductCart $line The line
-     * @throws DatabaseException When the database refuses the delete
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws HilosException When the collection refuses the delete
-     */
-    private function deleteLine(ObjectSessionProductCart $line): void
-    {
-        $idString = $line->getIdString();
-        $line->delete();
-        unset($this->objectCollection[$idString]);
     }
 }

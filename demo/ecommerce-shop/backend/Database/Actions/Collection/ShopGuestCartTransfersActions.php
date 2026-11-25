@@ -27,7 +27,7 @@ use Hilos\HilosException;
 final class ShopGuestCartTransfersActions extends DbActions
 {
     /**
-     * Assigns a guest product cart to its recipient account.
+     * Assigns a guest cart to its recipient account.
      *
      * @param int $sessionId Source browser session ID
      * @param int $cartEpoch Number of the source cart
@@ -53,6 +53,7 @@ final class ShopGuestCartTransfersActions extends DbActions
         $transfer->cartEpoch = $cartEpoch;
         $transfer->userId = $userId;
         $transfer->received = false;
+        $transfer->voucherSuperseded = false;
         $transfer->sync();
         $this->addObjectToCollection($transfer);
     }

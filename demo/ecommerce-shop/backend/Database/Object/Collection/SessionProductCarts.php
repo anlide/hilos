@@ -15,7 +15,6 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlSortDirection;
@@ -40,7 +39,7 @@ final class SessionProductCarts extends Objects
     private const string CART_KEY = 'cart_key';
     private const string SESSION_MISSING = 'session_missing';
     private const string LAST_LINE_ID = 'last_line_id';
-    private const string LAST_VOUCHER_SESSION_ID = 'last_voucher_session_id';
+    private const string LAST_VOUCHER_ID = 'last_voucher_id';
     private const int TRANSFER_LINES_PER_PAGE = 25;
 
     /**
@@ -201,6 +200,21 @@ final class SessionProductCarts extends Objects
     }
 
     /**
+     * @param list<int> $sessionIds Swept sessions
+     * @return array<int, array<int, list<int>>> Physical line IDs by session and epoch
+     * @throws HilosException When the stored rows cannot be selected
+     */
+    public function storedLineIdsByPair(array $sessionIds): array
+    {
+        $ids = [];
+        foreach ($this->readStoredByColumn(EntitySessionProductCart::session_id, ...$sessionIds) as $line) {
+            $ids[$line->session_id][$line->cart_epoch][] = $line->id;
+        }
+
+        return $ids;
+    }
+
+    /**
      * Locks the exact saved line and reconciles the object that a caller will write through.
      *
      * @param int $sessionId Cart owner
@@ -249,7 +263,7 @@ final class SessionProductCarts extends Objects
     /**
      * Captures the high-water marks once for a recovery pass, using the last primary key of each table.
      *
-     * @return array{int, int} Greatest product line ID and voucher binding session ID, zero for an empty table
+     * @return array{int, int} Greatest product line ID and voucher binding ID, zero for an empty table
      * @throws NamedDatabaseException When a table or its database cannot be resolved
      * @throws DatabaseException When the query fails
      */
@@ -258,13 +272,13 @@ final class SessionProductCarts extends Objects
         $products = EntitySessionProductCart::getSqlTableName();
         $vouchers = EntitySessionVoucherCart::getSqlTableName();
         $lineId = EntitySessionProductCart::id;
-        $voucherSessionId = EntitySessionVoucherCart::session_id;
+        $voucherId = EntitySessionVoucherCart::id;
         $lastLine = self::LAST_LINE_ID;
-        $lastVoucher = self::LAST_VOUCHER_SESSION_ID;
+        $lastVoucher = self::LAST_VOUCHER_ID;
 
         $rows = Database::sql(
             "SELECT COALESCE((SELECT MAX(`{$lineId}`) FROM {$products}), 0) AS `{$lastLine}`,
-                COALESCE((SELECT MAX(`{$voucherSessionId}`) FROM {$vouchers}), 0) AS `{$lastVoucher}`",
+                COALESCE((SELECT MAX(`{$voucherId}`) FROM {$vouchers}), 0) AS `{$lastVoucher}`",
             index: EntitySessionProductCart::getDatabase()->connectionIndex,
         )->rows();
 
@@ -276,35 +290,31 @@ final class SessionProductCarts extends Objects
      *
      * @param int $afterLineId Exclusive lower bound for product line IDs
      * @param int $throughLineId Inclusive upper bound for product line IDs
-     * @param int $afterVoucherSessionId Exclusive lower bound for voucher binding session IDs
-     * @param int $throughVoucherSessionId Inclusive upper bound for voucher binding session IDs
+     * @param int $afterVoucherId Exclusive lower bound for voucher binding IDs
+     * @param int $throughVoucherId Inclusive upper bound for voucher binding IDs
      * @param int $limit Maximum number of rows per table
-     * @return array{array<int, bool>, array<int, bool>} Ordered cleanup candidate flags by product line ID and voucher binding session ID
+     * @return array{array<int, bool>, array<int, bool>} Ordered cleanup candidate flags by product line ID and voucher binding ID
      * @throws NamedDatabaseException When a table or its database cannot be resolved
      * @throws DatabaseException When a page query or its parameters are refused
      */
     public function cartRowAbsencesAfter(
         int $afterLineId,
         int $throughLineId,
-        int $afterVoucherSessionId,
-        int $throughVoucherSessionId,
+        int $afterVoucherId,
+        int $throughVoucherId,
         int $limit,
     ): array {
         return [
             $this->rowAbsencesAfter(
                 EntitySessionProductCart::class,
-                EntitySessionProductCart::id,
-                EntitySessionProductCart::session_id,
                 $afterLineId,
                 $throughLineId,
                 $limit,
             ),
             $this->rowAbsencesAfter(
                 EntitySessionVoucherCart::class,
-                EntitySessionVoucherCart::session_id,
-                EntitySessionVoucherCart::session_id,
-                $afterVoucherSessionId,
-                $throughVoucherSessionId,
+                $afterVoucherId,
+                $throughVoucherId,
                 $limit,
             ),
         ];
@@ -357,9 +367,7 @@ final class SessionProductCarts extends Objects
      * The held collection's column lookup walks the mirror and cannot bound work by physical rows.
      * Each SQL page visits at most $limit cart rows even if they all belong to a single session.
      *
-     * @param class-string<Entity> $cartEntity Cart table represented by the page
-     * @param string $keyColumn Cart row's primary key column
-     * @param string $sessionColumn Column identifying the owning session
+     * @param class-string<EntitySessionProductCart|EntitySessionVoucherCart> $cartEntity Cart table represented by the page
      * @param int $afterId Exclusive lower bound for cart keys
      * @param int $throughId Inclusive upper bound for cart keys
      * @param int $limit Maximum number of cart rows to check
@@ -367,7 +375,7 @@ final class SessionProductCarts extends Objects
      * @throws NamedDatabaseException When a table or its database cannot be resolved
      * @throws DatabaseException When the page query or its parameters are refused
      */
-    private function rowAbsencesAfter(string $cartEntity, string $keyColumn, string $sessionColumn, int $afterId, int $throughId, int $limit): array
+    private function rowAbsencesAfter(string $cartEntity, int $afterId, int $throughId, int $limit): array
     {
         if ($afterId >= $throughId) {
             return [];
@@ -375,29 +383,29 @@ final class SessionProductCarts extends Objects
 
         $carts = $cartEntity::getSqlTableName();
         $sessions = EntitySession::getSqlTableName();
+        $transfers = EntityShopGuestCartTransfer::getSqlTableName();
         $sessionId = EntitySession::id;
+        $sessionEpoch = EntitySession::cart_epoch;
+        $keyColumn = $cartEntity::id;
+        $sessionColumn = $cartEntity::session_id;
+        $epochColumn = $cartEntity::cart_epoch;
+        $transferId = EntityShopGuestCartTransfer::id;
+        $transferSession = EntityShopGuestCartTransfer::session_id;
+        $transferEpoch = EntityShopGuestCartTransfer::cart_epoch;
         $cartKey = self::CART_KEY;
         $missing = self::SESSION_MISSING;
-        $orphaned = "session_row.`{$sessionId}` IS NULL";
-        $epochColumn = '';
-        $transferJoin = '';
-        if ($cartEntity === EntitySessionProductCart::class) {
-            $epoch = EntitySessionProductCart::cart_epoch;
-            $transfers = EntityShopGuestCartTransfer::getSqlTableName();
-            $epochColumn = ", `{$epoch}`";
-            $transferJoin = "LEFT JOIN {$transfers} AS transfer ON transfer.`session_id` = cart.`{$sessionColumn}`
-                AND transfer.`cart_epoch` = cart.`{$epoch}`";
-            $orphaned = "({$orphaned} OR session_row.`cart_epoch` <> cart.`{$epoch}`) AND transfer.`id` IS NULL";
-        }
 
         $rows = Database::sql(
-            "SELECT cart.`{$cartKey}`, {$orphaned} AS `{$missing}`
+            "SELECT cart.`{$cartKey}`,
+                ((session_row.`{$sessionId}` IS NULL OR session_row.`{$sessionEpoch}` <> cart.`{$epochColumn}`)
+                    AND transfer.`{$transferId}` IS NULL) AS `{$missing}`
             FROM (
-                SELECT `{$keyColumn}` AS `{$cartKey}`, `{$sessionColumn}`{$epochColumn} FROM {$carts} FORCE INDEX (PRIMARY)
+                SELECT `{$keyColumn}` AS `{$cartKey}`, `{$sessionColumn}`, `{$epochColumn}` FROM {$carts} FORCE INDEX (PRIMARY)
                 WHERE `{$keyColumn}` > ? AND `{$keyColumn}` <= ? ORDER BY `{$keyColumn}` LIMIT ?
             ) AS cart
             LEFT JOIN {$sessions} AS session_row ON session_row.`{$sessionId}` = cart.`{$sessionColumn}`
-            {$transferJoin}
+            LEFT JOIN {$transfers} AS transfer ON transfer.`{$transferSession}` = cart.`{$sessionColumn}`
+                AND transfer.`{$transferEpoch}` = cart.`{$epochColumn}`
             ORDER BY cart.`{$cartKey}`",
             [$afterId, $throughId, $limit],
             index: $cartEntity::getDatabase()->connectionIndex,

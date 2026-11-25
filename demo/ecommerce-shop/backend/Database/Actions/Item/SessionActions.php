@@ -80,6 +80,7 @@ final class SessionActions extends FrameworkSessionActions
 
                 $leavesGuestCart = $stored->user_id === null && $stored->impersonator_user_id === null && $userId > 0;
                 $hasLines = $leavesGuestCart && Hilos::$db->sessionProductCarts->hasLockedCartLine($session->id, $stored->cart_epoch);
+                $hasVoucher = $leavesGuestCart && Hilos::$db->sessionVoucherCarts->hasLockedSlot($session->id, $stored->cart_epoch);
                 $session->acceptStored($stored);
                 $bind();
                 if (!$leavesGuestCart) {
@@ -88,7 +89,7 @@ final class SessionActions extends FrameworkSessionActions
 
                 $session->cartEpoch = $stored->cart_epoch + 1;
                 $session->sync();
-                if ($hasLines) {
+                if ($hasLines || $hasVoucher) {
                     Hilos::$db->shopGuestCartTransfers->actions->create($session->id, $stored->cart_epoch, $userId);
                 }
             });

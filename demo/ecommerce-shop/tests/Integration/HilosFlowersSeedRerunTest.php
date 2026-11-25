@@ -95,7 +95,7 @@ final class HilosFlowersSeedRerunTest extends TestCase
 
             Database::sql('INSERT INTO voucher (code, discount_percent, active) VALUES (?, 10, 1)', ['BOUQUET10']);
             $voucherId = Database::lastInsertId();
-            Database::sql('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucherId]);
+            Database::sql('INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, 0, ?)', [$sessionId, $voucherId]);
             Database::sql('INSERT INTO user_voucher_cart (user_id, voucher_id) VALUES (?, ?)', [$userId, $voucherId]);
 
             self::assertTrue(Seed::applyOne('001'));
@@ -107,7 +107,10 @@ final class HilosFlowersSeedRerunTest extends TestCase
             self::assertSame('BOUQUET10', Database::sql('SELECT code FROM voucher WHERE id = ?', [$voucherId])->field('code'));
             self::assertSame(
                 (string)$voucherId,
-                Database::sql('SELECT voucher_id FROM session_voucher_cart WHERE session_id = ?', [$sessionId])->field('voucher_id'),
+                Database::sql(
+                    'SELECT voucher_id FROM session_voucher_cart WHERE session_id = ? AND cart_epoch = 0',
+                    [$sessionId],
+                )->field('voucher_id'),
             );
             self::assertSame(
                 (string)$voucherId,

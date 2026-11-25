@@ -23,6 +23,7 @@ use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock;
 use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart;
 use Demo\EcommerceShop\Database\Entity\Item\SessionVoucherCart;
+use Demo\EcommerceShop\Database\Object\Item\SessionVoucherCart as ObjectSessionVoucherCart;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
 use Demo\EcommerceShop\Database\Object\Item\SessionProductCart as ObjectSessionProductCart;
 use Demo\EcommerceShop\Database\Object\Item\UserProductCart as ObjectUserProductCart;
@@ -196,7 +197,7 @@ final class CartStateTest extends IntegrationTestCase
         $lineId = self::guestLine($sessionId, $productId, 2);
         $otherLineId = self::guestLine($otherSessionId, $productId, 1);
         $voucher = $this->createVoucher('CARTSTEP10', 10);
-        Database::sql('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucher->id]);
+        Database::sql('INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, 0, ?)', [$sessionId, $voucher->id]);
         $this->startCartWorker();
         $guest = $this->guestCarts();
         $this->connectCartTab(self::FIRST_TAB, null, $sessionId);
@@ -537,7 +538,7 @@ final class CartStateTest extends IntegrationTestCase
         $lineId = self::guestLine($sessionId, $productId, 2);
         $otherLineId = self::guestLine($otherSessionId, $productId, 1);
         $voucher = $this->createVoucher('CARTEXACT10', 10);
-        Database::sql('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucher->id]);
+        Database::sql('INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, 0, ?)', [$sessionId, $voucher->id]);
         $this->startCartWorker();
         $guest = $this->guestCarts();
         $this->connectCartTab(self::FIRST_TAB, null, $sessionId);
@@ -1345,10 +1346,11 @@ final class CartStateTest extends IntegrationTestCase
         self::assertCount(1, $facts);
         self::assertInstanceOf(DbSyncCreatedSignalData::class, $facts[0]);
         self::assertSame(EcommerceShopDbContext::sessionVoucherCarts, $facts[0]->collectionKey);
-        self::assertSame((string)$sessionId, $facts[0]->idString);
+        $bindingId = self::storedGuestVoucherSlot($sessionId)?->id ?? self::fail('Missing persisted guest voucher');
+        self::assertSame((string)$bindingId, $facts[0]->idString);
         self::assertSame('guest-apply', $facts[0]->originRequestId);
-        self::assertSame($voucher->id, Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId);
-        self::assertFalse(isset(Hilos::$db->sessionVoucherCarts[$otherSessionId]));
+        self::assertSame($voucher->id, self::storedGuestVoucherSlot($sessionId)?->voucher_id);
+        self::assertNull(self::storedGuestVoucherSlot($otherSessionId));
         self::assertSame([[$group, [
             'userId' => null,
             'lines' => [['productId' => $productId, 'quantity' => 2]],
@@ -1374,7 +1376,7 @@ final class CartStateTest extends IntegrationTestCase
         self::assertNull($reply->reply);
         self::assertSame([], $facts);
         self::assertSame([], $states);
-        self::assertSame($voucher->id, Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId);
+        self::assertSame($voucher->id, self::storedGuestVoucherSlot($sessionId)?->voucher_id);
     }
 
     /** @return array<string, array{bool}> Whether Apply changes the persisted binding */
@@ -1410,22 +1412,23 @@ final class CartStateTest extends IntegrationTestCase
             Hilos::$sr->subscribeToGroup($tabGroup, new WebSocketGroupSubscribeSignalDTO($tab, $tabGroup));
         }
 
-        Database::sqlRun('UPDATE session_voucher_cart SET voucher_id = ? WHERE session_id = ?', [$stored->id, $sessionId]);
-        $slot = Hilos::$db->sessionVoucherCarts[$sessionId];
+        $bindingId = self::storedGuestVoucherSlot($sessionId)?->id ?? self::fail('Missing persisted guest voucher');
+        Database::sqlRun('UPDATE session_voucher_cart SET voucher_id = ? WHERE id = ?', [$stored->id, $bindingId]);
+        $slot = Hilos::$db->sessionVoucherCarts[$bindingId];
         self::assertSame($cached->id, $slot->voucherId);
         $selected = $replace ? $cached : $stored;
         $this->dispatchCartAction($guest, self::cartVoucherSignal('guest-stale-slot', $selected->code, CartStepQuantityActionDTO::GUEST));
         [$facts, $states, $reply] = $this->takeCartActionOutcome('guest-stale-slot', self::VOUCHER_ACTION);
 
         self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
-        self::assertSame($selected->id, SessionVoucherCart::getById($sessionId)?->voucher_id);
+        self::assertSame($selected->id, SessionVoucherCart::getById($bindingId)?->voucher_id);
         self::assertSame($selected->id, $slot->voucherId);
         $snapshot = ['userId' => null, 'lines' => [], 'voucherId' => $selected->id];
         if ($replace) {
             self::assertCount(1, $facts);
             self::assertInstanceOf(DbSyncUpdatedSignalData::class, $facts[0]);
             self::assertSame(EcommerceShopDbContext::sessionVoucherCarts, $facts[0]->collectionKey);
-            self::assertSame((string)$sessionId, $facts[0]->idString);
+            self::assertSame((string)$bindingId, $facts[0]->idString);
             self::assertSame('guest-stale-slot', $facts[0]->originRequestId);
             self::assertSame([SessionVoucherCart::voucher_id => $stored->id], $facts[0]->previous);
             self::assertSame([[$group, $snapshot, [self::FIRST_TAB, self::SECOND_TAB]]], $states);
@@ -1468,31 +1471,34 @@ final class CartStateTest extends IntegrationTestCase
         $original = null;
         if ($held) {
             $this->underAgent($guest, static fn () => $guest->applyVoucher($sessionId, $cached->code));
-            $original = $objects[$sessionId];
+            $bindingId = self::storedGuestVoucherSlot($sessionId)?->id ?? self::fail('Missing persisted guest voucher');
+            $original = $objects[$bindingId];
             self::assertNotNull($original);
             if ($occupied) {
-                Database::sqlRun('UPDATE session_voucher_cart SET voucher_id = ? WHERE session_id = ?', [$stored->id, $sessionId]);
+                Database::sqlRun('UPDATE session_voucher_cart SET voucher_id = ? WHERE id = ?', [$stored->id, $bindingId]);
             } else {
-                Database::sqlRun('DELETE FROM session_voucher_cart WHERE session_id = ?', [$sessionId]);
+                Database::sqlRun('DELETE FROM session_voucher_cart WHERE id = ?', [$bindingId]);
             }
         } else {
-            Database::sqlRun('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $stored->id]);
-            self::assertFalse(isset($objects[$sessionId]));
+            Database::sqlRun('INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, 0, ?)', [$sessionId, $stored->id]);
+            $bindingId = Database::lastInsertId();
+            self::assertFalse(isset($objects[$bindingId]));
         }
         $this->drainSignals();
 
         $this->underAgent($guest, fn () => $this->assertRolledBackWithoutCart(static function () use ($guest, $sessionId, $requested): void {
             $guest->applyVoucher($sessionId, $requested->code);
-            self::assertSame($requested->id, SessionVoucherCart::getById($sessionId)?->voucher_id);
-            self::assertSame($requested->id, Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId);
+            $slot = self::storedGuestVoucherSlot($sessionId) ?? self::fail('Missing persisted guest voucher');
+            self::assertSame($requested->id, $slot->voucher_id);
+            self::assertSame($requested->id, Hilos::$db->sessionVoucherCarts[$slot->id]->voucherId);
             self::assertNull(Hilos::$sr->getNextQueuedSignal());
         }));
 
-        self::assertSame($occupied ? $stored->id : null, SessionVoucherCart::getById($sessionId)?->voucher_id);
-        self::assertSame($held, isset($objects[$sessionId]));
+        self::assertSame($occupied ? $stored->id : null, self::storedGuestVoucherSlot($sessionId)?->voucher_id);
+        self::assertSame($held, isset($objects[$bindingId]));
         if ($original !== null) {
-            self::assertSame($original, $objects[$sessionId]);
-            self::assertSame($cached->id, Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId);
+            self::assertSame($original, $objects[$bindingId]);
+            self::assertSame($cached->id, Hilos::$db->sessionVoucherCarts[$bindingId]->voucherId);
         }
     }
 
@@ -1551,6 +1557,126 @@ final class CartStateTest extends IntegrationTestCase
         ], $this->takeCartPage(self::FIRST_TAB));
     }
 
+    /** @return iterable<string, array{bool, ?bool, string, string, string}> Source contents and expected account amounts */
+    public static function departingCartVouchers(): iterable
+    {
+        yield 'products and a replacement voucher' => [true, true, '160000', '40000', '120000'];
+        yield 'products without a voucher' => [true, null, '160000', '16000', '144000'];
+        yield 'active voucher alone' => [false, true, '64000', '16000', '48000'];
+        yield 'inactive voucher alone' => [false, false, '64000', '0', '64000'];
+    }
+
+    /**
+     * @param bool $withGuestLine Whether the source also has products
+     * @param ?bool $incomingActive Voucher catalog status, or null when no guest voucher was selected
+     * @param string $itemsTotal Expected Items amount
+     * @param string $discount Expected voucher deduction
+     * @param string $total Expected payable amount
+     */
+    #[DataProvider('departingCartVouchers')]
+    public function testBindAndOfferRefreshTheAccountCartWithTheSavedVoucher(
+        bool $withGuestLine,
+        ?bool $incomingActive,
+        string $itemsTotal,
+        string $discount,
+        string $total,
+    ): void {
+        $product = self::seededProduct('ceramic-pot-18-cm-sand');
+        $userId = $this->person('Cart voucher transfer shopper');
+        $sessionId = $this->storedGuestSession();
+        $accountVoucher = $this->createVoucher('CARTOWNER10', 10);
+        $owner = $this->personAgent($userId);
+        self::accountLine($userId, $product, 2);
+        $this->underAgent($owner, static fn () => $owner->applyVoucher($accountVoucher->code));
+        if ($withGuestLine) {
+            self::guestLine($sessionId, $product, 3);
+        }
+
+        $selected = $accountVoucher;
+        $mirror = null;
+        if ($incomingActive !== null) {
+            $selected = $this->createVoucher('CARTTRANSFER25', 25);
+            if (!$incomingActive) {
+                $this->underVoucherLibrary(static fn () => $selected->actions->setActive(false));
+            }
+            $guest = $this->guestCarts();
+            $this->underAgent($guest, static fn () => $guest->applyVoucher($sessionId, $accountVoucher->code));
+            $bindingId = self::storedGuestVoucherSlot($sessionId)?->id ?? self::fail('Missing persisted guest voucher');
+            $mirror = Hilos::$db->sessionVoucherCarts[$bindingId];
+            Database::sqlRun('UPDATE session_voucher_cart SET voucher_id = ? WHERE id = ?', [$selected->id, $bindingId]);
+            self::assertSame($accountVoucher->id, $mirror->voucherId);
+            self::assertSame($selected->id, Hilos::$db->sessionVoucherCarts->storedVoucherId($sessionId, 0));
+        }
+
+        $session = Hilos::$db->sessions[$sessionId];
+        $this->underAgent($this->sessionsLibrary(), static fn () => $session->actions->bindUser($userId));
+        $transferId = (int)Database::sql(
+            'SELECT id FROM shop_guest_cart_transfer WHERE session_id = ? AND cart_epoch = 0 AND user_id = ?',
+            [$sessionId, $userId],
+        )->field('id');
+        self::assertGreaterThan(0, $transferId);
+        if ($mirror !== null) {
+            self::assertSame($accountVoucher->id, $mirror->voucherId);
+        }
+
+        $this->startCartWorker();
+        $this->connectCartTab(self::FIRST_TAB, $userId, $sessionId);
+        $this->drainSignals();
+        $this->subscribeCart($owner, self::FIRST_TAB);
+        $before = $this->takeCartPage(self::FIRST_TAB);
+        self::assertSame([2], array_column($before['lines'], 'quantity'));
+        self::assertSame(['code' => 'CARTOWNER10', 'active' => true, 'discount' => '6400'], $before['voucher']);
+        self::assertSame('57600', $before['total']);
+
+        $offer = SignalDTO::fromJson((new SignalDTO(
+            new SignalSource(SignalSource::AGENT, GuestCartsLibraryAgent::AGENT_TYPE),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(EcommerceShopSignalConstants::GUEST_CART_TRANSFER_OFFER),
+            new AgentSignalData(new GuestCartTransferOfferSignalData($transferId, $userId)),
+        ))->toJson());
+        self::assertEquals([new AgentDestination($owner->getType(), $owner->getIndex())], Hilos::$sr->getDestinations($offer));
+        $this->deliverCartFrame($owner, $offer);
+
+        $changes = [];
+        $states = [];
+        $receipts = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $data = $signal->data;
+            if ($data instanceof DbSyncUpdatedSignalData
+                && in_array($data->collectionKey, [EcommerceShopDbContext::userProductCarts, EcommerceShopDbContext::userVoucherCarts], true)
+            ) {
+                $changes[] = $data;
+            } elseif ($signal->signalName->getName() === EcommerceShopSignalConstants::CART_STATE) {
+                self::assertInstanceOf(WebSocketSignalData::class, $data);
+                $states[] = self::cartState($data);
+            } elseif ($signal->signalName->getName() === EcommerceShopSignalConstants::GUEST_CART_TRANSFER_RECEIVED) {
+                self::assertInstanceOf(AgentSignalData::class, $data);
+                $receipts[] = $data->data->toArray();
+            }
+        }
+        $quantity = $withGuestLine ? 5 : 2;
+        self::assertSame([[CartGroup::forUser($userId), [
+            'userId' => $userId,
+            'lines' => [['productId' => $product, 'quantity' => $quantity]],
+            'voucherId' => $selected->id,
+        ]]], $states);
+        self::assertSame([['transferId' => $transferId, 'userId' => $userId]], $receipts);
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $userId));
+        self::assertSame(
+            $selected->id,
+            (int)Database::sql('SELECT voucher_id FROM user_voucher_cart WHERE user_id = ?', [$userId])->field('voucher_id'),
+        );
+
+        $this->flushCartUpdates(...$changes);
+        $cart = $this->takeCartPage(self::FIRST_TAB);
+        self::assertSame($userId, $cart['userId']);
+        self::assertSame([$product], array_column($cart['lines'], 'productId'));
+        self::assertSame([$quantity], array_column($cart['lines'], 'quantity'));
+        self::assertSame($itemsTotal, $cart['itemsTotal']);
+        self::assertSame(['code' => $selected->code, 'active' => $incomingActive ?? true, 'discount' => $discount], $cart['voucher']);
+        self::assertSame($total, $cart['total']);
+    }
+
     /** A stale owner, pending handoff or mismatched kind cannot write to either cart. */
     public function testVoucherApplicationThroughCartPageRefusesUnconfirmedOwnership(): void
     {
@@ -1587,7 +1713,7 @@ final class CartStateTest extends IntegrationTestCase
         self::assertNull(Hilos::$rt->connections[self::FIRST_TAB]?->userId);
         $this->dispatchCartAction($guest, self::cartVoucherSignal('stale-owner', $voucher->code, CartStepQuantityActionDTO::GUEST));
         $this->assertCartActionRefused('stale-owner', $reason, self::VOUCHER_ACTION);
-        self::assertFalse(isset(Hilos::$db->sessionVoucherCarts[$sessionId]));
+        self::assertNull(self::storedGuestVoucherSlot($sessionId));
         self::assertFalse(isset(Hilos::$db->userVoucherCarts[$userId]));
     }
 
@@ -1613,18 +1739,20 @@ final class CartStateTest extends IntegrationTestCase
         $primary = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
         $peer = new mysqli($primary->host, $primary->user, $primary->password, $primary->database, $primary->port, $primary->socket);
         $lockSession = static fn () => $peer->execute_query('SELECT id FROM hilos_session WHERE id = ? FOR UPDATE NOWAIT', [$sessionId]);
-        $mirror = new class ($collection, (string)($userId ?? $sessionId)) implements SourceMirrorSubscriberInterface {
+        $mirror = new class ($collection, $sessionId, $userId) implements SourceMirrorSubscriberInterface {
             public ?Closure $probe = null;
 
-            public function __construct(private readonly string $collection, private readonly string $bindingId)
+            public function __construct(private readonly string $collection, private readonly int $sessionId, private readonly ?int $userId)
             {
             }
 
             public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
             {
-                if ($change->sourceKey === $this->collection && $change->sourceId === $this->bindingId
-                    && $change->mutationType === TableMutationType::Create
-                ) {
+                $matches = $this->userId === null
+                    ? ($change->row[ObjectSessionVoucherCart::sessionId] ?? null) === $this->sessionId
+                        && ($change->row[ObjectSessionVoucherCart::cartEpoch] ?? null) === 0
+                    : $change->sourceId === (string)$this->userId;
+                if ($change->sourceKey === $this->collection && $matches && $change->mutationType === TableMutationType::Create) {
                     ($this->probe)?->__invoke();
                 }
             }
@@ -1677,7 +1805,7 @@ final class CartStateTest extends IntegrationTestCase
         $this->dispatchCartAction($owner, self::cartVoucherSignal('apply-with-stale-session', $replacement->code, $kind));
         $this->assertCartActionRefused('apply-with-stale-session', $reason, self::VOUCHER_ACTION);
         self::assertSame($voucher->id, $userId === null
-            ? Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId
+            ? self::storedGuestVoucherSlot($sessionId)?->voucher_id
             : Hilos::$db->userVoucherCarts[$userId]->voucherId);
     }
 
@@ -1726,7 +1854,7 @@ final class CartStateTest extends IntegrationTestCase
             'voucherId' => $voucher->id,
         ]]], $states);
         self::assertNull(Database::sql('SELECT id FROM session_product_cart WHERE id = ?', [$guestLine])->field('id'));
-        self::assertSame($voucher->id, Hilos::$db->sessionVoucherCarts[$sessionId]->voucherId);
+        self::assertSame($voucher->id, self::storedGuestVoucherSlot($sessionId)?->voucher_id);
 
         $neighborUserId = $this->person('Neighboring cart shopper');
         $neighborAccountLine = self::accountLine($neighborUserId, $outOfStockProduct, 1);
@@ -2495,6 +2623,15 @@ final class CartStateTest extends IntegrationTestCase
         )->field('quantity');
 
         return $quantity === null ? null : (int)$quantity;
+    }
+
+    /**
+     * @param int $sessionId Browser session ID
+     * @return ?SessionVoucherCart Saved binding of the fixture's cart epoch
+     */
+    private static function storedGuestVoucherSlot(int $sessionId): ?SessionVoucherCart
+    {
+        return SessionVoucherCart::get([SessionVoucherCart::session_id => $sessionId, SessionVoucherCart::cart_epoch => 0])->first();
     }
 
     /**

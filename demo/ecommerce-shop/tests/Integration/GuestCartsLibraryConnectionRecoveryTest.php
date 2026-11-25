@@ -206,7 +206,10 @@ final class GuestCartsLibraryConnectionRecoveryTest extends IntegrationTestCase
             'INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (?, ?, 1)',
             [$sessionId, $productId],
         );
-        $connection->execute_query('INSERT INTO session_voucher_cart (session_id, voucher_id) VALUES (?, ?)', [$sessionId, $voucherId]);
+        $connection->execute_query(
+            'INSERT INTO session_voucher_cart (session_id, cart_epoch, voucher_id) VALUES (?, 0, ?)',
+            [$sessionId, $voucherId],
+        );
     }
 
     /** @param list<int> $expected Remaining fixture session keys in each table */

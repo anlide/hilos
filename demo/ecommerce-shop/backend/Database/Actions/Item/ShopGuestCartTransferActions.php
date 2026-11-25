@@ -24,7 +24,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 final class ShopGuestCartTransferActions extends DbActions
 {
     /**
-     * Saves receipt of the lines in the same transaction as the recipient's cart writes.
+     * Saves receipt of the source in the same transaction as the recipient's cart writes.
      *
      * @throws ItemNotFoundForUpdateException When the transfer is no longer persisted
      * @throws WriteNotAllowedException When this process may not update the transfer
@@ -43,6 +43,29 @@ final class ShopGuestCartTransferActions extends DbActions
 
         $this->ensureCanWrite();
         $this->object->received = true;
+        $this->object->sync();
+    }
+
+    /**
+     * Gives a later choice precedence over the voucher of a locked pending transfer.
+     *
+     * @throws ItemNotFoundForUpdateException When the transfer is no longer persisted
+     * @throws WriteNotAllowedException When this process may not update the transfer
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
+     * @throws DatabaseException When the update fails
+     * @throws ObjectCollectionNullException When the backing collection is missing
+     * @throws ObjectGetIdStringNotImplementedException When the transfer has no usable key
+     * @throws SourceChangeSubscriberException When a change subscriber fails
+     * @throws InvalidArgumentException When the DB sync signal cannot be queued
+     */
+    public function markVoucherSuperseded(): void
+    {
+        if (!$this->object->isRelated()) {
+            throw new ItemNotFoundForUpdateException('Guest cart transfer is no longer persisted');
+        }
+
+        $this->ensureCanWrite();
+        $this->object->voucherSuperseded = true;
         $this->object->sync();
     }
 
