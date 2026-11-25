@@ -7,6 +7,7 @@ import {
   setStock,
   warehouseRow,
 } from '../helpers/catalogProducts.js'
+import { submitCartVoucher } from '../helpers/cartVoucher.js'
 import {
   bindGuestCartItem,
   deferGuestCartAddCleanup,
@@ -50,7 +51,6 @@ test('a guest sees live prices in the cart and follows the product link', async 
   cleanup,
 }) => {
   const name = `e2e product ${randomBytes(6).toString('hex')}`
-  const command = createStandCommandChannel({ timeoutMs: 5_000 })
   const guestContext = await browser.newContext(
     timeZoneContextOptions(test.info().project.use, 'Africa/Mogadishu'),
   )
@@ -144,98 +144,6 @@ test('a guest sees live prices in the cart and follows the product link', async 
     await expectDocumentUnchanged(expect, guest)
   })
 
-  const voucherPrefix = `ZZE2EV${randomBytes(11).toString('hex').toUpperCase()}`
-  const firstCode = `${voucherPrefix}01`
-  const replacementCode = `${voucherPrefix}02`
-  const inactiveCode = `${voucherPrefix}03`
-  const unknownCode = `${voucherPrefix}04`
-  const openVoucherForm = guest.getByTestId('cart-voucher-apply-open')
-  const voucherForm = guest.getByTestId('cart-voucher-apply')
-  const voucherCode = voucherForm.getByTestId('cart-voucher-apply-code')
-  const voucherError = voucherForm.getByTestId('cart-voucher-apply-error')
-  const applyVoucher = async (code: string) => {
-    await typeInto(voucherCode, code)
-    await clickSubmit(expect, guest.getByTestId('cart-voucher-apply-submit'))
-  }
-  const voucherRow = guest.getByTestId('shop-cart-voucher')
-  const expectVoucher = async (
-    code: string,
-    deduction: string,
-    total: string,
-  ) => {
-    await expect(voucherRow.locator('dt')).toHaveText(`Voucher ${code}`)
-    await expect(voucherRow.locator('dd')).toHaveText(deduction)
-    await expect(guest.getByTestId('shop-cart-total')).toHaveText(total)
-    await expectDocumentUnchanged(expect, guest)
-  }
-
-  await test.step('apply a mixed-case voucher and see the discounted total', async () => {
-    for (const voucher of [
-      { code: firstCode, discountPercent: 10, active: true },
-      { code: replacementCode, discountPercent: 20, active: true },
-      { code: inactiveCode, discountPercent: 25, active: false },
-    ]) {
-      const { code } = voucher
-      expect(
-        await command('test:ecommerce-shop:voucher-fixture-get', { code }),
-      ).toEqual({ voucher: null })
-      cleanup.defer(() =>
-        command('test:ecommerce-shop:voucher-fixture-delete', { code }),
-      )
-      expect(
-        await command('test:ecommerce-shop:voucher-fixture-create', voucher),
-      ).toMatchObject({ voucher })
-    }
-
-    const token = await sessionToken(guest)
-    const setCartVoucher = 'test:ecommerce-shop:guest-cart-set-voucher'
-    const clearVoucher = (code: string) =>
-      command(setCartVoucher, { sessionToken: token, code, applied: false })
-    cleanup.defer(async () => {
-      // The browser may have applied either code even if an assertion failed.
-      const reply = await clearVoucher(replacementCode).catch(
-        (error: unknown) => {
-          if (
-            !(error instanceof Error) ||
-            error.message !==
-              `${setCartVoucher} failed: This guest cart holds a different voucher`
-          ) {
-            throw error
-          }
-          return clearVoucher(firstCode)
-        },
-      )
-      expect(reply).toEqual({ applied: false })
-    })
-
-    await openVoucherForm.click()
-    await applyVoucher(`z${firstCode.slice(1)}`)
-    await expect(voucherForm).toBeHidden()
-    await expectVoucher(firstCode, '−₴630.15', '₴5,671.35')
-  })
-
-  await test.step('keep the applied voucher when another code is refused', async () => {
-    await openVoucherForm.click()
-    for (const { code, reason } of [
-      { code: unknownCode, reason: 'Voucher code was not found' },
-      { code: inactiveCode, reason: 'This voucher is inactive' },
-    ]) {
-      await applyVoucher(code)
-      await expect(
-        voucherError.getByText(reason, { exact: true }),
-      ).toBeVisible()
-      await expect(voucherCode).toHaveValue(code)
-      await expectVoucher(firstCode, '−₴630.15', '₴5,671.35')
-    }
-  })
-
-  await test.step('replace the voucher and see the new total in the same cart', async () => {
-    await applyVoucher(replacementCode)
-    await expect(voucherForm).toBeHidden()
-    await expectVoucher(replacementCode, '−₴1,260.30', '₴5,041.20')
-    await expect(voucherRow).not.toContainText(firstCode)
-  })
-
   await test.step('follow the cart line to its product page', async () => {
     await productLink.click()
     await expect(guest).toHaveURL(/\/product\/[^/]+$/)
@@ -302,8 +210,7 @@ test('signing in combines the guest and account carts and signing out opens an e
 
   const applyVoucher = async (code: string) => {
     await openVoucherForm.click()
-    await typeInto(voucherForm.getByTestId('cart-voucher-apply-code'), code)
-    await clickSubmit(expect, page.getByTestId('cart-voucher-apply-submit'))
+    await submitCartVoucher(expect, page, code)
     await expect(voucherForm).toBeHidden()
     await expect(voucherRow.locator('dt')).toHaveText(`Voucher ${code}`)
   }

@@ -1,7 +1,18 @@
 import { randomBytes } from 'node:crypto'
 
 import { test as base, expect } from '../test.js'
-import { moneyFieldLabel } from '../../../frontend/src/money/money.js'
+import {
+  createStockProduct,
+  deferCatalogProductDelete,
+  setStock,
+  warehouseRow,
+} from '../helpers/catalogProducts.js'
+import { bindGuestCartItem } from '../helpers/guestCart.js'
+import {
+  applyGuestCartVoucher,
+  createVoucherFixture,
+  reserveVoucherCodes,
+} from '../helpers/voucherFixtures.js'
 import { PAGE_ADMIN_PRODUCT_STOCK } from '../../../frontend/src/pages/keys.js'
 
 import {
@@ -10,17 +21,15 @@ import {
   cleanupFixtures,
   clickSubmit,
   dismissToasts,
-  drawPhotoFixture,
   expectDocumentUnchanged,
   expectPageReady,
   gotoPage,
   grantAdminToSelf,
   markDocument,
-  sessionToken,
+  timeZoneContextOptions,
   typeInto,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
 // spec-owner: demo — the shop's Vouchers page and live voucher discounts in guest carts.
 
@@ -30,9 +39,6 @@ const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 test.use({ colorScheme: 'light', trace: 'off' })
 
 const VOUCHERS_PATH = '/hilos/vouchers'
-const VOUCHER_GET_COMMAND = 'test:ecommerce-shop:voucher-fixture-get'
-const VOUCHER_DELETE_COMMAND = 'test:ecommerce-shop:voucher-fixture-delete'
-const command = createStandCommandChannel({ timeoutMs: 5_000 })
 
 test('shop.vouchers-add: an admin corrects a refused discount, adds and edits a voucher live and gets a duplicate-code refusal', async ({
   page,
@@ -41,20 +47,7 @@ test('shop.vouchers-add: an admin corrects a refused discount, adds and edits a 
   const code = `ZZE2EV${randomBytes(12).toString('hex').toUpperCase()}`
   const renamedCode = `ZZE2EV${randomBytes(12).toString('hex').toUpperCase()}`
   const enteredCode = code.toLowerCase()
-  for (const ownedCode of [code, renamedCode]) {
-    expect(await command(VOUCHER_GET_COMMAND, { code: ownedCode })).toEqual({
-      voucher: null,
-    })
-    cleanup.defer(async () => {
-      expect(await command(VOUCHER_GET_COMMAND, { code: ownedCode })).toEqual({
-        voucher: null,
-      })
-    })
-  }
-  // LIFO deletes the original first, so a queued Save cannot leave a renamed row.
-  for (const ownedCode of [renamedCode, code]) {
-    cleanup.defer(() => command(VOUCHER_DELETE_COMMAND, { code: ownedCode }))
-  }
+  await reserveVoucherCodes(expect, cleanup, code, renamedCode)
 
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, VOUCHERS_PATH)
@@ -157,129 +150,49 @@ test('shop.vouchers-toggle: an admin switches a discount off and back on in an o
   const code = `ZZE2EV${randomBytes(12).toString('hex').toUpperCase()}`
   const name = `e2e product ${randomBytes(6).toString('hex')}`
   const discountPercent = 25
-  const itemsAmount = '₴1,200'
-  const discountedTotal = '₴900'
-  const deduction = '−₴300'
-  const setCartQuantity = 'test:ecommerce-shop:guest-cart-set-quantity'
-  const setCartVoucher = 'test:ecommerce-shop:guest-cart-set-voucher'
+  const itemsAmount = '₴1,230'
+  const discountedTotal = '₴922.50'
+  const deduction = '−₴307.50'
 
-  const guestContext = await browser.newContext()
+  const guestContext = await browser.newContext(
+    timeZoneContextOptions(test.info().project.use, 'Africa/Mogadishu'),
+  )
   cleanup.defer(() => guestContext.close())
   const guest = await guestContext.newPage()
 
-  await test.step('create the active voucher', async () => {
-    expect(await command(VOUCHER_GET_COMMAND, { code })).toEqual({
-      voucher: null,
-    })
-    cleanup.defer(() => command(VOUCHER_DELETE_COMMAND, { code }))
-    const voucher = { code, discountPercent, active: true }
-    expect(
-      await command('test:ecommerce-shop:voucher-fixture-create', voucher),
-    ).toMatchObject({ voucher })
-  })
+  await test.step('create the active voucher', () =>
+    createVoucherFixture(expect, cleanup, {
+      code,
+      discountPercent,
+      active: true,
+    }))
 
+  deferCatalogProductDelete(cleanup, name)
   await grantAdminToSelf(expect, page)
-  const productId =
-    await test.step('create a stock item priced at ₴400', async () => {
-      cleanup.defer(() =>
-        command('test:ecommerce-shop:product-delete', { name }),
-      )
-      await gotoPage(expect, page, '/hilos/products', PAGE_READY)
-      const products = page.getByTestId('admin-products-table')
-      await products.getByTestId('hilos-table-main-action').click()
 
-      const dialog = page.getByRole('dialog', {
-        name: 'Add product',
-        exact: true,
-      })
-      await typeInto(
-        dialog.getByRole('textbox', { name: 'Name', exact: true }),
+  const { productId } =
+    await test.step('create a stock item with a picture', () =>
+      createStockProduct(
+        expect,
+        page,
         name,
-      )
-      await dialog
-        .getByRole('combobox', { name: 'Category' })
-        .selectOption({ label: 'Pots & planters' })
-      await dialog
-        .getByRole('radio', { name: 'Unique piece' })
-        .press('ArrowRight')
-      await expect(
-        dialog.getByRole('radio', { name: 'Stock item' }),
-      ).toBeChecked()
-      await typeInto(
-        dialog.getByRole('textbox', { name: moneyFieldLabel('Price') }),
-        '400',
-      )
-      await typeInto(
-        dialog.getByRole('textbox', { name: 'Description' }),
+        'Pots & planters',
         'A ceramic planter carried in stock.',
-      )
-
-      const [chooser] = await Promise.all([
-        page.waitForEvent('filechooser'),
-        dialog.getByTestId('admin-products-add-picture').click(),
-      ])
-      await chooser.setFiles({
-        name: 'planter.png',
-        mimeType: 'image/png',
-        buffer: await drawPhotoFixture(page, {
-          width: 320,
-          height: 240,
-          mimeType: 'image/png',
-          rectangles: [
-            { color: '#246ac4', x: 0, y: 0, width: 320, height: 240 },
-          ],
-        }),
-      })
-      await expect(
-        dialog.getByTestId('admin-products-add-preview'),
-      ).toBeVisible()
-      await clickSubmit(expect, dialog.getByTestId('admin-products-add-submit'))
-      await expect(dialog).toBeHidden()
-      await products.getByRole('link', { name, exact: true }).click()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(/\/hilos\/product\/[1-9]\d*$/)
-
-      return Number(new URL(page.url()).pathname.split('/').at(-1))
-    })
+      ))
 
   await test.step('set stock for the cart item', async () => {
     await page.getByTestId(`hilos-page-tab-${PAGE_ADMIN_PRODUCT_STOCK}`).click()
     await expectPageReady(expect, page)
     const stockPath = new URL(page.url()).pathname
-    const warehouseRow = page
-      .getByTestId('admin-product-stock-table')
-      .getByRole('row')
-      .filter({
-        has: page.getByRole('cell', { name: 'Odesa · Peresyp', exact: true }),
-      })
-    const setStock = async (units: string) => {
-      const dialog = page.getByRole('dialog', {
-        name: 'Set stock',
-        exact: true,
-      })
-      await warehouseRow.getByTestId('admin-product-stock-edit-open').click()
-      await typeInto(
-        dialog.getByTestId('admin-product-stock-edit-units'),
-        units,
-      )
-      await clickSubmit(
-        expect,
-        dialog.getByTestId('admin-product-stock-edit-submit'),
-      )
-      await expect(dialog).toBeHidden()
-      await expect(
-        warehouseRow.getByRole('cell', { name: units, exact: true }),
-      ).toBeVisible()
-    }
-
-    const zero = warehouseRow.getByRole('cell', { name: '0', exact: true })
+    const row = warehouseRow(page)
+    const zero = row.getByRole('cell', { name: '0', exact: true })
     await expect(zero).toBeVisible()
     cleanup.defer(async () => {
       await gotoPage(expect, page, stockPath, PAGE_READY)
-      await expect(warehouseRow).toBeVisible()
-      if (!(await zero.isVisible())) await setStock('0')
+      await expect(row).toBeVisible()
+      if (!(await zero.isVisible())) await setStock(expect, page, '0')
     })
-    await setStock('8')
+    await setStock(expect, page, '8')
   })
 
   const items = guest
@@ -296,35 +209,9 @@ test('shop.vouchers-toggle: an admin switches a discount off and back on in an o
     await expect(guest.getByTestId('shop-cart-empty')).toBeVisible()
     await markDocument(guest)
 
-    const token = await sessionToken(guest)
-    cleanup.defer(() =>
-      command(setCartQuantity, {
-        sessionToken: token,
-        productId,
-        quantity: 0,
-      }),
-    )
-    await command(setCartQuantity, {
-      sessionToken: token,
-      productId,
-      quantity: 3,
-    })
-    cleanup.defer(async () => {
-      expect(
-        await command(setCartVoucher, {
-          sessionToken: token,
-          code,
-          applied: false,
-        }),
-      ).toEqual({ applied: false })
-    })
-    expect(
-      await command(setCartVoucher, {
-        sessionToken: token,
-        code,
-        applied: true,
-      }),
-    ).toEqual({ applied: true })
+    const setQuantity = await bindGuestCartItem(cleanup, guest, productId)
+    await setQuantity(3)
+    await applyGuestCartVoucher(expect, cleanup, guest, code)
 
     await expect(guest.getByTestId('shop-cart-product-link')).toHaveText(name)
     await expect(voucherLabel).toHaveText(`Voucher ${code}`)
