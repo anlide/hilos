@@ -3,6 +3,14 @@ import type { Page } from '@playwright/test'
 
 import { test as base, expect } from '../test.js'
 import { drawCatalogPicture } from '../helpers/catalogPictures.js'
+import {
+  PRODUCT_DELETE_COMMAND,
+  createStockProduct,
+  setStock,
+  warehouseRow,
+  withStockPage,
+} from '../helpers/catalogProducts.js'
+import { bindGuestCartItem } from '../helpers/guestCart.js'
 import { moneyFieldLabel } from '../../../frontend/src/money/money.js'
 import {
   PAGE_ADMIN_PRODUCT,
@@ -16,7 +24,6 @@ import {
 } from '../../../frontend/src/views/Category/categoryProducts.js'
 import {
   SIGNAL_TYPE_ACTION,
-  SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIBE,
 } from '../../../../../framework/frontend/core/src/protocol/constants.js'
@@ -27,7 +34,6 @@ import {
   clickSubmit,
   deliveryObject,
   dismissToasts,
-  drawPhotoFixture,
   emulateSystemTheme,
   expectDocumentUnchanged,
   expectPageReady,
@@ -36,9 +42,9 @@ import {
   gotoPage,
   grantAdminToSelf,
   markDocument,
-  sessionToken,
   shownByTestId,
   tableTotal,
+  timeZoneContextOptions,
   trackedActionReplies,
   type TestCleanup,
   typeInto,
@@ -57,215 +63,8 @@ const CATEGORIES_TABLE = 'admin-categories-table'
 // EcommerceShopCommandConstants::CATEGORY_TEST_DELETE, request key `name`.
 const CATEGORY_DELETE_COMMAND = 'test:ecommerce-shop:category-delete'
 
-// EcommerceShopCommandConstants::PRODUCT_TEST_DELETE, request key `name`.
-const PRODUCT_DELETE_COMMAND = 'test:ecommerce-shop:product-delete'
-
-const GUEST_CART_SET_QUANTITY_COMMAND =
-  'test:ecommerce-shop:guest-cart-set-quantity'
-
 // Browser traces can include the guest's session cookie.
 const guestCartTest = test.extend({ trace: 'off' })
-
-guestCartTest(
-  'adding a product to a guest cart updates another tab without reloading',
-  async ({ browser, cleanup }) => {
-    // The product ID in 001_hilos_flowers.sql identifies the cleanup target.
-    const morningMeadow = {
-      id: 1,
-      slug: 'morning-meadow',
-      name: 'Morning meadow',
-    }
-    const productPath = `/product/${morningMeadow.slug}`
-    const guestContext = await browser.newContext({ colorScheme: 'light' })
-    cleanup.defer(() => guestContext.close())
-
-    const firstTab = await guestContext.newPage()
-    const delivery = watchDeliveryFrames(firstTab)
-    cleanup.defer(() => delivery.stop())
-    await gotoPage(expect, firstTab, productPath)
-    await expect(
-      firstTab.getByTestId('nav-cart').getByTestId('cart-badge'),
-    ).toHaveText('0')
-
-    const secondTab = await guestContext.newPage()
-    await gotoPage(expect, secondTab, productPath)
-    const secondBadge = secondTab
-      .getByTestId('nav-cart')
-      .getByTestId('cart-badge')
-    const availability = secondTab.getByTestId('shop-product-availability')
-    await expect(secondBadge).toHaveText('0')
-    await expect(availability).toHaveText('One of a kind')
-    await markDocument(secondTab)
-
-    const token = await sessionToken(firstTab)
-    const command = createStandCommandChannel({ timeoutMs: 5_000 })
-    const addToCart = 'product_add_to_cart'
-    const since = delivery.sent.length
-    const replies = () => trackedActionReplies(delivery, addToCart, since)
-    let clickAttempted = false
-
-    cleanup.defer(async () => {
-      if (!clickAttempted) return
-
-      // The browser can send the add before the observer receives framesent.
-      const ownCartLine = availability.filter({ hasText: /^In your cart$/ })
-      let unconfirmed: Error | undefined
-      try {
-        await expect
-          .poll(() => replies().length > 0 || ownCartLine.isVisible(), {
-            message: 'Guest cart cleanup waits for the add reply or cart line',
-          })
-          .toBe(true)
-      } catch (error) {
-        unconfirmed = new Error(
-          'Guest cart cleanup could not confirm that the add finished',
-          { cause: error },
-        )
-      }
-
-      // An error can arrive after the cart write commits, so remove after either reply.
-      try {
-        await command(GUEST_CART_SET_QUANTITY_COMMAND, {
-          sessionToken: token,
-          productId: morningMeadow.id,
-          quantity: 0,
-        })
-      } catch (error) {
-        if (unconfirmed === undefined) throw error
-        throw new AggregateError(
-          [unconfirmed, error],
-          'Guest cart add was unconfirmed and the fallback removal failed',
-          { cause: error },
-        )
-      }
-      if (unconfirmed !== undefined) throw unconfirmed
-    })
-
-    const addButton = firstTab.getByTestId('shop-product-add-to-cart')
-    clickAttempted = true
-    await addButton.click()
-    await expect.poll(() => replies().length).toBe(1)
-    expect(replies()[0].frame.type).toBe(SIGNAL_TYPE_ACTION_SUCCESS)
-    await expect(firstTab.getByTestId('shop-product-go-to-cart')).toBeVisible()
-
-    await expect(secondBadge).toHaveText('1')
-    await expect(availability).toHaveText('In your cart')
-    const cartLink = secondTab.getByTestId('shop-product-go-to-cart')
-    await expect(cartLink).toHaveRole('link')
-    await expect(cartLink).toHaveAccessibleName('In your cart — go to cart')
-    await expect(cartLink).toHaveAttribute('href', '/cart')
-    await expectDocumentUnchanged(expect, secondTab)
-
-    await cartLink.click()
-    await expect(secondTab).toHaveURL('/cart')
-    await expectPageReady(expect, secondTab)
-    await expect(
-      secondTab
-        .getByTestId('shop-cart-line')
-        .getByTestId('shop-cart-product-link'),
-    ).toHaveText(morningMeadow.name)
-    expect(replies().length).toBe(1)
-  },
-)
-
-async function createStockProduct(
-  page: Page,
-  name: string,
-  categoryName: string,
-  description: string,
-): Promise<void> {
-  await gotoPage(expect, page, '/hilos/products')
-  const products = page.getByTestId('admin-products-table')
-  await products.getByTestId('hilos-table-main-action').click()
-
-  const dialog = page.getByRole('dialog', {
-    name: 'Add product',
-    exact: true,
-  })
-  await typeInto(
-    dialog.getByRole('textbox', { name: 'Name', exact: true }),
-    name,
-  )
-  await dialog
-    .getByRole('combobox', { name: 'Category' })
-    .selectOption({ label: categoryName })
-  await dialog.getByRole('radio', { name: 'Unique piece' }).press('ArrowRight')
-  await expect(dialog.getByRole('radio', { name: 'Stock item' })).toBeChecked()
-  await typeInto(
-    dialog.getByRole('textbox', { name: moneyFieldLabel('Price') }),
-    '410',
-  )
-  await typeInto(
-    dialog.getByRole('textbox', { name: 'Description' }),
-    description,
-  )
-
-  const [chooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    dialog.getByTestId('admin-products-add-picture').click(),
-  ])
-  await chooser.setFiles({
-    name: 'planter.png',
-    mimeType: 'image/png',
-    buffer: await drawPhotoFixture(page, {
-      width: 320,
-      height: 240,
-      mimeType: 'image/png',
-      rectangles: [{ color: '#246ac4', x: 0, y: 0, width: 320, height: 240 }],
-    }),
-  })
-  await expect(dialog.getByTestId('admin-products-add-preview')).toBeVisible()
-  await clickSubmit(expect, dialog.getByTestId('admin-products-add-submit'))
-  await expect(dialog).toBeHidden()
-  await products.getByRole('link', { name, exact: true }).click()
-  await expectPageReady(expect, page)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
-}
-
-const warehouseRow = (stockPage: Page) =>
-  stockPage
-    .getByTestId('admin-product-stock-table')
-    .getByRole('row')
-    .filter({
-      has: stockPage.getByRole('cell', {
-        name: 'Odesa · Peresyp',
-        exact: true,
-      }),
-    })
-
-const setStock = async (stockPage: Page, units: string) => {
-  const row = warehouseRow(stockPage)
-  const dialog = stockPage.getByRole('dialog', {
-    name: 'Set stock',
-    exact: true,
-  })
-  await row.getByTestId('admin-product-stock-edit-open').click()
-  await typeInto(dialog.getByTestId('admin-product-stock-edit-units'), units)
-  await clickSubmit(
-    expect,
-    dialog.getByTestId('admin-product-stock-edit-submit'),
-  )
-  await expect(dialog).toBeHidden()
-  await expect(
-    row.getByRole('cell', { name: units, exact: true }),
-  ).toBeVisible()
-}
-
-async function withStockPage<T>(
-  page: Page,
-  path: string,
-  read: (stockPage: Page) => Promise<T>,
-): Promise<T> {
-  const stockPage = await page.context().newPage()
-  try {
-    await gotoPage(expect, stockPage, path, PAGE_READY)
-    await expect(warehouseRow(stockPage)).toBeVisible()
-
-    return await read(stockPage)
-  } finally {
-    await stockPage.close()
-  }
-}
 
 test('a guest sees live price, stock, and address changes on a product', async ({
   browser,
@@ -279,7 +78,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
   const categoryName = 'Pots & planters'
   const categoryPath = '/category/pots-planters'
   const description = 'A ceramic planter carried in stock.'
-  const deleteProductCommand = 'test:ecommerce-shop:product-delete'
+  const deleteProductCommand = PRODUCT_DELETE_COMMAND
   const deleteProductFailure = `${deleteProductCommand} failed: ${deleteProductCommand} failed: The product fixture could not be deleted`
   const command = createStandCommandChannel({ timeoutMs: 5_000 })
   const delivery = watchDeliveryFrames(page)
@@ -303,6 +102,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
       // The command wraps database failures. Confirm the late write that
       // now holds the stock foreign key before trying the deletion again.
       const cleared = await withStockPage(
+        expect,
         page,
         pendingStockPath,
         async (stockPage) => {
@@ -312,7 +112,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
           })
           if (!(await written.isVisible())) return false
 
-          await setStock(stockPage, '0')
+          await setStock(expect, stockPage, '0')
 
           return true
         },
@@ -336,7 +136,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
     const hasReply = () =>
       trackedActionReplies(delivery, PRODUCT_STOCK_SET_UNITS, since).length > 0
     const repliedBeforeRead = hasReply()
-    await withStockPage(page, path, async (restorePage) => {
+    await withStockPage(expect, page, path, async (restorePage) => {
       const row = warehouseRow(restorePage)
       let replyMayFollowRead = false
       if (wasSent && !repliedBeforeRead) {
@@ -366,7 +166,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
       }
       const zero = row.getByRole('cell', { name: '0', exact: true })
       if (!(await zero.isVisible())) {
-        await setStock(restorePage, '0')
+        await setStock(expect, restorePage, '0')
       } else if (replyMayFollowRead) {
         pendingStockPath = path
       }
@@ -375,10 +175,12 @@ test('a guest sees live price, stock, and address changes on a product', async (
 
   await grantAdminToSelf(expect, page)
   await test.step('create a stock item through Add product', async () => {
-    await createStockProduct(page, name, categoryName, description)
+    await createStockProduct(expect, page, name, categoryName, description)
   })
 
-  const guestContext = await browser.newContext()
+  const guestContext = await browser.newContext(
+    timeZoneContextOptions(test.info().project.use, 'Africa/Mogadishu'),
+  )
   cleanup.defer(() => guestContext.close())
   const guest = await guestContext.newPage()
   const price = guest.getByTestId('shop-product-price')
@@ -449,7 +251,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
       path: new URL(page.url()).pathname,
       since: delivery.sent.length,
     }
-    await setStock(page, stockUnits)
+    await setStock(expect, page, stockUnits)
 
     await expect(availability).toHaveText('Only 3 left')
     await expect(guest).toHaveURL(productPath)
@@ -457,7 +259,7 @@ test('a guest sees live price, stock, and address changes on a product', async (
   })
 
   await test.step('return stock to zero and keep the product open at the same address', async () => {
-    await setStock(page, '0')
+    await setStock(expect, page, '0')
     stockWrite = undefined
 
     await expect(availability).toHaveText('Out of stock')
@@ -617,6 +419,7 @@ guestCartTest(
 
         // Retry only after a fresh view shows the write that can block deletion.
         const cleared = await withStockPage(
+          expect,
           page,
           pendingStockPath,
           async (stockPage) => {
@@ -626,7 +429,7 @@ guestCartTest(
             })
             if (!(await written.isVisible())) return false
 
-            await setStock(stockPage, '0')
+            await setStock(expect, stockPage, '0')
 
             return true
           },
@@ -641,15 +444,13 @@ guestCartTest(
 
     const { overviewPath, productId } =
       await test.step('create a stock item and make it available in the shop', async () => {
-        await createStockProduct(
+        const { overviewPath, productId } = await createStockProduct(
+          expect,
           page,
           name,
           'Pots & planters',
           'A ceramic planter carried in stock.',
         )
-        await expect(page).toHaveURL(/\/hilos\/product\/[1-9]\d*$/)
-        const overviewPath = new URL(page.url()).pathname
-        const productId = Number(overviewPath.split('/').at(-1))
 
         await page
           .getByTestId(`hilos-page-tab-${PAGE_ADMIN_PRODUCT_STOCK}`)
@@ -669,7 +470,7 @@ guestCartTest(
         cleanup.defer(async () => {
           // Preserve the mutation's socket and keep reset replies on their own page.
           let replyPrecedesSnapshot = hasReply()
-          await withStockPage(page, stockPath, async (stockPage) => {
+          await withStockPage(expect, page, stockPath, async (stockPage) => {
             const row = warehouseRow(stockPage)
             const written = row.getByRole('cell', {
               name: stockUnits,
@@ -699,20 +500,22 @@ guestCartTest(
 
             const empty = row.getByRole('cell', { name: '0', exact: true })
             if (await written.isVisible()) {
-              await setStock(stockPage, '0')
+              await setStock(expect, stockPage, '0')
             } else if (!replyPrecedesSnapshot || !(await empty.isVisible())) {
               return
             }
             pendingStockPath = undefined
           })
         })
-        await setStock(page, stockUnits)
+        await setStock(expect, page, stockUnits)
         await gotoPage(expect, page, overviewPath, PAGE_READY)
 
         return { overviewPath, productId }
       })
 
-    const guestContext = await browser.newContext({ colorScheme: 'light' })
+    const guestContext = await browser.newContext(
+      timeZoneContextOptions(test.info().project.use, 'Africa/Mogadishu'),
+    )
     cleanup.defer(() => guestContext.close())
     const guest = await guestContext.newPage()
     const overviewCount = page
@@ -732,14 +535,7 @@ guestCartTest(
       await markDocument(guest)
     })
 
-    const token = await sessionToken(guest)
-    const setQuantity = (quantity: number) =>
-      command(GUEST_CART_SET_QUANTITY_COMMAND, {
-        sessionToken: token,
-        productId,
-        quantity,
-      })
-    cleanup.defer(() => setQuantity(0))
+    const setQuantity = await bindGuestCartItem(cleanup, guest, productId)
 
     const expectLiveCount = async (text: string) => {
       await expect(overviewCount).toHaveText(text)

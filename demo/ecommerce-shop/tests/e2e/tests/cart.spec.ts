@@ -1,14 +1,25 @@
 import { randomBytes } from 'node:crypto'
 
 import { test as base, expect } from '../test.js'
+import {
+  createStockProduct,
+  deferCatalogProductDelete,
+  setStock,
+  warehouseRow,
+} from '../helpers/catalogProducts.js'
+import {
+  bindGuestCartItem,
+  deferGuestCartAddCleanup,
+  deferGuestCartProductsCleanup,
+} from '../helpers/guestCart.js'
 import { moneyFieldLabel } from '../../../frontend/src/money/money.js'
 import { PAGE_ADMIN_PRODUCT_STOCK } from '../../../frontend/src/pages/keys.js'
+import { SIGNAL_TYPE_ACTION_SUCCESS } from '../../../../../framework/frontend/core/src/protocol/constants.js'
 import {
   PAGE_READY,
   cleanupFixtures,
   clickSubmit,
   createTestUser,
-  drawPhotoFixture,
   expectDocumentUnchanged,
   expectPageReady,
   gotoPage,
@@ -18,8 +29,11 @@ import {
   markDocument,
   openSignIn,
   sessionToken,
+  timeZoneContextOptions,
+  trackedActionReplies,
   type TestCleanup,
   typeInto,
+  watchDeliveryFrames,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
@@ -37,114 +51,38 @@ test('a guest sees live prices in the cart and follows the product link', async 
 }) => {
   const name = `e2e product ${randomBytes(6).toString('hex')}`
   const command = createStandCommandChannel({ timeoutMs: 5_000 })
-  const setCartQuantity = 'test:ecommerce-shop:guest-cart-set-quantity'
-  const guestContext = await browser.newContext()
+  const guestContext = await browser.newContext(
+    timeZoneContextOptions(test.info().project.use, 'Africa/Mogadishu'),
+  )
   cleanup.defer(() => guestContext.close())
   const guest = await guestContext.newPage()
 
-  cleanup.defer(() => command('test:ecommerce-shop:product-delete', { name }))
+  deferCatalogProductDelete(cleanup, name)
   await grantAdminToSelf(expect, page)
 
-  const productId =
-    await test.step('create a stock item with a picture', async () => {
-      await gotoPage(expect, page, '/hilos/products', PAGE_READY)
-      const products = page.getByTestId('admin-products-table')
-      await products.getByTestId('hilos-table-main-action').click()
-
-      const dialog = page.getByRole('dialog', {
-        name: 'Add product',
-        exact: true,
-      })
-      await typeInto(
-        dialog.getByRole('textbox', { name: 'Name', exact: true }),
+  const { overviewPath, productId } =
+    await test.step('create a stock item with a picture', () =>
+      createStockProduct(
+        expect,
+        page,
         name,
-      )
-      await dialog
-        .getByRole('combobox', { name: 'Category' })
-        .selectOption({ label: 'Pots & planters' })
-      await dialog
-        .getByRole('radio', { name: 'Unique piece' })
-        .press('ArrowRight')
-      await expect(
-        dialog.getByRole('radio', { name: 'Stock item' }),
-      ).toBeChecked()
-      await typeInto(
-        dialog.getByRole('textbox', { name: moneyFieldLabel('Price') }),
-        '410',
-      )
-      await typeInto(
-        dialog.getByRole('textbox', { name: 'Description' }),
+        'Pots & planters',
         'A ceramic planter carried in stock.',
-      )
-
-      const [chooser] = await Promise.all([
-        page.waitForEvent('filechooser'),
-        dialog.getByTestId('admin-products-add-picture').click(),
-      ])
-      await chooser.setFiles({
-        name: 'planter.png',
-        mimeType: 'image/png',
-        buffer: await drawPhotoFixture(page, {
-          width: 320,
-          height: 240,
-          mimeType: 'image/png',
-          rectangles: [
-            { color: '#246ac4', x: 0, y: 0, width: 320, height: 240 },
-          ],
-        }),
-      })
-      await expect(
-        dialog.getByTestId('admin-products-add-preview'),
-      ).toBeVisible()
-      await clickSubmit(expect, dialog.getByTestId('admin-products-add-submit'))
-      await expect(dialog).toBeHidden()
-      await products.getByRole('link', { name, exact: true }).click()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(/\/hilos\/product\/[1-9]\d*$/)
-
-      return Number(new URL(page.url()).pathname.split('/').at(-1))
-    })
+      ))
 
   await test.step('set stock for the cart item', async () => {
-    const overviewPath = new URL(page.url()).pathname
     await page.getByTestId(`hilos-page-tab-${PAGE_ADMIN_PRODUCT_STOCK}`).click()
     await expectPageReady(expect, page)
     const stockPath = new URL(page.url()).pathname
-    const warehouseRow = page
-      .getByTestId('admin-product-stock-table')
-      .getByRole('row')
-      .filter({
-        has: page.getByRole('cell', { name: 'Odesa · Peresyp', exact: true }),
-      })
-
-    const setStock = async (units: string) => {
-      const dialog = page.getByRole('dialog', {
-        name: 'Set stock',
-        exact: true,
-      })
-      await warehouseRow.getByTestId('admin-product-stock-edit-open').click()
-      await typeInto(
-        dialog.getByTestId('admin-product-stock-edit-units'),
-        units,
-      )
-      await clickSubmit(
-        expect,
-        dialog.getByTestId('admin-product-stock-edit-submit'),
-      )
-      await expect(dialog).toBeHidden()
-      await expect(
-        warehouseRow.getByRole('cell', { name: units, exact: true }),
-      ).toBeVisible()
-    }
-
-    const zero = warehouseRow.getByRole('cell', { name: '0', exact: true })
+    const row = warehouseRow(page)
+    const zero = row.getByRole('cell', { name: '0', exact: true })
     await expect(zero).toBeVisible()
     cleanup.defer(async () => {
       await gotoPage(expect, page, stockPath, PAGE_READY)
-      await expect(warehouseRow).toBeVisible()
-      if (!(await zero.isVisible())) await setStock('0')
+      await expect(row).toBeVisible()
+      if (!(await zero.isVisible())) await setStock(expect, page, '0')
     })
-    await setStock('8')
+    await setStock(expect, page, '8')
     await gotoPage(expect, page, overviewPath, PAGE_READY)
   })
 
@@ -163,15 +101,8 @@ test('a guest sees live prices in the cart and follows the product link', async 
     await expect(guest.getByTestId('shop-cart-empty')).toBeVisible()
     await markDocument(guest)
 
-    const token = await sessionToken(guest)
-    cleanup.defer(() =>
-      command(setCartQuantity, { sessionToken: token, productId, quantity: 0 }),
-    )
-    await command(setCartQuantity, {
-      sessionToken: token,
-      productId,
-      quantity: 3,
-    })
+    const setQuantity = await bindGuestCartItem(cleanup, guest, productId)
+    await setQuantity(3)
 
     await expect(productLink).toHaveText(name)
     await expect(line.getByText('Quantity: 3', { exact: true })).toBeVisible()
@@ -381,18 +312,11 @@ test('signing in combines the guest and account carts and signing out opens an e
     cartProducts: typeof products,
     code?: string,
   ) => {
-    const guestToken = await sessionToken(page)
-    // The transfer owns these bindings after sign-in rotates the guest token.
-    for (const { id: productId } of cartProducts) {
-      cleanup.defer(async () => {
-        if ((await sessionToken(page)) !== guestToken) return
-        await command('test:ecommerce-shop:guest-cart-set-quantity', {
-          sessionToken: guestToken,
-          productId,
-          quantity: 0,
-        })
-      })
-    }
+    const guestToken = await deferGuestCartProductsCleanup(
+      cleanup,
+      page,
+      cartProducts.map(({ id }) => id),
+    )
     if (code !== undefined) {
       cleanup.defer(async () => {
         if ((await sessionToken(page)) !== guestToken) return
@@ -463,4 +387,75 @@ test('signing in combines the guest and account carts and signing out opens an e
     await expect(items).toHaveText('₴280')
     await expect(total).toHaveText('₴280')
   })
+})
+
+test('adding a product to a guest cart updates another tab without reloading', async ({
+  browser,
+  cleanup,
+}) => {
+  // The product ID in 001_hilos_flowers.sql identifies the cleanup target.
+  const morningMeadow = {
+    id: 1,
+    slug: 'morning-meadow',
+    name: 'Morning meadow',
+  }
+  const productPath = `/product/${morningMeadow.slug}`
+  const guestContext = await browser.newContext(
+    timeZoneContextOptions(test.info().project.use, 'Africa/Mogadishu'),
+  )
+  cleanup.defer(() => guestContext.close())
+
+  const firstTab = await guestContext.newPage()
+  const delivery = watchDeliveryFrames(firstTab)
+  cleanup.defer(() => delivery.stop())
+  await gotoPage(expect, firstTab, productPath)
+  await expect(
+    firstTab.getByTestId('nav-cart').getByTestId('cart-badge'),
+  ).toHaveText('0')
+
+  const secondTab = await guestContext.newPage()
+  await gotoPage(expect, secondTab, productPath)
+  const secondBadge = secondTab
+    .getByTestId('nav-cart')
+    .getByTestId('cart-badge')
+  const availability = secondTab.getByTestId('shop-product-availability')
+  await expect(secondBadge).toHaveText('0')
+  await expect(availability).toHaveText('One of a kind')
+  await markDocument(secondTab)
+
+  const addToCart = 'product_add_to_cart'
+  const since = delivery.sent.length
+  const replies = () => trackedActionReplies(delivery, addToCart, since)
+  const ownCartLine = availability.filter({ hasText: /^In your cart$/ })
+  const clickAdd = await deferGuestCartAddCleanup(
+    expect,
+    cleanup,
+    firstTab,
+    morningMeadow.id,
+    async () => replies().length > 0 || (await ownCartLine.isVisible()),
+  )
+
+  const addButton = firstTab.getByTestId('shop-product-add-to-cart')
+  await clickAdd(() => addButton.click())
+  await expect.poll(() => replies().length).toBe(1)
+  expect(replies()[0].frame.type).toBe(SIGNAL_TYPE_ACTION_SUCCESS)
+  await expect(firstTab.getByTestId('shop-product-go-to-cart')).toBeVisible()
+
+  await expect(secondBadge).toHaveText('1')
+  await expect(availability).toHaveText('In your cart')
+  const cartLink = secondTab.getByTestId('shop-product-go-to-cart')
+  await expect(cartLink).toHaveRole('link')
+  await expect(cartLink).toHaveAccessibleName('In your cart — go to cart')
+  await expect(cartLink).toHaveAttribute('href', '/cart')
+  await expectDocumentUnchanged(expect, secondTab)
+
+  await cartLink.click()
+  await expect(secondTab).toHaveURL('/cart')
+  await expectPageReady(expect, secondTab)
+  await expect(
+    secondTab
+      .getByTestId('shop-cart-line')
+      .getByTestId('shop-cart-product-link'),
+  ).toHaveText(morningMeadow.name)
+  expect(replies().length).toBe(1)
 })
