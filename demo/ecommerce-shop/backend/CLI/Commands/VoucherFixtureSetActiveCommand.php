@@ -33,10 +33,10 @@ final class VoucherFixtureSetActiveCommand extends AbstractCommandChannelTestCom
         return 'Switch a voucher fixture on or off (test-only)';
     }
 
-    /** @return string Usage and environment requirement */
+    /** @return string Command usage */
     public function getHelp(): string
     {
-        return 'php cli.php ' . $this->getName() . " <code> --active=<on|off>\nRequires APP_ENV=test.\n";
+        return 'php cli.php ' . $this->getName() . " <code> --active=<on|off>\n";
     }
 
     /**

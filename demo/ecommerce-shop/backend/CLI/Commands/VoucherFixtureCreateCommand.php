@@ -36,10 +36,10 @@ final class VoucherFixtureCreateCommand extends AbstractCommandChannelTestComman
         return 'Create a voucher fixture (test-only)';
     }
 
-    /** @return string Usage and environment requirement */
+    /** @return string Command usage */
     public function getHelp(): string
     {
-        return 'php cli.php ' . $this->getName() . " <code> --discount-percent=<1..100> --active=<on|off>\nRequires APP_ENV=test.\n";
+        return 'php cli.php ' . $this->getName() . " <code> --discount-percent=<1..100> --active=<on|off>\n";
     }
 
     /**

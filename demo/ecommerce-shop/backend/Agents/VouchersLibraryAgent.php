@@ -21,6 +21,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Environment\NonProductionGate;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -50,10 +51,10 @@ final class VouchersLibraryAgent extends AbstractAgent
     /** The library has no periodic work. */
     protected const MAX_IDLE_SLEEP_SECONDS = 600;
 
-    /** @return TruthSourceOperations Add and Update everywhere, with Remove on test stands */
+    /** @return TruthSourceOperations Add and Update everywhere, with Remove on non-production nodes */
     public static function defaultTruthSourceOperations(): TruthSourceOperations
     {
-        if (VoucherFixture::isAllowed()) {
+        if (NonProductionGate::admitted()) {
             return TruthSourceOperations::of(TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove);
         }
 
@@ -61,8 +62,6 @@ final class VouchersLibraryAgent extends AbstractAgent
     }
 
     /**
-     * The project requires the test environment even on nodes admitted by the socket's non-production gate.
-     *
      * @param CommandRequestDTO $data Topology-hydrated fixture command
      * @param string $source Command source, unused
      * @param string $name Signal name, unused
@@ -71,12 +70,6 @@ final class VouchersLibraryAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
-        if (!VoucherFixture::isAllowed()) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, VoucherFixture::ENVIRONMENT_REFUSAL));
-
-            return;
-        }
-
         try {
             $reply = CommandReplyDTO::ok($data->correlationId, $this->fixtureResult($data));
         } catch (ValidationException $failure) {

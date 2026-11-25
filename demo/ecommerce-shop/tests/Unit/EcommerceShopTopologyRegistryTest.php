@@ -1652,7 +1652,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertArrayNotHasKey($command, (new EcommerceShopCliManager(['cli.php']))->commandClasses());
     }
 
-    /** The vouchers library runs once on the policy-selected node and gains Remove only in the test environment. */
+    /** The vouchers library runs once on the policy-selected node and gains Remove on non-production nodes. */
     public function testVouchersLibraryOwnsVouchersWithEnvironmentSpecificOperations(): void
     {
         $entry = Hilos::AGENTS[AgentType::VOUCHERS_LIBRARY];
@@ -1671,14 +1671,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             self::assertSame([EcommerceShopDbContext::vouchers], array_keys($claims));
             self::assertSame($ordinaryOperations, $claims[EcommerceShopDbContext::vouchers]->asList());
 
-            foreach ([AppEnv::DEV->value, AppEnv::PROD->value, 'unrecognized', null, AppEnv::TEST->value] as $environment) {
+            $nonProduction = [AppEnv::DEV->value, AppEnv::LOCAL->value, AppEnv::TEST->value];
+            $productionLike = [AppEnv::PROD->value, AppEnv::STAGING->value, 'unrecognized', null];
+            foreach ([...$nonProduction, ...$productionLike] as $environment) {
                 $env = $this->createPartialMock(EnvAccessor::class, ['effectiveValueFor']);
                 $env->method('effectiveValueFor')->with(EnvConstants::APP_ENV->name)->willReturn($environment);
                 Hilos::$env = $env;
 
                 $claims = OwnershipDeclaration::dbCollectionsOf(VouchersLibraryAgent::class);
                 self::assertSame(
-                    $environment === AppEnv::TEST->value ? [...$ordinaryOperations, TruthSourceOperation::Remove] : $ordinaryOperations,
+                    in_array($environment, $nonProduction, true) ? [...$ordinaryOperations, TruthSourceOperation::Remove] : $ordinaryOperations,
                     $claims[EcommerceShopDbContext::vouchers]->asList(),
                 );
             }
@@ -1710,8 +1712,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
-    /** The project CLI refuses these fixtures in dev as well as in production, before reading a channel address. */
-    public function testVoucherFixtureCliRefusesOutsideTest(): void
+    /** The project CLI refuses these fixtures on production-like environments, before reading a channel address. */
+    public function testVoucherFixtureCliRefusesOnProductionLikeEnvironments(): void
     {
         $code = 'ZZE2EV000000000000000000000000';
         $commands = [
@@ -1723,7 +1725,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         ];
         $previousEnv = Hilos::$env;
         try {
-            foreach ([AppEnv::DEV, AppEnv::PROD] as $environment) {
+            foreach ([AppEnv::PROD, AppEnv::STAGING] as $environment) {
                 $env = $this->createPartialMock(EnvAccessor::class, ['effectiveValueFor']);
                 $env->method('effectiveValueFor')->with(EnvConstants::APP_ENV->name)->willReturn($environment->value);
                 Hilos::$env = $env;

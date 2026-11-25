@@ -25,9 +25,7 @@ use Demo\EcommerceShop\Hilos;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Session\SessionToken;
-use Hilos\Constants\AppEnv;
 use Hilos\Constants\CommandConstants;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionFailureReason;
 use Hilos\Core\Agent\AbstractAgent;
@@ -50,7 +48,6 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
-use Hilos\Environment\EnvAccessor;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -475,43 +472,32 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertNotSame($before, (clone $level)->takeHeld());
     }
 
-    /** @return array<string, array{bool, string}> Whether the node is in test and the expected refusal */
+    /** @return array<string, array{string}> Expected refusal for an unavailable guest session */
     public static function guestVoucherFixtureAccessRefusals(): array
     {
         return [
-            'dev environment' => [false, 'Voucher fixtures require APP_ENV=test'],
-            'bound session before sync' => [true, 'This guest session is no longer available'],
+            'bound session before sync' => ['This guest session is no longer available'],
         ];
     }
 
-    /** The command requires the test environment and a session that is still a guest in storage. */
+    /** The command requires a session that is still a guest in storage. */
     #[DataProvider('guestVoucherFixtureAccessRefusals')]
-    public function testGuestVoucherFixtureRefusesOutsideTestOrAfterSignIn(bool $inTest, string $reason): void
+    public function testGuestVoucherFixtureRefusesAfterSignIn(string $reason): void
     {
         $sessionId = self::guestSessionId();
         $session = Hilos::$db->sessions[$sessionId];
         $voucher = self::createVoucher('ZZE2EV111111111111111111111111', 10, true);
         $this->carts()->applyVoucher($sessionId, $voucher->code);
 
-        $previousEnv = Hilos::$env;
-        if ($inTest) {
-            Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Signed-in shopper']);
-            Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [Database::lastInsertId(), $sessionId]);
-            self::assertNull($session->userId);
-        } else {
-            $env = $this->createPartialMock(EnvAccessor::class, ['effectiveValueFor']);
-            $env->method('effectiveValueFor')->with(EnvConstants::APP_ENV->name)->willReturn(AppEnv::DEV->value);
-            Hilos::$env = $env;
-        }
-        try {
-            foreach ([true, false] as $applied) {
-                $reply = $this->voucherFixture($session->token, $voucher->code, $applied);
-                self::assertFalse($reply->isOk());
-                self::assertSame([CommandConstants::FIELD_MESSAGE => $reason], $reply->payload);
-                self::assertSame($voucher->id, self::storedVoucherId($sessionId));
-            }
-        } finally {
-            Hilos::$env = $previousEnv;
+        Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Signed-in shopper']);
+        Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [Database::lastInsertId(), $sessionId]);
+        self::assertNull($session->userId);
+
+        foreach ([true, false] as $applied) {
+            $reply = $this->voucherFixture($session->token, $voucher->code, $applied);
+            self::assertFalse($reply->isOk());
+            self::assertSame([CommandConstants::FIELD_MESSAGE => $reason], $reply->payload);
+            self::assertSame($voucher->id, self::storedVoucherId($sessionId));
         }
     }
 

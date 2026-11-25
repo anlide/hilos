@@ -183,8 +183,8 @@ final class VoucherFixtureCommandsTest extends VouchersLibraryEnvironment
         $this->assertResult(EcommerceShopCommandConstants::VOUCHER_FIXTURE_GET, ['code' => $code], $created->payload);
     }
 
-    /** A dev node can pass the shared socket gate and is still refused by the fixture handler. */
-    public function testDirectCommandRequestsAreRefusedInDev(): void
+    /** A dev node runs voucher fixture lifecycle commands without refusal. */
+    public function testDirectCommandRequestsSucceedInDev(): void
     {
         $code = $this->unusedCode();
         $previousEnv = Hilos::$env;
@@ -192,15 +192,17 @@ final class VoucherFixtureCommandsTest extends VouchersLibraryEnvironment
         $env->method('effectiveValueFor')->with(EnvConstants::APP_ENV->name)->willReturn(AppEnv::DEV->value);
         Hilos::$env = $env;
         try {
-            foreach ([
-                EcommerceShopCommandConstants::VOUCHER_FIXTURE_CREATE => ['discountPercent' => 25, 'active' => true],
-                EcommerceShopCommandConstants::VOUCHER_FIXTURE_GET => [],
-                EcommerceShopCommandConstants::VOUCHER_FIXTURE_UPDATE => ['discountPercent' => 45],
-                EcommerceShopCommandConstants::VOUCHER_FIXTURE_SET_ACTIVE => ['active' => false],
-                EcommerceShopCommandConstants::VOUCHER_FIXTURE_DELETE => [],
-            ] as $command => $fields) {
-                self::assertRefusal($this->command($command, ['code' => $code, ...$fields]), 'Voucher fixtures require APP_ENV=test');
-            }
+            $created = $this->command(EcommerceShopCommandConstants::VOUCHER_FIXTURE_CREATE, [
+                'code' => $code,
+                'discountPercent' => 25,
+                'active' => true,
+            ]);
+            self::assertTrue($created->isOk());
+            $this->assertResult(EcommerceShopCommandConstants::VOUCHER_FIXTURE_GET, ['code' => $code], $created->payload);
+
+            $deleted = $this->command(EcommerceShopCommandConstants::VOUCHER_FIXTURE_DELETE, ['code' => $code]);
+            self::assertTrue($deleted->isOk());
+            self::assertSame(['deleted' => true], $deleted->payload);
         } finally {
             Hilos::$env = $previousEnv;
         }

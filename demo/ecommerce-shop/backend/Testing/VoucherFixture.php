@@ -5,35 +5,14 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Testing;
 
 use Demo\EcommerceShop\Database\Actions\VoucherFields;
-use Demo\EcommerceShop\Hilos;
-use Hilos\Constants\AppEnv;
-use Hilos\Constants\EnvConstants;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooLongException;
-use Hilos\Environment\Exception\EnvException;
 
-/** The environment and code space reserved for voucher fixtures. */
+/** The code space reserved for voucher fixtures. */
 final class VoucherFixture
 {
-    public const string ENVIRONMENT_REFUSAL = 'Voucher fixtures require APP_ENV=test';
-
     private const string CODE_PATTERN = '/\AZZE2EV[0-9A-F]{24}\z/';
-
-    /** @return bool Whether the loaded environment resolves to test */
-    public static function isAllowed(): bool
-    {
-        $env = Hilos::$env;
-        if ($env === null) {
-            return false;
-        }
-
-        try {
-            return AppEnv::fromString($env[EnvConstants::APP_ENV]->string()) === AppEnv::TEST;
-        } catch (EnvException) {
-            return false;
-        }
-    }
 
     /**
      * @param string $value Code as entered

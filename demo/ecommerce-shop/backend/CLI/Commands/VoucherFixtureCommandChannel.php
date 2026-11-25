@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\CLI\Commands;
 
-use Demo\EcommerceShop\Testing\VoucherFixture;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Router\SignalDataInterface;
@@ -22,10 +21,6 @@ trait VoucherFixtureCommandChannel
      */
     private function sendVoucherFixture(SignalDataInterface $payload): int
     {
-        if (!VoucherFixture::isAllowed()) {
-            return $this->printToStandardError(VoucherFixture::ENVIRONMENT_REFUSAL);
-        }
-
         try {
             $result = $this->sendCommand($this->getName(), $payload->toArray());
         } catch (EnvException $failure) {

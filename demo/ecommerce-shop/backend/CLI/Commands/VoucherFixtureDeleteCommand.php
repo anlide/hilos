@@ -31,10 +31,10 @@ final class VoucherFixtureDeleteCommand extends AbstractCommandChannelTestComman
         return 'Delete a voucher fixture (test-only)';
     }
 
-    /** @return string Usage and environment requirement */
+    /** @return string Command usage */
     public function getHelp(): string
     {
-        return 'php cli.php ' . $this->getName() . " <code>\nRequires APP_ENV=test.\n";
+        return 'php cli.php ' . $this->getName() . " <code>\n";
     }
 
     /**

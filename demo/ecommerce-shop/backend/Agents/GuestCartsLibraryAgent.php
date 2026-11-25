@@ -619,11 +619,6 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      */
     private function handleFixtureVoucherCommand(CommandRequestDTO $data): void
     {
-        if (!VoucherFixture::isAllowed()) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, VoucherFixture::ENVIRONMENT_REFUSAL));
-
-            return;
-        }
         $query = $data->parsedPayload;
         if (!$query instanceof GuestCartSetVoucherCommandData) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'The guest cart voucher fixture request is invalid'));

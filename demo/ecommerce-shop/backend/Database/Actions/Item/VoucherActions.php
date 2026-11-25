@@ -103,7 +103,7 @@ final class VoucherActions extends DbActions
     /**
      * The voucher's database references protect both kinds of cart during deletion.
      *
-     * @throws ValidationException When fixture deletion is disabled, the code is invalid or a cart holds the voucher
+     * @throws ValidationException When the code is invalid or a cart holds the voucher
      * @throws EmptyValueException When the code is empty
      * @throws ValueTooLongException When the code exceeds its column width
      * @throws ItemNotFoundForDeleteException When the voucher has no ID
@@ -116,9 +116,6 @@ final class VoucherActions extends DbActions
      */
     public function deleteFixture(): void
     {
-        if (!VoucherFixture::isAllowed()) {
-            throw new ValidationException(VoucherFixture::ENVIRONMENT_REFUSAL);
-        }
         VoucherFixture::code($this->object->code);
         $this->ensureCanWrite(TruthSourceOperation::Remove);
 
