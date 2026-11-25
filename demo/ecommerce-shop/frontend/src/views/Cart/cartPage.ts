@@ -24,10 +24,13 @@ export function createCartPageSignal(
   currentUserId: ReadonlySignal<number | null>,
   connection: Pick<HilosConnection, 'on' | 'state'>,
 ): ReadonlySignal<CartSnapshot | null> {
-  const cartData = scopes.pageDataSignal('cart')
-  const activeCartData = computedSignal(() =>
-    scopes.page()?.key === PAGE_CART ? cartData.get() : undefined,
-  )
+  const activeCartData = computedSignal(() => {
+    const scope = scopes.page()
+
+    return scope?.key === PAGE_CART
+      ? scope.data.entrySignal('cart').get()
+      : undefined
+  })
   const snapshot = createSignal<CartSnapshot | null>(null)
   const clear = () => snapshot.set(null)
   let rotating = false
@@ -35,16 +38,23 @@ export function createCartPageSignal(
   // An owner change clears the projection without re-reading the slot. An old
   // guest answer can still be there when the user returns to being a guest.
   subscribeSignal(currentUserId, clear)
-  subscribeSignal(activeCartData, (raw) => {
-    if (raw === undefined) {
+  subscribeSignal(activeCartData, (entry) => {
+    if (entry === undefined) {
       clear()
       return
     }
     if (rotating || connection.state !== 'connected') return
 
-    const result = cartSnapshotSchema.safeParse(raw)
+    const result = cartSnapshotSchema.safeParse(entry.value)
     if (result.success && result.data.userId === currentUserId.get()) {
-      snapshot.set(result.data)
+      snapshot.set(
+        entry.pageSubscriptionProof === undefined
+          ? result.data
+          : {
+              ...result.data,
+              pageSubscriptionProof: entry.pageSubscriptionProof,
+            },
+      )
     }
   })
   connection.on('projectSignal', (signal) => {

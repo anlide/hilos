@@ -8,6 +8,9 @@ use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\TableProgressScope;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Socket\WebSocket\Delivery\DeliveryCoalescer;
 use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -66,6 +69,37 @@ final class DeliveryCoalescerTest extends TestCase
             $coalescer->append($frame);
         }
         self::assertSame([$runB, $runALast, $otherRow], $coalescer->drain());
+    }
+
+    public function testPageSubscriptionProofCreatesAnOrderedMergeBoundary(): void
+    {
+        $proofA = str_repeat('a', 64);
+        $proofB = str_repeat('b', 64);
+        $answer = static fn (array $data, ?string $proof): DeliveryFrame => self::frame(
+            SignalTypeConstants::PAGE_RESPONSE,
+            new PageResponseSignalData('cart', new PagePayload(data: $data), $proof)->toArray(),
+        );
+        $cartA = $answer(['cart' => ['voucher' => 15], 'title' => 'Cart'], $proofA);
+        $latestA = $answer(['cart' => ['voucher' => 17]], $proofA);
+        $partial = $answer(['title' => 'New cart'], $proofB);
+        $cartB = $answer(['cart' => ['voucher' => 17]], $proofB);
+        $unproven = $answer(['cart' => ['voucher' => 17]], null);
+        $coalescer = new DeliveryCoalescer();
+        foreach ([$cartA, $latestA, $partial, $cartB, $unproven] as $frame) {
+            $coalescer->append($frame);
+        }
+
+        self::assertSame(
+            array_map(static fn (DeliveryFrame $frame): string => self::canonicalJson($frame->getEnvelope()), [
+                $answer(['cart' => ['voucher' => 17], 'title' => 'Cart'], $proofA),
+                $answer(['title' => 'New cart', 'cart' => ['voucher' => 17]], $proofB),
+                $unproven,
+            ]),
+            array_map(static fn (DeliveryFrame $frame): string => self::canonicalJson($frame->getEnvelope()), $coalescer->drain()),
+        );
+        $coalescer->append($cartA);
+        $coalescer->append($partial);
+        self::assertSame([$cartA, $partial], $coalescer->drain());
     }
 
     public function testWholeStateListsAndProgressScopesHaveIndependentAddresses(): void

@@ -7,11 +7,12 @@ namespace Hilos\Core\Page\DTO;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Socket\WebSocket\DTO\PageSubscriptionProof;
 
 /**
  * PageResponseSignalData - Server-to-client page subscription response.
  *
- * Carries the `{page, payload}` wire form sent to a subscribing connection: the
+ * Carries the `{page, payload?, pageSubscriptionProof?}` envelope for a subscribing connection: the
  * page key lets the frontend drop a late signal for a page it has already left,
  * and the payload is the page scope the frontend normalizer ingests, split by
  * section ({@see PagePayload}). A subscription is answered by one of these
@@ -29,10 +30,12 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
      *
      * @param string $pageKey Subscribed page key echoed on the signal
      * @param PagePayload $payload Page scope payload (entities and plain data)
+     * @param ?string $pageSubscriptionProof Proof of the subscription that produced the accompanying snapshot
      */
     public function __construct(
         public readonly string $pageKey,
         public readonly PagePayload $payload,
+        public readonly ?string $pageSubscriptionProof = null,
     ) {
     }
 
@@ -46,13 +49,16 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
      * a subscribing page waits on — would die at the parse boundary. An absent
      * key reads as "no payload" on both sides.
      *
-     * @return array<string, mixed> DTO payload in the `{page, payload?}` wire form
+     * @return array<string, mixed> Page response envelope with optional payload and subscription proof
      */
     public function toArray(): array
     {
         $wire = [self::page => $this->pageKey];
         if (!$this->payload->isEmpty()) {
             $wire[self::payload] = $this->payload->toArray();
+        }
+        if ($this->pageSubscriptionProof !== null) {
+            $wire[PageSubscriptionProof::pageSubscriptionProof] = $this->pageSubscriptionProof;
         }
 
         return $wire;
@@ -74,9 +80,9 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
      * A page whose only section is the one left out loses its payload entirely and arrives as
      * a bare page key — which is how the windows section was lost on its first outing.
      *
-     * @param array<string, mixed> $data Source data in the `{page, payload}` wire form
+     * @param array<string, mixed> $data Source page response envelope
      * @return static Restored DTO instance
-     * @throws InvalidFormatException When the page key is missing, or the payload or a section is not a map
+     * @throws InvalidFormatException When the page key is missing or an envelope value has the wrong type
      */
     public static function fromArray(array $data): static
     {
@@ -92,6 +98,7 @@ final class PageResponseSignalData extends BaseDTO implements SignalDataInterfac
                 windows: self::optionalArray($payload, PagePayload::windows) ?? [],
                 refusedWindows: self::optionalArray($payload, PagePayload::refusedWindows) ?? [],
             ),
+            pageSubscriptionProof: self::optionalString($data, PageSubscriptionProof::pageSubscriptionProof),
         );
     }
 }

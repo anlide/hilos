@@ -181,6 +181,11 @@ export const pageResponseSchema = z.looseObject({
   // is the acknowledgement the routed outlet waits on, and it carries no
   // payload key at all rather than an empty map.
   payload: scopePayloadSchema.optional(),
+  pageSubscriptionProof: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional()
+    .catch(undefined),
 })
 
 export type PageResponseWire = z.infer<typeof pageResponseSchema>

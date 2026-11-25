@@ -698,6 +698,7 @@ export class PageSubscription {
    * @param options Binding-local entity-type overrides for this page's slots.
    * @param isCurrent Whether the admitted opening still owns the delivery.
    * @param omitData Inline data keys to leave at their current values.
+   * @param pageSubscriptionProof Proof accompanying the data in this delivery.
    */
   [ingestAdmittedPageResponse](
     pageKey: string,
@@ -705,6 +706,7 @@ export class PageSubscription {
     options: NormalizerOptions,
     isCurrent?: () => boolean,
     omitData?: readonly string[],
+    pageSubscriptionProof?: string,
   ): boolean {
     const scope = this.scopes.page()
     if (!scope || pageKey !== this.current?.pageKey) return false
@@ -713,7 +715,14 @@ export class PageSubscription {
       if (isCurrent && !isCurrent()) return false
       const revision = this.responseRevision
 
-      ingestWhileCurrent(scope, payload, options, isCurrent, omitData)
+      ingestWhileCurrent(
+        scope,
+        payload,
+        options,
+        isCurrent,
+        omitData,
+        pageSubscriptionProof,
+      )
       if (isCurrent && !isCurrent()) return false
       if (this.responseRevision === revision && this.scopes.page() === scope) {
         this.answeredRevision = revision

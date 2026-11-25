@@ -970,8 +970,14 @@ export class HilosConnection {
    * @param action The action name the subscribed page routes on.
    * @param data The action payload, carried under the `data` field.
    * @param requestId Optional client-minted id for reply correlation.
+   * @param pageSubscriptionProof Optional proof from the originating page snapshot.
    */
-  sendAction(action: string, data: unknown, requestId?: string): boolean {
+  sendAction(
+    action: string,
+    data: unknown,
+    requestId?: string,
+    pageSubscriptionProof?: string,
+  ): boolean {
     const frame: Record<string, unknown> = {
       [FIELD_TYPE]: SIGNAL_TYPE_ACTION,
       [FIELD_ACTION]: action,
@@ -979,6 +985,9 @@ export class HilosConnection {
     }
     if (requestId !== undefined) {
       frame[FIELD_REQUEST_ID] = requestId
+    }
+    if (pageSubscriptionProof !== undefined) {
+      frame['pageSubscriptionProof'] = pageSubscriptionProof
     }
 
     const sent = this.send(JSON.stringify(frame))

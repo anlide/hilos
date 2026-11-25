@@ -46,7 +46,7 @@ const emptyCart: CartSnapshot = {
 }
 const voucherCart: CartSnapshot = {
   ...guestCart,
-  voucher: { code: 'SAVE25', active: true, discount: '6000' },
+  voucher: { id: 25, code: 'SAVE25', active: true, discount: '6000' },
   total: '18000',
 }
 
@@ -223,7 +223,7 @@ describe('Cart page projection', () => {
 
     const switchedOff = {
       ...guestCart,
-      voucher: { code: 'SAVE25', active: false, discount: '0' },
+      voucher: { id: 25, code: 'SAVE25', active: false, discount: '0' },
     }
     answer(switchedOff)
     expect(snapshot.get()).toEqual(switchedOff)
@@ -232,15 +232,47 @@ describe('Cart page projection', () => {
     expect(snapshot.get()).toEqual(guestCart)
 
     for (const voucher of [
-      { code: 'SAVE25', active: false, discount: '6000' },
-      { code: 'SAVE25', active: 'true', discount: '6000' },
-      { code: 'SAVE25', discount: '6000' },
-      { code: '', active: true, discount: '6000' },
-      { active: true, discount: '6000' },
-      { code: 'SAVE25', active: true },
+      { id: 25, code: 'SAVE25', active: false, discount: '6000' },
+      { id: 25, code: 'SAVE25', active: 'true', discount: '6000' },
+      { id: 25, code: 'SAVE25', discount: '6000' },
+      { id: 25, code: '', active: true, discount: '6000' },
+      { id: 25, active: true, discount: '6000' },
+      { id: 25, code: 'SAVE25', active: true },
       undefined,
     ]) {
       answer({ ...voucherCart, voucher })
+      expect(snapshot.get()).toEqual(guestCart)
+    }
+  })
+
+  it('requires a positive safe integer ID for either voucher state', () => {
+    const { snapshot, answer } = openCart()
+
+    for (const active of [true, false]) {
+      const voucher = {
+        code: 'SAVE25',
+        active,
+        discount: active ? '6000' : '0',
+      }
+      const cart = active ? voucherCart : guestCart
+      const first = { ...cart, voucher: { ...voucher, id: 1 } }
+      const last = {
+        ...cart,
+        voucher: { ...voucher, id: Number.MAX_SAFE_INTEGER },
+      }
+      answer(first)
+      expect(snapshot.get()).toEqual(first)
+      answer(last)
+      expect(snapshot.get()).toEqual(last)
+
+      answer({ ...cart, voucher })
+      expect(snapshot.get()).toEqual(last)
+      for (const id of [null, '25', 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        answer({ ...cart, voucher: { ...voucher, id } })
+        expect(snapshot.get()).toEqual(last)
+      }
+
+      answer(guestCart)
       expect(snapshot.get()).toEqual(guestCart)
     }
   })
@@ -258,7 +290,12 @@ describe('Cart page projection', () => {
       ...guestCart,
       lines: [largeLine],
       itemsTotal: '9099990809000091',
-      voucher: { code: 'SAVE1', active: true, discount: '90999908090001' },
+      voucher: {
+        id: 1,
+        code: 'SAVE1',
+        active: true,
+        discount: '90999908090001',
+      },
       total: '9008990900910090',
     }
     answer(initial)
@@ -273,7 +310,7 @@ describe('Cart page projection', () => {
         { ...largeLine, price: 99_999_998, lineTotal: '9099990718000182' },
       ],
       itemsTotal: '9099990718000182',
-      voucher: { code: 'SAVE1', active: false, discount: '0' },
+      voucher: { id: 1, code: 'SAVE1', active: false, discount: '0' },
       total: '9099990718000182',
     }
     answer(live)

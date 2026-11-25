@@ -142,6 +142,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\WebSocketClient;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\AbstractServer;
@@ -184,6 +185,7 @@ use Closure;
 use Generator;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
@@ -903,6 +905,167 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $client->now = 10_000;
         $client->write();
         self::assertSame([], $this->read($socket));
+    }
+
+    /** @return iterable<string, array{string}> Socket changes before the owner receives an action */
+    public static function actionProofDeliveries(): iterable
+    {
+        yield 'unchanged subscription' => ['current'];
+        yield 'ordinary action without proof' => ['ordinary'];
+        yield 'subscribe parsed before dispatch' => ['subscribe'];
+        yield 'unsubscribe parsed in the physical continuation' => ['unsubscribe'];
+        yield 'subscribe parsed before a held action is released' => ['held'];
+        yield 'replacement socket before a held action is released' => ['held replacement'];
+        yield 'pending at intake and complete at send' => ['initially pending'];
+    }
+
+    #[DataProvider('actionProofDeliveries')]
+    public function testActionProofKeepsOnlyItsOriginalCurrentSubscriptionStamp(string $change): void
+    {
+        $previousRt = Hilos::$rt;
+        $previousBrowser = Hilos::$browser;
+        [$client] = $this->connect();
+        Hilos::$browser = new PerInstanceRosterIdentityBrowser();
+        Hilos::$rt = $this->sessionHandoffRuntime($client->acceptKey, 102);
+        try {
+            $request = $this->subscribe($client, params: ['id' => 1]);
+            $deliveryId = $request->data->deliveryId;
+            $identity = PageHandoffIdentity::current($client->acceptKey);
+            self::assertNotNull($identity);
+            $client->bindPageDeliveryIdentity($deliveryId, $identity);
+            if ($change !== 'initially pending') {
+                $client->completeDelivery('delivery', $deliveryId);
+            }
+
+            $proof = $change === 'ordinary' ? null : str_repeat('a', 64);
+            $client->acceptJson(json_encode([
+                'type' => SignalTypeConstants::ACTION,
+                'action' => DeliveryFlowClient::PROOF_ACTION,
+                'pageSubscriptionProof' => $proof,
+                'requestId' => 'proof-action',
+                'data' => ['id' => 1],
+            ], JSON_THROW_ON_ERROR));
+
+            if ($change === 'initially pending') {
+                $client->completeDelivery('delivery', $deliveryId);
+            } elseif ($change === 'subscribe') {
+                $client->acceptJson('{"type":"page_subscribe","page":"delivery","params":{"id":2}}');
+                self::assertSame(['id' => 1], Hilos::$sr->pageSubscription($client->acceptKey)?->params);
+            } elseif ($change === 'unsubscribe') {
+                $dispatcher = SignalDispatcherFixture::owner($this->master);
+                $dispatch = $dispatcher->createSignalDispatch(Hilos::$sr->getNextQueuedSignal(), false,
+                    $this->worker, $this->server, null, null, null);
+                while ($dispatch->hasWork() && $dispatch->physical === null) {
+                    $dispatcher->runSignalPortion($dispatch, 1);
+                }
+                self::assertNotNull($dispatch->physical);
+                self::assertSame($client, $dispatch->clientTarget?->getClient());
+                self::assertSame([], $this->worker->requests);
+                $client->acceptJson('{"type":"page_unsubscribe","page":"delivery"}');
+                self::assertSame(['id' => 1], Hilos::$sr->pageSubscription($client->acceptKey)?->params);
+                $dispatcher->runSignalPortion($dispatch, 64);
+            } elseif ($change === 'held' || $change === 'held replacement') {
+                $agents = $this->master->getAgentManagerDaemon();
+                $agents->started = false;
+                $this->worker->awaiting = true;
+                $this->master->drain();
+                self::assertSame([], $this->worker->requests);
+                $held = $this->heldAgentFrames();
+                self::assertCount(1, $held);
+                self::assertSame($deliveryId, $held[0]->signal->data->pageSubscriptionDeliveryId);
+
+                if ($change === 'held replacement') {
+                    $this->server->dropClient($client);
+                    [$replacement] = $this->connect($client->acceptKey);
+                    self::assertSame($replacement, $this->server->clientTarget($client->acceptKey)?->getClient());
+                } else {
+                    $client->acceptJson('{"type":"page_subscribe","page":"delivery","params":{"id":2}}');
+                }
+                $agents->started = true;
+                $this->worker->awaiting = false;
+                $this->master->onAgentStarted('owner');
+            }
+
+            $this->master->drain();
+            $actions = array_values(array_filter($this->worker->requests,
+                static fn (DaemonAgentMessageDTO $message): bool => $message->signal->data instanceof WebSocketActionSignalDTO));
+            if ($change === 'held replacement') {
+                self::assertSame([], $actions);
+                return;
+            }
+            self::assertCount(1, $actions);
+            $action = $actions[0]->signal->data;
+            self::assertSame('proof-action', $action->requestId);
+            self::assertSame(['id' => 1], $action->data);
+            self::assertSame($proof, $action->pageSubscriptionProof);
+            self::assertSame($change === 'current' ? $deliveryId : null, $action->pageSubscriptionDeliveryId);
+        } finally {
+            Hilos::$rt = $previousRt;
+            Hilos::$browser = $previousBrowser;
+        }
+    }
+
+    #[TestWith([false], 'confirmed at send')]
+    #[TestWith([true], 'unsubscribed during the peer walk')]
+    public function testActionProofIsCheckedBeforeThePeerQueueTakesOwnership(bool $unsubscribe): void
+    {
+        $previousRt = Hilos::$rt;
+        $previousBrowser = Hilos::$browser;
+        $router = Hilos::$sr;
+        [$client] = $this->connect();
+        [$peer, $link, $reader] = $this->connectPeer('socket', 'remote');
+        Hilos::$browser = new PerInstanceRosterIdentityBrowser();
+        Hilos::$rt = $this->sessionHandoffRuntime($client->acceptKey, 102);
+        try {
+            $request = $this->subscribe($client, params: ['id' => 1]);
+            $deliveryId = $request->data->deliveryId;
+            $identity = PageHandoffIdentity::current($client->acceptKey);
+            self::assertNotNull($identity);
+            $client->bindPageDeliveryIdentity($deliveryId, $identity);
+            $client->completeDelivery('delivery', $deliveryId);
+            $router->bindPageAgent($client->acceptKey, 'delivery', 'owner', null, 'remote');
+
+            $proof = str_repeat('a', 64);
+            $client->acceptJson(json_encode([
+                'type' => SignalTypeConstants::ACTION,
+                'action' => DeliveryFlowClient::PROOF_ACTION,
+                'pageSubscriptionProof' => $proof,
+                'requestId' => 'peer-proof-action',
+            ], JSON_THROW_ON_ERROR));
+            $dispatcher = SignalDispatcherFixture::owner($this->master);
+            $dispatch = $dispatcher->createSignalDispatch($router->getNextQueuedSignal(), false, $this->worker, $this->server, null, null, $peer);
+            while ($dispatch->hasWork() && $dispatch->physical === null) {
+                $dispatcher->runSignalPortion($dispatch, 1);
+            }
+            self::assertNotNull($dispatch->physical);
+            // Stop after the addressed peer lookup and before it invokes the send callback.
+            $dispatcher->runSignalPortion($dispatch, 3);
+            self::assertFalse($link->hasPendingWrite());
+            if ($unsubscribe) {
+                $client->acceptJson('{"type":"page_unsubscribe","page":"delivery"}');
+            }
+            $dispatcher->runSignalPortion($dispatch, 64);
+            self::assertSame([], $this->worker->requests);
+
+            [$forwarded] = $this->takePeerFrames($link, $reader, 1);
+            self::assertInstanceOf(PeerSignalDTO::class, $forwarded);
+            $serving = new DeliveryFlowMaster();
+            $worker = new DeliveryFlowWorkerServer($serving->getAgentManagerDaemon());
+            $serving->registerServer($worker);
+            $serving->deliverSignalToAgent('owner', null, $forwarded->signal);
+            self::assertCount(1, $worker->requests);
+            $action = $worker->requests[0]->signal->data;
+            self::assertInstanceOf(WebSocketActionSignalDTO::class, $action);
+            self::assertSame('peer-proof-action', $action->requestId);
+            self::assertSame($proof, $action->pageSubscriptionProof);
+            self::assertSame($unsubscribe ? null : $deliveryId, $action->pageSubscriptionDeliveryId);
+        } finally {
+            Hilos::$sr = $router;
+            Hilos::$rt = $previousRt;
+            Hilos::$browser = $previousBrowser;
+            $link->close();
+            socket_close($reader);
+        }
     }
 
     /** @return iterable<string, array{bool}> The new request on either side of a start report */
@@ -2501,6 +2664,19 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             self::assertSame(SignalTypeConstants::PAGE_SUBSCRIBE, $request->signalType->getType());
             self::assertSame(102, PageHandoffIdentity::fromMeta($request->meta)?->sessionId);
 
+            $pageSubscriptionProof = str_repeat('a', 64);
+            $action = json_encode([
+                'type' => SignalTypeConstants::ACTION,
+                'action' => DeliveryFlowClient::PROOF_ACTION,
+                'pageSubscriptionProof' => $pageSubscriptionProof,
+                'requestId' => 'proof-action',
+            ], JSON_THROW_ON_ERROR);
+            $client->acceptJson($action);
+            $pendingAction = $masterRouter->getNextQueuedSignal()?->data;
+            self::assertInstanceOf(WebSocketActionSignalDTO::class, $pendingAction);
+            self::assertSame($pageSubscriptionProof, $pendingAction->pageSubscriptionProof);
+            self::assertNull($pendingAction->pageSubscriptionDeliveryId);
+
             Hilos::$rt = $workerRt;
             SourceInterestRegistry::markReady(SourceChange::KIND_RT, DeliveryFlowSessionRuntime::connections);
             self::assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, DeliveryFlowSessionRuntime::connections));
@@ -2550,12 +2726,32 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             self::assertNull($worker->router->getNextQueuedSignal());
 
             Hilos::$rt = $masterRt;
-            $this->queueServingWorkerReply($this->master, $answer);
+            self::assertInstanceOf(PageResponseSignalData::class, $answer->data->data);
+            $this->queueServingWorkerReply($this->master, new SignalDTO(
+                $answer->signalSource,
+                $answer->signalType,
+                $answer->signalName,
+                new WebSocketSignalData(
+                    new PageResponseSignalData($page, $answer->data->data->payload, $pageSubscriptionProof),
+                    targetAcceptKey: $acceptKey,
+                ),
+                $answer->meta,
+            ));
             $this->queueServingWorkerReply($this->master, $complete);
             $client->write();
             $frames = $this->read($socket);
             self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($frames, 'type'));
             self::assertSame(102, $frames[0]['data']['payload']['data'][StateHilosSessionConnection::sessionId]);
+            self::assertSame($pageSubscriptionProof, $frames[0]['data']['pageSubscriptionProof']);
+
+            $client->acceptJson($action);
+            $queuedAction = $masterRouter->getNextQueuedSignal();
+            self::assertNotNull($queuedAction);
+            $restored = DaemonAgentMessageDTO::fromJson(new DaemonAgentMessageDTO($guest->getId(), $queuedAction)->toJson())->signal->data;
+            self::assertInstanceOf(WebSocketActionSignalDTO::class, $restored);
+            self::assertSame('proof-action', $restored->requestId);
+            self::assertSame($pageSubscriptionProof, $restored->pageSubscriptionProof);
+            self::assertSame($request->data->deliveryId, $restored->pageSubscriptionDeliveryId);
         } finally {
             Hilos::$rt = $previousRt;
             Hilos::$sr = $masterRouter;
@@ -5568,13 +5764,16 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
     }
 
     /** @return array{DeliveryFlowClient, Socket} Accepted socket and its browser end */
-    private function connect(): array
+    private function connect(?string $acceptKey = null): array
     {
         $pair = [];
         self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
         socket_set_nonblock($pair[0]);
         socket_set_nonblock($pair[1]);
         $client = new DeliveryFlowClient($pair[0]);
+        if ($acceptKey !== null) {
+            $client->acceptKey = $acceptKey;
+        }
         $this->server->attach($client);
         $this->connections[] = [$client, $pair[1]];
         return [$client, $pair[1]];
@@ -5723,6 +5922,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
 
 final class DeliveryFlowClient extends WebSocketClient
 {
+    public const string PROOF_ACTION = 'proof_action';
+
     public int $now = 0;
 
     public function __construct(Socket $socket, ?SocketTransportInterface $transport = null)
@@ -5740,6 +5941,14 @@ final class DeliveryFlowClient extends WebSocketClient
     protected function deliveryNowMs(): int
     {
         return $this->now;
+    }
+
+    /** @param string $actionName Test action accepted for transport assertions */
+    protected function onActionValidated(string $actionName): void
+    {
+        if ($actionName !== self::PROOF_ACTION) {
+            parent::onActionValidated($actionName);
+        }
     }
 
     protected function onHandshake(array $headers, string $acceptKey, array $cookies, ?string $clientIp, RequestQueryParams $queryParams): void
@@ -5890,6 +6099,10 @@ final class DeliveryFlowRouter extends SignalRouter
     {
         if ($signal->signalName->getName() === PerInstancePublicIdentityPage::PAGE) {
             return parent::getDestinations($signal);
+        }
+        if ($signal->signalType->getType() === SignalTypeConstants::ACTION && $signal->signalName->getName() === DeliveryFlowClient::PROOF_ACTION) {
+            $subscription = $this->pageSubscription($signal->data->acceptKey);
+            return $subscription?->page === 'delivery' ? [$this->pageServingAgent($subscription)] : [];
         }
         if (in_array($signal->signalType->getType(), ['page_subscribe', 'page_update_subscription'], true)) {
             if ($signal->signalName->getName() === 'unreachable') {

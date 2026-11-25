@@ -502,11 +502,7 @@ class SignalRouter
             }
             $authority = $this->pageAnswerAuthority?->acceptKey === $signalData->targetAcceptKey
                 ? $this->pageAnswerAuthority : null;
-            $subscription = match (true) {
-                $authority instanceof PageSubscriptionContext => $authority->subscription,
-                $authority instanceof WebSocketPageSubscribeSignalDTO => $authority,
-                default => $this->pageSubscription($signalData->targetAcceptKey),
-            };
+            $subscription = $this->pageAnswerSubscription($signalData->targetAcceptKey);
             if ($answerPage !== null && $subscription?->page === $answerPage && $subscription->deliveryId !== null) {
                 $meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID] = $subscription->deliveryId;
                 $meta[WebSocketPageSubscribeSignalDTO::PAGE] = $answerPage;
@@ -544,6 +540,37 @@ class SignalRouter
     {
         $this->queuedSignals->enqueue($signal);
         $this->queueWake?->__invoke();
+    }
+
+    /**
+     * @param string $acceptKey Socket addressed by the answer
+     * @param string $page Page being assembled
+     * @return ?string Internal delivery ID of the confirmed answer, including a first answer before mirror registration
+     */
+    final public function confirmedPageAnswerDeliveryId(string $acceptKey, string $page): ?string
+    {
+        $subscription = $this->pageAnswerSubscription($acceptKey);
+        $identity = $subscription instanceof PageSubscription ? $subscription->admittedIdentity : $this->pageAnswerIdentity;
+        if ($subscription?->page !== $page || $identity === null || !$this->isPageAnswerCurrent($acceptKey)) {
+            return null;
+        }
+
+        return $subscription->deliveryId;
+    }
+
+    /**
+     * @param string $acceptKey Socket addressed by the answer
+     * @return WebSocketPageSubscribeSignalDTO|PageSubscription|null Delivery authority bound to this assembly
+     */
+    private function pageAnswerSubscription(string $acceptKey): WebSocketPageSubscribeSignalDTO|PageSubscription|null
+    {
+        $authority = $this->pageAnswerAuthority?->acceptKey === $acceptKey ? $this->pageAnswerAuthority : null;
+
+        return match (true) {
+            $authority instanceof PageSubscriptionContext => $authority->subscription,
+            $authority instanceof WebSocketPageSubscribeSignalDTO => $authority,
+            default => $this->pageSubscription($acceptKey),
+        };
     }
 
     /**

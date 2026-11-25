@@ -29,6 +29,9 @@ export const CART_SET_QUANTITY = 'cart_set_quantity'
 /** Action name on the server (EcommerceShopSignalConstants::CART_APPLY_VOUCHER). */
 export const CART_APPLY_VOUCHER = 'cart_apply_voucher'
 
+/** Action name on the server (EcommerceShopSignalConstants::CART_REMOVE_VOUCHER). */
+export const CART_REMOVE_VOUCHER = 'cart_remove_voucher'
+
 /** One unit added to or removed from a saved quantity. */
 export type CartQuantityStep = -1 | 1
 
@@ -80,4 +83,23 @@ export function sendCartApplyVoucher(
   ownerKind: CartOwnerKind,
 ): ActionHandle {
   return actions.dispatch(CART_APPLY_VOUCHER, { code, ownerKind })
+}
+
+/**
+ * Remove the displayed voucher through the active Cart subscription.
+ *
+ * @param expectedVoucherId The voucher's primary key in the accepted snapshot.
+ * @param ownerKind The kind of cart in that snapshot.
+ * @param pageSubscriptionProof The proof accompanying that snapshot.
+ */
+export function sendCartRemoveVoucher(
+  expectedVoucherId: number,
+  ownerKind: CartOwnerKind,
+  pageSubscriptionProof: string,
+): ActionHandle {
+  return actions.dispatch(
+    CART_REMOVE_VOUCHER,
+    { expectedVoucherId, ownerKind },
+    { pageSubscriptionProof },
+  )
 }

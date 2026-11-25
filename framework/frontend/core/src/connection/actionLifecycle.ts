@@ -108,8 +108,14 @@ export interface ActionLifecycleSource {
    * @param action The action name.
    * @param data The action payload.
    * @param requestId The client-minted correlation id.
+   * @param pageSubscriptionProof Proof from the page snapshot the action uses.
    */
-  sendAction(action: string, data: unknown, requestId?: string): boolean
+  sendAction(
+    action: string,
+    data: unknown,
+    requestId?: string,
+    pageSubscriptionProof?: string,
+  ): boolean
   /**
    * Subscribe to one connection event; returns an unsubscribe.
    *
@@ -214,12 +220,12 @@ export class ActionLifecycle {
    *
    * @param action The action name the subscribed page routes on.
    * @param data The action payload.
-   * @param options Optional `replySchema` the success reply is validated against; when set, `done`'s `reply` is the parsed value and a reply that fails the schema rejects with `invalid-reply`.
+   * @param options Optional reply schema and proof from the originating page snapshot.
    */
   dispatch<T = unknown>(
     action: string,
     data: unknown,
-    options: { replySchema?: ZodType<T> } = {},
+    options: { replySchema?: ZodType<T>; pageSubscriptionProof?: string } = {},
   ): ActionHandle<T> {
     const requestId = String(++this.sequence)
     const loading = createSignal(false)
@@ -230,7 +236,12 @@ export class ActionLifecycle {
       reject = rejectFn
     })
 
-    if (!this.source.sendAction(action, data, requestId)) {
+    const { pageSubscriptionProof } = options
+    const sent =
+      pageSubscriptionProof === undefined
+        ? this.source.sendAction(action, data, requestId)
+        : this.source.sendAction(action, data, requestId, pageSubscriptionProof)
+    if (!sent) {
       // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
       reject(new ActionError(action, 'disconnected', 'Not connected.'))
 

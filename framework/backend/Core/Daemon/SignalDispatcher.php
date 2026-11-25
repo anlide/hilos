@@ -54,6 +54,7 @@ use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\Delivery\DeliveryCleanup;
 use Hilos\TruthSource\RtReplicaConfirmation;
@@ -2111,6 +2112,8 @@ class SignalDispatcher
             $recovery,
             $dispatch?->placementRecoveryRelay ?? false,
             $dispatch?->linkBoundUpload ?? false,
+            actionClientTarget: !$localOnly && $payload instanceof WebSocketActionSignalDTO && $payload->pageSubscriptionProof !== null
+                ? $dispatch?->clientTarget : null,
         );
         $existing = $dispatch?->heldId;
         if ($existing !== null && $this->agentSignalHolds()->get($existing)?->agentId === $agentId) {

@@ -113,6 +113,7 @@ export function bindPageScope(
         options,
         isLive,
         admission?.omitData,
+        response.pageSubscriptionProof,
       )
     } else if (signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR) {
       // Validated against pageSubscriptionErrorSchema at the parse boundary;

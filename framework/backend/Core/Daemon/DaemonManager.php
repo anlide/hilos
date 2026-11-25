@@ -263,6 +263,7 @@ use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
@@ -6155,7 +6156,12 @@ abstract class DaemonManager extends BaseManager implements
         $dispatch->clientAcceptKey = $signal->data instanceof WebSocketAcceptKeySignalDTO
             ? $signal->data->getAcceptKey()
             : ($signal->data instanceof WebSocketSignalData ? $signal->data->targetAcceptKey : null);
-        if ($webSocketServer !== null && $dispatch->clientAcceptKey !== null) {
+        if ($dispatch->release !== null && !$dispatch->release->localOnly
+            && $signal->data instanceof WebSocketActionSignalDTO && $signal->data->pageSubscriptionProof !== null) {
+            $dispatch->clientServer = $webSocketServer;
+            $dispatch->clientTarget = $dispatch->release->actionClientTarget;
+            $dispatch->clientResolved = true;
+        } elseif ($webSocketServer !== null && $dispatch->clientAcceptKey !== null) {
             $dispatch->clientServer = $webSocketServer;
             $dispatch->clientTarget = yield from $this->clientLookup($dispatch, $webSocketServer, $dispatch->clientAcceptKey);
             $dispatch->clientResolved = true;
@@ -11606,6 +11612,41 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Recheck the original socket at the send boundary, after any retained delivery steps.
+     * A stale stamp becomes absent so the addressed owner sends the normal action refusal.
+     *
+     * @param SignalDispatch $dispatch Lifetime retaining the original browser target
+     * @param SignalDTO $signal Envelope about to enter a worker or peer queue
+     * @param bool $fromPeer Whether another master already handed off the action
+     * @return ?SignalDTO Envelope for this send, or null when the originating socket has left
+     */
+    private function recheckActionProofForSend(SignalDispatch $dispatch, SignalDTO $signal, bool $fromPeer): ?SignalDTO
+    {
+        $data = $signal->data;
+        if ($fromPeer || !$data instanceof WebSocketActionSignalDTO || $data->pageSubscriptionProof === null) {
+            return $signal;
+        }
+
+        $client = $dispatch->clientTarget?->getClient();
+        if ($client === null) {
+            return null;
+        }
+        if ($data->pageSubscriptionDeliveryId === null || $data->pageSubscriptionDeliveryId === $client->actionPageSubscriptionDeliveryId()) {
+            return $signal;
+        }
+
+        return new SignalDTO($signal->signalSource, $signal->signalType, $signal->signalName, new WebSocketActionSignalDTO(
+            acceptKey: $data->acceptKey,
+            action: $data->action,
+            data: $data->data,
+            requestId: $data->requestId,
+            clientIp: $data->clientIp,
+            sessionIdentity: $data->sessionIdentity,
+            pageSubscriptionProof: $data->pageSubscriptionProof,
+        ), $signal->meta);
+    }
+
+    /**
      * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Queued or released browser request
      * @param bool $localOnly Whether this request was forwarded by a peer to this serving node
@@ -13462,11 +13503,15 @@ abstract class DaemonManager extends BaseManager implements
             $relay = $dispatch->release?->recovery !== null && $dispatch->release->localOnly;
             $relayOrder = $relay && $pending?->handoff
                 ? Hilos::$cluster?->placement()?->confirmedWorkerOrder($pending->agentId, $destination->nodeId) : null;
+            $prepared = $this->recheckActionProofForSend($dispatch, $signal, $relay);
+            if ($prepared === null) {
+                return AgentDeliveryOutcome::Delivered;
+            }
             $delivered = $mesh->sendSignalToNode(
                 $destination->nodeId,
                 $destination->agentType,
                 $destination->agentIndex,
-                $relayOrder === null ? $signal : new SignalDTO($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data, [
+                $relayOrder === null ? $prepared : new SignalDTO($signal->signalSource, $signal->signalType, $signal->signalName, $prepared->data, [
                     ...$signal->meta,
                     PageHandoffIdentity::META_RELAY_LEADER => $relayOrder->leaderNodeId,
                     PageHandoffIdentity::META_RELAY_TERM => $relayOrder->term,
@@ -13627,10 +13672,14 @@ abstract class DaemonManager extends BaseManager implements
                 }
             }
 
+            $prepared = $this->recheckActionProofForSend($dispatch, $signal, $localOnly);
+            if ($prepared === null) {
+                return AgentDeliveryOutcome::Delivered;
+            }
             $workerServer->sendSignalToAgent(
                 $agentType,
                 $agentIndex,
-                new DaemonAgentMessageDTO(agentId: $agentId, signal: $signal),
+                new DaemonAgentMessageDTO(agentId: $agentId, signal: $prepared),
                 $this->signalLifecycleSink($dispatch),
             );
         } catch (HilosException $failure) {

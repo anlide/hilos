@@ -82,6 +82,7 @@ final class PagePayload
      * @param array<string, mixed> $tables Row collections per table key
      * @param array<string, mixed> $windows First window per viewport-table key
      * @param array<string, mixed> $refusedWindows Refusal of each viewport table whose first window could not be built
+     * @param ?string $pageSubscriptionProof Proof attached to the page response envelope during assembly
      */
     public function __construct(
         public readonly array $entities = [],
@@ -90,6 +91,7 @@ final class PagePayload
         public readonly array $tables = [],
         public readonly array $windows = [],
         public readonly array $refusedWindows = [],
+        public readonly ?string $pageSubscriptionProof = null,
     ) {
     }
 

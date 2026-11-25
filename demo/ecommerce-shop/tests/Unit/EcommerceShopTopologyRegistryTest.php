@@ -67,6 +67,7 @@ use Demo\EcommerceShop\Pages\DTO\CategoryDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartSetQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartVoucherApplyActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CartVoucherRemoveActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
@@ -1222,6 +1223,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             EcommerceShopSignalConstants::CART_STEP_QUANTITY => CartStepQuantityActionDTO::class,
             EcommerceShopSignalConstants::CART_SET_QUANTITY => CartSetQuantityActionDTO::class,
             $action => CartVoucherApplyActionDTO::class,
+            EcommerceShopSignalConstants::CART_REMOVE_VOUCHER => CartVoucherRemoveActionDTO::class,
         ], CartPage::ACTIONS);
         self::assertSame(CartPage::PAGE, Hilos::getPageActionRoutes()[$action]);
         self::assertSame(CartVoucherApplyActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
@@ -1248,6 +1250,21 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             $router->bindPageAgent($ownerKind, CartPage::PAGE, $agentType, $agentIndex);
             self::assertEquals([new AgentDestination($agentType, $agentIndex)], $router->getDestinations($frame));
         }
+    }
+
+    public function testCartVoucherRemovalIsAWriteActionOwnedByTheCartPage(): void
+    {
+        $action = EcommerceShopSignalConstants::CART_REMOVE_VOUCHER;
+
+        self::assertSame('cart_remove_voucher', $action);
+        self::assertSame(CartPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+        self::assertSame(CartVoucherRemoveActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getActionAgentRoutes()[$action]);
+        self::assertNotContains($action, CartPage::AUTH_ACTIONS);
+        self::assertNotContains($action, CartPage::READING_ACTIONS);
+        self::assertArrayNotHasKey($action, Hilos::getAgentActionRoutes());
+        self::assertArrayNotHasKey($action, Hilos::getAgentActionDtoRoutes());
+        self::assertArrayNotHasKey($action, Hilos::getAgentSignalRoutes());
     }
 
     public function testPageRegistryKeysMatchPageClassConstants(): void

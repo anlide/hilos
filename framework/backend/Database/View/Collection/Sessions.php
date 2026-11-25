@@ -78,13 +78,14 @@ class Sessions extends DbCollection
      *
      * @param int $sessionId Session primary key
      * @param int $userId Expected bound user
+     * @param ?string $token Expected token when the read depends on its rotation
      * @return bool Whether the persisted session is active and bound to that user
      * @throws DatabaseException When the primary-key read fails
      * @throws InvalidArgumentException When the entity query is invalid
      */
-    public function isStoredActiveForUser(int $sessionId, int $userId): bool
+    public function isStoredActiveForUser(int $sessionId, int $userId, ?string $token = null): bool
     {
-        return $this->objectCollection->isStoredActiveForUser($sessionId, $userId);
+        return $this->objectCollection->isStoredActiveForUser($sessionId, $userId, $token);
     }
 
     /**

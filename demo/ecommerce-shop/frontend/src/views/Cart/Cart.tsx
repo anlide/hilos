@@ -3,7 +3,12 @@ import {
   registerFocusReturnFallback,
   subscribeSignal,
 } from '@hilos/core/base'
-import { HilosLink, useSignal } from '@hilos/react/base'
+import {
+  HilosLink,
+  LoadingButton,
+  useSignal,
+  useTrackedAction,
+} from '@hilos/react/base'
 import {
   Component,
   Fragment,
@@ -22,7 +27,7 @@ import { CartQuantityEditModal } from './CartQuantityEditModal.js'
 import { CartRemoveButton } from './CartRemoveButton.js'
 import CartSkeleton from './CartSkeleton.js'
 import { CartVoucherApplyModal } from './CartVoucherApplyModal.js'
-import { type CartOwnerKind } from './cartActions.js'
+import { sendCartRemoveVoucher, type CartOwnerKind } from './cartActions.js'
 import { createCartPageSignal } from './cartPage.js'
 import { createCartQuantityEdit } from './cartQuantityEdit.js'
 import {
@@ -33,6 +38,20 @@ import {
 } from './types/Cart.js'
 
 const cartPage = createCartPageSignal(scopes, currentUserId, connection)
+
+/** Read the current owner's accepted cart while voucher controls are available. */
+function readVoucherCart(): CartSnapshot | null {
+  const snapshot = cartPage.get()
+  if (
+    snapshot === null ||
+    snapshot.userId !== currentUserId.get() ||
+    snapshot.lines.length === 0
+  ) {
+    return null
+  }
+
+  return snapshot
+}
 
 /** A saved selection at the current price and availability. */
 function CartItem({
@@ -114,7 +133,47 @@ function CartItem({
 }
 
 /** The selected voucher: what it takes off, or a muted line saying it is switched off. */
-function CartVoucherRow({ voucher }: { voucher: CartVoucher }) {
+function CartVoucherRow({
+  voucher,
+  owner,
+  pageSubscriptionProof,
+}: {
+  voucher: CartVoucher
+  owner: string
+  pageSubscriptionProof?: string
+}) {
+  const remove = useTrackedAction()
+  const submitting = useRef(false)
+
+  async function submit(): Promise<void> {
+    if (submitting.current) return
+
+    const snapshot = readVoucherCart()
+    if (
+      snapshot === null ||
+      cartIdentity(snapshot) !== owner ||
+      snapshot.voucher?.id !== voucher.id ||
+      pageSubscriptionProof === undefined ||
+      snapshot.pageSubscriptionProof !== pageSubscriptionProof
+    ) {
+      return
+    }
+
+    // Dispatch sends synchronously, before the tracked runner accepts a handle.
+    submitting.current = true
+    try {
+      await remove.run(
+        sendCartRemoveVoucher(
+          snapshot.voucher.id,
+          snapshot.userId === null ? 'guest' : 'account',
+          pageSubscriptionProof,
+        ),
+      )
+    } finally {
+      submitting.current = false
+    }
+  }
+
   return (
     <div
       className={`d-flex justify-content-between gap-2 small mb-1${voucher.active ? '' : ' text-body-secondary'}`}
@@ -122,6 +181,16 @@ function CartVoucherRow({ voucher }: { voucher: CartVoucher }) {
     >
       <dt className="fw-normal">
         Voucher <span className="font-monospace">{voucher.code}</span>
+        <LoadingButton
+          type="button"
+          className="btn-link btn-sm p-1 ms-1 text-body-secondary"
+          aria-label="Remove voucher"
+          data-id="cart-voucher-remove"
+          loading={remove.busy}
+          onClick={() => void submit()}
+        >
+          <i className="bi bi-x-circle" aria-hidden="true" />
+        </LoadingButton>
         {!voucher.active && ' · Inactive'}
       </dt>
       {voucher.active ? (
@@ -140,6 +209,8 @@ interface CartRowFocus {
   readonly neighbors: readonly Element[]
 }
 
+type CartFocus = CartRowFocus | { readonly voucherRemove: HTMLButtonElement }
+
 interface CartContentsProps {
   readonly cart: CartSnapshot
   readonly onEdit: (lineId: number) => void
@@ -150,8 +221,21 @@ interface CartContentsProps {
 class CartContents extends Component<CartContentsProps> {
   private readonly list = createRef<HTMLUListElement>()
   private readonly empty = createRef<HTMLDivElement>()
+  private readonly summary = createRef<HTMLDListElement>()
+  private readonly applyVoucher = createRef<HTMLButtonElement>()
 
-  getSnapshotBeforeUpdate(): CartRowFocus | null {
+  getSnapshotBeforeUpdate(): CartFocus | null {
+    const voucherRemove =
+      this.summary.current?.querySelector<HTMLButtonElement>(
+        '[data-id="cart-voucher-remove"]',
+      )
+    if (
+      voucherRemove &&
+      voucherRemove.ownerDocument.activeElement === voucherRemove
+    ) {
+      return { voucherRemove }
+    }
+
     const list = this.list.current
     if (!list) return null
 
@@ -176,16 +260,29 @@ class CartContents extends Component<CartContentsProps> {
   componentDidUpdate(
     _previous: Readonly<CartContentsProps>,
     _state: unknown,
-    focus: CartRowFocus | null,
+    focus: CartFocus | null,
   ) {
-    if (!focus || focus.row.isConnected) return
+    if (!focus) return
 
+    const fallback = this.empty.current?.querySelector<HTMLAnchorElement>(
+      '[data-id="shop-cart-go-shopping"]',
+    )
+    if ('voucherRemove' in focus) {
+      const { voucherRemove } = focus
+      if (voucherRemove.isConnected) return
+
+      const { activeElement, body } = voucherRemove.ownerDocument
+      if (activeElement?.isConnected && activeElement !== body) return
+
+      const target = this.applyVoucher.current ?? fallback
+      target?.focus()
+      return
+    }
+
+    if (focus.row.isConnected) return
     const row = focus.neighbors.find((neighbor) => neighbor.isConnected)
     const remove = (row ?? this.list.current)?.querySelector<HTMLButtonElement>(
       '[data-id="shop-cart-remove-line"]',
-    )
-    const fallback = this.empty.current?.querySelector<HTMLAnchorElement>(
-      '[data-id="shop-cart-go-shopping"]',
     )
     const target = remove ?? fallback
     target?.focus()
@@ -243,13 +340,18 @@ class CartContents extends Component<CartContentsProps> {
             <div className="col-lg-4">
               <div className="card">
                 <div className="card-body">
-                  <dl className="mb-3">
+                  <dl ref={this.summary} className="mb-3">
                     <div className="d-flex justify-content-between gap-2 small mb-1">
                       <dt className="fw-normal">Items</dt>
                       <dd className="mb-0">{formatMoney(cart.itemsTotal)}</dd>
                     </div>
                     {cart.voucher !== null && (
-                      <CartVoucherRow voucher={cart.voucher} />
+                      <CartVoucherRow
+                        key={owner}
+                        voucher={cart.voucher}
+                        owner={owner}
+                        pageSubscriptionProof={cart.pageSubscriptionProof}
+                      />
                     )}
                     <div className="d-flex justify-content-between gap-2 fw-semibold">
                       <dt>Total</dt>
@@ -260,6 +362,7 @@ class CartContents extends Component<CartContentsProps> {
                   </dl>
                   <div className="d-grid">
                     <button
+                      ref={this.applyVoucher}
                       key={owner}
                       type="button"
                       className="btn btn-sm btn-outline-secondary"
@@ -357,15 +460,8 @@ export default function Cart() {
   }, [])
 
   function openVoucher(): void {
-    const snapshot = cartPage.get()
-    if (
-      voucherOpening.get() !== null ||
-      snapshot === null ||
-      snapshot.userId !== currentUserId.get() ||
-      snapshot.lines.length === 0
-    ) {
-      return
-    }
+    const snapshot = readVoucherCart()
+    if (voucherOpening.get() !== null || snapshot === null) return
 
     voucherOpening.set({
       id: ++nextVoucherId.current,
@@ -374,12 +470,10 @@ export default function Cart() {
   }
 
   function voucherOwnerKind(opening: CartVoucherOpening): CartOwnerKind | null {
-    const snapshot = cartPage.get()
+    const snapshot = readVoucherCart()
     if (
       voucherOpening.get() !== opening ||
       snapshot === null ||
-      snapshot.userId !== currentUserId.get() ||
-      snapshot.lines.length === 0 ||
       cartIdentity(snapshot) !== opening.owner
     ) {
       return null

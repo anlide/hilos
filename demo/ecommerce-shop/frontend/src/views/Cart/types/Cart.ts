@@ -3,6 +3,9 @@ import { z } from '@hilos/core/base'
 import { KOPECK_AMOUNT_PATTERN } from '../../../money/money.js'
 
 const totalSchema = z.string().regex(KOPECK_AMOUNT_PATTERN)
+const voucherIdSchema = z
+  .number()
+  .refine((id) => Number.isSafeInteger(id) && id > 0)
 
 /** The complete `data.cart` snapshot sent by the Cart page. */
 export const cartSnapshotSchema = z
@@ -28,11 +31,13 @@ export const cartSnapshotSchema = z
     voucher: z
       .discriminatedUnion('active', [
         z.object({
+          id: voucherIdSchema,
           code: z.string().min(1),
           active: z.literal(true),
           discount: totalSchema,
         }),
         z.object({
+          id: voucherIdSchema,
           code: z.string().min(1),
           active: z.literal(false),
           discount: z.literal('0'),
@@ -48,7 +53,9 @@ export const cartSnapshotSchema = z
     },
   )
 
-export type CartSnapshot = z.infer<typeof cartSnapshotSchema>
+export type CartSnapshot = z.infer<typeof cartSnapshotSchema> & {
+  readonly pageSubscriptionProof?: string
+}
 export type CartLine = CartSnapshot['lines'][number]
 export type CartVoucher = NonNullable<CartSnapshot['voucher']>
 

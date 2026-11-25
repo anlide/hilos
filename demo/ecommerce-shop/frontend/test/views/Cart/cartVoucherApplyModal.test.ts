@@ -85,7 +85,7 @@ const guest: CartSnapshot = {
 const empty = { ...guest, lines: [], itemsTotal: '0', total: '0' }
 const discounted: CartSnapshot = {
   ...guest,
-  voucher: { code: 'SAVE20', active: true, discount: '200' },
+  voucher: { id: 20, code: 'SAVE20', active: true, discount: '200' },
   total: '800',
 }
 const sendAction = vi.mocked(wire.connection.sendAction)
@@ -231,7 +231,7 @@ it('labels the action from the accepted voucher and opens an empty, focused fiel
   await act(async () =>
     answer({
       ...guest,
-      voucher: { code: 'SAVE20', active: false, discount: '0' },
+      voucher: { id: 20, code: 'SAVE20', active: false, discount: '0' },
     }),
   )
   expect(trigger().textContent).toBe('Apply another voucher')

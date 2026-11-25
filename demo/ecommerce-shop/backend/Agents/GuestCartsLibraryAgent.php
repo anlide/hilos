@@ -442,6 +442,22 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Reconciles the guest voucher slot while the caller holds the session lock.
+     *
+     * @param int $sessionId Browser session ID
+     * @param int $cartEpoch Number of the guest cart under that lock
+     * @return ?int Saved voucher ID, or null when the slot is empty
+     * @throws NamedDatabaseException When the binding database or table cannot be resolved
+     * @throws DatabaseException When the slot read or reconciliation fails
+     * @throws InvalidArgumentException When the slot query or View item cannot be built
+     * @throws LogicException When the slot collection is misconfigured
+     */
+    public function storedVoucherId(int $sessionId, int $cartEpoch): ?int
+    {
+        return Hilos::$db->sessionVoucherCarts->storedSlot($sessionId, $cartEpoch)?->voucherId;
+    }
+
+    /**
      * Reads the current catalog row of the voucher selected for a guest cart.
      *
      * @param int $sessionId Browser session ID

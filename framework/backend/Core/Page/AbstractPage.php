@@ -503,7 +503,7 @@ abstract class AbstractPage implements ActionHostInterface
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
             $acceptKey,
-            new PageResponseSignalData(static::PAGE, $own->over($snapshot)),
+            new PageResponseSignalData(static::PAGE, $own->over($snapshot), $own->pageSubscriptionProof),
         );
         if ($router?->isPageAnswerCurrent($acceptKey) === false) {
             return;
@@ -1328,6 +1328,7 @@ abstract class AbstractPage implements ActionHostInterface
             data: $viewer ? $shell + $payload->data : $payload->data + $shell,
             lists: $payload->lists,
             tables: $payload->tables,
+            pageSubscriptionProof: $payload->pageSubscriptionProof,
         );
     }
 

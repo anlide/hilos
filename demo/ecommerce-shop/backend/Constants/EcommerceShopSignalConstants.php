@@ -116,6 +116,9 @@ final class EcommerceShopSignalConstants
     /** @var string Browser action to apply a voucher to the current cart */
     public const string CART_APPLY_VOUCHER = 'cart_apply_voucher';
 
+    /** @var string Browser action to remove the voucher displayed in the cart */
+    public const string CART_REMOVE_VOUCHER = 'cart_remove_voucher';
+
     /** @var string Server → client, WS_GROUP: the whole cart of one guest session or one person, sent by its owner */
     public const string CART_STATE = 'cart_state';
 

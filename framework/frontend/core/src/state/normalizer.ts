@@ -152,6 +152,7 @@ export function ingest(
  * @param options Binding-local entity-type overrides for the payload's slots.
  * @param isCurrent Whether the delivery can still write to the scope after each reactive write.
  * @param omitData Inline data keys to leave at their current values.
+ * @param pageSubscriptionProof Proof accompanying the page response's plain data.
  */
 export function ingestWhileCurrent(
   scope: Scope,
@@ -159,6 +160,7 @@ export function ingestWhileCurrent(
   options: NormalizerOptions,
   isCurrent?: () => boolean,
   omitData?: readonly string[],
+  pageSubscriptionProof?: string,
 ): void {
   const slots = payload.entities ?? {}
   const data = payload.data ?? {}
@@ -213,7 +215,7 @@ export function ingestWhileCurrent(
   for (const [key, value] of Object.entries(data)) {
     if (isCurrent && !isCurrent()) return
     if (omitData?.includes(key)) continue
-    scope.data.set(key, value)
+    scope.data.set(key, value, pageSubscriptionProof)
   }
   for (const [listKey, section] of Object.entries(lists)) {
     if (isCurrent && !isCurrent()) return

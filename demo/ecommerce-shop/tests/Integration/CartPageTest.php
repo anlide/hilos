@@ -353,15 +353,16 @@ final class CartPageTest extends CartPageEnvironment
         self::stock($guestProduct, $warehouse, 5);
         self::stock($accountProduct, $warehouse, 5);
         $guestVoucher = $this->voucher('CARTGUEST10', 10);
+        $accountVoucher = $this->voucher('CARTOWNER20', 20);
         self::guestVoucher($sessionId, $guestVoucher->id);
-        self::accountVoucher($userId, $this->voucher('CARTOWNER20', 20)->id);
+        self::accountVoucher($userId, $accountVoucher->id);
         self::connect(self::FIRST, null, $sessionId);
         $guest = new GuestCartsLibraryAgent();
         $account = new UserAgent((string)$userId);
         $this->subscribe($guest, self::FIRST);
         $cart = $this->cart(self::FIRST);
         self::assertSame([$guestProduct], array_column($cart['lines'], 'productId'));
-        self::assertSame(['code' => 'CARTGUEST10', 'active' => true, 'discount' => '1200'], $cart['voucher']);
+        self::assertSame(['id' => $guestVoucher->id, 'code' => 'CARTGUEST10', 'active' => true, 'discount' => '1200'], $cart['voucher']);
         self::assertSame('10800', $cart['total']);
 
         self::bindFirstUser($userId);
@@ -371,7 +372,7 @@ final class CartPageTest extends CartPageEnvironment
         $cart = $this->cart(self::FIRST);
         self::assertSame($userId, $cart['userId']);
         self::assertSame([$accountProduct], array_column($cart['lines'], 'productId'));
-        self::assertSame(['code' => 'CARTOWNER20', 'active' => true, 'discount' => '3600'], $cart['voucher']);
+        self::assertSame(['id' => $accountVoucher->id, 'code' => 'CARTOWNER20', 'active' => true, 'discount' => '3600'], $cart['voucher']);
         self::assertSame('14400', $cart['total']);
         self::assertSame((string)$userId, Hilos::$sr->pageSubscription(self::FIRST)?->agentIndex);
         self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $guestVoucher->actions->setActive(false))));
@@ -389,7 +390,7 @@ final class CartPageTest extends CartPageEnvironment
         $cart = $this->cart(self::FIRST);
         self::assertNull($cart['userId']);
         self::assertSame([$guestProduct], array_column($cart['lines'], 'productId'));
-        self::assertSame(['code' => 'CARTGUEST10', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame(['id' => $guestVoucher->id, 'code' => 'CARTGUEST10', 'active' => false, 'discount' => '0'], $cart['voucher']);
         self::assertSame($cart['itemsTotal'], $cart['total']);
         self::assertSame(AgentType::GUEST_CARTS_LIBRARY, Hilos::$sr->pageSubscription(self::FIRST)?->agentType);
 
@@ -999,7 +1000,8 @@ final class CartPageTest extends CartPageEnvironment
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
         $lineId = self::accountLine($userId, $product, 2);
-        self::accountVoucher($userId, $this->voucher('CARTLIVE20', 20)->id);
+        $voucher = $this->voucher('CARTLIVE20', 20);
+        self::accountVoucher($userId, $voucher->id);
         self::connect(self::FIRST, $userId, $sessionId);
         $this->subscribe(new UserAgent((string)$userId), self::FIRST);
         $cart = $this->cart(self::FIRST);
@@ -1030,7 +1032,7 @@ final class CartPageTest extends CartPageEnvironment
         self::assertSame([$lineId], array_column($cart['lines'], 'lineId'));
         self::assertSame([9000], array_column($cart['lines'], 'price'));
         self::assertSame('18000', $cart['itemsTotal']);
-        self::assertSame(['code' => 'CARTLIVE20', 'active' => true, 'discount' => '3600'], $cart['voucher']);
+        self::assertSame(['id' => $voucher->id, 'code' => 'CARTLIVE20', 'active' => true, 'discount' => '3600'], $cart['voucher']);
         self::assertSame('14400', $cart['total']);
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
     }
@@ -1143,7 +1145,7 @@ final class CartPageTest extends CartPageEnvironment
 
         $cart = $this->cart(self::FIRST);
         self::assertSame('9999999999999999', $cart['itemsTotal']);
-        self::assertSame(['code' => 'CARTPAGE1', 'active' => true, 'discount' => '100000000000000'], $cart['voucher']);
+        self::assertSame(['id' => $voucher->id, 'code' => 'CARTPAGE1', 'active' => true, 'discount' => '100000000000000'], $cart['voucher']);
         self::assertSame('9899999999999999', $cart['total']);
         self::assertSame(['4999999950000000', '5000000049999999'], array_column($cart['lines'], 'lineTotal'));
         self::assertSame([ProductFields::PRICE_MAX, ProductFields::PRICE_MAX], array_column($cart['lines'], 'price'));
@@ -1158,7 +1160,7 @@ final class CartPageTest extends CartPageEnvironment
 
         self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $voucher->actions->setActive(false))));
         $cart = $this->cart(self::FIRST);
-        self::assertSame(['code' => 'CARTPAGE1', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame(['id' => $voucher->id, 'code' => 'CARTPAGE1', 'active' => false, 'discount' => '0'], $cart['voucher']);
         self::assertSame('9999999899999999', $cart['total']);
         self::assertSame($cart['itemsTotal'], $cart['total']);
 
@@ -1197,13 +1199,13 @@ final class CartPageTest extends CartPageEnvironment
         $this->subscribe($guest, self::FIRST);
         $cart = $this->cart(self::FIRST);
         self::assertSame('1002', $cart['itemsTotal']);
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '251'], $cart['voucher']);
+        self::assertSame(['id' => $active->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '251'], $cart['voucher']);
         self::assertSame('751', $cart['total']);
 
         self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         $cart = $this->cart(self::ACCOUNT);
-        self::assertSame(['code' => 'CARTPAGEOFF10', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame(['id' => $inactive->id, 'code' => 'CARTPAGEOFF10', 'active' => false, 'discount' => '0'], $cart['voucher']);
         self::assertSame('1002', $cart['total']);
 
         self::connect(self::SECOND, null, $otherSessionId);
@@ -1211,7 +1213,7 @@ final class CartPageTest extends CartPageEnvironment
         $cart = $this->cart(self::SECOND);
         self::assertSame([7], array_column($cart['lines'], 'quantity'));
         self::assertSame('5010', $cart['itemsTotal']);
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '1253'], $cart['voucher']);
+        self::assertSame(['id' => $active->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '1253'], $cart['voucher']);
         self::assertSame('3757', $cart['total']);
 
         self::connect(self::EMPTY, null, $unrelatedSessionId);
@@ -1219,7 +1221,7 @@ final class CartPageTest extends CartPageEnvironment
         $cart = $this->cart(self::EMPTY);
         self::assertSame([0], array_column($cart['lines'], 'availableQuantity'));
         self::assertSame('0', $cart['itemsTotal']);
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '0'], $cart['voucher']);
+        self::assertSame(['id' => $active->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '0'], $cart['voucher']);
         self::assertSame('0', $cart['total']);
     }
 
@@ -1262,14 +1264,14 @@ final class CartPageTest extends CartPageEnvironment
         $facts[] = self::productPriceFact($product, 10_000);
         self::assertSame([], $this->flushCartFacts(...$facts));
         foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
-            self::assertSame(['code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
+            self::assertSame(['id' => $shared->id, 'code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
             self::assertSame('20000', $cart['itemsTotal']);
             self::assertSame('20000', $cart['total']);
         }
 
         self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $shared->actions->setActive(true))));
         foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
-            self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '5000'], $cart['voucher']);
+            self::assertSame(['id' => $shared->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '5000'], $cart['voucher']);
             self::assertSame('15000', $cart['total']);
         }
 
@@ -1279,7 +1281,7 @@ final class CartPageTest extends CartPageEnvironment
         foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
             self::assertSame([1], array_column($cart['lines'], 'availableQuantity'));
             self::assertSame('10000', $cart['itemsTotal']);
-            self::assertSame(['code' => 'CARTPAGE30', 'active' => true, 'discount' => '3000'], $cart['voucher']);
+            self::assertSame(['id' => $shared->id, 'code' => 'CARTPAGE30', 'active' => true, 'discount' => '3000'], $cart['voucher']);
             self::assertSame('7000', $cart['total']);
         }
     }
@@ -1304,7 +1306,7 @@ final class CartPageTest extends CartPageEnvironment
         self::connect(self::ACCOUNT, $userId, self::storedSession($userId));
         $this->subscribe(new UserAgent((string) $userId), self::ACCOUNT);
         $cart = $this->cart(self::ACCOUNT);
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '6000'], $cart['voucher']);
+        self::assertSame(['id' => $second->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '6000'], $cart['voucher']);
         self::assertSame('18000', $cart['total']);
         self::assertSame($first->id, Hilos::$db->userVoucherCarts[$userId]->voucherId);
 
@@ -1314,7 +1316,7 @@ final class CartPageTest extends CartPageEnvironment
 
         self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $second->actions->setActive(false))));
         $cart = $this->cartsByConnection([self::ACCOUNT])[self::ACCOUNT];
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame(['id' => $second->id, 'code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
         self::assertSame('24000', $cart['itemsTotal']);
         self::assertSame($cart['itemsTotal'], $cart['total']);
     }
@@ -1354,7 +1356,7 @@ final class CartPageTest extends CartPageEnvironment
         );
         self::assertSame([], $this->flushCartFacts(self::guestVoucherCreated($bindingId)));
         $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '3000'], $cart['voucher']);
+        self::assertSame(['id' => $first->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '3000'], $cart['voucher']);
         self::assertSame('9000', $cart['total']);
 
         $staleId = self::guestVoucher($otherSessionId, $departed->id);
@@ -1390,12 +1392,12 @@ final class CartPageTest extends CartPageEnvironment
             previous: [UserVoucherCart::voucher_id => $first->id],
         ))));
         $cart = $this->cartsByConnection([self::ACCOUNT])[self::ACCOUNT];
-        self::assertSame(['code' => 'CARTPAGE50', 'active' => true, 'discount' => '6000'], $cart['voucher']);
+        self::assertSame(['id' => $second->id, 'code' => 'CARTPAGE50', 'active' => true, 'discount' => '6000'], $cart['voucher']);
         self::assertSame('6000', $cart['total']);
 
         self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $first->actions->setActive(false))));
         $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
+        self::assertSame(['id' => $first->id, 'code' => 'CARTPAGE25', 'active' => false, 'discount' => '0'], $cart['voucher']);
 
         Database::sql('UPDATE session_voucher_cart SET voucher_id = ? WHERE id = ?', [$second->id, $bindingId]);
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
@@ -1405,7 +1407,7 @@ final class CartPageTest extends CartPageEnvironment
             previous: [SessionVoucherCart::voucher_id => $first->id],
         ))));
         $cart = $this->cartsByConnection([self::SECOND])[self::SECOND];
-        self::assertSame(['code' => 'CARTPAGE50', 'active' => true, 'discount' => '6000'], $cart['voucher']);
+        self::assertSame(['id' => $second->id, 'code' => 'CARTPAGE50', 'active' => true, 'discount' => '6000'], $cart['voucher']);
         self::assertSame('6000', $cart['total']);
 
         self::assertSame([], $this->flushCartFacts(self::guestVoucherRemoved($bindingId)));
@@ -1458,7 +1460,7 @@ final class CartPageTest extends CartPageEnvironment
             new DbSyncClearedSignalData(EcommerceShopDbContext::vouchers),
         )));
         foreach ($this->cartsByConnection([self::FIRST, self::ACCOUNT]) as $cart) {
-            self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '3000'], $cart['voucher']);
+            self::assertSame(['id' => $voucher->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '3000'], $cart['voucher']);
             self::assertSame('9000', $cart['total']);
         }
 
@@ -1481,8 +1483,11 @@ final class CartPageTest extends CartPageEnvironment
         $voucher = $this->voucher('CARTPAGE25', 25);
         self::guestVoucher($sessionId, $voucher->id);
         self::connect(self::FIRST, null, $sessionId);
-        $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
-        self::assertSame('18000', $this->cart(self::FIRST)['total']);
+        $this->subscribeTrackedCart(new GuestCartsLibraryAgent(), self::FIRST . ':1');
+        $initial = $this->pageReply(self::FIRST);
+        self::assertInstanceOf(PageResponseSignalData::class, $initial);
+        self::assertNotNull($initial->pageSubscriptionProof);
+        self::assertSame('18000', $initial->payload->data[CartPage::DATA_CART]['total']);
 
         self::assertSame([], $this->flushWithStockReadFailure(false, ...$this->voucherFacts(
             static fn () => $voucher->actions->setActive(false),
@@ -1493,8 +1498,11 @@ final class CartPageTest extends CartPageEnvironment
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
 
         self::assertSame([], $this->flushCartFacts(...$this->voucherFacts(static fn () => $voucher->actions->setActive(true))));
-        $cart = $this->cart(self::FIRST);
-        self::assertSame(['code' => 'CARTPAGE25', 'active' => true, 'discount' => '6000'], $cart['voucher']);
+        $recovered = $this->pageReply(self::FIRST);
+        self::assertInstanceOf(PageResponseSignalData::class, $recovered);
+        self::assertSame($initial->pageSubscriptionProof, $recovered->pageSubscriptionProof);
+        $cart = $recovered->payload->data[CartPage::DATA_CART];
+        self::assertSame(['id' => $voucher->id, 'code' => 'CARTPAGE25', 'active' => true, 'discount' => '6000'], $cart['voucher']);
         self::assertSame('18000', $cart['total']);
         self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::FIRST));
     }
@@ -1962,7 +1970,7 @@ final class CartPageTest extends CartPageEnvironment
      * @param string $acceptKey Connection expecting a full cart
      * @return array{
      *     userId: ?int, guestCartKey: ?string, lines: list<array<string, mixed>>, itemsTotal: string,
-     *     voucher: ?array{code: string, active: bool, discount: string}, total: string
+     *     voucher: ?array{id: int, code: string, active: bool, discount: string}, total: string
      * } The wire cart
      */
     private function cart(string $acceptKey): array

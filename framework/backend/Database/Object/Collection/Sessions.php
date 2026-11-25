@@ -167,15 +167,17 @@ class Sessions extends Objects
      *
      * @param int $sessionId Session primary key
      * @param int $userId Expected bound user
+     * @param ?string $token Expected token when the read depends on its rotation
      * @return bool Whether storage holds an unexpired session bound to that user
      * @throws DatabaseException When the primary-key read fails
      * @throws InvalidArgumentException When the entity query is invalid
      */
-    public function isStoredActiveForUser(int $sessionId, int $userId): bool
+    public function isStoredActiveForUser(int $sessionId, int $userId, ?string $token = null): bool
     {
         $session = static::entityClass()::getById($sessionId);
 
         return $session !== null && $session->user_id === $userId
+            && ($token === null || $session->token === $token)
             && ($session->expires_at === null || $session->expires_at > TimeHelper::nowMs());
     }
 

@@ -20,6 +20,8 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
+use Hilos\Core\Router\DTO\PageSubscriptionProofAction;
+use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -173,8 +175,15 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         // The answer lands between the two frames. The action is still held, because the
         // subscribe it belongs to is: running it now would let it overtake its own page.
         $browser->identity = ConnectionIdentity::resolved(self::USER_ID);
+        $proof = str_repeat('a', 64);
+        $originalDeliveryId = self::ACCEPT_KEY . ':1';
         $router->dispatchAction(
-            new WebSocketActionSignalDTO(self::ACCEPT_KEY, PendingFrameTestPage::ACTION),
+            new WebSocketActionSignalDTO(
+                self::ACCEPT_KEY,
+                PendingFrameTestPage::ACTION,
+                pageSubscriptionProof: $proof,
+                pageSubscriptionDeliveryId: $originalDeliveryId,
+            ),
             SignalSource::WEBSOCKET,
         );
         $this->assertSame([], $this->page($factory)->handled);
@@ -182,6 +191,7 @@ final class PageSignalRouterPendingFrameTest extends TestCase
         $router->releasePendingFrames();
 
         $this->assertSame(['subscribe', 'action'], $this->page($factory)->handled);
+        $this->assertSame([$proof, $originalDeliveryId], $this->page($factory)->actionProof);
     }
 
     public function testAnIdentityThatNeverArrivesCostsTheDeadlineAndThenTodaysVerdict(): void
@@ -947,6 +957,9 @@ final class PendingFrameTestPage extends AbstractPage
     /** @var list<string> Handlers that ran, in the order the router reached them */
     public array $handled = [];
 
+    /** @var ?array{?string, ?string} Proof and delivery ID that reached the action handler */
+    public ?array $actionProof = null;
+
     /**
      * Records that the subscribe handler ran (only reachable once the guard passed).
      *
@@ -969,6 +982,9 @@ final class PendingFrameTestPage extends AbstractPage
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
         $this->handled[] = 'action';
+        if ($dto instanceof PendingFrameProofActionDTO) {
+            $this->actionProof = $dto->proof;
+        }
 
         return null;
     }
@@ -1117,6 +1133,16 @@ final class PendingFrameTestBrowser extends BrowserContext
 final class PendingFrameTestPageFactory extends AbstractPageFactory
 {
     /**
+     * @param string $action Action from the original frame
+     * @param array<string, mixed> $data Business payload
+     * @return ActionPayloadDTO Action that observes its attached proof
+     */
+    public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
+    {
+        return new PendingFrameProofActionDTO($action, $data);
+    }
+
+    /**
      * Creates the identity-judged test page.
      *
      * @param string $pageName Page name
@@ -1141,6 +1167,25 @@ final class PendingFrameTestPageFactory extends AbstractPageFactory
     public function hasPage(string $pageName): bool
     {
         return $pageName === PendingFrameTestPage::PAGE;
+    }
+}
+
+final class PendingFrameProofActionDTO extends UnknownActionPayloadDTO implements PageSubscriptionProofAction
+{
+    /** @var array{?string, ?string} Action envelope metadata relayed by the router */
+    public array $proof = [null, null];
+
+    /**
+     * @param ?string $pageSubscriptionProof Proof from the original frame
+     * @param ?string $deliveryId Original subscription authority
+     * @return static Action carrying the proof seen by the dispatcher
+     */
+    public function withPageSubscriptionProof(?string $pageSubscriptionProof, ?string $deliveryId): static
+    {
+        $dto = clone $this;
+        $dto->proof = [$pageSubscriptionProof, $deliveryId];
+
+        return $dto;
     }
 }
 

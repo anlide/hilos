@@ -63,6 +63,7 @@ use Hilos\Socket\WebSocket\Delivery\DeliveryQueue;
 use Hilos\Socket\WebSocket\Delivery\DeliveryRequestLifetime;
 use Hilos\Socket\WebSocket\Delivery\DeliverySettingsMirror;
 use Hilos\Socket\WebSocket\DTO\HandshakeWelcomeSignalData;
+use Hilos\Socket\WebSocket\DTO\PageSubscriptionProof;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -1972,6 +1973,17 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         return $this->pendingSubscribe;
     }
 
+    /** @return ?string Subscription authority the socket can attest for a proof-bearing action */
+    public function actionPageSubscriptionDeliveryId(): ?string
+    {
+        if ($this->pendingSubscribe !== null || $this->expiredPageDeliveryScope !== null
+            || $this->pageDeliveryIdentity === null || !$this->hasCurrentPageDeliveryIdentity()) {
+            return null;
+        }
+
+        return $this->subscriptionDeliveryId;
+    }
+
     /**
      * Abandon incomplete work before an unsubscribe or recovery control frame is queued.
      *
@@ -2261,6 +2273,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 // anywhere to consult instead: the handshake is routed to the WebSocket
                 // lifecycle agent and the action to the page agent, so nothing the worker can
                 // reach knows both (HIL-420).
+                $pageSubscriptionProof = PageSubscriptionProof::read($decoded[PageSubscriptionProof::pageSubscriptionProof] ?? null);
                 $dto = new WebSocketActionSignalDTO(
                     acceptKey: $acceptKey,
                     action: $actionName,
@@ -2268,6 +2281,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     requestId: $requestId,
                     clientIp: $this->handshakeClientIp,
                     sessionIdentity: $this->sessionIdentity,
+                    pageSubscriptionProof: $pageSubscriptionProof,
+                    pageSubscriptionDeliveryId: $pageSubscriptionProof === null ? null : $this->actionPageSubscriptionDeliveryId(),
                 );
 
                 $this->acceptDeliveryRequest();

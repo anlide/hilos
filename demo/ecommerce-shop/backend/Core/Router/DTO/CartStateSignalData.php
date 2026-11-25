@@ -24,8 +24,8 @@ final class CartStateSignalData extends SignalData implements SignalDataInterfac
     public const string QUANTITY = 'quantity';
     public const string VOUCHER_ID = 'voucherId';
 
-    /** Largest integer the browser can carry as an exact ID. */
-    private const int MAX_SAFE_VOUCHER_ID = 9_007_199_254_740_991;
+    /** @internal Largest voucher ID the browser can carry exactly in cart payloads. */
+    public const int MAX_SAFE_VOUCHER_ID = 9_007_199_254_740_991;
 
     /**
      * @param ?int $userId Person whose cart it is, null for the cart of a guest session

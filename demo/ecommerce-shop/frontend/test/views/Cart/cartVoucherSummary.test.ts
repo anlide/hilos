@@ -44,7 +44,7 @@ const cart: CartSnapshot = {
     },
   ],
   itemsTotal: '1002',
-  voucher: { code: 'SAVE25', active: true, discount: '251' },
+  voucher: { id: 25, code: 'SAVE25', active: true, discount: '251' },
   total: '751',
 }
 
@@ -93,7 +93,7 @@ it('shows the exact discount between the items and the total', async () => {
 it('says a switched-off voucher is inactive with a dash, and the total is the items', async () => {
   await answer({
     ...cart,
-    voucher: { code: 'SAVE25', active: false, discount: '0' },
+    voucher: { id: 25, code: 'SAVE25', active: false, discount: '0' },
     total: '1002',
   })
 
@@ -120,7 +120,7 @@ it('shows the total it was sent even when nothing is left to pay', async () => {
     ...cart,
     lines: [{ ...cart.lines[0]!, availableQuantity: 0, lineTotal: '0' }],
     itemsTotal: '0',
-    voucher: { code: 'SAVE25', active: true, discount: '0' },
+    voucher: { id: 25, code: 'SAVE25', active: true, discount: '0' },
     total: '0',
   })
 

@@ -53,6 +53,7 @@ use Hilos\Core\Page\Exception\PageUnauthorizedException;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\PageSubscriptionProofAction;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -1386,7 +1387,11 @@ class PageSignalRouter
     private function createActionPayloadDTO(ActionHostInterface $host, WebSocketActionSignalDTO $data): ActionPayloadDTO
     {
         if (!$host instanceof AbstractAgent) {
-            return $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
+            $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
+
+            return $dto instanceof PageSubscriptionProofAction
+                ? $dto->withPageSubscriptionProof($data->pageSubscriptionProof, $data->pageSubscriptionDeliveryId)
+                : $dto;
         }
 
         $dto = Hilos::$sr?->createAgentActionPayloadDTO($data->action, $data->data, $host->getType());

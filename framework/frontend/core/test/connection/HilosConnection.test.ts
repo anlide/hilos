@@ -642,6 +642,34 @@ describe('action send', () => {
     ])
   })
 
+  it('carries a tracked page proof beside the action data and request id', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.readyState = WebSocket.OPEN
+    socket.open()
+    const pageSubscriptionProof = 'a'.repeat(64)
+    const data = { expectedVoucherId: 17, ownerKind: 'guest' }
+
+    expect(
+      connection.sendAction(
+        'cart_remove_voucher',
+        data,
+        'req-1',
+        pageSubscriptionProof,
+      ),
+    ).toBe(true)
+    expect(socket.sent).toEqual([
+      JSON.stringify({
+        type: 'action',
+        action: 'cart_remove_voucher',
+        data,
+        requestId: 'req-1',
+        pageSubscriptionProof,
+      }),
+    ])
+  })
+
   it('refuses an action while the socket is closing before the close event', () => {
     const { connection } = createConnection()
     connection.connect()
@@ -664,6 +692,78 @@ describe('action send', () => {
 
     expect(connection.sendAction('message', { content: 'hi' })).toBe(false)
     expect(socket.sent).toEqual([])
+  })
+})
+
+describe('page subscription proof delivery', () => {
+  it('keeps the proof with data admitted by the current page and socket', () => {
+    const scopes = new ScopeManager()
+    const { connection } = createConnection({
+      projectSchemas: {
+        ...PAGE_SIGNAL_SCHEMAS,
+        cart_state: z.looseObject({ cart: z.unknown() }),
+      },
+    })
+    const pages = bindPageScope(connection, scopes)
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.open()
+    pages.subscribe('cart')
+    pages.releaseOnSession()
+    const firstProof = 'a'.repeat(64)
+    const nextProof = 'b'.repeat(64)
+    const firstCart = { voucher: 17 }
+    const nextCart = { voucher: 18 }
+    const answer = (
+      page: string,
+      data: Record<string, unknown>,
+      pageSubscriptionProof?: string,
+    ) =>
+      JSON.stringify({
+        type: 'page_response',
+        data: { page, payload: { data }, pageSubscriptionProof },
+      })
+    const cart = () => scopes.page()?.data.entrySignal('cart').get()
+
+    socket.message(answer('cart', { cart: firstCart }, firstProof))
+    expect(cart()).toEqual({
+      value: firstCart,
+      pageSubscriptionProof: firstProof,
+    })
+    socket.message(answer('catalog', { cart: nextCart }, nextProof))
+    socket.message(answer('cart', { title: 'Cart' }, nextProof))
+    socket.message(
+      JSON.stringify({
+        type: 'cart_state',
+        data: { cart: nextCart, pageSubscriptionProof: nextProof },
+      }),
+    )
+    expect(cart()).toEqual({
+      value: firstCart,
+      pageSubscriptionProof: firstProof,
+    })
+    socket.message(answer('cart', { cart: nextCart }, nextProof))
+    expect(cart()).toEqual({
+      value: nextCart,
+      pageSubscriptionProof: nextProof,
+    })
+    socket.message(answer('cart', { cart: nextCart }))
+    expect(cart()).toEqual({ value: nextCart })
+    socket.message(answer('cart', { cart: firstCart }, 'invalid'))
+    expect(cart()).toEqual({ value: firstCart })
+
+    connection.close()
+    connection.connect()
+    const replacement = MockWebSocket.last
+    replacement.open()
+    pages.releaseOnSession()
+    replacement.message(answer('cart', { cart: nextCart }, nextProof))
+    socket.message(answer('cart', { cart: firstCart }, firstProof))
+    expect(cart()).toEqual({
+      value: nextCart,
+      pageSubscriptionProof: nextProof,
+    })
+    connection.close()
   })
 })
 

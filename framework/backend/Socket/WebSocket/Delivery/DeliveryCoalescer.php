@@ -9,6 +9,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Socket\WebSocket\DTO\PageSubscriptionProof;
 use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use stdClass;
@@ -63,7 +64,12 @@ final class DeliveryCoalescer
         }
 
         $previous = isset($this->indices[$key]) ? $this->frames[$this->indices[$key]] : null;
-        if ($previous !== null) {
+        if ($previous !== null && $frame->getType() === SignalTypeConstants::PAGE_RESPONSE
+            && $previous->pageSubscriptionProof() !== $frame->pageSubscriptionProof()) {
+            // A new proof begins a new segment whose first frame may merge with later frames of that proof.
+            $this->cleanup->retire($this->indices);
+            $this->cleanup->retire($this->writes);
+        } elseif ($previous !== null) {
             $merged = $this->mergeFrames($previous, $frame);
             if ($merged === null) {
                 $this->appendBoundary($frame);
@@ -252,7 +258,9 @@ final class DeliveryCoalescer
         if ($frame->getType() !== SignalTypeConstants::PAGE_RESPONSE) {
             return $writes;
         }
-        if (!self::hasOnlyKeys($body, [PageResponseSignalData::page, PageResponseSignalData::payload])) {
+        if (!self::hasOnlyKeys($body, [
+            PageResponseSignalData::page, PageResponseSignalData::payload, PageSubscriptionProof::pageSubscriptionProof,
+        ])) {
             return null;
         }
         $payload = $body->{PageResponseSignalData::payload} ?? new stdClass();

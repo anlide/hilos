@@ -8,6 +8,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Socket\WebSocket\DTO\PageSubscriptionProof;
 use JsonException;
 use stdClass;
 
@@ -108,6 +109,14 @@ final class DeliveryFrame
     public function getEnvelope(): ?stdClass
     {
         return self::copyValue($this->envelope);
+    }
+
+    /** @return ?string Proof attached to the page response, if any */
+    public function pageSubscriptionProof(): ?string
+    {
+        $data = $this->envelope?->{SignalPayloadConstants::FIELD_DATA};
+
+        return $data instanceof stdClass ? PageSubscriptionProof::read($data->{PageSubscriptionProof::pageSubscriptionProof} ?? null) : null;
     }
 
     /** @return bool Whether metadata makes this an independently observable event */

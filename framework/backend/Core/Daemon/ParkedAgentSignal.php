@@ -52,6 +52,7 @@ final readonly class ParkedAgentSignal
      * @param ?PlacementRecovery $recovery Replay obligation with its original placement
      * @param bool $placementRecoveryRelay Whether the frame already used its recovery hop
      * @param bool $linkBoundUpload Whether the bytes belong to an existing upload reservation
+     * @param ?BrowserDeliveryTarget $actionClientTarget Original local socket for a proof-bearing action
      */
     public function __construct(
         public SignalDTO $signal,
@@ -65,6 +66,7 @@ final readonly class ParkedAgentSignal
         public ?PlacementRecovery $recovery = null,
         public bool $placementRecoveryRelay = false,
         public bool $linkBoundUpload = false,
+        public ?BrowserDeliveryTarget $actionClientTarget = null,
     ) {
     }
 
@@ -86,6 +88,7 @@ final readonly class ParkedAgentSignal
             $recovery,
             $this->placementRecoveryRelay,
             $this->linkBoundUpload,
+            $this->actionClientTarget,
         );
     }
 
@@ -106,6 +109,7 @@ final readonly class ParkedAgentSignal
             $this->recovery,
             $this->placementRecoveryRelay,
             $this->linkBoundUpload,
+            $this->actionClientTarget,
         );
     }
 
@@ -126,6 +130,7 @@ final readonly class ParkedAgentSignal
             $this->recovery,
             $this->placementRecoveryRelay,
             $this->linkBoundUpload,
+            $this->actionClientTarget,
         );
     }
 
@@ -146,6 +151,7 @@ final readonly class ParkedAgentSignal
             $this->recovery,
             $this->placementRecoveryRelay,
             $this->linkBoundUpload,
+            $this->actionClientTarget,
         );
     }
 }

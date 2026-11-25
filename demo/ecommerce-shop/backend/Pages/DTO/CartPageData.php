@@ -24,7 +24,7 @@ use Hilos\Files\HilosFiles;
  *     lineId: int, productId: int, slug: string, name: string, kind: string, pictureUrl: string,
  *     price: int, quantity: int, availableQuantity: int, lineTotal: string
  * }
- * @phpstan-type CartVoucher array{code: string, active: bool, discount: string}
+ * @phpstan-type CartVoucher array{id: int, code: string, active: bool, discount: string}
  */
 final readonly class CartPageData
 {
@@ -104,6 +104,7 @@ final readonly class CartPageData
             self::lines => $this->lines,
             self::itemsTotal => $items,
             self::voucher => $this->voucher === null ? null : [
+                EntityVoucher::id => $this->voucher->id,
                 EntityVoucher::code => $this->voucher->code,
                 EntityVoucher::active => $this->voucher->active,
                 self::discount => $discount,

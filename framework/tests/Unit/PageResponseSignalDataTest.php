@@ -101,4 +101,18 @@ final class PageResponseSignalDataTest extends TestCase
         $this->assertSame('main', $restored->pageKey);
         $this->assertTrue($restored->payload->isEmpty());
     }
+
+    public function testProofSurvivesTheHopBesideThePayload(): void
+    {
+        $proof = str_repeat('b', 64);
+        $original = new PageResponseSignalData('cart', new PagePayload(data: ['cart' => ['voucher' => 17]]), $proof);
+        $restored = PageResponseSignalData::fromJson($original->toJson());
+
+        self::assertSame([
+            'page' => 'cart',
+            'payload' => ['data' => ['cart' => ['voucher' => 17]]],
+            'pageSubscriptionProof' => $proof,
+        ], $restored->toArray());
+        self::assertSame($proof, $restored->pageSubscriptionProof);
+    }
 }

@@ -19,12 +19,15 @@ use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartSetQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartVoucherApplyActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CartVoucherRemoveActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Runtime\View\Item\Connection;
+use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
@@ -39,11 +42,16 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\DatabaseConnectionException;
 use Hilos\Database\Exception\DatabaseRuntimeException;
 use Hilos\Database\Exception\NamedDatabaseException;
+use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
 use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
@@ -71,6 +79,7 @@ final class CartPage extends AbstractPage
         EcommerceShopSignalConstants::CART_STEP_QUANTITY => CartStepQuantityActionDTO::class,
         EcommerceShopSignalConstants::CART_SET_QUANTITY => CartSetQuantityActionDTO::class,
         EcommerceShopSignalConstants::CART_APPLY_VOUCHER => CartVoucherApplyActionDTO::class,
+        EcommerceShopSignalConstants::CART_REMOVE_VOUCHER => CartVoucherRemoveActionDTO::class,
     ];
 
     /**
@@ -92,8 +101,11 @@ final class CartPage extends AbstractPage
 
     public const string DATA_CART = 'cart';
 
+    /** Refusal shared by the cart handler and the shop transport. */
+    public const string CART_UNAVAILABLE = 'This cart is no longer available.';
+
     private const string GUEST_CART_KEY_MESSAGE = 'ecommerce-shop:guest-cart:v1:%d:%d';
-    private const string CART_UNAVAILABLE = 'This cart is no longer available.';
+    private const string PAGE_SUBSCRIPTION_PROOF_MESSAGE = 'ecommerce-shop:cart-subscription:v1:%d:%s:%s:%s';
 
     /**
      * @param string $acceptKey Acting connection
@@ -144,7 +156,15 @@ final class CartPage extends AbstractPage
                 if (!$dto instanceof CartVoucherApplyActionDTO) {
                     throw new InvalidActionPayloadException($action, CartVoucherApplyActionDTO::class, $dto);
                 }
-                $this->handleApplyVoucher($acceptKey, $dto);
+                $this->handleVoucherAction($acceptKey, $dto);
+
+                return null;
+
+            case EcommerceShopSignalConstants::CART_REMOVE_VOUCHER:
+                if (!$dto instanceof CartVoucherRemoveActionDTO) {
+                    throw new InvalidActionPayloadException($action, CartVoucherRemoveActionDTO::class, $dto);
+                }
+                $this->handleVoucherAction($acceptKey, $dto);
 
                 return null;
 
@@ -228,21 +248,25 @@ final class CartPage extends AbstractPage
             $lines[] = CartPageData::line($lineId, $product, $quantity, $stock->of($productId)->unitCount);
         }
         $cart = new CartPageData($userId, $guestCartKey, $lines, $this->cartVoucher($sessionId, $cartEpoch));
-        $payload = new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
-
         $current = $this->requireConnection($acceptKey);
-        if ($current->userId !== $userId || $current->sessionId !== $sessionId
+        if ($current->userId !== $userId || $current->sessionId !== $sessionId || $current->sessionToken !== $sessionToken
         ) {
             throw new PageConflictException('The cart owner has changed');
         }
         $bindingIsCurrent = $userId === null
-            ? $current->sessionToken === $sessionToken && Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $sessionToken) === $cartEpoch
-            : Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId);
+            ? Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $sessionToken) === $cartEpoch
+            : Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId, $sessionToken);
         if (!$bindingIsCurrent) {
             throw new PageConflictException('The cart owner has changed');
         }
 
-        return $payload;
+        $deliveryId = Hilos::$sr?->confirmedPageAnswerDeliveryId($acceptKey, self::PAGE);
+
+        return new PagePayload(
+            data: [self::DATA_CART => $cart->toArray()],
+            pageSubscriptionProof: $sessionToken === null || $sessionToken === '' || $deliveryId === null
+                ? null : self::pageSubscriptionProof($deliveryId, $sessionId, $sessionToken, $userId, $cartEpoch),
+        );
     }
 
     /**
@@ -382,7 +406,7 @@ final class CartPage extends AbstractPage
 
     /**
      * @param string $acceptKey Connection invoking the action
-     * @param CartVoucherApplyActionDTO $dto Entered code and displayed cart kind
+     * @param CartVoucherApplyActionDTO|CartVoucherRemoveActionDTO $dto Voucher action and displayed cart kind
      * @throws ValidationException When the cart binding changed or the voucher is refused
      * @throws RtActionsStateCollectionNullException When the runtime connection collection is unavailable
      * @throws NamedDatabaseException When the primary database cannot be resolved
@@ -391,15 +415,16 @@ final class CartPage extends AbstractPage
      * @throws DatabaseConnectionException When the commit cannot reach the database
      * @throws DatabaseRuntimeException When the commit fails
      * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
-     * @throws LogicException When voucher application raises an unexpected failure
+     * @throws LogicException When the voucher action raises an unexpected failure
      * @throws HilosException When the runtime, database or cart sources cannot complete the action
      */
-    private function handleApplyVoucher(string $acceptKey, CartVoucherApplyActionDTO $dto): void
+    private function handleVoucherAction(string $acceptKey, CartVoucherApplyActionDTO|CartVoucherRemoveActionDTO $dto): void
     {
         $connection = $this->requireActionConnection($acceptKey, self::CART_UNAVAILABLE);
         $sessionId = $connection->sessionId;
         $userId = $connection->userId;
-        $guestToken = $userId === null ? $connection->sessionToken : null;
+        $sessionToken = $connection->sessionToken;
+        $guestToken = $userId === null ? $sessionToken : null;
         $ownerKind = $userId === null ? CartStepQuantityActionDTO::GUEST : CartStepQuantityActionDTO::ACCOUNT;
         if ($sessionId === null || $sessionId <= 0 || $dto->ownerKind !== $ownerKind
             || ($userId === null && ($guestToken === null || $guestToken === ''))
@@ -410,10 +435,19 @@ final class CartPage extends AbstractPage
 
         $agent = $this->getAgent();
         try {
-            Database::transaction(DatabaseNames::PRIMARY, static function () use ($agent, $sessionId, $userId, $guestToken, $dto): void {
+            Database::transaction(DatabaseNames::PRIMARY, function () use ($acceptKey, $agent, $sessionId, $userId, $sessionToken, $dto): void {
+                if ($dto instanceof CartVoucherRemoveActionDTO) {
+                    if (!$agent instanceof GuestCartsLibraryAgent && !$agent instanceof UserAgent) {
+                        throw new ValidationException(self::CART_UNAVAILABLE);
+                    }
+                    $cartEpoch = $this->requirePageSubscriptionProof($acceptKey, $sessionId, $userId, $sessionToken, $dto);
+                    $this->removeExpectedVoucher($agent, $sessionId, $cartEpoch, $dto->expectedVoucherId);
+
+                    return;
+                }
                 try {
                     $sessionActive = $userId === null
-                        ? Hilos::$db->sessions->lockActiveGuestCartEpoch($sessionId, $guestToken, waitForLock: false) !== null
+                        ? Hilos::$db->sessions->lockActiveGuestCartEpoch($sessionId, $sessionToken, waitForLock: false) !== null
                         : Hilos::$db->sessions->lockStoredActiveSession($sessionId, $userId);
                 } catch (DatabaseException $failure) {
                     throw new ValidationException(self::CART_UNAVAILABLE, previous: $failure);
@@ -422,18 +456,151 @@ final class CartPage extends AbstractPage
                     throw new ValidationException(self::CART_UNAVAILABLE);
                 }
 
+                if (!$agent instanceof GuestCartsLibraryAgent && !$agent instanceof UserAgent) {
+                    throw new ValidationException(self::CART_UNAVAILABLE);
+                }
                 if ($agent instanceof GuestCartsLibraryAgent) {
                     $agent->applyVoucher($sessionId, $dto->code);
-                } elseif ($agent instanceof UserAgent) {
-                    $agent->applyVoucher($dto->code);
                 } else {
-                    throw new ValidationException(self::CART_UNAVAILABLE);
+                    $agent->applyVoucher($dto->code);
                 }
             });
         } catch (HilosException $failure) {
             throw $failure;
         } catch (Throwable $failure) {
-            throw new LogicException('Failed to apply the cart voucher', previous: $failure);
+            throw new LogicException('Failed to change the cart voucher', previous: $failure);
+        }
+    }
+
+    /**
+     * @param string $acceptKey Acting socket
+     * @param int $sessionId Session selected by the serving cart owner
+     * @param ?int $userId Account owning the cart, or null for a guest
+     * @param ?string $sessionToken Token from the connection before reading storage
+     * @param CartVoucherRemoveActionDTO $dto Original Remove action with its envelope metadata
+     * @return ?int Confirmed guest cart epoch, or null for an account cart
+     * @throws ValidationException When the subscription proof or stored session no longer confirms this cart
+     * @throws HilosException When the runtime or stored guest epoch cannot be read
+     */
+    private function requirePageSubscriptionProof(
+        string $acceptKey,
+        int $sessionId,
+        ?int $userId,
+        ?string $sessionToken,
+        CartVoucherRemoveActionDTO $dto,
+    ): ?int {
+        if ($dto->pageSubscriptionProof === null || $dto->pageSubscriptionDeliveryId === null
+            || $sessionToken === null || $sessionToken === '') {
+            throw new ValidationException(self::CART_UNAVAILABLE);
+        }
+        try {
+            $cartEpoch = $userId === null
+                ? Hilos::$db->sessions->lockActiveGuestCartEpoch($sessionId, $sessionToken, waitForLock: false) : null;
+            $sessionActive = $userId === null
+                ? $cartEpoch !== null : Hilos::$db->sessions->lockStoredActiveSession($sessionId, $userId, $sessionToken);
+        } catch (DatabaseException $failure) {
+            throw new ValidationException(self::CART_UNAVAILABLE, previous: $failure);
+        }
+
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        $current = $this->requireActionConnection($acceptKey, self::CART_UNAVAILABLE);
+        if (!$sessionActive || $subscription?->deliveryId !== $dto->pageSubscriptionDeliveryId || $subscription->admittedIdentity === null
+            || !$subscription->admitsPageAnswer($acceptKey)
+            || $current->sessionId !== $sessionId || $current->userId !== $userId || $current->sessionToken !== $sessionToken
+            || !hash_equals(
+                self::pageSubscriptionProof($subscription->deliveryId, $sessionId, $sessionToken, $userId, $cartEpoch),
+                $dto->pageSubscriptionProof,
+            )
+        ) {
+            throw new ValidationException(self::CART_UNAVAILABLE);
+        }
+
+        return $cartEpoch;
+    }
+
+    /**
+     * The confirmed delivery ID already includes the socket. The persisted session
+     * token is available to its serving owner across nodes and keeps the digest opaque.
+     *
+     * @param string $deliveryId Confirmed internal subscription incarnation
+     * @param int $sessionId Stored session of the socket
+     * @param string $sessionToken Token verified against that session
+     * @param ?int $userId Account owning the cart, or null for a guest
+     * @param ?int $cartEpoch Stored guest generation, or null for an account
+     * @return string Opaque proof for this confirmed cart subscription
+     */
+    private static function pageSubscriptionProof(
+        string $deliveryId,
+        int $sessionId,
+        string $sessionToken,
+        ?int $userId,
+        ?int $cartEpoch,
+    ): string {
+        return hash_hmac(
+            'sha256',
+            sprintf(self::PAGE_SUBSCRIPTION_PROOF_MESSAGE, $sessionId, $userId, $cartEpoch, $deliveryId),
+            $sessionToken,
+        );
+    }
+
+    /**
+     * Removes the displayed voucher with the session binding locked by the caller.
+     *
+     * @param GuestCartsLibraryAgent|UserAgent $agent Confirmed cart owner
+     * @param int $sessionId Stored session that keys a guest cart
+     * @param ?int $cartEpoch Number of the guest cart confirmed by the proof, or null for an account cart
+     * @param int $expectedVoucherId Primary key of the displayed voucher
+     * @throws ValidationException When the cart is unavailable, another voucher is applied or the owner refuses removal
+     * @throws AccountErasingException When the person's erasure has begun
+     * @throws ItemNotFoundForUpdateException When the person is missing
+     * @throws LogicException When a collection is misconfigured
+     * @throws InvalidArgumentException When a slot query or item is invalid or DB sync cannot be queued
+     * @throws DatabaseException When a binding or catalog read, reconciliation, or delete fails
+     * @throws ItemNotFoundException When a binding or catalog row disappears during a keyed read
+     * @throws WriteNotAllowedException When the owner may not remove the binding
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
+     * @throws ObjectCollectionNullException When the binding has no backing collection
+     * @throws ObjectGetIdStringNotImplementedException When the binding cannot be keyed
+     * @throws SourceChangeSubscriberException When a binding change subscriber fails
+     * @throws HilosException When the cart snapshot cannot be read
+     * @throws NamedDatabaseException When the primary database or a cart table cannot be resolved
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     * @throws NestedTransactionRefusedException When a transaction cannot be opened
+     * @throws TransactionNotOpenException When the transaction fails or loses its level
+     * @throws DatabaseConnectionException When the commit cannot reach the database
+     * @throws DatabaseRuntimeException When the commit fails
+     * @throws AnnouncementFailedException When releasing a committed announcement fails outside a handler
+     * @throws Throwable When the transaction propagates another failure from the cart operation
+     */
+    private function removeExpectedVoucher(
+        GuestCartsLibraryAgent|UserAgent $agent,
+        int $sessionId,
+        ?int $cartEpoch,
+        int $expectedVoucherId,
+    ): void {
+        if ($agent instanceof GuestCartsLibraryAgent) {
+            if ($cartEpoch === null) {
+                throw new ValidationException(self::CART_UNAVAILABLE);
+            }
+            $voucherId = $agent->storedVoucherId($sessionId, $cartEpoch);
+            if ($voucherId === null) {
+                return;
+            }
+        } else {
+            $voucher = $agent->cartVoucher();
+            if ($voucher === null) {
+                return;
+            }
+            $voucherId = $voucher->id;
+        }
+        if ($voucherId !== $expectedVoucherId) {
+            throw new ValidationException('This voucher is no longer applied to your cart.');
+        }
+
+        if ($agent instanceof GuestCartsLibraryAgent) {
+            $agent->removeVoucher($sessionId);
+        } else {
+            $agent->removeVoucher();
         }
     }
 

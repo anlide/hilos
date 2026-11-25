@@ -4,22 +4,37 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Core\Daemon;
 
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Core\Socket\Server\EcommerceShopWebSocketServer;
 use Demo\EcommerceShop\Core\Socket\Server\EcommerceShopWorkerServer;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Pages\CartPage;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonContext;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Module\BuildTimestampModule;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\Daemon\Module\PeerModule;
+use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Server\CommandServer;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\ServerInterface;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * EcommerceShopDaemonManager - Main daemon manager for the ecommerce-shop demo.
@@ -31,6 +46,57 @@ final class EcommerceShopDaemonManager extends DaemonManager
 {
     /** @var EcommerceShopWorkerServer Worker server, held while composing so the server set below names the built instance */
     private EcommerceShopWorkerServer $workerServer;
+
+    /**
+     * Replies to a tracked Remove that the router could not address to a cart owner.
+     *
+     * @param SignalDispatch $dispatch Original routed lifetime and captured browser transport
+     * @param bool $hasDestination Whether the router produced a target
+     * @throws InvalidArgumentException When a refusal cannot be named
+     * @throws InvalidFormatException When subscription recovery configuration is invalid
+     */
+    public function finishUnservedSignal(SignalDispatch $dispatch, bool $hasDestination): void
+    {
+        parent::finishUnservedSignal($dispatch, $hasDestination);
+        if ($hasDestination) {
+            return;
+        }
+
+        $signal = $dispatch->getSignal();
+        if ($signal->signalSource->getSource() !== SignalSource::WEBSOCKET
+            || $signal->signalType->getType() !== SignalTypeConstants::ACTION
+            || $signal->signalName->getName() !== EcommerceShopSignalConstants::CART_REMOVE_VOUCHER
+            || !$signal->data instanceof WebSocketActionSignalDTO
+            || $signal->data->requestId === null
+        ) {
+            return;
+        }
+
+        // The captured target protects the original socket's lifetime; its queue owns the subscription hold.
+        $client = $dispatch->clientTarget?->getClient();
+        if ($client === null) {
+            return;
+        }
+
+        $frame = $this->prepareSignalFrame(new SignalDTO(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::WS_USER),
+            new SignalName(SignalConstants::ACTION_ERROR),
+            new PageActionErrorSignalData(
+                EcommerceShopSignalConstants::CART_REMOVE_VOUCHER,
+                CartPage::CART_UNAVAILABLE,
+                $signal->data->requestId,
+            ),
+        ));
+        if ($frame === null) {
+            return;
+        }
+        try {
+            $client->sendDeliveryFrame($frame);
+        } catch (Throwable $failure) {
+            Logger::error('Failed to queue cart voucher removal refusal: ' . $failure->getMessage());
+        }
+    }
 
     /**
      * Create signal router instance.

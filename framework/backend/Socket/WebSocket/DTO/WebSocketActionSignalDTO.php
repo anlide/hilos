@@ -14,12 +14,9 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Represents an action signal sent from WebSocket client.
  *
- * Two of its fields are stamped by the master rather than sent by the client:
- * {@see clientIp} and {@see sessionIdentity} name who is asking, so the anti-abuse
- * guard can key an attempt without a lookup table from accept key to connection
- * (HIL-420). They travel on the master→worker leg only; nothing about the frame the
- * browser sends changes, and a client cannot set them because the frame parser does
- * not read them.
+ * The master stamps {@see clientIp} and {@see sessionIdentity} for anti-abuse
+ * checks (HIL-420) and {@see pageSubscriptionDeliveryId} for an action carrying
+ * a proof. These values travel to the worker and cannot be supplied by a browser.
  */
 class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
@@ -31,6 +28,8 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     public const string CLIENT_IP = 'clientIp';
     public const string SESSION_IDENTITY = 'sessionIdentity';
 
+    private const string pageSubscriptionDeliveryId = 'pageSubscriptionDeliveryId';
+
     /**
      * Creates WebSocket action signal DTO.
      *
@@ -40,6 +39,8 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
      * @param ?string $requestId Client-minted request id for reply correlation, or null for a fire-and-forget action
      * @param ?string $clientIp Peer address the connection was accepted from, or null when it is unavailable
      * @param ?string $sessionIdentity Digest of the connection's session token, or null when it carries no session
+     * @param ?string $pageSubscriptionProof Client's proof from an accepted page response
+     * @param ?string $pageSubscriptionDeliveryId Internal authority of the socket when it received a proof
      */
     public function __construct(
         public readonly string $acceptKey,
@@ -48,6 +49,8 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
         public readonly ?string $requestId = null,
         public readonly ?string $clientIp = null,
         public readonly ?string $sessionIdentity = null,
+        public readonly ?string $pageSubscriptionProof = null,
+        public readonly ?string $pageSubscriptionDeliveryId = null,
     ) {
     }
 
@@ -83,6 +86,12 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
         if ($this->sessionIdentity !== null) {
             $result[self::SESSION_IDENTITY] = $this->sessionIdentity;
         }
+        if ($this->pageSubscriptionProof !== null) {
+            $result[PageSubscriptionProof::pageSubscriptionProof] = $this->pageSubscriptionProof;
+        }
+        if ($this->pageSubscriptionDeliveryId !== null) {
+            $result[self::pageSubscriptionDeliveryId] = $this->pageSubscriptionDeliveryId;
+        }
 
         return $result;
     }
@@ -95,7 +104,7 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload carries no accept key or no action name
+     * @throws InvalidFormatException When a required address is missing or trusted IPC metadata has the wrong type
      */
     public static function fromArray(array $data): static
     {
@@ -106,6 +115,8 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
             requestId: self::optionalString($data, self::REQUEST_ID),
             clientIp: self::optionalString($data, self::CLIENT_IP),
             sessionIdentity: self::optionalString($data, self::SESSION_IDENTITY),
+            pageSubscriptionProof: PageSubscriptionProof::read($data[PageSubscriptionProof::pageSubscriptionProof] ?? null),
+            pageSubscriptionDeliveryId: self::optionalString($data, self::pageSubscriptionDeliveryId),
         );
     }
 }
