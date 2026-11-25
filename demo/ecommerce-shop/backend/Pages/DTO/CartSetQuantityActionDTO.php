@@ -37,7 +37,10 @@ final class CartSetQuantityActionDTO extends ActionPayloadDTO
         if ($ownerKind !== CartStepQuantityActionDTO::GUEST && $ownerKind !== CartStepQuantityActionDTO::ACCOUNT) {
             throw new InvalidFormatException('Unknown cart owner kind');
         }
-        if ($expectedQuantity < CartLineRules::QUANTITY_MIN || $expectedQuantity > CartLineRules::QUANTITY_MAX) {
+        $limit = $ownerKind === CartStepQuantityActionDTO::ACCOUNT
+            ? CartLineRules::STORED_ACCOUNT_QUANTITY_MAX
+            : CartLineRules::EXACT_QUANTITY_MAX;
+        if ($expectedQuantity < CartLineRules::QUANTITY_MIN || $expectedQuantity > $limit) {
             throw new InvalidFormatException('Review the current cart quantity before changing it.');
         }
     }

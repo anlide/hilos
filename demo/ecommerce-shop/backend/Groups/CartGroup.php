@@ -7,7 +7,6 @@ namespace Demo\EcommerceShop\Groups;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
-use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Core\Group\GroupMembership;
 
 /**
@@ -29,11 +28,12 @@ final class CartGroup
      * Builds the group name of a guest session's cart.
      *
      * @param int $sessionId Row of the session
+     * @param int $cartEpoch Number of the cart
      * @return string Group name the session's tabs join
      */
-    public static function forSession(int $sessionId): string
+    public static function forSession(int $sessionId, int $cartEpoch): string
     {
-        return self::NAME . ':guest-' . $sessionId;
+        return self::NAME . ':guest-' . $sessionId . '-' . $cartEpoch;
     }
 
     /**
@@ -45,23 +45,5 @@ final class CartGroup
     public static function forUser(int $userId): string
     {
         return self::NAME . ':user-' . $userId;
-    }
-
-    /**
-     * Names the group of the cart a session holds now: the person's when one is signed in, the session's otherwise.
-     *
-     * @param SessionStateSignalData $frame What the session is now
-     * @return ?string Group name, or null when the frame names neither a person nor a session row
-     */
-    public static function of(SessionStateSignalData $frame): ?string
-    {
-        if ($frame->userId !== null) {
-            return self::forUser($frame->userId);
-        }
-        if ($frame->sessionId !== null) {
-            return self::forSession($frame->sessionId);
-        }
-
-        return null;
     }
 }

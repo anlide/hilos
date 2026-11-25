@@ -271,10 +271,11 @@ final class ProductPageTest extends ProductPageEnvironment
         $otherId = $this->other->id;
         Hilos::$db->productWarehouseStocks->actions->setUnits($productId, $this->warehouse, 8);
         Hilos::$db->productWarehouseStocks->actions->setUnits($otherId, $this->warehouse, 8);
-        self::asFixtureOwner(new GuestCartsLibraryAgent(), static function () use ($productId, $otherId): void {
-            Hilos::$db->sessionProductCarts->actions->add(101, $productId);
-            Hilos::$db->sessionProductCarts->actions->setQuantity(101, $productId, 3);
-            Hilos::$db->sessionProductCarts->actions->add(102, $otherId);
+        $otherSessionId = self::createGuestCartSession();
+        self::asFixtureOwner(new GuestCartsLibraryAgent(), function () use ($productId, $otherId, $otherSessionId): void {
+            Hilos::$db->sessionProductCarts->actions->add($this->guestCartSessionId, 0, $productId);
+            Hilos::$db->sessionProductCarts->actions->setQuantity($this->guestCartSessionId, 0, $productId, 3);
+            Hilos::$db->sessionProductCarts->actions->add($otherSessionId, 0, $otherId);
         });
         $userId = Hilos::$rt->connections[self::VISITOR]->userId;
         self::assertNotNull($userId);
@@ -307,25 +308,27 @@ final class ProductPageTest extends ProductPageEnvironment
         $this->subscribe(self::VISITOR, $this->other->slug);
         $this->takeCard(self::VISITOR);
 
-        self::asFixtureOwner(new GuestCartsLibraryAgent(), static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $productId));
-        $row = Database::sql('SELECT * FROM session_product_cart WHERE session_id = ? AND product_id = ?', [101, $productId])->rows()[0];
-        $lineId = (string) $row[EntitySessionProductCart::id];
+        $created = $this->addGuestCartLine($productId);
+        $row = $created->signalData->row;
+        $lineId = $created->signalData->idString;
         $key = EcommerceShopDbContext::sessionProductCarts;
-        $created = new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData($key, $lineId, $row));
 
         $this->deliver($created, $created);
         $this->assertCartCountFrame($productId, $slug, 1);
 
         self::asFixtureOwner(
             new GuestCartsLibraryAgent(),
-            static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, $productId, 3),
+            fn () => Hilos::$db->sessionProductCarts->actions->setQuantity($this->guestCartSessionId, 0, $productId, 3),
         );
         $this->deliver(new WorkerDbSyncUpdatedMessageDTO(
             new DbSyncUpdatedSignalData($key, $lineId, [EntitySessionProductCart::quantity => 3]),
         ));
         self::assertSame([], $this->takeFrames());
 
-        self::asFixtureOwner(new GuestCartsLibraryAgent(), static fn () => Hilos::$db->sessionProductCarts->actions->remove(101, $productId));
+        self::asFixtureOwner(
+            new GuestCartsLibraryAgent(),
+            fn () => Hilos::$db->sessionProductCarts->actions->remove($this->guestCartSessionId, 0, $productId),
+        );
         $row[EntitySessionProductCart::quantity] = 3;
         $deleted = new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData($key, $lineId, $row));
         $this->deliver($deleted);
@@ -339,12 +342,10 @@ final class ProductPageTest extends ProductPageEnvironment
 
         $otherId = $this->other->id;
         Hilos::$db->productWarehouseStocks->actions->setUnits($otherId, $this->warehouse, 8);
-        self::asFixtureOwner(new GuestCartsLibraryAgent(), static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $otherId));
-        $otherRow = Database::sql('SELECT * FROM session_product_cart WHERE session_id = ? AND product_id = ?', [101, $otherId])->rows()[0];
         $this->deliverWithCartCountFailure(
             $productId,
             $deleted,
-            new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData($key, (string) $otherRow[EntitySessionProductCart::id], $otherRow)),
+            $this->addGuestCartLine($otherId),
         );
         $frames = $this->takeFrames();
         self::assertCount(2, $frames);
@@ -392,7 +393,7 @@ final class ProductPageTest extends ProductPageEnvironment
         }
 
         $productId = $this->stock->id;
-        $this->deliver(self::addGuestCartLine($productId));
+        $this->deliver($this->addGuestCartLine($productId));
         $response = $this->takeFrame(self::GUEST)->data;
         self::assertInstanceOf(PageResponseSignalData::class, $response);
         self::assertSame(ProductPage::PAGE, $response->pageKey);
@@ -431,7 +432,7 @@ final class ProductPageTest extends ProductPageEnvironment
         $newSlug = $this->stock->slug;
         self::assertSame($oldSlug, $this->warmProduct($productId)->slug);
         self::assertSame($newSlug, Database::sql('SELECT slug FROM product WHERE id = ?', [$productId])->field('slug'));
-        $this->deliver(self::addGuestCartLine($this->other->id));
+        $this->deliver($this->addGuestCartLine($this->other->id));
         self::assertSame([], $this->takeFrames());
 
         $reads = $this->observeCartCountReads(function () use ($mutation, $productId): void {
@@ -448,7 +449,7 @@ final class ProductPageTest extends ProductPageEnvironment
                     )));
                     break;
                 default:
-                    $this->deliver(self::addGuestCartLine($productId));
+                    $this->deliver($this->addGuestCartLine($productId));
             }
         });
         $this->assertMove($oldSlug, $newSlug);
@@ -552,7 +553,7 @@ final class ProductPageTest extends ProductPageEnvironment
         $this->observeCartCountReads(fn () => $this->subscribe(self::GUEST, $slug), $productId);
         $this->takeRefusal(self::GUEST, HttpConstants::HTTP_INTERNAL_ERROR);
 
-        $fact = self::addGuestCartLine($this->stock->id);
+        $fact = $this->addGuestCartLine($this->stock->id);
         $reads = $this->observeCartCountReads(fn () => $this->deliver($fact));
         self::assertSame([], $this->takeFrames());
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
@@ -561,7 +562,7 @@ final class ProductPageTest extends ProductPageEnvironment
             EcommerceShopDbContext::userProductCarts => [],
         ], $reads);
 
-        $this->deliver(self::addGuestCartLine($productId));
+        $this->deliver($this->addGuestCartLine($productId));
         $frame = $this->takeFrame(self::GUEST);
         self::assertSame($slug, self::card($frame)[EntityProduct::slug]);
         self::assertSame([
@@ -599,9 +600,9 @@ final class ProductPageTest extends ProductPageEnvironment
         $this->takeFrame(self::ADMIN);
 
         $facts = [
-            self::addGuestCartLine($this->stock->id),
-            self::addGuestCartLine($this->other->id),
-            self::addGuestCartLine($this->unplaced->id),
+            $this->addGuestCartLine($this->stock->id),
+            $this->addGuestCartLine($this->other->id),
+            $this->addGuestCartLine($this->unplaced->id),
         ];
         if ($stage !== 'overlap') {
             Hilos::$browser->record(SourceChange::dbCleared(EcommerceShopDbContext::userProductCarts));
@@ -901,7 +902,7 @@ final class ProductPageTest extends ProductPageEnvironment
         self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $overview);
         self::assertSame(AdminProductPage::PAGE, $overview->page);
         self::assertSame(HttpConstants::HTTP_INTERNAL_ERROR, $overview->httpCode);
-        $cartFact = self::addGuestCartLine($this->stock->id);
+        $cartFact = $this->addGuestCartLine($this->stock->id);
         $categoryFact = self::renameCategory($this->stock->categoryId, 'Spring bulbs');
 
         $calls = 0;
@@ -988,7 +989,7 @@ final class ProductPageTest extends ProductPageEnvironment
         }
         $this->observeCartCountReads(fn () => $this->subscribe(self::VISITOR, $this->other->slug), $this->other->id);
         $this->takeRefusal(self::VISITOR, HttpConstants::HTTP_INTERNAL_ERROR);
-        $cartFact = self::addGuestCartLine($this->stock->id);
+        $cartFact = $this->addGuestCartLine($this->stock->id);
         $categoryFact = self::renameCategory($this->stock->categoryId, 'Spring bulbs');
 
         $lostSlug = $this->other->slug;
@@ -1314,7 +1315,7 @@ final class ProductPageTest extends ProductPageEnvironment
         $this->subscribe(self::GUEST, $slug);
         $this->takeCard(self::GUEST);
 
-        $fact = self::addGuestCartLine($productId);
+        $fact = $this->addGuestCartLine($productId);
         $flush = function () use ($clear, $fact): void {
             if ($clear) {
                 Hilos::$browser->record(SourceChange::dbCleared(EcommerceShopDbContext::userProductCarts));
@@ -1393,11 +1394,11 @@ final class ProductPageTest extends ProductPageEnvironment
         self::assertNull(Hilos::$sr->pageResource(self::ADMIN));
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::ADMIN));
 
-        $this->deliver(self::addGuestCartLine($this->other->id));
+        $this->deliver($this->addGuestCartLine($this->other->id));
         self::assertSame([], $this->takeFrames());
         self::assertTrue(Hilos::$sr->hasPageDeliveryFailure(self::ADMIN));
 
-        $this->deliver(self::addGuestCartLine($productId));
+        $this->deliver($this->addGuestCartLine($productId));
         $response = $this->takeFrame(self::ADMIN)->data;
         self::assertInstanceOf(PageResponseSignalData::class, $response);
         self::assertSame(AdminProductPage::PAGE, $response->pageKey);
@@ -1456,7 +1457,7 @@ final class ProductPageTest extends ProductPageEnvironment
         $this->takeFrame(self::ADMIN);
 
         $reads = $this->observeCartCountReads(fn () => $this->deliver(
-            self::addGuestCartLine($productId),
+            $this->addGuestCartLine($productId),
             self::productPriceFact($productId, 15_500),
         ));
         $frames = $this->takeFrames();
@@ -2306,6 +2307,7 @@ final class ProductPageTest extends ProductPageEnvironment
         $this->stock = Hilos::$db->products[$stock];
         $this->other = Hilos::$db->products[$other];
         $this->unplaced = Hilos::$db->products[$unplaced];
+        $this->guestCartSessionId = self::createGuestCartSession();
 
         Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Product visitor']);
         $visitorId = Database::lastInsertId();

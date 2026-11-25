@@ -4,20 +4,27 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Agents\Hilos;
 
+use Closure;
+use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\CartAddProductDoneSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\CartAddProductSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferClearedSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferOfferSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferReceivedSignalData;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Entity\Item\ShopGuestCartTransfer;
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
 use Demo\EcommerceShop\Database\Entity\Item\UserVoucherCart;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
@@ -33,6 +40,7 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\ExternalWriterException;
@@ -67,29 +75,31 @@ use Throwable;
 /**
  * Person agent bound to the ecommerce-shop project.
  *
- * Owns the person's product lines and voucher binding, and erases both in its assigned part
+ * Owns the person's product lines, voucher binding and guest cart transfers, and erases them in its assigned part
  * of account erasure. It reads the cart on demand and sends the whole cart to the person's
  * tabs and devices through {@see CartGroup}.
  */
 final class UserAgent extends AbstractUserAgent
 {
     /**
-     * @var array<string, list<TruthSourceOperation>> The person's framework sets, cart lines and voucher binding
+     * @var array<string, list<TruthSourceOperation>> The person's framework sets, cart lines, voucher binding and transfers
      */
     public const array OWNS_DB_SET = [
         ...parent::OWNS_DB_SET,
         EcommerceShopDbContext::userProductCarts => TruthSourceOperation::ALL,
         EcommerceShopDbContext::userVoucherCarts => TruthSourceOperation::ALL,
+        EcommerceShopDbContext::shopGuestCartTransfers => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
     ];
 
     /**
-     * @var list<string> Framework reads plus the catalog entries and stock checked by cart operations
+     * @var list<string> Framework reads plus catalog entries, stock and guest product lines checked by cart operations
      */
     public const array READS_DB = [
         ...parent::READS_DB,
         EcommerceShopDbContext::products,
         EcommerceShopDbContext::productWarehouseStocks,
         EcommerceShopDbContext::vouchers,
+        EcommerceShopDbContext::sessionProductCarts,
     ];
 
     public const array READS_RT = [
@@ -108,17 +118,26 @@ final class UserAgent extends AbstractUserAgent
             AgentSignalConfigKey::INDEX_FIELD => AccountCartSendSignalData::userId,
             AgentSignalConfigKey::DTO => CartAddProductSignalData::class,
         ],
+        EcommerceShopSignalConstants::GUEST_CART_TRANSFER_OFFER => [
+            AgentSignalConfigKey::INDEX_FIELD => GuestCartTransferOfferSignalData::userId,
+            AgentSignalConfigKey::DTO => GuestCartTransferOfferSignalData::class,
+        ],
+        EcommerceShopSignalConstants::GUEST_CART_TRANSFER_CLEARED => [
+            AgentSignalConfigKey::INDEX_FIELD => GuestCartTransferClearedSignalData::userId,
+            AgentSignalConfigKey::DTO => GuestCartTransferClearedSignalData::class,
+        ],
     ];
 
     /**
-     * Tells the person's tabs their cart and handles storefront additions. Inherited frames keep their own protocol.
+     * Tells the person's tabs their cart and handles storefront additions and guest transfers.
+     * Inherited frames keep their own protocol.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $sender Full sender identity, passed to the inherited handler
+     * @param string $sender Full sender identity
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is unknown to this agent
      * @throws InvalidAgentSignalPayloadException When the payload differs from its declaration
-     * @throws AgentException When the frame names another person
+     * @throws AgentException When a transfer fails, a frame names another person or a transfer comes from another sender
      * @throws InvalidArgumentException When an answer cannot be named or queued
      * @throws InvalidFormatException When a cart add, renewal or account operation answer is malformed
      * @throws DatabaseException When the folded-account lookup fails
@@ -145,6 +164,30 @@ final class UserAgent extends AbstractUserAgent
                 }
 
                 $this->addProductToCart($ask);
+
+                return;
+
+            case EcommerceShopSignalConstants::GUEST_CART_TRANSFER_OFFER:
+                $offer = $data->data;
+                if (!$offer instanceof GuestCartTransferOfferSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, GuestCartTransferOfferSignalData::class, $offer);
+                }
+
+                $this->requireGuestCartTransferSender($sender);
+                $this->refuseAnotherPerson($offer->userId, $name);
+                $this->receiveGuestCart($offer);
+
+                return;
+
+            case EcommerceShopSignalConstants::GUEST_CART_TRANSFER_CLEARED:
+                $cleared = $data->data;
+                if (!$cleared instanceof GuestCartTransferClearedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, GuestCartTransferClearedSignalData::class, $cleared);
+                }
+
+                $this->requireGuestCartTransferSender($sender);
+                $this->refuseAnotherPerson($cleared->userId, $name);
+                $this->finishGuestCartTransfer($cleared);
 
                 return;
 
@@ -196,8 +239,8 @@ final class UserAgent extends AbstractUserAgent
                 throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
             }
 
-            $line = Hilos::$db->userProductCarts[$lineId] ?? null;
-            if ($line === null || $line->userId !== $userId) {
+            $line = Hilos::$db->userProductCarts->lockCartLine($userId, $lineId);
+            if ($line === null) {
                 throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
             }
 
@@ -252,8 +295,8 @@ final class UserAgent extends AbstractUserAgent
                 throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $failure);
             }
 
-            $line = Hilos::$db->userProductCarts[$lineId] ?? null;
-            if ($line === null || $line->userId !== $userId) {
+            $line = Hilos::$db->userProductCarts->lockCartLine($userId, $lineId);
+            if ($line === null) {
                 throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
             }
 
@@ -375,8 +418,8 @@ final class UserAgent extends AbstractUserAgent
             throw new ValidationException(CartLineRules::LINE_UNAVAILABLE, previous: $e);
         }
 
-        $line = Hilos::$db->userProductCarts[$lineId] ?? null;
-        if ($line === null || $line->userId !== $userId) {
+        $line = Hilos::$db->userProductCarts->lockCartLine($userId, $lineId);
+        if ($line === null) {
             throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
         }
 
@@ -401,12 +444,12 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
-     * Deletes the person's product lines and voucher binding inside the assigned erasure step.
+     * Deletes the person's product lines, voucher binding and guest cart transfers inside the assigned erasure step.
      * If any cart rows were removed, the person's tabs learn the cart is empty once the erasure commits.
      *
      * @param int $userId Person whose account is being erased
-     * @return AccountErasure Deleted rows by cart table, with no registry files
-     * @throws WriteNotAllowedException When this process may not remove a cart row
+     * @return AccountErasure Deleted rows by table, with no registry files
+     * @throws WriteNotAllowedException When this process may not remove a cart row or transfer
      * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When a loaded object does not match its collection or an announcement cannot be queued
@@ -434,6 +477,15 @@ final class UserAgent extends AbstractUserAgent
 
         if ($deletedRows !== []) {
             $this->publishCart($userId);
+        }
+
+        $removedTransfers = 0;
+        foreach (Hilos::$db->shopGuestCartTransfers->whereColumnIs(ShopGuestCartTransfer::user_id, $userId) as $transfer) {
+            $transfer->actions->remove();
+            $removedTransfers++;
+        }
+        if ($removedTransfers > 0) {
+            $deletedRows[ShopGuestCartTransfer::_table] = $removedTransfers;
         }
 
         return new AccountErasure($deletedRows, []);
@@ -500,6 +552,97 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
+     * @param string $sender Full source identity from the dispatcher
+     * @throws AgentException When the source is not the guest carts library
+     */
+    private function requireGuestCartTransferSender(string $sender): void
+    {
+        if ($sender !== SignalSource::describe(new SignalSource(SignalSource::AGENT, GuestCartsLibraryAgent::AGENT_TYPE))) {
+            throw new AgentException('Guest cart transfers require the guest carts library as the sender.');
+        }
+    }
+
+    /**
+     * Commits the saved source and its receipt together, or repeats an already committed receipt.
+     *
+     * @param GuestCartTransferOfferSignalData $offer Offer addressed to this person by the library
+     * @throws AgentException When account admission, storage or signal delivery refuses the transfer
+     */
+    private function receiveGuestCart(GuestCartTransferOfferSignalData $offer): void
+    {
+        $this->runGuestCartTransfer($offer->transferId, function () use ($offer): void {
+            $transfer = Hilos::$db->shopGuestCartTransfers->storedTransferForRecipient($offer->transferId, $offer->userId);
+            if ($transfer === null) {
+                return;
+            }
+
+            if (!$transfer->received) {
+                $quantities = Hilos::$db->sessionProductCarts->storedCartQuantityPage($transfer->sessionId, $transfer->cartEpoch, 0);
+                if ($quantities === []) {
+                    return;
+                }
+
+                AddressablePerson::require($offer->userId);
+                if (AccountMergeAccess::reservation($offer->userId) !== null) {
+                    throw new ValidationException(AccountMergeAccess::REFUSED_MESSAGE);
+                }
+                do {
+                    foreach ($quantities as $productId => $quantity) {
+                        Hilos::$db->userProductCarts->actions->mergeLine($offer->userId, $productId, $quantity);
+                    }
+                    $quantities = Hilos::$db->sessionProductCarts->storedCartQuantityPage(
+                        $transfer->sessionId,
+                        $transfer->cartEpoch,
+                        $productId,
+                    );
+                } while ($quantities !== []);
+
+                $transfer->actions->markReceived();
+                $this->publishCart($offer->userId);
+            }
+
+            $receipt = new GuestCartTransferReceivedSignalData($offer->transferId, $offer->userId);
+            Database::afterCommit(fn () => $this->sendToAgent(EcommerceShopSignalConstants::GUEST_CART_TRANSFER_RECEIVED, $receipt));
+        });
+    }
+
+    /**
+     * Removes a received transfer only after storage shows that its exact source cart is empty.
+     *
+     * @param GuestCartTransferClearedSignalData $cleared Clearance addressed to this person by the library
+     * @throws AgentException When storage refuses the reads or removal
+     */
+    private function finishGuestCartTransfer(GuestCartTransferClearedSignalData $cleared): void
+    {
+        $this->runGuestCartTransfer($cleared->transferId, static function () use ($cleared): void {
+            if (Hilos::$db->shopGuestCartTransfers->storedReceipt($cleared->transferId, $cleared->userId) !== true) {
+                return;
+            }
+
+            $transfer = Hilos::$db->shopGuestCartTransfers[$cleared->transferId];
+            if (!Hilos::$db->sessionProductCarts->hasCartLine($transfer->sessionId, $transfer->cartEpoch)) {
+                $transfer->actions->remove();
+            }
+        });
+    }
+
+    /**
+     * Rolls back failed transfer work and reports its cause to the agent dispatcher.
+     *
+     * @param int $transferId Transfer being applied or cleared
+     * @param Closure(): void $work Reads and writes belonging to one transaction
+     * @throws AgentException When the transfer transaction fails
+     */
+    private function runGuestCartTransfer(int $transferId, Closure $work): void
+    {
+        try {
+            Database::transaction(DatabaseNames::PRIMARY, $work);
+        } catch (Throwable $failure) {
+            throw new AgentException("Guest cart transfer #{$transferId} failed: {$failure->getMessage()}", previous: $failure);
+        }
+    }
+
+    /**
      * Sends the person's whole cart to every tab and device of the person.
      *
      * A tab added to the person's group receives the current cart. Its lines are
@@ -512,14 +655,13 @@ final class UserAgent extends AbstractUserAgent
     private function publishCart(int $userId): void
     {
         $lines = [];
-        foreach (Hilos::$db->userProductCarts->whereColumnIs(UserProductCart::user_id, $userId) as $line) {
-            $lines[$line->id] = [CartStateSignalData::PRODUCT_ID => $line->productId, CartStateSignalData::QUANTITY => $line->quantity];
+        foreach (Hilos::$db->userProductCarts->storedCartLines($userId) as [$productId, $quantity]) {
+            $lines[] = [CartStateSignalData::PRODUCT_ID => $productId, CartStateSignalData::QUANTITY => $quantity];
         }
-        ksort($lines);
 
         $frame = new CartStateSignalData(
             $userId,
-            array_values($lines),
+            $lines,
             (Hilos::$db->userVoucherCarts[$userId] ?? null)?->voucherId,
         );
         Database::afterCommit(fn () => $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forUser($userId), $frame));

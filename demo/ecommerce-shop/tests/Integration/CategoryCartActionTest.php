@@ -153,7 +153,7 @@ final class CategoryCartActionTest extends IntegrationTestCase
             $this->click($productId, $requestId);
             $states = $this->completeAdd($this->guest, $productId, self::UNIQUE_SLUG, $sessionId, null, $requestId);
 
-            self::assertSame([[CartGroup::forSession($sessionId), self::cartBody(null, $productId, 1, null)]], $states);
+            self::assertSame([[CartGroup::forSession($sessionId, 0), self::cartBody(null, $productId, 1, null)]], $states);
             $this->assertReply($requestId);
             self::assertSame([1], self::guestQuantities($sessionId));
         }
@@ -326,7 +326,7 @@ final class CategoryCartActionTest extends IntegrationTestCase
         }
         ExecutionContext::run(
             new ExecutionFrame(agentId: self::CONNECTIONS_OWNER),
-            static fn () => Hilos::$rt->connections->actions->register($acceptKey, $userId, sessionId: $sessionId),
+            static fn () => Hilos::$rt->connections->actions->register($acceptKey, $userId, $session->token, $sessionId),
         );
 
         return $sessionId;
@@ -403,6 +403,7 @@ final class CategoryCartActionTest extends IntegrationTestCase
         self::assertSame($productSlug, $payload->productSlug);
         self::assertSame($sessionId, $payload->sessionId);
         self::assertSame($userId, $payload->userId);
+        self::assertSame($userId === null ? Hilos::$db->sessions[$sessionId]->cartEpoch : null, $payload->cartEpoch);
         self::assertSame(self::CLICKER, $payload->acceptKey);
         self::assertSame($requestId, $payload->requestId);
         self::assertSame(EcommerceShopSignalConstants::CART_CATEGORY_ADD_DONE, $payload->replySignal);

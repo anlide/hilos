@@ -24,7 +24,12 @@ final class CartSetQuantityActionDTOTest extends TestCase
 
     public function testBothCartKindsAndTheOriginalQuantitySurviveARoundTrip(): void
     {
-        foreach ([self::INPUT, ['lineId' => 23, 'ownerKind' => 'account', 'quantity' => '1', 'expectedQuantity' => 4_294_967_295]] as $input) {
+        foreach ([
+            self::INPUT,
+            [...self::INPUT, 'expectedQuantity' => 4_294_967_295],
+            ['lineId' => 23, 'ownerKind' => 'account', 'quantity' => '1', 'expectedQuantity' => 4_294_967_295],
+            ['lineId' => 23, 'ownerKind' => 'account', 'quantity' => '1', 'expectedQuantity' => 9_007_199_254_740_991],
+        ] as $input) {
             $dto = CartSetQuantityActionDTO::fromArray($input);
 
             self::assertSame('cart_set_quantity', $dto->getAction());
@@ -66,7 +71,8 @@ final class CartSetQuantityActionDTOTest extends TestCase
         yield 'boolean quantity' => [[...self::INPUT, 'quantity' => true]];
         yield 'zero expected quantity' => [[...self::INPUT, 'expectedQuantity' => 0]];
         yield 'negative expected quantity' => [[...self::INPUT, 'expectedQuantity' => -1]];
-        yield 'oversized expected quantity' => [[...self::INPUT, 'expectedQuantity' => 4_294_967_296]];
+        yield 'oversized guest expected quantity' => [[...self::INPUT, 'expectedQuantity' => 4_294_967_296]];
+        yield 'oversized account expected quantity' => [[...self::INPUT, 'ownerKind' => 'account', 'expectedQuantity' => 9_007_199_254_740_992]];
         yield 'string expected quantity' => [[...self::INPUT, 'expectedQuantity' => '2']];
         yield 'float expected quantity' => [[...self::INPUT, 'expectedQuantity' => 2.0]];
         yield 'boolean expected quantity' => [[...self::INPUT, 'expectedQuantity' => true]];

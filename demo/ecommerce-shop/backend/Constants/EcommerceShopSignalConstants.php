@@ -142,4 +142,16 @@ final class EcommerceShopSignalConstants
 
     /** @var string Shop connections agent → the person's agent: tell every tab and device of the person the cart */
     public const string ACCOUNT_CART_SEND = 'account_cart_send';
+
+    /** @var string Shop connections agent → guest carts library: resume saved transfers for a session */
+    public const string GUEST_CART_TRANSFER_WAKE = 'guest_cart_transfer_wake';
+
+    /** @var string Guest carts library → the person's agent: apply the saved transfer to its recipient */
+    public const string GUEST_CART_TRANSFER_OFFER = 'guest_cart_transfer_offer';
+
+    /** @var string Person's agent → guest carts library: the recipient committed the transfer */
+    public const string GUEST_CART_TRANSFER_RECEIVED = 'guest_cart_transfer_received';
+
+    /** @var string Guest carts library → the person's agent: the source product lines are gone */
+    public const string GUEST_CART_TRANSFER_CLEARED = 'guest_cart_transfer_cleared';
 }

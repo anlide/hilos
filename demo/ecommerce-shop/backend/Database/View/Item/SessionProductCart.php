@@ -19,6 +19,7 @@ use Hilos\HilosException;
  *
  * @property-read ?int $id
  * @property-read int $sessionId Number of the browser session whose cart it is
+ * @property-read int $cartEpoch Number of that session's product cart
  * @property-read int $productId Product in the cart
  * @property-read int $quantity How many units, one at least
  * @property-read SessionProductCartActions $actions Writes for the guest carts library
@@ -39,6 +40,7 @@ final class SessionProductCart extends DbItem
         return match ($name) {
             ObjectSessionProductCart::id => $this->_object->id,
             ObjectSessionProductCart::sessionId => $this->_object->sessionId,
+            ObjectSessionProductCart::cartEpoch => $this->_object->cartEpoch,
             ObjectSessionProductCart::productId => $this->_object->productId,
             ObjectSessionProductCart::quantity => $this->_object->quantity,
             default => parent::__get($name),

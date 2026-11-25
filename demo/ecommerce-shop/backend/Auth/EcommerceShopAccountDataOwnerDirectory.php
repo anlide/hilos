@@ -15,8 +15,8 @@ use Hilos\Auth\AccountOperation\AccountErasureExemption;
  * addresses are its catalog, the stock counts units in each warehouse, and the vouchers
  * are shop discount codes. These collections hold no personal data. The guest carts belong to
  * browser sessions without an account and have no column pointing at a person, so the erasure
- * leaves them alone too. The person's agent owns their cart lines and voucher binding for
- * account erasure.
+ * leaves them alone too. The person's agent erases their product lines, voucher binding and
+ * guest cart transfers assigned to their account.
  */
 final class EcommerceShopAccountDataOwnerDirectory extends AccountDataOwnerDirectory
 {
@@ -39,9 +39,13 @@ final class EcommerceShopAccountDataOwnerDirectory extends AccountDataOwnerDirec
         ];
     }
 
-    /** @return list<string> The carts of the people with an account, which the person's agent holds and erases */
+    /** @return list<string> Account carts and guest cart transfers, which the person's agent holds and erases */
     protected static function personal(): array
     {
-        return [EcommerceShopDbContext::userProductCarts, EcommerceShopDbContext::userVoucherCarts];
+        return [
+            EcommerceShopDbContext::userProductCarts,
+            EcommerceShopDbContext::userVoucherCarts,
+            EcommerceShopDbContext::shopGuestCartTransfers,
+        ];
     }
 }

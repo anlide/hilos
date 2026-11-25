@@ -65,4 +65,17 @@ describe('CartHeaderLink', () => {
     expect(html).toContain('data-id="cart-badge"')
     expect(html).toContain('>5</span>')
   })
+
+  it('renders the exact total above the safe integer range', () => {
+    const cart = createSignal<readonly CartLine[] | null>([
+      { productId: 1, quantity: Number.MAX_SAFE_INTEGER },
+      { productId: 2, quantity: 2 },
+    ])
+    const html = renderToStaticMarkup(
+      createElement<CartHeaderLinkProps>(CartHeaderLink, { cart }),
+    )
+
+    expect(html).toContain('aria-label="Cart, 9007199254740993 items"')
+    expect(html).toContain('data-id="cart-badge">9007199254740993</span>')
+  })
 })

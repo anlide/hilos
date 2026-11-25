@@ -6,12 +6,14 @@ namespace Demo\EcommerceShop\Database\View\Collection;
 
 use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
 use Demo\EcommerceShop\Database\Object\Collection\SessionProductCarts as ObjectSessionProductCarts;
+use Demo\EcommerceShop\Database\Object\Item\SessionProductCart as ObjectSessionProductCart;
 use Demo\EcommerceShop\Database\View\Item\SessionProductCart;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\NamedDatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
 
 /**
  * SessionProductCarts - Db collection of SessionProductCart items: the cart lines of visitors
@@ -44,13 +46,116 @@ final class SessionProductCarts extends DbCollection
 
     /**
      * @param int $sessionId Cart owner
+     * @param int $cartEpoch Number of the guest cart
+     * @return iterable<int, array{int, int}> Saved product ID and quantity by line ID, in line order
+     * @throws DatabaseException When the cart rows cannot be read
+     * @throws InvalidArgumentException When the entity read cannot be built
+     */
+    public function storedCartLines(int $sessionId, int $cartEpoch): iterable
+    {
+        return $this->objectCollection->storedCartLines($sessionId, $cartEpoch);
+    }
+
+    /**
+     * @param int $sessionId Cart owner
+     * @param int $cartEpoch Number of the guest cart
+     * @param int $lineId Primary key of the line being addressed
+     * @return ?SessionProductCart The locked cart line, or null when the key is unavailable
+     * @throws HilosException When the locking read or reconciliation fails
+     * @throws LogicException When the collection cannot provide its item class
+     * @throws InvalidArgumentException When the object does not belong to this collection
+     */
+    public function lockCartLine(int $sessionId, int $cartEpoch, int $lineId): ?SessionProductCart
+    {
+        $line = $this->objectCollection->lockCartLine($sessionId, $cartEpoch, $lineId);
+
+        return $line === null ? null : $this->createDbItem($line);
+    }
+
+    /**
+     * @param int $sessionId Cart owner already locked by the caller
+     * @param int $cartEpoch Number of the guest cart
+     * @param int $productId Catalog product
+     * @return ?SessionProductCart The saved line under lock, including one missing from the mirror
+     * @throws HilosException When the locking read or reconciliation fails
+     * @throws LogicException When the collection cannot provide its item class
+     * @throws InvalidArgumentException When the object does not belong to this collection
+     */
+    public function lockProductLine(int $sessionId, int $cartEpoch, int $productId): ?SessionProductCart
+    {
+        $line = $this->objectCollection->lockProductLine($sessionId, $cartEpoch, $productId);
+
+        return $line === null ? null : $this->createDbItem($line);
+    }
+
+    /**
+     * @param int $sessionId Cart owner
+     * @param int $cartEpoch Number of the guest cart
      * @param ?int $productId Product to match, null for any line
      * @return bool Whether the current cart has a matching line
      * @throws DatabaseException When the cart membership cannot be read
      */
-    public function hasCartLine(int $sessionId, ?int $productId = null): bool
+    public function hasCartLine(int $sessionId, int $cartEpoch, ?int $productId = null): bool
     {
-        return $this->objectCollection->hasCartLine($sessionId, $productId);
+        return $this->objectCollection->hasCartLine($sessionId, $cartEpoch, $productId);
+    }
+
+    /**
+     * @param int $sessionId Cart owner already locked by the caller
+     * @param int $cartEpoch Number of the source cart
+     * @return bool Whether the locked pair has any saved product line
+     * @throws HilosException When the locking read fails
+     */
+    public function hasLockedCartLine(int $sessionId, int $cartEpoch): bool
+    {
+        return $this->objectCollection->hasLockedCartLine($sessionId, $cartEpoch);
+    }
+
+    /**
+     * @param int $sessionId Source session
+     * @param int $cartEpoch Source cart number
+     * @return array<int, int> Stored quantities keyed by product ID
+     * @throws DatabaseException When the cart rows cannot be read
+     * @throws InvalidArgumentException When the entity read cannot be built
+     */
+    public function storedCartQuantities(int $sessionId, int $cartEpoch): array
+    {
+        return $this->objectCollection->storedCartQuantities($sessionId, $cartEpoch);
+    }
+
+    /**
+     * @param int $sessionId Source session
+     * @param int $cartEpoch Source cart number
+     * @param int $afterProductId Exclusive product cursor, zero at the start
+     * @return array<int, int> One saved page of quantities in ascending product ID order
+     * @throws DatabaseException When the cart rows cannot be read
+     * @throws InvalidArgumentException When the entity read cannot be built
+     */
+    public function storedCartQuantityPage(int $sessionId, int $cartEpoch, int $afterProductId): array
+    {
+        return $this->objectCollection->storedCartQuantityPage($sessionId, $cartEpoch, $afterProductId);
+    }
+
+    /**
+     * @param int $sessionId Cart owner
+     * @param int $cartEpoch Number of the guest cart
+     * @return self Selection of the addressed cart's product lines
+     * @throws HilosException When the cart collection refuses the read
+     */
+    public function forCart(int $sessionId, int $cartEpoch): self
+    {
+        return $this->whereColumnIs(ObjectSessionProductCart::sessionId, $sessionId)
+            ->filter(static fn (SessionProductCart $line): bool => $line->cartEpoch === $cartEpoch);
+    }
+
+    /**
+     * @param int $lineId Key of a possibly sparse cart fact
+     * @return ?array{int, int} Persisted session and epoch, or null when the line is gone
+     * @throws HilosException When the keyed read fails
+     */
+    public function storedLineCoordinate(int $lineId): ?array
+    {
+        return $this->objectCollection->storedLineCoordinate($lineId);
     }
 
     /**
@@ -69,7 +174,7 @@ final class SessionProductCarts extends DbCollection
      * @param int $afterVoucherSessionId Exclusive lower bound for voucher binding session IDs
      * @param int $throughVoucherSessionId Inclusive upper bound for voucher binding session IDs
      * @param int $limit Maximum number of rows per table
-     * @return array{array<int, bool>, array<int, bool>} Ordered absence flags by product line ID and voucher binding session ID
+     * @return array{array<int, bool>, array<int, bool>} Ordered cleanup candidate flags by product line ID and voucher binding session ID
      * @throws NamedDatabaseException When a table or its database cannot be resolved
      * @throws DatabaseException When a page query or its parameters are refused
      */

@@ -10,15 +10,19 @@ use Demo\EcommerceShop\Database\Actions\Collection\ProductsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductSlugsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductWarehouseStocksActions;
 use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
+use Demo\EcommerceShop\Database\Actions\Collection\SessionsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\SessionVoucherCartsActions;
+use Demo\EcommerceShop\Database\Actions\Collection\ShopGuestCartTransfersActions;
 use Demo\EcommerceShop\Database\Actions\Collection\UserProductCartsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\UserVoucherCartsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\VouchersActions;
 use Demo\EcommerceShop\Database\Actions\Collection\WarehousesActions;
 use Demo\EcommerceShop\Database\Actions\Item\CategoryActions;
 use Demo\EcommerceShop\Database\Actions\Item\ProductActions;
+use Demo\EcommerceShop\Database\Actions\Item\SessionActions;
 use Demo\EcommerceShop\Database\Actions\Item\SessionProductCartActions;
 use Demo\EcommerceShop\Database\Actions\Item\SessionVoucherCartActions;
+use Demo\EcommerceShop\Database\Actions\Item\ShopGuestCartTransferActions;
 use Demo\EcommerceShop\Database\Actions\Item\UserProductCartActions;
 use Demo\EcommerceShop\Database\Actions\Item\UserVoucherCartActions;
 use Demo\EcommerceShop\Database\Actions\Item\VoucherActions;
@@ -30,6 +34,7 @@ use Demo\EcommerceShop\Database\Object\Collection\ProductSlugs as ObjectProductS
 use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks as ObjectProductWarehouseStocks;
 use Demo\EcommerceShop\Database\Object\Collection\SessionProductCarts as ObjectSessionProductCarts;
 use Demo\EcommerceShop\Database\Object\Collection\SessionVoucherCarts as ObjectSessionVoucherCarts;
+use Demo\EcommerceShop\Database\Object\Collection\ShopGuestCartTransfers as ObjectShopGuestCartTransfers;
 use Demo\EcommerceShop\Database\Object\Collection\UserProductCarts as ObjectUserProductCarts;
 use Demo\EcommerceShop\Database\Object\Collection\UserVoucherCarts as ObjectUserVoucherCarts;
 use Demo\EcommerceShop\Database\Object\Collection\Vouchers as ObjectVouchers;
@@ -40,11 +45,14 @@ use Demo\EcommerceShop\Database\View\Collection\Products;
 use Demo\EcommerceShop\Database\View\Collection\ProductSlugs;
 use Demo\EcommerceShop\Database\View\Collection\ProductWarehouseStocks;
 use Demo\EcommerceShop\Database\View\Collection\SessionProductCarts;
+use Demo\EcommerceShop\Database\View\Collection\Sessions;
 use Demo\EcommerceShop\Database\View\Collection\SessionVoucherCarts;
+use Demo\EcommerceShop\Database\View\Collection\ShopGuestCartTransfers;
 use Demo\EcommerceShop\Database\View\Collection\UserProductCarts;
 use Demo\EcommerceShop\Database\View\Collection\UserVoucherCarts;
 use Demo\EcommerceShop\Database\View\Collection\Vouchers;
 use Demo\EcommerceShop\Database\View\Collection\Warehouses;
+use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
@@ -71,7 +79,9 @@ use Hilos\Database\Object\Objects;
  * library holds them whole. A person who signed in has a cart of their own: the carts of the
  * people grow with the accounts, so they load lazily by key as well, and a person's lines are
  * held and written by the agent of that person alone.
- * The same agents hold their carts' voucher bindings, keyed by session or person ID.
+ * The same agents hold their carts' voucher bindings, keyed by session or person ID. Each
+ * session keeps the epoch of its active product cart. Transfer records load by key, and
+ * the recipient's agent holds the records assigned to its account.
  *
  * @extends HilosDbContext
  * @property-read Warehouses $warehouses
@@ -80,8 +90,10 @@ use Hilos\Database\Object\Objects;
  * @property-read Products $products
  * @property-read ProductSlugs $productSlugs
  * @property-read ProductWarehouseStocks $productWarehouseStocks
+ * @property-read Sessions $sessions
  * @property-read SessionProductCarts $sessionProductCarts
  * @property-read SessionVoucherCarts $sessionVoucherCarts
+ * @property-read ShopGuestCartTransfers $shopGuestCartTransfers
  * @property-read UserProductCarts $userProductCarts
  * @property-read UserVoucherCarts $userVoucherCarts
  * @property-read Vouchers $vouchers
@@ -96,6 +108,7 @@ final class EcommerceShopDbContext extends HilosDbContext
     public const string productWarehouseStocks = 'productWarehouseStocks';
     public const string sessionProductCarts = 'sessionProductCarts';
     public const string sessionVoucherCarts = 'sessionVoucherCarts';
+    public const string shopGuestCartTransfers = 'shopGuestCartTransfers';
     public const string userProductCarts = 'userProductCarts';
     public const string userVoucherCarts = 'userVoucherCarts';
     public const string vouchers = 'vouchers';
@@ -122,6 +135,7 @@ final class EcommerceShopDbContext extends HilosDbContext
         $this->mountObjectCollection(ObjectProductWarehouseStocks::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectSessionProductCarts::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectSessionVoucherCarts::class, Objects::LAZY_STRATEGY_KEY);
+        $this->mountObjectCollection(ObjectShopGuestCartTransfers::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectUserProductCarts::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectUserVoucherCarts::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectVouchers::class, Objects::LAZY_STRATEGY_NONE);
@@ -144,8 +158,27 @@ final class EcommerceShopDbContext extends HilosDbContext
             SessionVoucherCartsActions::class,
             SessionVoucherCartActions::class,
         );
+        $this->setRepresent(
+            self::shopGuestCartTransfers,
+            ShopGuestCartTransfers::class,
+            ShopGuestCartTransfersActions::class,
+            ShopGuestCartTransferActions::class,
+        );
         $this->setRepresent(self::userProductCarts, UserProductCarts::class, UserProductCartsActions::class, UserProductCartActions::class);
         $this->setRepresent(self::userVoucherCarts, UserVoucherCarts::class, UserVoucherCartsActions::class, UserVoucherCartActions::class);
         $this->setRepresent(self::vouchers, Vouchers::class, VouchersActions::class, VoucherActions::class);
+    }
+
+    /**
+     * Mounts the session chain that carries the shop's cart epoch.
+     *
+     * @return array<string, FrameworkExtension> Framework keys served by project subclasses
+     */
+    protected function frameworkExtensions(): array
+    {
+        return [
+            ...parent::frameworkExtensions(),
+            self::sessions => new FrameworkExtension(Sessions::class, SessionsActions::class, SessionActions::class),
+        ];
     }
 }

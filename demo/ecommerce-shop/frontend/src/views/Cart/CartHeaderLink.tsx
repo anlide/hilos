@@ -16,12 +16,14 @@ export interface CartHeaderLinkProps {
 export function CartHeaderLink({ cart = currentCart }: CartHeaderLinkProps) {
   const lines = useSignal(cart)
   const totalCount =
-    lines === null ? null : lines.reduce((acc, line) => acc + line.quantity, 0)
+    lines === null
+      ? null
+      : lines.reduce((sum, line) => sum + BigInt(line.quantity), 0n).toString()
 
   const accessibleName =
     totalCount === null
       ? 'Cart'
-      : totalCount === 1
+      : totalCount === '1'
         ? 'Cart, 1 item'
         : `Cart, ${totalCount} items`
 

@@ -59,6 +59,7 @@ final class AccountCartErasureTest extends IntegrationTestCase
                 $people = implode(',', $this->userIds);
                 Database::sqlRun("DELETE FROM `user_product_cart` WHERE `user_id` IN ({$people})");
                 Database::sqlRun("DELETE FROM `user_voucher_cart` WHERE `user_id` IN ({$people})");
+                Database::sqlRun("DELETE FROM `shop_guest_cart_transfer` WHERE `user_id` IN ({$people})");
                 Database::sqlRun("DELETE FROM `hilos_account_operation` WHERE `root_user_id` IN ({$people})");
                 Database::sqlRun("DELETE FROM `hilos_account_deletion` WHERE `user_id` IN ({$people})");
                 Database::sqlRun("DELETE FROM `hilos_user` WHERE `id` IN ({$people})");
@@ -106,6 +107,34 @@ final class AccountCartErasureTest extends IntegrationTestCase
             [[CartGroup::forUser($personId), ['userId' => $personId, 'lines' => [], 'voucherId' => null]]],
             $this->cartStates(),
         );
+    }
+
+    /** Both receipt states count as transfers of this person, including when the source session is gone. */
+    public function testThePartErasesPendingAndReceivedTransfersForItsAccount(): void
+    {
+        $personId = $this->person('Transfer recipient leaving');
+        $otherId = $this->person('Transfer recipient staying');
+        $sessionId = 4_000_000_000;
+        self::assertNull(Database::sql('SELECT id FROM hilos_session WHERE id = ?', [$sessionId])->field('id'));
+        $this->underAgent($this->sessionsLibrary(), static function () use ($sessionId, $personId, $otherId): void {
+            Hilos::$db->shopGuestCartTransfers->actions->create($sessionId, 0, $personId);
+            Hilos::$db->shopGuestCartTransfers->actions->create($sessionId, 2, $otherId);
+        });
+        Database::sqlRun(
+            'INSERT INTO `shop_guest_cart_transfer` (`session_id`, `cart_epoch`, `user_id`, `received`) VALUES (?, 1, ?, TRUE)',
+            [$sessionId, $personId],
+        );
+        self::assertSame([0 => false, 1 => true], self::storedTransfers($personId));
+        $operation = $this->openErasure($personId);
+        $this->capture($operation, $personId);
+        $this->drainSignals();
+
+        $result = $this->runPart($operation, $personId);
+
+        self::assertPayload($result, ['rows' => ['shop_guest_cart_transfer' => 2], 'files' => []]);
+        self::assertSame([], self::storedTransfers($personId));
+        self::assertSame([2 => false], self::storedTransfers($otherId));
+        self::assertSame([], $this->cartStates());
     }
 
     /** A voucher-only cart records one erased binding and tells the person's group the cart is empty. */
@@ -363,5 +392,22 @@ final class AccountCartErasureTest extends IntegrationTestCase
         }
 
         return $lines;
+    }
+
+    /**
+     * @param int $userId Transfer recipient
+     * @return array<int, bool> Receipt state by source cart epoch
+     */
+    private static function storedTransfers(int $userId): array
+    {
+        $transfers = [];
+        foreach (Database::sql(
+            'SELECT `cart_epoch`, `received` FROM `shop_guest_cart_transfer` WHERE `user_id` = ? ORDER BY `cart_epoch`',
+            [$userId],
+        )->rows() as $row) {
+            $transfers[(int)$row['cart_epoch']] = (bool)$row['received'];
+        }
+
+        return $transfers;
     }
 }

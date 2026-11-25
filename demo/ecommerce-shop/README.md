@@ -259,15 +259,16 @@ sign-out a tab is told the cart of whoever it belongs to now — the account's
 cart, shared by all of the person's tabs and devices, or the cart of the
 browser session.
 
-When a guest signs in, their cart joins the account's cart — the quantities
-of a stock item add up, a unique piece already there is not doubled, and the
-guest's cart is gone. A sum above the stock is kept as it is: the cart holds
-no stock (below), and the cart page shows honestly what can be had. Each
-owner writes only its own: the guest carts library hands the guest's cart to
-the person's agent, the agent adds it to the account's cart, and only after
-the agent's answer does the library drop its own. Signing out leaves the
-browser a guest again, with an empty cart; the account's cart stays with the
-account until the next sign-in.
+When a guest signs in, the sign-in transaction assigns the products from their
+guest cart to that account. The guest carts library sends the saved assignment ID
+to the person's agent, which reads the assigned cart in batches in the background.
+The quantities of a stock item add up, and a unique
+piece already there stays at one. The account's cart keeps the full sum even
+when it exceeds stock, and the cart page shows what can be had. The person's
+agent saves the sum before the library clears the old product lines. A quick
+sign-out or a sign-in to another account leaves the original recipient in
+place. Signing out leaves the browser a guest again with an empty product cart.
+The account keeps its cart.
 
 Erasing an account erases its cart. When two accounts are merged, the cart of
 the account merged away joins the cart of the account it is merged into, by
@@ -554,7 +555,7 @@ the container `env_file`.
 | `composer run db:migration:down` | roll back the last migration |
 | `composer run db:migration:status` | migration status |
 | `composer run db:schema:status` | compare schema against entities |
-| `composer run db:seed:apply -- 001` | replace the Hilos Flowers catalog and clear product lines from guest and account carts. Stop the daemon before running or rerunning this seed. |
+| `composer run db:seed:apply -- 001` | replace the Hilos Flowers catalog and clear guest and account cart product lines along with saved guest cart transfers. Stop the daemon before running or rerunning this seed. |
 | `composer run db:seed:apply -- 002` | add the missing example vouchers; the daemon stopped (beside a running one the command refuses) |
 
 Rerunning seed `001` keeps saved vouchers in both carts and leaves uploaded files on disk.

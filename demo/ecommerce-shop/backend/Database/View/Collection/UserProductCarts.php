@@ -11,6 +11,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
+use Hilos\HilosException;
 
 /**
  * UserProductCarts - Db collection of UserProductCart items: the cart lines of people with an
@@ -40,6 +41,32 @@ final class UserProductCarts extends DbCollection
     public function countForProduct(int $productId): int
     {
         return $this->objectCollection->countForProduct($productId);
+    }
+
+    /**
+     * @param int $userId Cart owner
+     * @return iterable<int, array{int, int}> Saved product ID and quantity by line ID, in line order
+     * @throws DatabaseException When the cart rows cannot be read
+     * @throws InvalidArgumentException When the entity read cannot be built
+     */
+    public function storedCartLines(int $userId): iterable
+    {
+        return $this->objectCollection->storedCartLines($userId);
+    }
+
+    /**
+     * @param int $userId Cart owner
+     * @param int $lineId Primary key of the line being addressed
+     * @return ?UserProductCart The locked cart line, or null when the key is unavailable
+     * @throws HilosException When the locking read or reconciliation fails
+     * @throws LogicException When the collection cannot provide its item class
+     * @throws InvalidArgumentException When the object does not belong to this collection
+     */
+    public function lockCartLine(int $userId, int $lineId): ?UserProductCart
+    {
+        $line = $this->objectCollection->lockCartLine($userId, $lineId);
+
+        return $line === null ? null : $this->createDbItem($line);
     }
 
     /**

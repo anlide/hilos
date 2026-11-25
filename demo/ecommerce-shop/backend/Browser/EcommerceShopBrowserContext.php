@@ -458,8 +458,17 @@ final class EcommerceShopBrowserContext extends BrowserContext
             return false;
         }
 
+        $cartEpoch = null;
+        if ($userId === null) {
+            $token = $connection->sessionToken;
+            $cartEpoch = $token === null ? null : Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $token);
+            if ($cartEpoch === null) {
+                return false;
+            }
+        }
+
         if ($change->sourceKey === EcommerceShopDbContext::sessionProductCarts) {
-            return $userId === null && $this->cartLineChangeMatchesOwner($change, $sessionId);
+            return $cartEpoch !== null && $this->guestCartLineChangeMatches($change, $sessionId, $cartEpoch);
         }
         if ($change->sourceKey === EcommerceShopDbContext::userProductCarts) {
             return $userId !== null && $this->cartLineChangeMatchesOwner($change, $userId);
@@ -479,19 +488,20 @@ final class EcommerceShopBrowserContext extends BrowserContext
                 && ($change->mutationType === TableMutationType::Clear || $binding->voucherId === (int) $change->sourceId);
         }
 
-        $cartLines = $userId === null ? Hilos::$db->sessionProductCarts : Hilos::$db->userProductCarts;
-        $ownerId = $userId ?? $sessionId;
+        $hasCartLine = $cartEpoch !== null
+            ? static fn (?int $productId = null): bool => Hilos::$db->sessionProductCarts->hasCartLine($sessionId, $cartEpoch, $productId)
+            : static fn (?int $productId = null): bool => Hilos::$db->userProductCarts->hasCartLine($userId, $productId);
         if ($change->mutationType === TableMutationType::Clear) {
-            return $cartLines->hasCartLine($ownerId);
+            return $hasCartLine();
         }
         if ($change->sourceKey === EcommerceShopDbContext::products) {
-            return $cartLines->hasCartLine($ownerId, (int) $change->sourceId);
+            return $hasCartLine((int) $change->sourceId);
         }
-        if (!$cartLines->hasCartLine($ownerId)) {
+        if (!$hasCartLine()) {
             return false;
         }
         foreach ($this->cartProductIdsOfStockChange($change) as $productId) {
-            if ($cartLines->hasCartLine($ownerId, $productId)) {
+            if ($hasCartLine($productId)) {
                 return true;
             }
         }
@@ -984,11 +994,59 @@ final class EcommerceShopBrowserContext extends BrowserContext
     }
 
     /**
-     * Resolves membership from the changed line without re-reading a deleted row.
-     * A collection clear invalidates even a now-empty cart of that owner type.
+     * Resolves a guest cart fact against the active pair, keeping the pair from each image together.
      *
-     * @param SourceChange $change Guest or account cart line fact
-     * @param int $ownerId Session id for a guest line or user id for an account line
+     * @param SourceChange $change Guest cart line fact
+     * @param int $sessionId Owner of the active guest cart
+     * @param int $cartEpoch Epoch of the active guest cart
+     * @return bool Whether the fact belongs to the active pair
+     * @throws HilosException When a sparse fact cannot be read
+     */
+    private function guestCartLineChangeMatches(SourceChange $change, int $sessionId, int $cartEpoch): bool
+    {
+        if ($change->mutationType === TableMutationType::Clear) {
+            return true;
+        }
+
+        [$owner, $epoch] = self::guestLineCoordinate($change->row);
+        [$previousOwner, $previousEpoch] = self::guestLineCoordinate($change->previous);
+        if ($previousOwner === $sessionId && $previousEpoch === $cartEpoch) {
+            return true;
+        }
+
+        if ($owner === null || $epoch === null) {
+            if ($change->mutationType === TableMutationType::Delete) {
+                return false;
+            }
+            $stored = Hilos::$db->sessionProductCarts->storedLineCoordinate((int)$change->sourceId);
+            if ($stored === null || ($owner !== null && $owner !== $stored[0]) || ($epoch !== null && $epoch !== $stored[1])) {
+                return false;
+            }
+            [$owner, $epoch] = $stored;
+        }
+
+        return ($owner === $sessionId && $epoch === $cartEpoch)
+            || (($previousOwner ?? $owner) === $sessionId && ($previousEpoch ?? $epoch) === $cartEpoch);
+    }
+
+    /**
+     * @param array<string, mixed> Image or diff of a guest cart line
+     * @return array{?int, ?int} Session and epoch provided by this image
+     */
+    private static function guestLineCoordinate(array $row): array
+    {
+        $owner = $row[ObjectSessionProductCart::sessionId] ?? $row[EntitySessionProductCart::session_id] ?? null;
+        $epoch = $row[ObjectSessionProductCart::cartEpoch] ?? $row[EntitySessionProductCart::cart_epoch] ?? null;
+
+        return [$owner === null ? null : (int)$owner, $epoch === null ? null : (int)$epoch];
+    }
+
+    /**
+     * Resolves membership from the changed line without re-reading a deleted row.
+     * A collection clear invalidates even a now-empty account cart.
+     *
+     * @param SourceChange $change Account cart line fact
+     * @param int $ownerId User ID of the account cart
      * @return bool Whether the fact belongs to this cart
      * @throws HilosException When a configured cart collection refuses the read
      * @throws LogicException When the cart collection is misconfigured
@@ -1001,11 +1059,8 @@ final class EcommerceShopBrowserContext extends BrowserContext
             return true;
         }
 
-        $guest = $change->sourceKey === EcommerceShopDbContext::sessionProductCarts;
-        $objectKey = $guest ? ObjectSessionProductCart::sessionId : ObjectUserProductCart::userId;
-        $entityKey = $guest ? EntitySessionProductCart::session_id : EntityUserProductCart::user_id;
-        $rowOwner = $change->row[$objectKey] ?? $change->row[$entityKey] ?? null;
-        $previousOwner = $change->previous[$objectKey] ?? $change->previous[$entityKey] ?? null;
+        $rowOwner = $change->row[ObjectUserProductCart::userId] ?? $change->row[EntityUserProductCart::user_id] ?? null;
+        $previousOwner = $change->previous[ObjectUserProductCart::userId] ?? $change->previous[EntityUserProductCart::user_id] ?? null;
         if ((int) $rowOwner === $ownerId || (int) $previousOwner === $ownerId) {
             return true;
         }
@@ -1013,9 +1068,7 @@ final class EcommerceShopBrowserContext extends BrowserContext
             return false;
         }
 
-        return $guest
-            ? (Hilos::$db->sessionProductCarts[(int) $change->sourceId] ?? null)?->sessionId === $ownerId
-            : (Hilos::$db->userProductCarts[(int) $change->sourceId] ?? null)?->userId === $ownerId;
+        return (Hilos::$db->userProductCarts[(int) $change->sourceId] ?? null)?->userId === $ownerId;
     }
 
     /**

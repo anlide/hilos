@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Agents\Hilos;
 
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
@@ -34,7 +35,15 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
     /**
-     * Registration holds read at handshake and when finding sessions waiting on an address.
+     * @var array<string, list<TruthSourceOperation>> Framework writes and creation of guest cart transfers
+     */
+    public const array OWNS_DB = [
+        ...parent::OWNS_DB,
+        EcommerceShopDbContext::shopGuestCartTransfers => [TruthSourceOperation::Add],
+    ];
+
+    /**
+     * Registration holds read at handshake and guest product lines read when assigning a transfer.
      *
      * Only the users library writes these holds (HIL-1411). The read is declared in the project
      * because only {@see AuthFeature::mount()} mounts the registration reservation table.
@@ -44,6 +53,7 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
     public const array READS_DB = [
         ...parent::READS_DB,
         HilosDbContext::registrationReservations,
+        EcommerceShopDbContext::sessionProductCarts,
     ];
 
     /**

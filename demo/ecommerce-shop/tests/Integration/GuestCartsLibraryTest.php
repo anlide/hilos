@@ -6,6 +6,7 @@ namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\CLI\DTO\GuestCartSetVoucherCommandData;
 use Demo\EcommerceShop\Constants\AgentType;
@@ -48,10 +49,12 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\DatabaseNames;
 use Hilos\Environment\EnvAccessor;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Testing\IntegrationTest;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
@@ -61,12 +64,24 @@ use RuntimeException;
  *
  * Warehouses, products of either kind and their stock are rows written straight into their tables past their
  * libraries, before the first cart action of a case reads them. Stock changes, voucher catalog writes and session
- * writes run under their respective owners. Product-only cases use session numbers; voucher cases create real
- * sessions. The stored carts and stock are read back past the ORM.
+ * writes run under their respective owners. The stored carts and stock are read back past the ORM.
  */
 #[IntegrationTest]
 final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
 {
+    /** Stores the guests addressed by the product-action fixtures. */
+    protected function setUpInTransaction(): void
+    {
+        parent::setUpInTransaction();
+        $now = TimeHelper::nowMs();
+        foreach ([101, 102, 103] as $sessionId) {
+            Database::sql(
+                'INSERT INTO hilos_session (id, token, created_at, last_seen_at) VALUES (?, ?, ?, ?)',
+                [$sessionId, SessionToken::mint(), $now, $now],
+            );
+        }
+    }
+
     /** The library's start declares the carts complete in its process. */
     public function testTheStartDeclaresTheCartsComplete(): void
     {
@@ -86,13 +101,13 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $stock = Hilos::$db->productWarehouseStocks->getObjectCollection();
         self::assertNotNull($stock);
         self::assertFalse($stock->isAllLoaded());
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
         self::assertFalse($stock->isAllLoaded());
         $lines = self::storedLines(101);
         self::assertCount(1, $lines);
         self::assertSame(['productId' => $bulbs, 'quantity' => 1], self::withoutId($lines[0]));
 
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
         self::assertSame([['id' => $lines[0]['id'], 'productId' => $bulbs, 'quantity' => 2]], self::storedLines(101));
     }
 
@@ -102,13 +117,13 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $bulbs = self::product(ProductKind::STOCK);
         self::stock($bulbs, self::warehouse(), 2);
         $seeds = self::product(ProductKind::STOCK);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
         $stored = self::storedLines(101);
 
-        self::assertRefused('Only 2 in stock', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $bulbs));
-        self::assertRefused('This product is out of stock', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $seeds));
-        self::assertRefused('This product does not exist', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $seeds + 1));
+        self::assertRefused('Only 2 in stock', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs));
+        self::assertRefused('This product is out of stock', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, 0, $seeds));
+        self::assertRefused('This product does not exist', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, 0, $seeds + 1));
 
         self::assertSame($stored, self::storedLines(101));
     }
@@ -120,15 +135,15 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $bowl = self::product(ProductKind::UNIQUE);
         self::stock($vase, self::warehouse(), 1);
 
-        self::assertRefused('This piece is not in a warehouse yet', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $bowl));
+        self::assertRefused('This piece is not in a warehouse yet', static fn () => Hilos::$db->sessionProductCarts->actions->add(101, 0, $bowl));
         self::assertSame([], self::storedLines(101));
 
-        Hilos::$db->sessionProductCarts->actions->add(101, $vase);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
         $lines = self::storedLines(101);
         self::assertCount(1, $lines);
         self::assertSame(['productId' => $vase, 'quantity' => 1], self::withoutId($lines[0]));
 
-        Hilos::$db->sessionProductCarts->actions->add(101, $vase);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
         self::assertSame($lines, self::storedLines(101));
     }
 
@@ -137,21 +152,21 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     {
         $bulbs = self::product(ProductKind::STOCK);
         self::stock($bulbs, self::warehouse(), 2);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
         $line = self::storedLines(101)[0]['id'];
 
         self::assertRefused(
             'A cart line keeps one unit at least: Remove takes it out',
-            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_DOWN),
+            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_DOWN),
         );
-        Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_UP);
+        Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_UP);
         self::assertSame([['id' => $line, 'productId' => $bulbs, 'quantity' => 2]], self::storedLines(101));
 
         self::assertRefused(
             'Only 2 in stock',
-            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_UP),
+            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_UP),
         );
-        Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_DOWN);
+        Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_DOWN);
         self::assertSame([['id' => $line, 'productId' => $bulbs, 'quantity' => 1]], self::storedLines(101));
     }
 
@@ -161,8 +176,8 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $kyiv = self::warehouse();
         $bulbs = self::product(ProductKind::STOCK);
         self::stock($bulbs, $kyiv, 3);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
-        Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 3);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 3);
         $line = self::storedLines(101)[0]['id'];
 
         ExecutionContext::run(
@@ -172,13 +187,13 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
 
         self::assertRefused(
             'Only 1 in stock',
-            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_UP),
+            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_UP),
         );
-        self::assertRefused('Only 1 in stock', static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 2));
-        Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 3);
+        self::assertRefused('Only 1 in stock', static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 2));
+        Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 3);
         self::assertSame([['id' => $line, 'productId' => $bulbs, 'quantity' => 3]], self::storedLines(101));
 
-        Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_DOWN);
+        Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_DOWN);
         self::assertSame([['id' => $line, 'productId' => $bulbs, 'quantity' => 2]], self::storedLines(101));
     }
 
@@ -189,23 +204,23 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::stock($vase, self::warehouse(), 1);
         $bulbs = self::product(ProductKind::STOCK);
         self::stock($bulbs, self::warehouse(), 5);
-        Hilos::$db->sessionProductCarts->actions->add(101, $vase);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
         $stored = self::storedLines(101);
 
         $unique = 'A unique piece has no quantity: it is one of a kind';
-        self::assertRefused($unique, static fn () => Hilos::$db->sessionProductCarts->actions->step(101, $vase, CartLineRules::STEP_UP));
-        self::assertRefused($unique, static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, $vase, 1));
+        self::assertRefused($unique, static fn () => Hilos::$db->sessionProductCarts->actions->step(101, 0, $vase, CartLineRules::STEP_UP));
+        self::assertRefused($unique, static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $vase, 1));
         self::assertRefused(
             'This product is not in the cart',
-            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_UP),
+            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_UP),
         );
         self::assertRefused(
             'This product is not in the cart',
-            static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 2),
+            static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 2),
         );
         self::assertRefused(
             'This product does not exist',
-            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, $bulbs + 1, CartLineRules::STEP_UP),
+            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs + 1, CartLineRules::STEP_UP),
         );
 
         self::assertSame($stored, self::storedLines(101));
@@ -216,18 +231,18 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     {
         $bulbs = self::product(ProductKind::STOCK);
         self::stock($bulbs, self::warehouse(), 5);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
         $line = self::storedLines(101)[0]['id'];
 
-        Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 4);
+        Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 4);
         self::assertSame([['id' => $line, 'productId' => $bulbs, 'quantity' => 4]], self::storedLines(101));
 
         self::assertRefused(
             'A cart line keeps one unit at least: Remove takes it out',
-            static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 0),
+            static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 0),
         );
-        self::assertRefused('Only 5 in stock', static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 6));
-        Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 4);
+        self::assertRefused('Only 5 in stock', static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 6));
+        Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 4);
 
         self::assertSame([['id' => $line, 'productId' => $bulbs, 'quantity' => 4]], self::storedLines(101));
     }
@@ -239,17 +254,17 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::stock($bulbs, self::warehouse(), 5);
         $vase = self::product(ProductKind::UNIQUE);
         self::stock($vase, self::warehouse(), 1);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
-        Hilos::$db->sessionProductCarts->actions->add(101, $vase);
-        Hilos::$db->sessionProductCarts->actions->add(102, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
+        Hilos::$db->sessionProductCarts->actions->add(102, 0, $bulbs);
         $other = self::storedLines(102);
 
-        Hilos::$db->sessionProductCarts->actions->remove(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->remove(101, 0, $bulbs);
         $lines = self::storedLines(101);
         self::assertCount(1, $lines);
         self::assertSame(['productId' => $vase, 'quantity' => 1], self::withoutId($lines[0]));
 
-        Hilos::$db->sessionProductCarts->actions->remove(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->remove(101, 0, $bulbs);
         self::assertSame($lines, self::storedLines(101));
         self::assertSame($other, self::storedLines(102));
     }
@@ -261,12 +276,13 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::stock($bulbs, self::warehouse(), 5);
         $vase = self::product(ProductKind::UNIQUE);
         self::stock($vase, self::warehouse(), 1);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
-        Hilos::$db->sessionProductCarts->actions->add(101, $vase);
-        Hilos::$db->sessionProductCarts->actions->add(102, $bulbs);
-        Hilos::$db->sessionProductCarts->actions->add(103, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
+        Hilos::$db->sessionProductCarts->actions->add(102, 0, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(103, 0, $bulbs);
         $kept = self::storedLines(102);
 
+        Database::sql('DELETE FROM hilos_session WHERE id IN (?, ?)', [101, 103]);
         $this->sweep([101, 103, 104]);
 
         self::assertSame([], self::storedLines(101));
@@ -406,6 +422,57 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertSame($before, (clone $level)->takeHeld());
     }
 
+    /** A deleted saved row is an empty slot even when the old binding is still held. */
+    public function testGuestVoucherFixtureRecreatesADeletedBindingBeforeSync(): void
+    {
+        $sessionId = self::guestSessionId();
+        $token = Hilos::$db->sessions[$sessionId]->token;
+        $voucher = self::createVoucher('ZZE2EV111111111111111111111111', 10, true);
+        $this->carts()->applyVoucher($sessionId, $voucher->code);
+
+        Database::sqlRun('DELETE FROM session_voucher_cart WHERE session_id = ?', [$sessionId]);
+        self::assertSame($voucher->id, $this->carts()->cartVoucher($sessionId)?->id);
+        self::assertNull(self::storedVoucherId($sessionId));
+
+        $reply = $this->voucherFixture($token, $voucher->code, true);
+        self::assertTrue($reply->isOk());
+        self::assertSame(['applied' => true], $reply->payload);
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+        self::assertSame($voucher->id, $this->carts()->cartVoucher($sessionId)?->id);
+    }
+
+    public function testGuestVoucherFixtureRefusesADifferentStoredBindingBeforeSync(): void
+    {
+        $sessionId = self::guestSessionId();
+        $token = Hilos::$db->sessions[$sessionId]->token;
+        $cached = self::createVoucher('ZZE2EV111111111111111111111111', 10, true);
+        $stored = self::createVoucher('ZZE2EV222222222222222222222222', 15, true);
+        $this->carts()->applyVoucher($sessionId, $cached->code);
+
+        Database::sqlRun('UPDATE session_voucher_cart SET voucher_id = ? WHERE session_id = ?', [$stored->id, $sessionId]);
+        self::assertSame($cached->id, $this->carts()->cartVoucher($sessionId)?->id);
+        $level = Database::runtimeTransactionLevel();
+        self::assertNotNull($level);
+        $before = (clone $level)->takeHeld();
+
+        foreach ([true, false] as $applied) {
+            $reply = $this->voucherFixture($token, $cached->code, $applied);
+            self::assertFalse($reply->isOk());
+            self::assertSame([CommandConstants::FIELD_MESSAGE => 'This guest cart holds a different voucher'], $reply->payload);
+            self::assertSame($stored->id, self::storedVoucherId($sessionId));
+            self::assertSame($before, (clone $level)->takeHeld());
+        }
+
+        self::asOwner(new VouchersLibraryAgent(), static fn () => $stored->actions->setActive(false));
+        $before = (clone $level)->takeHeld();
+        $reply = $this->voucherFixture($token, $stored->code, false);
+        self::assertTrue($reply->isOk());
+        self::assertSame(['applied' => false], $reply->payload);
+        self::assertNull(self::storedVoucherId($sessionId));
+        self::assertNull($this->carts()->cartVoucher($sessionId));
+        self::assertNotSame($before, (clone $level)->takeHeld());
+    }
+
     /** @return array<string, array{bool, string}> Whether the node is in test and the expected refusal */
     public static function guestVoucherFixtureAccessRefusals(): array
     {
@@ -481,7 +548,7 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
         foreach ([$sweptSessionId, $keptSessionId] as $sessionId) {
-            Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+            Hilos::$db->sessionProductCarts->actions->add($sessionId, 0, $product);
             $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         }
         $keptLines = self::storedLines($keptSessionId);
@@ -553,7 +620,7 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
         foreach ([$sweptSessionId, $keptSessionId] as $sessionId) {
-            Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+            Hilos::$db->sessionProductCarts->actions->add($sessionId, 0, $product);
             $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         }
         $sweptLines = self::storedLines($sweptSessionId);
@@ -578,6 +645,73 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertSame($voucher->id, self::storedVoucherId($keptSessionId));
     }
 
+    /** Both cleanup paths retain assigned pairs, and recovery also clears inactive pairs of a live session. */
+    public function testCleanupPreservesPendingAndReceivedPairsWithOrWithoutASession(): void
+    {
+        $swept = self::guestSessionId();
+        $missed = self::guestSessionId();
+        $live = self::guestSessionId();
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 1);
+        $recipient = self::asOwner(
+            new UsersLibraryAgent(),
+            static fn () => Hilos::$db->users->actions->createWithName('Cart transfer recipient'),
+        );
+
+        foreach ([$swept, $missed, $live] as $sessionId) {
+            for ($epoch = 0; $epoch <= 3; $epoch++) {
+                Database::sql('UPDATE hilos_session SET cart_epoch = ? WHERE id = ?', [$epoch, $sessionId]);
+                Hilos::$db->sessionProductCarts->actions->add($sessionId, $epoch, $product);
+            }
+        }
+        $sweptLines = self::storedLines($swept);
+        $missedLines = self::storedLines($missed);
+        $liveLines = self::storedLines($live);
+        Database::sql('DELETE FROM hilos_session WHERE id IN (?, ?)', [$swept, $missed]);
+
+        [$throughLineId] = Hilos::$db->sessionProductCarts->cartRecoveryHorizons();
+        [$candidates] = Hilos::$db->sessionProductCarts->cartRowAbsencesAfter(0, $throughLineId, 0, 0, 25);
+        $oldCandidates = [$missedLines[0]['id'], $missedLines[1]['id']];
+        foreach ($oldCandidates as $lineId) {
+            self::assertTrue($candidates[$lineId]);
+        }
+
+        foreach ([$swept, $missed, $live] as $sessionId) {
+            Database::sql(
+                'INSERT INTO shop_guest_cart_transfer (session_id, cart_epoch, user_id, received) VALUES (?, 0, ?, 0), (?, 1, ?, 1)',
+                [$sessionId, $recipient->id, $sessionId, $recipient->id],
+            );
+        }
+        Database::transaction(
+            DatabaseNames::PRIMARY,
+            static fn () => Hilos::$db->sessionProductCarts->actions->deleteRecoveryLines($oldCandidates),
+        );
+
+        $this->sweep([$swept]);
+
+        self::assertSame(array_slice($sweptLines, 0, 2), self::storedLines($swept));
+        self::assertSame($missedLines, self::storedLines($missed));
+        self::assertSame($liveLines, self::storedLines($live));
+
+        [$candidates] = Hilos::$db->sessionProductCarts->cartRowAbsencesAfter(0, $throughLineId, 0, 0, 25);
+        foreach ([$sweptLines, $missedLines, $liveLines] as $lines) {
+            self::assertFalse($candidates[$lines[0]['id']]);
+            self::assertFalse($candidates[$lines[1]['id']]);
+        }
+
+        $previousRouter = Hilos::$sr;
+        Hilos::initSignalRouter(new EcommerceShopSignalRouter());
+        try {
+            $this->carts()->onTick();
+        } finally {
+            Hilos::$sr = $previousRouter;
+        }
+
+        self::assertSame([$sweptLines[0]], self::storedLines($swept));
+        self::assertSame([$missedLines[0]], self::storedLines($missed));
+        self::assertSame([$liveLines[0], $liveLines[3]], self::storedLines($live));
+    }
+
     /** One oversized orphan cart spans a failed retry, several bounded ticks and an owner restart. */
     public function testRecoveryResumesAnOversizedCartByItsRemainingRows(): void
     {
@@ -588,13 +722,13 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $warehouse = self::warehouse();
         $neighborProduct = self::product(ProductKind::STOCK, $category);
         self::stock($neighborProduct, $warehouse, 1);
-        Hilos::$db->sessionProductCarts->actions->add($leftSessionId, $neighborProduct);
+        Hilos::$db->sessionProductCarts->actions->add($leftSessionId, 0, $neighborProduct);
         for ($i = 0; $i < 75; $i++) {
             $product = self::product(ProductKind::STOCK, $category);
             self::stock($product, $warehouse, 1);
-            Hilos::$db->sessionProductCarts->actions->add($orphanSessionId, $product);
+            Hilos::$db->sessionProductCarts->actions->add($orphanSessionId, 0, $product);
         }
-        Hilos::$db->sessionProductCarts->actions->add($rightSessionId, $neighborProduct);
+        Hilos::$db->sessionProductCarts->actions->add($rightSessionId, 0, $neighborProduct);
         $leftLines = self::storedLines($leftSessionId);
         $rightLines = self::storedLines($rightSessionId);
         self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$orphanSessionId]->actions->delete());
@@ -650,25 +784,25 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 1);
         $firstSessionId = self::guestSessionId();
-        Hilos::$db->sessionProductCarts->actions->add($firstSessionId, $product);
+        Hilos::$db->sessionProductCarts->actions->add($firstSessionId, 0, $product);
         $this->carts()->applyVoucher($firstSessionId, 'SUMMER25');
         for ($i = 1; $i < 60; $i++) {
             $sessionId = self::guestSessionId();
-            Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+            Hilos::$db->sessionProductCarts->actions->add($sessionId, 0, $product);
             $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         }
         $this->carts()->onTick();
 
         self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$firstSessionId]->actions->delete());
         $lateOrphanId = self::guestSessionId();
-        Hilos::$db->sessionProductCarts->actions->add($lateOrphanId, $product);
+        Hilos::$db->sessionProductCarts->actions->add($lateOrphanId, 0, $product);
         $this->carts()->applyVoucher($lateOrphanId, 'SUMMER25');
         self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$lateOrphanId]->actions->delete());
 
         for ($page = 0; $page < 3; $page++) {
             for ($i = 0; $i < 25; $i++) {
                 $sessionId = self::guestSessionId();
-                Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+                Hilos::$db->sessionProductCarts->actions->add($sessionId, 0, $product);
                 $this->carts()->applyVoucher($sessionId, 'SUMMER25');
             }
             self::assertCount(1, self::storedLines($firstSessionId));
@@ -687,7 +821,7 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     {
         $bulbs = self::product(ProductKind::STOCK);
         self::stock($bulbs, self::warehouse(), 5);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
         $stored = self::storedLines(101);
 
         try {
@@ -723,11 +857,12 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::stock($vase, self::warehouse(), 1);
         $stock = self::storedStock();
 
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
-        Hilos::$db->sessionProductCarts->actions->add(101, $vase);
-        Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_UP);
-        Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 3);
-        Hilos::$db->sessionProductCarts->actions->remove(101, $vase);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
+        Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_UP);
+        Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 3);
+        Hilos::$db->sessionProductCarts->actions->remove(101, 0, $vase);
+        Database::sql('DELETE FROM hilos_session WHERE id = ?', [101]);
         $this->sweep([101]);
 
         self::assertSame($stock, self::storedStock());
@@ -740,42 +875,42 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::stock($bulbs, self::warehouse(), 5);
         $vase = self::product(ProductKind::UNIQUE);
         self::stock($vase, self::warehouse(), 1);
-        Hilos::$db->sessionProductCarts->actions->add(101, $bulbs);
-        Hilos::$db->sessionProductCarts->actions->add(101, $vase);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs);
+        Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
         $stored = self::storedLines(101);
 
         self::assertRefusedToAnotherWriter(
             CreateNotAllowedException::class,
-            static fn () => Hilos::$db->sessionProductCarts->actions->add(102, $bulbs),
+            static fn () => Hilos::$db->sessionProductCarts->actions->add(102, 0, $bulbs),
         );
         self::assertRefusedToAnotherWriter(
             WriteNotAllowedException::class,
-            static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $bulbs),
+            static fn () => Hilos::$db->sessionProductCarts->actions->add(101, 0, $bulbs),
         );
         self::assertRefusedToAnotherWriter(
             WriteNotAllowedException::class,
-            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, $bulbs, CartLineRules::STEP_UP),
+            static fn () => Hilos::$db->sessionProductCarts->actions->step(101, 0, $bulbs, CartLineRules::STEP_UP),
         );
         self::assertRefusedToAnotherWriter(
             WriteNotAllowedException::class,
-            static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 3),
+            static fn () => Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 3),
         );
         self::assertRefusedToAnotherWriter(
             WriteNotAllowedException::class,
-            static fn () => Hilos::$db->sessionProductCarts->actions->remove(101, $bulbs),
+            static fn () => Hilos::$db->sessionProductCarts->actions->remove(101, 0, $bulbs),
         );
+        ExecutionContext::run(new ExecutionFrame(agentId: AgentType::ECOMMERCE_SHOP), static function () use ($bulbs, $vase): void {
+            Hilos::$db->sessionProductCarts->actions->add(101, 0, $vase);
+            Hilos::$db->sessionProductCarts->actions->setQuantity(101, 0, $bulbs, 1);
+            Hilos::$db->sessionProductCarts->actions->remove(102, 0, $bulbs);
+            self::assertSame(0, Hilos::$db->sessionProductCarts->actions->deleteForSessions([102]));
+        });
+
+        Database::sql('DELETE FROM hilos_session WHERE id = ?', [101]);
         self::assertRefusedToAnotherWriter(
             WriteNotAllowedException::class,
             static fn () => Hilos::$db->sessionProductCarts->actions->deleteForSessions([101]),
         );
-
-        ExecutionContext::run(new ExecutionFrame(agentId: AgentType::ECOMMERCE_SHOP), static function () use ($bulbs, $vase): void {
-            Hilos::$db->sessionProductCarts->actions->add(101, $vase);
-            Hilos::$db->sessionProductCarts->actions->setQuantity(101, $bulbs, 1);
-            Hilos::$db->sessionProductCarts->actions->remove(102, $bulbs);
-            self::assertSame(0, Hilos::$db->sessionProductCarts->actions->deleteForSessions([102]));
-        });
-
         self::assertSame($stored, self::storedLines(101));
     }
 

@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Database\Entity\Item\Session as ShopSession;
+use Demo\EcommerceShop\Database\Entity\Item\ShopGuestCartTransfer;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Backup\BackupConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Item\Session as FrameworkSession;
 use Hilos\Database\MigrationClaim;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Database\Schema\EntitySchemaAudit;
@@ -96,6 +99,8 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
             count($entities),
             'Entity discovery found fewer classes than expected; PSR-4 mapping or directory changed',
         );
+        $this->assertContains(ShopGuestCartTransfer::class, $entities);
+        $this->assertSame(ShopSession::class, EntitySchemaAudit::mountedClassOf(FrameworkSession::class));
     }
 
     /**

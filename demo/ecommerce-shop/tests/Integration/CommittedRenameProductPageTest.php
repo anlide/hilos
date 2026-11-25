@@ -60,7 +60,7 @@ final class CommittedRenameProductPageTest extends TestCase
             self::assertSame($newSlug, Database::sql('SELECT slug FROM product WHERE id = ?', [$productId])->field('slug'));
             self::assertSame($oldSlug, $held->slug);
 
-            $cartFact = self::addGuestCartLine($productId);
+            $cartFact = $this->addGuestCartLine($productId);
             self::assertSame([[], []], array_values($this->observeCartCountReads(fn () => $this->deliver($cartFact))));
             $this->assertMove($oldSlug, $newSlug);
             self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::GUEST));
@@ -106,7 +106,10 @@ final class CommittedRenameProductPageTest extends TestCase
             Database::sql('SET SESSION TRANSACTION ISOLATION LEVEL ' . $isolation);
             $oldSlug = $this->warmProduct($productId)->slug;
             $newSlug = 'placed-' . $oldSlug;
-            Database::sql('INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (101, ?, 1)', [$productId]);
+            Database::sql(
+                'INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (?, ?, 1)',
+                [$this->guestCartSessionId, $productId],
+            );
 
             $views = new ReflectionProperty(DbContext::class, '_dbItemCollections');
             $original = $views->getValue($this->reader);
@@ -165,7 +168,7 @@ final class CommittedRenameProductPageTest extends TestCase
             Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Cart transfer recipient']);
             $userId = Database::lastInsertId();
             try {
-                self::addGuestCartLine($productId);
+                $this->addGuestCartLine($productId);
                 $this->observeCartCountReads(
                     fn () => $this->flushReaderAfter(static fn () => self::assertSame(1, ProductCartCount::forProduct($productId))),
                     beforeCount: static function (string $collection) use ($productId, $userId): void {
@@ -221,6 +224,7 @@ final class CommittedRenameProductPageTest extends TestCase
             [$productId, $categoryId],
         )->rows();
         try {
+            $this->guestCartSessionId = self::createGuestCartSession();
             ExecutionContext::run(new ExecutionFrame(), static function (): void {
                 Hilos::$rt->connections->actions->register(self::GUEST, null, sessionId: 1);
             });
@@ -228,6 +232,9 @@ final class CommittedRenameProductPageTest extends TestCase
         } finally {
             try {
                 Database::sql('DELETE FROM session_product_cart WHERE product_id = ?', [$productId]);
+                if (isset($this->guestCartSessionId)) {
+                    Database::sql('DELETE FROM hilos_session WHERE id = ?', [$this->guestCartSessionId]);
+                }
                 Database::sql('DELETE FROM product_slug WHERE product_id = ?', [$productId]);
                 Database::sql('DELETE FROM product_warehouse_stock WHERE product_id = ?', [$productId]);
                 Database::sql('DELETE FROM warehouse WHERE id = ?', [$warehouse]);

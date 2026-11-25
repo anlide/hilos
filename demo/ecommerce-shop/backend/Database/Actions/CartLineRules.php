@@ -39,8 +39,11 @@ final class CartLineRules
     /** Fewest units a line keeps: below it the line is taken out, not kept empty. */
     public const int QUANTITY_MIN = 1;
 
-    /** Largest quantity the cart tables' unsigned INT columns can store. */
-    public const int QUANTITY_MAX = 4_294_967_295;
+    /** Largest quantity accepted as a new exact quantity. */
+    public const int EXACT_QUANTITY_MAX = 4_294_967_295;
+
+    /** Most units an account cart line can store and carry to the browser exactly. */
+    public const int STORED_ACCOUNT_QUANTITY_MAX = 9_007_199_254_740_991;
 
     /** Refusal shared by stale cart bindings and lines outside the current cart. */
     public const string LINE_UNAVAILABLE = 'This cart item is no longer available.';
@@ -150,6 +153,31 @@ final class CartLineRules
     }
 
     /**
+     * Combines existing cart quantities without checking warehouse stock.
+     *
+     * @param int $productId ID of the product both lines refer to
+     * @param ?int $quantity Quantity already held by the recipient, if any
+     * @param int $incoming Quantity held by the source
+     * @return int Quantity the recipient keeps
+     * @throws ValidationException When the product is missing or the quantities cannot be kept exactly
+     * @throws HilosException When the products cannot be read
+     */
+    public static function merged(int $productId, ?int $quantity, int $incoming): int
+    {
+        self::keptQuantity($incoming);
+        if (self::productKind($productId) === ProductKind::UNIQUE) {
+            return self::QUANTITY_MIN;
+        }
+
+        $current = $quantity === null ? 0 : self::keptQuantity($quantity);
+        if ($incoming > self::STORED_ACCOUNT_QUANTITY_MAX - $current) {
+            throw new ValidationException('The combined cart quantity is too large.');
+        }
+
+        return $current + $incoming;
+    }
+
+    /**
      * Checks the edit's starting quantity before applying the exact quantity rules against stored stock.
      *
      * @param int $productId Id of the product
@@ -236,10 +264,10 @@ final class CartLineRules
     }
 
     /**
-     * Parses a decimal integer and checks the column limit before casting.
+     * Parses a decimal integer and checks the exact input limit before casting.
      *
      * @param string $quantity Original quantity text from the form
-     * @return int Quantity within the storage range
+     * @return int Quantity within the exact input range
      * @throws ValidationException When the text is malformed or the quantity lies outside the cart range
      */
     private static function parseQuantity(string $quantity): int
@@ -253,7 +281,7 @@ final class CartLineRules
         }
 
         $digits = ltrim($quantity, '0');
-        $limit = (string) self::QUANTITY_MAX;
+        $limit = (string) self::EXACT_QUANTITY_MAX;
         if (strlen($digits) > strlen($limit) || (strlen($digits) === strlen($limit) && strcmp($digits, $limit) > 0)) {
             throw new ValidationException('That quantity is too large.');
         }

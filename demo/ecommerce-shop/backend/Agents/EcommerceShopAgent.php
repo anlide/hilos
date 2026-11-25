@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferWakeSignalData;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -27,6 +28,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\RelayedActionReplyDTO;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
@@ -47,6 +49,8 @@ final class EcommerceShopAgent extends AbstractAgent
 {
     /** @var array<string, list<TruthSourceOperation>> Who is on the wire */
     public const array OWNS_RT = [EcommerceShopRtContext::connections => TruthSourceOperation::BY_KIND];
+
+    public const array READS_DB = [HilosDbContext::sessions];
 
     public const string AGENT_TYPE = AgentType::ECOMMERCE_SHOP;
 
@@ -89,14 +93,31 @@ final class EcommerceShopAgent extends AbstractAgent
         }
 
         $userId = $frame->userId;
+        $sessionId = $frame->sessionId;
+        $guestCart = null;
+        $cartGroup = null;
+        if ($userId !== null) {
+            $cartGroup = CartGroup::forUser($userId);
+        } elseif ($sessionId !== null) {
+            $cartEpoch = Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $frame->sessionToken);
+            if ($cartEpoch === null) {
+                return;
+            }
+            $guestCart = new GuestCartSendSignalData($sessionId, $cartEpoch);
+            $cartGroup = CartGroup::forSession($guestCart->sessionId, $guestCart->cartEpoch);
+        }
+
         // One identity for the whole frame: every socket it reaches belongs to the one session
         // it is about - the ones it names and the rest of the session's, which only this
         // register knows of yet.
         $identity = $this->handshakeIdentity($frame);
-        $cartGroup = CartGroup::of($frame);
 
         foreach ($acceptKeys as $acceptKey) {
             $this->settleConnection($acceptKey, $frame);
+            $previousCart = Hilos::$sr?->groupSubscriptionName($acceptKey, CartGroup::NAME);
+            if ($previousCart !== null && $previousCart !== $cartGroup) {
+                GroupMembership::leaveAll($acceptKey);
+            }
             $this->sendHandshakeResponse(EcommerceShopSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
             if ($cartGroup !== null) {
                 GroupMembership::join($acceptKey, $cartGroup, $this->getAgentSignalSource());
@@ -115,7 +136,7 @@ final class EcommerceShopAgent extends AbstractAgent
             PageAccessReassessment::forConnections($frame->acceptKeys);
         }
 
-        $this->askForCart($frame);
+        $this->askForCart($userId, $guestCart);
         $this->answerLibraryAction($frame);
     }
 
@@ -193,18 +214,16 @@ final class EcommerceShopAgent extends AbstractAgent
      * The person's agent answers for a signed-in session, the guest carts library for any
      * other; a frame naming neither a person nor a session row asks nobody.
      *
-     * @param SessionStateSignalData $frame What the session is now
+     * @param ?int $userId Signed-in cart owner
+     * @param ?GuestCartSendSignalData $guestCart Guest cart joined by the connections
      * @throws InvalidArgumentException When the request signal cannot be named
      */
-    private function askForCart(SessionStateSignalData $frame): void
+    private function askForCart(?int $userId, ?GuestCartSendSignalData $guestCart): void
     {
-        if ($frame->userId !== null) {
-            $this->sendToAgent(EcommerceShopSignalConstants::ACCOUNT_CART_SEND, new AccountCartSendSignalData($frame->userId));
-
-            return;
-        }
-        if ($frame->sessionId !== null) {
-            $this->sendToAgent(EcommerceShopSignalConstants::GUEST_CART_SEND, new GuestCartSendSignalData($frame->sessionId));
+        if ($userId !== null) {
+            $this->sendToAgent(EcommerceShopSignalConstants::ACCOUNT_CART_SEND, new AccountCartSendSignalData($userId));
+        } elseif ($guestCart !== null) {
+            $this->sendToAgent(EcommerceShopSignalConstants::GUEST_CART_SEND, $guestCart);
         }
     }
 
@@ -261,6 +280,12 @@ final class EcommerceShopAgent extends AbstractAgent
                 }
 
                 $this->applySessionState($state);
+                if ($state->sessionId !== null) {
+                    $this->sendToAgent(
+                        EcommerceShopSignalConstants::GUEST_CART_TRANSFER_WAKE,
+                        new GuestCartTransferWakeSignalData($state->sessionId),
+                    );
+                }
 
                 return;
 

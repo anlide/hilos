@@ -6,8 +6,10 @@ namespace Demo\EcommerceShop\Database\Object\Item;
 
 use Demo\EcommerceShop\Database\Entity\Item\UserProductCart as EntityUserProductCart;
 use Demo\EcommerceShop\Database\Object\Collection\UserProductCarts as ObjectUserProductCarts;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\HilosException;
 
 /**
  * UserProductCart - Object wrapper for user_product_cart entity.
@@ -62,6 +64,27 @@ final class UserProductCart extends Object_
             self::quantity => $this->entity->quantity = (int)$value,
             default => parent::__set($property, $value),
         };
+    }
+
+    /**
+     * Reconciles this object and its sync baseline with the locked cart row.
+     *
+     * @param EntityUserProductCart $stored Cart line as read under its PRIMARY lock
+     * @throws HilosException When the backing database or rollback scope is unavailable
+     */
+    public function acceptStored(EntityUserProductCart $stored): void
+    {
+        $before = $this->entitySync->toArray();
+        $after = $stored->toArray();
+        if ($after === $before) {
+            return;
+        }
+
+        Database::onRollback(
+            fn () => $this->restoreSaved($before, related: true),
+            index: $stored::getDatabase()->connectionIndex,
+        );
+        $this->restoreSaved($after, related: true);
     }
 
     /**

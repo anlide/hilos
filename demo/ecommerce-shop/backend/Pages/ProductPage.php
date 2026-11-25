@@ -41,6 +41,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Files\HilosFiles;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -75,6 +76,8 @@ final class ProductPage extends AbstractPage
     public const array ACTIONS = [
         EcommerceShopSignalConstants::PRODUCT_ADD_TO_CART => ProductAddToCartActionDTO::class,
     ];
+
+    public const array READS_DB = [HilosDbContext::sessions];
 
     public const string DATA_PRODUCT = 'product';
 
@@ -267,11 +270,22 @@ final class ProductPage extends AbstractPage
             throw new ValidationException(self::PRODUCT_UNAVAILABLE);
         }
 
-        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        $connection = Hilos::$rt->connections[$acceptKey];
         $sessionId = $connection?->sessionId;
         $userId = $connection?->userId;
         if ($sessionId === null || $sessionId <= 0 || ($userId !== null && $userId <= 0)) {
             throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+        }
+
+        $cartEpoch = null;
+        if ($userId === null) {
+            $token = $connection->sessionToken;
+            $cartEpoch = $token === null || $connection->staleSince() !== null
+                ? null
+                : Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $token);
+            if ($cartEpoch === null) {
+                throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+            }
         }
 
         $this->forward(
@@ -286,6 +300,7 @@ final class ProductPage extends AbstractPage
                 requestId: $this->currentActionRequestId(),
                 action: EcommerceShopSignalConstants::PRODUCT_ADD_TO_CART,
                 successMessage: null,
+                cartEpoch: $cartEpoch,
             ),
         );
     }

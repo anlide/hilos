@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart;
+use Demo\EcommerceShop\Database\Entity\Item\ShopGuestCartTransfer;
 use Hilos\Backup\Anonymization\AnonymizationCompatibilityValidator;
 use Hilos\Backup\Anonymization\AnonymizationCoverageValidator;
 use Hilos\Backup\Anonymization\AnonymizationSqlBuilder;
@@ -14,6 +16,7 @@ use Hilos\Backup\Exception\AnonymizationConfigException;
 use Hilos\Backup\Exception\UnclassifiedLiveSchemaException;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Item\Session;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -106,6 +109,9 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         );
 
         $registry = PiiRegistry::collect();
+        foreach ([Session::_table, SessionProductCart::_table, ShopGuestCartTransfer::_table] as $table) {
+            $this->assertTrue($registry->isPurged(self::CONNECTION_INDEX, $table), $table);
+        }
         AnonymizationCoverageValidator::validateArchiveTables(
             $registry,
             [self::CONNECTION_INDEX => array_keys($schemas)],
@@ -184,10 +190,15 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         Database::transactionStart();
         try {
             $probeId = self::insertProbeUser();
-            self::insertProbeSession();
+            $sessionId = self::insertProbeSession();
+            Database::sqlRun(
+                'INSERT INTO `shop_guest_cart_transfer` (`session_id`, `cart_epoch`, `user_id`) VALUES (?, 0, ?)',
+                SqlParamCollection::fromArray([$sessionId, $probeId]),
+            );
             $this->assertSame(self::PROBE_USER_TIME_ZONE, self::probeUserTimeZone($probeId));
             $this->assertSame(self::PROBE_USER_LAST_BROWSER_TIME_ZONE, self::probeUserLastBrowserTimeZone($probeId));
             $this->assertSame(1, self::probeSessionCount());
+            $this->assertSame(1, self::probeTransferCount($probeId));
             foreach ($statements as $statement) {
                 Database::sqlRun($statement);
             }
@@ -198,6 +209,7 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
             $this->assertNull(self::probeUserTimeZone($probeId));
             $this->assertNull(self::probeUserLastBrowserTimeZone($probeId));
             $this->assertSame(0, self::probeSessionCount());
+            $this->assertSame(0, self::probeTransferCount($probeId));
         } finally {
             Database::transactionRollback();
         }
@@ -300,15 +312,18 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
      * Raw SQL for the same reason as the probe user: the row exists to meet the statement the
      * database runs, not the object layer.
      *
+     * @return int ID of the inserted browser session
      * @throws DatabaseException When the insert fails
      */
-    private static function insertProbeSession(): void
+    private static function insertProbeSession(): int
     {
         $now = TimeHelper::nowMs();
         Database::sqlRun(
             'INSERT INTO `hilos_session` (`token`, `browser_time_zone`, `created_at`, `last_seen_at`) VALUES (?, ?, ?, ?)',
             SqlParamCollection::fromArray([self::PROBE_SESSION_TOKEN, self::PROBE_SESSION_BROWSER_TIME_ZONE, $now, $now]),
         );
+
+        return Database::lastInsertId();
     }
 
     /**
@@ -323,5 +338,19 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
         );
 
         return (int)Database::field('probe_count');
+    }
+
+    /**
+     * Counts the probe account's transfer rows.
+     *
+     * @param int $probeId Probe user ID
+     * @return int Number of rows still in the transfer table
+     */
+    private static function probeTransferCount(int $probeId): int
+    {
+        return (int)Database::sql(
+            'SELECT COUNT(*) AS `probe_count` FROM `shop_guest_cart_transfer` WHERE `user_id` = ?',
+            SqlParamCollection::fromArray([$probeId]),
+        )->field('probe_count');
     }
 }

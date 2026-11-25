@@ -24,6 +24,7 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
+use Throwable;
 
 /**
  * UserProductCartsActions - write operations for the carts of people with an account.
@@ -34,8 +35,8 @@ use Hilos\HilosException;
  * shares; every check comes before any write, so a refused call leaves the cart as it was, and a
  * call that changes nothing writes nothing and asks for no right. A new line is a creation in the
  * person's set, a new quantity an update of it and a line taken out a removal from it, so any
- * other process is refused before it writes. Each write is one statement, so no transaction is
- * opened. The cart never writes the stock.
+ * other process is refused before it writes. Product mutations lock the saved row through commit.
+ * The cart never writes the stock.
  *
  * @extends DbActions<UserProductCart, ObjectUserProductCarts>
  * @property-read DbCollectionUserProductCarts $collection
@@ -59,16 +60,47 @@ final class UserProductCartsActions extends DbActions
      * @throws DatabaseException When the rows cannot be read, or the database refuses the write
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws HilosException When the right, the database or the collection refuses the write
+     * @throws Throwable When the cart transaction cannot complete
      */
     public function add(int $userId, int $productId): void
     {
-        $line = $this->line($userId, $productId);
-        $quantity = CartLineRules::added($productId, $line?->quantity);
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($userId, $productId): void {
+            $line = $this->objectCollection->lockProductLine($userId, $productId);
+            $quantity = CartLineRules::added($productId, $line?->quantity);
+            if ($line === null) {
+                $this->addLine($userId, $productId, $quantity);
+                return;
+            }
+            $this->changeQuantity($line, $quantity);
+        });
+    }
+
+    /**
+     * Merges a saved product line into the person's cart inside the caller's transfer transaction.
+     *
+     * @param int $userId Recipient of the line
+     * @param int $productId ID of the transferred product
+     * @param int $incoming Quantity held by the source
+     * @throws ValidationException When the product or merged quantity is invalid
+     * @throws CreateNotAllowedException When this process may not add the person's line
+     * @throws WriteNotAllowedException When this process may not change the person's line
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object does not match its collection
+     * @throws ObjectGetIdStringNotImplementedException When a matched item cannot be keyed
+     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
+     * @throws DatabaseException When the rows cannot be read or written
+     * @throws SourceChangeSubscriberException When a store announcement subscriber fails
+     * @throws HilosException When the right, the database or the collection refuses the write
+     */
+    public function mergeLine(int $userId, int $productId, int $incoming): void
+    {
+        $line = $this->objectCollection->lockProductLine($userId, $productId);
+        $quantity = CartLineRules::merged($productId, $line?->quantity, $incoming);
         if ($line === null) {
             $this->addLine($userId, $productId, $quantity);
             return;
         }
-        $this->changeQuantity($line->getObject(), $quantity);
+        $this->changeQuantity($line, $quantity);
     }
 
     /**
@@ -88,14 +120,17 @@ final class UserProductCartsActions extends DbActions
      * @throws DatabaseException When the rows cannot be read, or the database refuses the write
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws HilosException When the right, the database or the collection refuses the write
+     * @throws Throwable When the cart transaction cannot complete
      */
     public function step(int $userId, int $productId, int $step): void
     {
-        $line = $this->line($userId, $productId);
-        $quantity = CartLineRules::stepped($productId, $line?->quantity, $step);
-        if ($line !== null) {
-            $this->changeQuantity($line->getObject(), $quantity);
-        }
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($userId, $productId, $step): void {
+            $line = $this->objectCollection->lockProductLine($userId, $productId);
+            $quantity = CartLineRules::stepped($productId, $line?->quantity, $step);
+            if ($line !== null) {
+                $this->changeQuantity($line, $quantity);
+            }
+        });
     }
 
     /**
@@ -114,14 +149,17 @@ final class UserProductCartsActions extends DbActions
      * @throws DatabaseException When the rows cannot be read, or the database refuses the write
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws HilosException When the right, the database or the collection refuses the write
+     * @throws Throwable When the cart transaction cannot complete
      */
     public function setQuantity(int $userId, int $productId, int $quantity): void
     {
-        $line = $this->line($userId, $productId);
-        $exact = CartLineRules::exact($productId, $line?->quantity, $quantity);
-        if ($line !== null) {
-            $this->changeQuantity($line->getObject(), $exact);
-        }
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($userId, $productId, $quantity): void {
+            $line = $this->objectCollection->lockProductLine($userId, $productId);
+            $exact = CartLineRules::exact($productId, $line?->quantity, $quantity);
+            if ($line !== null) {
+                $this->changeQuantity($line, $exact);
+            }
+        });
     }
 
     /**
@@ -141,10 +179,16 @@ final class UserProductCartsActions extends DbActions
      * @throws ObjectCollectionNullException When the line has no owning collection
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
      * @throws HilosException When the right, the database or the collection refuses the delete
+     * @throws Throwable When the cart transaction cannot complete
      */
     public function remove(int $userId, int $productId): void
     {
-        $this->line($userId, $productId)?->actions->remove();
+        SessionProductCartsActions::inPrimaryTransaction(function () use ($userId, $productId): void {
+            $line = $this->objectCollection->lockProductLine($userId, $productId);
+            if ($line !== null) {
+                $this->collection[$line->id]->actions->remove();
+            }
+        });
     }
 
     /**
@@ -180,29 +224,6 @@ final class UserProductCartsActions extends DbActions
         }
 
         return count($lines);
-    }
-
-    /**
-     * Finds the line of a product in the cart of a person.
-     *
-     * @param int $userId Person whose cart it is
-     * @param int $productId Id of the product
-     * @return ?UserProductCart The line, or null when the cart holds none of the product
-     * @throws LogicException When collection class constants are not configured
-     * @throws InvalidArgumentException When a loaded object does not match its collection
-     * @throws DatabaseException When the rows cannot be read
-     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
-     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
-     */
-    private function line(int $userId, int $productId): ?UserProductCart
-    {
-        foreach ($this->collection->whereColumnIs(ObjectUserProductCart::userId, $userId) as $row) {
-            if ($row->productId === $productId) {
-                return $row;
-            }
-        }
-
-        return null;
     }
 
     /**

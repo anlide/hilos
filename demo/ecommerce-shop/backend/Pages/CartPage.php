@@ -12,8 +12,6 @@ use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
-use Demo\EcommerceShop\Database\Entity\Item\UserProductCart;
-use Demo\EcommerceShop\Database\Object\Item\SessionProductCart;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\CartPageData;
@@ -34,6 +32,7 @@ use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\PageConflictException;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
 use Hilos\Core\Page\PageRouteParams;
@@ -86,13 +85,14 @@ final class CartPage extends AbstractPage
         EcommerceShopDbContext::sessionVoucherCarts,
         EcommerceShopDbContext::userVoucherCarts,
         EcommerceShopDbContext::vouchers,
+        HilosDbContext::sessions,
     ];
 
     public const array READS_RT = [EcommerceShopRtContext::connections];
 
     public const string DATA_CART = 'cart';
 
-    private const string GUEST_CART_KEY_MESSAGE = 'ecommerce-shop:guest-cart:v1:%d:0';
+    private const string GUEST_CART_KEY_MESSAGE = 'ecommerce-shop:guest-cart:v1:%d:%d';
     private const string CART_UNAVAILABLE = 'This cart is no longer available.';
 
     /**
@@ -186,51 +186,59 @@ final class CartPage extends AbstractPage
         $connection = $this->requireConnection($acceptKey);
         $userId = $connection->userId;
         $sessionId = $connection->sessionId;
-        $sessionToken = $userId === null ? $connection->sessionToken : null;
-        if (!$this->isActiveCartBinding($sessionId, $userId, $sessionToken)) {
+        if ($sessionId === null) {
             throw new PageConflictException('The cart owner is not available yet');
         }
 
-        $guestCartKey = $sessionToken === null
-            ? null
-            : hash_hmac('sha256', sprintf(self::GUEST_CART_KEY_MESSAGE, $sessionId), $sessionToken);
-        $cartLines = $userId === null
-            ? Hilos::$db->sessionProductCarts->whereColumnIs(SessionProductCart::sessionId, $sessionId)
-            : Hilos::$db->userProductCarts->whereColumnIs(UserProductCart::user_id, $userId);
+        $sessionToken = $connection->sessionToken;
+        $cartEpoch = null;
+        $guestCartKey = null;
+        if ($userId === null) {
+            if ($sessionToken === null || $sessionToken === '') {
+                throw new PageConflictException('The cart owner is not available yet');
+            }
+
+            $cartEpoch = Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $sessionToken)
+                ?? throw new PageConflictException('The cart owner has changed');
+            $guestCartKey = hash_hmac('sha256', sprintf(self::GUEST_CART_KEY_MESSAGE, $sessionId, $cartEpoch), $sessionToken);
+            $cartLines = Hilos::$db->sessionProductCarts->storedCartLines($sessionId, $cartEpoch);
+        } else {
+            if (!Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId)) {
+                throw new PageConflictException('The cart owner is not available yet');
+            }
+            $cartLines = Hilos::$db->userProductCarts->storedCartLines($userId);
+        }
 
         $ordered = [];
         $productIds = [];
-        foreach ($cartLines as $line) {
-            $ordered[$line->id] = $line;
-            $productIds[] = $line->productId;
+        foreach ($cartLines as $lineId => [$productId, $quantity]) {
+            $ordered[$lineId] = [$productId, $quantity];
+            $productIds[] = $productId;
         }
-        ksort($ordered);
 
         $stock = Hilos::$db->productWarehouseStocks->totalsOfProducts(...$productIds);
         $lines = [];
-        foreach ($ordered as $line) {
-            $product = Hilos::$db->products[$line->productId] ?? null;
+        foreach ($ordered as $lineId => [$productId, $quantity]) {
+            $product = Hilos::$db->products[$productId] ?? null;
             if ($product === null) {
                 // A product can disappear with its cart line while the catalog change is crossing workers.
                 continue;
             }
 
-            $lines[] = CartPageData::line(
-                $line->id ?? throw new LogicException('A saved cart line must have an ID'),
-                $product,
-                $line->quantity,
-                $stock->of($line->productId)->unitCount,
-            );
+            $lines[] = CartPageData::line($lineId, $product, $quantity, $stock->of($productId)->unitCount);
         }
         $cart = new CartPageData($userId, $guestCartKey, $lines, $this->cartVoucher($sessionId));
         $payload = new PagePayload(data: [self::DATA_CART => $cart->toArray()]);
 
         $current = $this->requireConnection($acceptKey);
-        if (
-            $current->userId !== $userId || $current->sessionId !== $sessionId
-            || ($userId === null && $current->sessionToken !== $sessionToken)
-            || !$this->isActiveCartBinding($sessionId, $userId, $sessionToken)
+        if ($current->userId !== $userId || $current->sessionId !== $sessionId
         ) {
+            throw new PageConflictException('The cart owner has changed');
+        }
+        $bindingIsCurrent = $userId === null
+            ? $current->sessionToken === $sessionToken && Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $sessionToken) === $cartEpoch
+            : Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId);
+        if (!$bindingIsCurrent) {
             throw new PageConflictException('The cart owner has changed');
         }
 
@@ -276,10 +284,11 @@ final class CartPage extends AbstractPage
             throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
         }
 
+        $token = $connection->sessionToken;
         try {
-            Database::transaction(DatabaseNames::PRIMARY, static function () use ($agent, $sessionId, $dto): void {
-                if ($agent instanceof GuestCartsLibraryAgent) {
-                    $agent->removeProductLine($sessionId, $dto->lineId);
+            Database::transaction(DatabaseNames::PRIMARY, static function () use ($agent, $sessionId, $dto, $token): void {
+                if ($agent instanceof GuestCartsLibraryAgent && $token !== null) {
+                    $agent->removeProductLine($sessionId, $dto->lineId, $token);
                 } elseif ($agent instanceof UserAgent) {
                     if (!Hilos::$db->sessions->isStoredActiveForUser($sessionId, (int)$agent->getIndex())) {
                         throw new ValidationException(CartLineRules::LINE_UNAVAILABLE);
@@ -314,7 +323,7 @@ final class CartPage extends AbstractPage
         $agent = $this->getAgent();
         try {
             if ($agent instanceof GuestCartsLibraryAgent && $dto->ownerKind === CartStepQuantityActionDTO::GUEST) {
-                $agent->stepProductLine($sessionId, $dto->lineId, $dto->step);
+                $agent->stepProductLine($acceptKey, $sessionId, $dto->lineId, $dto->step);
 
                 return;
             }
@@ -353,7 +362,7 @@ final class CartPage extends AbstractPage
         $agent = $this->getAgent();
         try {
             if ($agent instanceof GuestCartsLibraryAgent && $dto->ownerKind === CartStepQuantityActionDTO::GUEST) {
-                $agent->setProductLineQuantity($sessionId, $dto->lineId, $dto->quantity, $dto->expectedQuantity);
+                $agent->setProductLineQuantity($acceptKey, $sessionId, $dto->lineId, $dto->quantity, $dto->expectedQuantity);
 
                 return;
             }
@@ -495,26 +504,5 @@ final class CartPage extends AbstractPage
         }
 
         return $connection;
-    }
-
-    /**
-     * @param ?int $sessionId Session ID from the current runtime binding
-     * @param ?int $userId Bound account ID, or null for a guest
-     * @param ?string $sessionToken Guest cookie token from the same binding
-     * @return bool Whether storage confirms this exact active cart binding
-     * @throws DatabaseException When the persisted session cannot be read
-     * @throws InvalidArgumentException When the entity query is invalid
-     */
-    private function isActiveCartBinding(?int $sessionId, ?int $userId, ?string $sessionToken): bool
-    {
-        if ($sessionId === null) {
-            return false;
-        }
-        if ($userId !== null) {
-            return Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId);
-        }
-
-        return $sessionToken !== null && $sessionToken !== ''
-            && Hilos::$db->sessions->isStoredActiveGuest($sessionId, $sessionToken);
     }
 }

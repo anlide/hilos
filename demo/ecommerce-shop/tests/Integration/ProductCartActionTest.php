@@ -126,6 +126,7 @@ final class ProductCartActionTest extends IntegrationTestCase
                 }
             });
             foreach ($this->sessionIds as $sessionId) {
+                Database::sqlRun('DELETE FROM shop_guest_cart_transfer WHERE session_id = ?', [$sessionId]);
                 Database::sqlRun('DELETE FROM session_product_cart WHERE session_id = ?', [$sessionId]);
                 Database::sqlRun('DELETE FROM session_voucher_cart WHERE session_id = ?', [$sessionId]);
                 Database::sqlRun('DELETE FROM hilos_session WHERE id = ?', [$sessionId]);
@@ -173,7 +174,7 @@ final class ProductCartActionTest extends IntegrationTestCase
             self::assertNull($ask->data->data->userId);
             [$cartStates, $reply, $facts] = $this->complete($ask, $guestOwner);
 
-            self::assertSame([self::cartState(CartGroup::forSession($sessionId), null, $productId, 1, $voucherId)], $cartStates);
+            self::assertSame([self::cartState(CartGroup::forSession($sessionId, 0), null, $productId, 1, $voucherId)], $cartStates);
             $this->assertSuccess($reply, $requestId);
             self::assertSame([1], self::guestQuantities($sessionId));
             self::assertSame([2], self::guestQuantities($otherSessionId));
@@ -268,7 +269,7 @@ final class ProductCartActionTest extends IntegrationTestCase
         [$states, $reply, $facts] = $this->complete($ask, $guestOwner);
         $this->assertSuccess($reply, 'add-after-recovery');
         self::assertSame([1], self::guestQuantities($sessionId));
-        self::assertSame([self::cartState(CartGroup::forSession($sessionId), null, $productId, 1, null)], $states);
+        self::assertSame([self::cartState(CartGroup::forSession($sessionId, 0), null, $productId, 1, null)], $states);
         self::assertCount(1, $facts);
         $this->assertOrigin($facts[0], $ask, $guestOwner, 'add-after-recovery');
     }
@@ -382,6 +383,49 @@ final class ProductCartActionTest extends IntegrationTestCase
         self::assertSame([], self::accountQuantities($replacementId));
     }
 
+    public function testAnAddIssuedForAnEarlierGuestEpochCannotWriteToTheNewCart(): void
+    {
+        $sessionId = $this->session();
+        $userId = $this->person();
+        $this->connect(self::CLICKER, $sessionId);
+        $productId = $this->subscribe(self::CLICKER, self::STOCK_SLUG);
+        $owner = $this->guestOwner();
+        $this->drainSignals();
+
+        [, $reply] = $this->complete($this->submit($productId, 'fill-departing-cart'), $owner);
+        $this->assertSuccess($reply, 'fill-departing-cart');
+        $oldAsk = $this->submit($productId, 'before-epoch-change');
+        self::assertSame(0, $oldAsk->data->data->cartEpoch);
+
+        $this->underAgent($this->sessionsLibrary(), static function () use ($sessionId, $userId): void {
+            Hilos::$db->sessions[$sessionId]->actions->bindUser($userId);
+            Hilos::$db->sessions[$sessionId]->actions->unbindUser();
+        });
+        self::assertSame(1, Hilos::$db->sessions->activeGuestCartEpoch($sessionId));
+        self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities($sessionId, 1));
+        $transfers = Hilos::$db->shopGuestCartTransfers->storedTransferIdsForSession($sessionId, 2);
+        self::assertCount(1, $transfers);
+        $this->drainSignals();
+
+        [$states, $reply, $facts] = $this->complete($oldAsk, $owner);
+        $this->assertFailure($reply, 'before-epoch-change', 'Your cart is not ready. Please try again.');
+        self::assertSame([], $states);
+        self::assertSame([], $facts);
+        self::assertSame([$productId => 1], Hilos::$db->sessionProductCarts->storedCartQuantities($sessionId, 0));
+        self::assertSame([], Hilos::$db->sessionProductCarts->storedCartQuantities($sessionId, 1));
+        self::assertFalse(Hilos::$db->shopGuestCartTransfers->storedReceipt($transfers[0], $userId));
+        self::assertSame([], self::accountQuantities($userId));
+
+        $newAsk = $this->submit($productId, 'after-epoch-change');
+        self::assertSame(1, $newAsk->data->data->cartEpoch);
+        [$states, $reply, $facts] = $this->complete($newAsk, $owner);
+        $this->assertSuccess($reply, 'after-epoch-change');
+        self::assertSame([self::cartState(CartGroup::forSession($sessionId, 1), null, $productId, 1, null)], $states);
+        self::assertCount(1, $facts);
+        self::assertSame([$productId => 1], Hilos::$db->sessionProductCarts->storedCartQuantities($sessionId, 0));
+        self::assertSame([$productId => 1], Hilos::$db->sessionProductCarts->storedCartQuantities($sessionId, 1));
+    }
+
     public function testAccountAddRefusesAConnectionThatBecomesStaleDuringHandover(): void
     {
         $userId = $this->person();
@@ -449,7 +493,8 @@ final class ProductCartActionTest extends IntegrationTestCase
     {
         ExecutionContext::run(new ExecutionFrame(agentId: self::CONNECTIONS_OWNER), static function () use ($acceptKey, $sessionId, $userId): void {
             Hilos::$rt->connections[$acceptKey]?->actions->unregister();
-            Hilos::$rt->connections->actions->register($acceptKey, $userId, sessionId: $sessionId);
+            $token = $sessionId === null ? null : Hilos::$db->sessions[$sessionId]->token;
+            Hilos::$rt->connections->actions->register($acceptKey, $userId, $token, $sessionId);
         });
     }
 

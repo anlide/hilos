@@ -28,7 +28,8 @@ final class CartAddProductSignalData extends BaseDTO implements HandoverAskInter
      * @param ?string $requestId Client correlation id, or null for an untracked click
      * @param string $action Action whose outcome is answered
      * @param ?string $successMessage Success sentence, or null for a silent success
-     * @throws InvalidFormatException When an id is not positive or the product address is empty
+     * @param ?int $cartEpoch Required nonnegative epoch for a guest cart, null for an account cart
+     * @throws InvalidFormatException When the product address, identity or cart epoch is invalid
      */
     public function __construct(
         public readonly int $productId,
@@ -40,12 +41,16 @@ final class CartAddProductSignalData extends BaseDTO implements HandoverAskInter
         public readonly ?string $requestId,
         public readonly string $action,
         public readonly ?string $successMessage,
+        public readonly ?int $cartEpoch = null,
     ) {
         if ($productId <= 0 || $sessionId <= 0 || ($userId !== null && $userId <= 0)) {
             throw new InvalidFormatException('Product, session and user IDs must be positive integers.');
         }
         if ($productSlug === '') {
             throw new InvalidFormatException('The original product address is required.');
+        }
+        if ($userId === null ? ($cartEpoch === null || $cartEpoch < 0) : $cartEpoch !== null) {
+            throw new InvalidFormatException('Only a guest cart requires a nonnegative epoch.');
         }
     }
 
@@ -60,23 +65,26 @@ final class CartAddProductSignalData extends BaseDTO implements HandoverAskInter
             throw new InvalidFormatException('Payload carries no user id field');
         }
 
+        $userId = self::optionalInt($data, AccountCartSendSignalData::userId);
+
         return new static(
             productId: self::requireInt($data, CartStateSignalData::PRODUCT_ID),
             productSlug: self::requireString($data, CartAddProductDoneSignalData::productSlug),
             sessionId: self::requireInt($data, HilosSessionConnection::sessionId),
-            userId: self::optionalInt($data, AccountCartSendSignalData::userId),
+            userId: $userId,
             replySignal: self::requireString($data, self::replySignal),
             acceptKey: self::requireString($data, SignalPayloadConstants::FIELD_ACCEPT_KEY),
             requestId: self::optionalString($data, SignalPayloadConstants::FIELD_REQUEST_ID),
             action: self::requireString($data, SignalPayloadConstants::FIELD_ACTION),
             successMessage: self::optionalString($data, self::successMessage),
+            cartEpoch: $userId === null ? self::requireInt($data, GuestCartSendSignalData::cartEpoch) : null,
         );
     }
 
     /** @return array<string, mixed> Transport payload and original handover address */
     public function toArray(): array
     {
-        return [
+        $data = [
             CartStateSignalData::PRODUCT_ID => $this->productId,
             CartAddProductDoneSignalData::productSlug => $this->productSlug,
             HilosSessionConnection::sessionId => $this->sessionId,
@@ -87,5 +95,10 @@ final class CartAddProductSignalData extends BaseDTO implements HandoverAskInter
             SignalPayloadConstants::FIELD_ACTION => $this->action,
             self::successMessage => $this->successMessage,
         ];
+        if ($this->cartEpoch !== null) {
+            $data[GuestCartSendSignalData::cartEpoch] = $this->cartEpoch;
+        }
+
+        return $data;
     }
 }

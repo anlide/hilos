@@ -88,8 +88,10 @@ final class HilosFlowersSeedRerunTest extends TestCase
             $guestLineId = Database::lastInsertId();
             Database::sql('INSERT INTO user_product_cart (user_id, product_id, quantity) VALUES (?, ?, 1)', [$userId, $productId]);
             $accountLineId = Database::lastInsertId();
+            Database::sql('INSERT INTO shop_guest_cart_transfer (session_id, cart_epoch, user_id) VALUES (?, 0, ?)', [$sessionId, $userId]);
             self::assertCount(1, Database::sql('SELECT id FROM session_product_cart')->rows(), 'Guest cart before rerun');
             self::assertCount(1, Database::sql('SELECT id FROM user_product_cart')->rows(), 'Account cart before rerun');
+            self::assertCount(1, Database::sql('SELECT id FROM shop_guest_cart_transfer')->rows(), 'Transfer before rerun');
 
             Database::sql('INSERT INTO voucher (code, discount_percent, active) VALUES (?, 10, 1)', ['BOUQUET10']);
             $voucherId = Database::lastInsertId();
@@ -100,6 +102,7 @@ final class HilosFlowersSeedRerunTest extends TestCase
 
             self::assertSame([], Database::sql('SELECT id FROM session_product_cart')->rows(), 'Guest cart after rerun');
             self::assertSame([], Database::sql('SELECT id FROM user_product_cart')->rows(), 'Account cart after rerun');
+            self::assertSame([], Database::sql('SELECT id FROM shop_guest_cart_transfer')->rows(), 'Transfers after rerun');
             self::assertSame($catalog, Database::sql('SELECT id, name FROM product ORDER BY id')->rows());
             self::assertSame('BOUQUET10', Database::sql('SELECT code FROM voucher WHERE id = ?', [$voucherId])->field('code'));
             self::assertSame(

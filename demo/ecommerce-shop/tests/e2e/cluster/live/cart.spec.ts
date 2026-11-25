@@ -2,7 +2,10 @@ import type { Page } from '@playwright/test'
 
 import { expect, test as base } from '../../test.js'
 import { PAGE_CART } from '../../../../frontend/src/pages/keys.js'
-import { cartSnapshotSchema } from '../../../../frontend/src/views/Cart/types/Cart.js'
+import {
+  cartSnapshotSchema,
+  type CartSnapshot,
+} from '../../../../frontend/src/views/Cart/types/Cart.js'
 import {
   FIELD_PAGE,
   FIELD_TYPE,
@@ -45,7 +48,13 @@ const stand = readClusterBrowserStand()
 const guestAgent = 'guest_carts_library'
 const rtAgent = 'ecommerce_shop'
 const cartPath = '/cart'
-const product = { productId: 16, name: 'Pine bark 5 L', quantity: 3 }
+const product = { productId: 16, name: 'Pine bark 5 L' }
+const guestProduct = { ...product, quantity: 3 }
+const accountProduct = { ...product, quantity: 1 }
+const combinedProduct = {
+  ...product,
+  quantity: accountProduct.quantity + guestProduct.quantity,
+}
 
 // Sign-in traffic and the session cookie must stay out of browser traces.
 test.use({ trace: 'off' })
@@ -59,6 +68,13 @@ type CartPacket = {
 
 type CartObservation = CartPacket & {
   visible: CartState[]
+  lines: {
+    node: number
+    lineId: number
+    name: string | null
+    quantity: string | null
+  }[]
+  changed: boolean
   afterMessage: boolean
 }
 
@@ -69,8 +85,11 @@ async function watchCartObservations(page: Page) {
   await page.addInitScript((socketPath) => {
     const observations: CartObservation[] = []
     Object.assign(window, { cartObservations: observations })
+    const lineNodes = new WeakMap<Element, number>()
+    let nextLineNode = 0
     let opened = 0
     let cursor: CartPacket = { socket: 0, message: 0 }
+    let previous = ''
     const hooks = {
       line: 'shop-cart-line',
       empty: 'shop-cart-empty',
@@ -78,21 +97,38 @@ async function watchCartObservations(page: Page) {
     }
     const states = Object.keys(hooks) as CartState[]
     const record = (packet: CartPacket, afterMessage: boolean) => {
-      const visible = states.filter((state) =>
+      const elements = (state: CartState) =>
         Array.from(
           document.querySelectorAll(`[data-id="${hooks[state]}"]`),
-        ).some((element) =>
+        ).filter((element) =>
           element.checkVisibility({
             opacityProperty: true,
             visibilityProperty: true,
           }),
-        ),
+        )
+      const rows = elements('line')
+      const visible = states.filter((state) =>
+        state === 'line' ? rows.length > 0 : elements(state).length > 0,
       )
-      if (
-        afterMessage ||
-        observations.at(-1)?.visible.join() !== visible.join()
-      ) {
-        observations.push({ ...packet, visible, afterMessage })
+      const lines = rows.map((row) => {
+        const node = lineNodes.get(row) ?? ++nextLineNode
+        lineNodes.set(row, node)
+        return {
+          node,
+          lineId: Number(row.getAttribute('data-line-id')),
+          name:
+            row.querySelector('[data-id="shop-cart-product-link"]')
+              ?.textContent ?? null,
+          quantity:
+            row.querySelector('[data-id="shop-cart-quantity"]')?.textContent ??
+            null,
+        }
+      })
+      const presentation = JSON.stringify({ visible, lines })
+      const changed = presentation !== previous
+      previous = presentation
+      if (afterMessage || changed) {
+        observations.push({ ...packet, visible, lines, changed, afterMessage })
       }
     }
     window.WebSocket = new Proxy(window.WebSocket, {
@@ -133,59 +169,27 @@ async function watchCartObservations(page: Page) {
     page.evaluate(() => (window as CartDocument).cartObservations ?? [])
 }
 
-/** Check continuity from the retiring socket's confirmation to the new cart. */
-function expectCartOwnerChange(
-  observations: CartObservation[],
-  confirmation: CartPacket,
-  whole: CartPacket,
-  previous: CartState,
-  next: CartState,
-) {
-  const start = observations.findIndex(
-    ({ afterMessage, socket, message }) =>
-      afterMessage &&
-      socket === confirmation.socket &&
-      message === confirmation.message,
-  )
-  const boundary = `identity confirmation on socket ${confirmation.socket}, message ${confirmation.message}`
-  expect(start, `Cart sampled after ${boundary}`).toBeGreaterThanOrEqual(0)
-  const loaded = observations.findIndex(
-    ({ socket, message, visible }, index) =>
-      index > start &&
-      socket === whole.socket &&
-      message >= whole.message &&
-      visible.includes(next),
-  )
-  expect(loaded, 'A fresh whole rendered on the new socket').toBeGreaterThan(
-    start,
-  )
-  expect(
-    observations
-      .slice(start, loaded + 1)
-      .filter(({ visible }) => visible.includes(previous)),
-    `The previous cart is absent from ${boundary} through the new whole`,
-  ).toEqual([])
-}
-
 /** Keep only the cart payload and confirmed identity from the physical frames. */
 function readCartTraffic(delivery: DeliveryFrameLog) {
   const frames = delivery.packets.flatMap(({ frames, at }) =>
     frames.map((frame) => ({ ...frame, at })),
   )
-  const identities = frames.flatMap(({ wire, socket, message }, index) => {
+  const identities = frames.flatMap(({ wire, socket, message, at }, index) => {
     const frame = deliveryObject(wire)
     if (frame.type !== SIGNAL_HANDSHAKE_RESPONSE) return []
     const payload = scopePayloadSchema.safeParse(frame.data)
     const user = payload.data?.entities?.currentUser
     const userId = user === null ? null : deliveryObject(user).id
-    return [{ socket, message, index, userId }]
+    return [{ socket, message, index, at, userId }]
   })
   const wholes = frames.flatMap(({ wire, socket, message, at }, index) => {
     const frame = deliveryObject(wire)
     if (frame.type !== SIGNAL_TYPE_PAGE_RESPONSE) return []
+    if (deliveryObject(frame.data).page !== PAGE_CART) return []
     const response = pageResponseSchema.safeParse(frame.data)
-    if (response.data?.page !== PAGE_CART) return []
-    const cart = cartSnapshotSchema.safeParse(response.data.payload?.data?.cart)
+    const cart = cartSnapshotSchema.safeParse(
+      response.data?.payload?.data?.cart,
+    )
     return [{ socket, message, index, at, cart: cart.data }]
   })
   const subscriptions = delivery.sent.flatMap(({ wire, socket, at }) => {
@@ -195,18 +199,139 @@ function readCartTraffic(delivery: DeliveryFrameLog) {
       ? [{ socket, at }]
       : []
   })
-  return { identities, subscriptions, wholes }
+  const epochs = identities.map((identity, position) => ({
+    ...identity,
+    answers: wholes.filter(
+      (answer) =>
+        answer.socket === identity.socket &&
+        identity.index < answer.index &&
+        answer.index < (identities[position + 1]?.index ?? Infinity),
+    ),
+  }))
+  return { epochs, subscriptions, wholes }
+}
+
+type CartEpoch = ReturnType<typeof readCartTraffic>['epochs'][number]
+type CartAnswer = CartEpoch['answers'][number]
+
+function cartAnswerAt(answers: CartAnswer[], { socket, message }: CartPacket) {
+  // React may commit after delivery, or combine several inners of one packet.
+  return answers
+    .filter((answer) => answer.socket === socket && answer.message <= message)
+    .at(-1)
+}
+
+function showsCart({ visible, lines }: CartObservation, cart: CartSnapshot) {
+  return (
+    visible.length === 1 &&
+    visible[0] === (cart.lines.length === 0 ? 'empty' : 'line') &&
+    lines.length === cart.lines.length &&
+    lines.every(({ lineId, name, quantity }, index) => {
+      const expected = cart.lines[index]
+      return (
+        lineId === expected.lineId &&
+        name === expected.name &&
+        quantity === `Quantity: ${expected.quantity}`
+      )
+    })
+  )
+}
+
+function isCartContent({ visible }: CartObservation) {
+  return visible.includes('line') || visible.includes('empty')
+}
+
+function confirmationStart(
+  observations: CartObservation[],
+  { socket, message }: CartPacket,
+) {
+  const matches = (packet: CartPacket) =>
+    packet.socket === socket && packet.message === message
+  expect(
+    observations.some((sample) => sample.afterMessage && matches(sample)),
+    `Cart sampled after identity confirmation on socket ${socket}, message ${message}`,
+  ).toBe(true)
+  return observations.findIndex(matches)
+}
+
+/** Check every cart render from identity confirmation through the fresh reply. */
+function expectCartOwnerChange(
+  observations: CartObservation[],
+  answers: CartAnswer[],
+  previous: CartObservation,
+) {
+  const firstRender = observations.findIndex(isCartContent)
+  expect(
+    firstRender,
+    'The new cart renders after the old cart clears',
+  ).toBeGreaterThan(0)
+  const [firstAnswer] = answers
+  if (!firstAnswer) throw new Error('Missing fresh cart response')
+
+  // The first packet sets the loading deadline even if its cart is never drawn.
+  const firstAnswerSample = observations.findIndex(
+    ({ socket, message }) =>
+      socket === firstAnswer.socket && message === firstAnswer.message,
+  )
+  expect(
+    firstAnswerSample,
+    'Cart sampled the first response on the fresh socket',
+  ).toBeGreaterThanOrEqual(0)
+  expect(
+    observations
+      .slice(0, Math.min(firstRender, firstAnswerSample))
+      .some(({ visible }) => visible.join() === 'loading'),
+    'Cart loads after identity confirmation and before the first fresh response',
+  ).toBe(true)
+
+  const previousNodes = new Set(previous.lines.map(({ node }) => node))
+  for (const [index, sample] of observations.slice(firstRender).entries()) {
+    if (index > 0 && !sample.changed) continue
+    const answer = cartAnswerAt(answers, sample)
+    expect(
+      answer?.cart !== undefined && showsCart(sample, answer.cart),
+      `Cart render matches the latest whole on socket ${sample.socket}, message ${sample.message}`,
+    ).toBe(true)
+    expect(
+      sample.lines.some(({ node }) => previousNodes.has(node)),
+      'The previous owner’s rows stay out of the new cart',
+    ).toBe(false)
+  }
 }
 
 test('an open cart follows sign-in and sign-out across cluster nodes', async ({
   browser,
   cleanup,
 }) => {
+  const expectProductLine = async (page: Page, quantity: number) => {
+    const line = page.getByTestId('shop-cart-line')
+    await expect(line).toHaveCount(1)
+    await expect(line.getByTestId('shop-cart-product-link')).toHaveText(
+      product.name,
+    )
+    await expect(line.getByTestId('shop-cart-quantity')).toHaveText(
+      `Quantity: ${quantity}`,
+    )
+  }
+
   const master = stand.follower
   const setup = await newClusterMasterPage(browser, stand, stand.leader)
   cleanup.defer(() => setup.context().close())
   const user = await createTestUser(expect, setup, {
     commandHost: clusterNodeHost(stand, stand.leader),
+  })
+  await test.step('add one unit to the account cart', async () => {
+    await gotoPage(expect, setup, '/product/pine-bark-5-l')
+    const addButton = setup.getByTestId('shop-product-add-to-cart')
+    await addButton.click()
+    await expect(
+      addButton.and(setup.locator('[aria-busy="true"]')),
+    ).toHaveCount(0)
+    await expect(
+      setup.getByTestId('nav-cart').getByTestId('cart-badge'),
+    ).toHaveText(String(accountProduct.quantity))
+    await gotoPage(expect, setup, cartPath, PAGE_READY)
+    await expectProductLine(setup, accountProduct.quantity)
   })
   const page = await newClusterMasterPage(browser, stand, master)
   cleanup.defer(() => page.context().close())
@@ -227,7 +352,7 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
     }
     await setQuantity(0)
   })
-  await setQuantity(product.quantity)
+  await setQuantity(guestProduct.quantity)
 
   const delivery = watchDeliveryFrames(page)
   cleanup.defer(delivery.stop)
@@ -235,15 +360,6 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
   cleanup.defer(upgrades.stop)
   const readObservations = await watchCartObservations(page)
   const line = page.getByTestId('shop-cart-line')
-  const expectGuestLine = async () => {
-    await expect(line).toHaveCount(1)
-    await expect(line.getByTestId('shop-cart-product-link')).toHaveText(
-      product.name,
-    )
-    await expect(
-      line.getByText(`Quantity: ${product.quantity}`, { exact: true }),
-    ).toBeVisible()
-  }
 
   const topology: {
     phase: string
@@ -252,6 +368,20 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
     agent: string
     serving: string
   }[] = []
+  cleanup.defer(async () => {
+    await test.info().attach('cart-owner-lifecycle', {
+      body: JSON.stringify(
+        {
+          topology,
+          ...readCartTraffic(delivery),
+          observations: await readObservations(),
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+  })
   const recordPlacement = async (phase: string, agent: string) => {
     await upgrades.assert()
     await expectClusterSingleAgents(expect, stand, [agent])
@@ -274,13 +404,13 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
 
   await test.step('open the saved guest cart', async () => {
     await gotoPage(expect, page, cartPath, PAGE_READY)
-    await expectGuestLine()
+    await expectProductLine(page, guestProduct.quantity)
     await markDocument(page)
     await recordPlacement('guest', guestAgent)
   })
 
   const guestToken = await sessionToken(page)
-  await test.step('sign in and get the account’s empty cart on the same page', async () => {
+  await test.step('sign in and see the transferred line in the account cart', async () => {
     await openSignIn(expect, page)
     await expectSessionRotation(expect, page, () =>
       login(expect, page, user.email),
@@ -289,14 +419,48 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
       (await sessionToken(page)) !== guestToken,
       'Sign-in rotated the cookie',
     ).toBe(true)
-    await expect(page.getByTestId('shop-cart-empty')).toBeVisible()
-    await expect(line).toHaveCount(0)
+    await expect
+      .poll(
+        async () => {
+          const { epochs, subscriptions } = readCartTraffic(delivery)
+          const account = epochs[2]
+          const subscription = subscriptions[1]
+          if (
+            account?.socket !== 2 ||
+            account.userId !== user.userId ||
+            subscription?.socket !== account.socket ||
+            subscription.at < account.at
+          )
+            return false
+
+          return (await readObservations()).some((sample) => {
+            const answer = cartAnswerAt(account.answers, sample)
+            const cart = answer?.cart
+            return (
+              answer !== undefined &&
+              answer.at > subscription.at &&
+              cart?.userId === user.userId &&
+              cart.guestCartKey === null &&
+              cart.lines.length === 1 &&
+              cart.lines[0].productId === product.productId &&
+              cart.lines[0].quantity === combinedProduct.quantity &&
+              showsCart(sample, cart)
+            )
+          })
+        },
+        {
+          message:
+            'The transferred account line rendered from the fresh subscription',
+        },
+      )
+      .toBe(true)
+    await expectProductLine(page, combinedProduct.quantity)
     await expectDocumentUnchanged(expect, page)
     expect(new URL(page.url()).pathname).toBe(cartPath)
     await recordPlacement('sign-in', `hilos_user:${user.userId}`)
   })
 
-  await test.step('sign out and recover the saved guest cart on the same page', async () => {
+  await test.step('sign out and see a new empty guest cart on the same page', async () => {
     const before = await sessionToken(page)
     await expectSessionRotation(expect, page, () => logout(expect, page))
     const after = await sessionToken(page)
@@ -304,34 +468,19 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
       after !== before && after !== guestToken,
       'Sign-out rotated onto a fresh guest cookie',
     ).toBe(true)
-    await expectGuestLine()
+    await expect(page.getByTestId('shop-cart-empty')).toBeVisible()
+    await expect(line).toHaveCount(0)
     await expectDocumentUnchanged(expect, page)
     expect(new URL(page.url()).pathname).toBe(cartPath)
     await recordPlacement('sign-out', guestAgent)
   })
 
-  const traffic = readCartTraffic(delivery)
+  const { epochs, subscriptions, wholes } = readCartTraffic(delivery)
   const observations = await readObservations()
-  await test.info().attach('cart-owner-lifecycle', {
-    body: JSON.stringify({ topology, ...traffic, observations }, null, 2),
-    contentType: 'application/json',
-  })
   expect(
     topology.slice(1).some(({ socket, serving }) => socket !== serving),
   ).toBe(true)
-  expect(traffic.subscriptions.map(({ socket }) => socket)).toEqual([1, 2, 3])
-  const epochs = traffic.identities.map(
-    ({ socket, userId, index }, position) => {
-      const end = traffic.identities[position + 1]?.index ?? Infinity
-      const answers = traffic.wholes.filter(
-        (answer) =>
-          answer.socket === socket &&
-          index < answer.index &&
-          answer.index < end,
-      )
-      return { socket, userId, answers }
-    },
-  )
+  expect(subscriptions.map(({ socket }) => socket)).toEqual([1, 2, 3])
   expect(epochs.map(({ socket, userId }) => ({ socket, userId }))).toEqual([
     { socket: 1, userId: null },
     { socket: 1, userId: user.userId },
@@ -339,85 +488,67 @@ test('an open cart follows sign-in and sign-out across cluster nodes', async ({
     { socket: 2, userId: null },
     { socket: 3, userId: null },
   ])
-  expect(epochs.flatMap(({ answers }) => answers)).toEqual(traffic.wholes)
+  expect(epochs.flatMap(({ answers }) => answers)).toEqual(wholes)
+  const [initial, signingIn, signedIn, signingOut, signedOut] = epochs
+  const initialCart = initial.answers[0]?.cart
+  expect(initialCart).toMatchObject({ userId: null, lines: [guestProduct] })
+  const initialGuestCartKey = initialCart?.guestCartKey
+  expect(initialGuestCartKey).toBeTruthy()
+
   for (const [position, epoch] of epochs.entries()) {
-    // The retiring socket's reassessment can finish before rotation closes it.
-    // On every new socket the browser makes one request and must get one whole.
-    if (epoch.socket !== epochs[position - 1]?.socket)
-      expect(epoch.answers).toHaveLength(1)
-    else expect(epoch.answers.length).toBeLessThanOrEqual(1)
-    for (const answer of epoch.answers) {
-      expect(answer.at).toBeGreaterThan(
-        traffic.subscriptions[epoch.socket - 1].at,
-      )
-      expect(answer.cart).toMatchObject({
-        userId: epoch.userId,
-        lines: epoch.userId === null ? [product] : [],
-      })
+    const subscription = subscriptions[epoch.socket - 1]
+    const fresh = epoch.socket !== epochs[position - 1]?.socket
+    if (fresh) {
+      expect(subscription.at).toBeGreaterThanOrEqual(epoch.at)
+      expect(epoch.answers.length).toBeGreaterThan(0)
+    } else {
+      // Reassessment can finish on the retiring socket before it closes.
+      expect(epoch.answers.length).toBeLessThanOrEqual(1)
+    }
+    if (fresh && epoch.userId === null) expect(epoch.answers).toHaveLength(1)
+
+    for (const [index, answer] of epoch.answers.entries()) {
+      expect(answer.at).toBeGreaterThan(subscription.at)
+      expect(answer.cart?.userId).toBe(epoch.userId)
+      if (epoch.userId !== null) {
+        expect(answer.cart?.guestCartKey).toBeNull()
+        // The first whole can still show the account's original quantity.
+        const pending =
+          index === 0 &&
+          answer.cart?.lines[0]?.quantity === accountProduct.quantity
+        expect(answer.cart?.lines).toMatchObject([
+          pending ? accountProduct : combinedProduct,
+        ])
+      } else if (epoch !== initial) {
+        expect(answer.cart?.guestCartKey).toBeTruthy()
+        expect(answer.cart?.guestCartKey).not.toBe(initialGuestCartKey)
+        expect(answer.cart?.lines).toEqual([])
+      }
     }
   }
-  const [initial, signedIn, signedOut] = [epochs[0], epochs[2], epochs[4]].map(
-    ({ answers }) => answers[0],
-  )
-  if (!initial.cart || !signedOut.cart) {
-    throw new Error('Expected full guest cart snapshots')
-  }
-  const { guestCartKey: initialGuestCartKey, ...initialCart } = initial.cart
-  const { guestCartKey: signedOutGuestCartKey, ...signedOutCart } =
-    signedOut.cart
 
-  // Session token rotation changes the guest key even when the cart is restored.
-  expect(initialGuestCartKey).toBeTruthy()
-  expect(signedOutGuestCartKey).toBeTruthy()
-  expect(signedOutGuestCartKey).not.toBe(initialGuestCartKey)
-  expect(signedIn.cart?.guestCartKey).toBeNull()
-  expect(signedOutCart).toStrictEqual(initialCart)
+  const signInStart = confirmationStart(observations, signingIn)
+  const signOutStart = confirmationStart(observations, signingOut)
+  const initialPaint = observations.slice(0, signInStart).find(isCartContent)
+  expect(
+    initialPaint,
+    'The saved guest cart rendered before sign-in',
+  ).toBeDefined()
+  if (!initialPaint || !initialCart)
+    throw new Error('Missing initial guest cart')
+  expect(cartAnswerAt(initial.answers, initialPaint)?.cart).toEqual(initialCart)
+  expect(showsCart(initialPaint, initialCart)).toBe(true)
 
+  const accountObservations = observations.slice(signInStart, signOutStart)
+  expectCartOwnerChange(accountObservations, signedIn.answers, initialPaint)
+  const accountPaint = accountObservations.at(-1)
+  const transferred = signedIn.answers.at(-1)?.cart
+  expect(transferred?.lines).toMatchObject([combinedProduct])
+  if (!accountPaint || !transferred) throw new Error('Missing transferred cart')
+  expect(showsCart(accountPaint, transferred)).toBe(true)
   expectCartOwnerChange(
-    observations,
-    traffic.identities[1],
-    signedIn,
-    'line',
-    'empty',
+    observations.slice(signOutStart),
+    signedOut.answers,
+    accountPaint,
   )
-  expectCartOwnerChange(
-    observations,
-    traffic.identities[3],
-    signedOut,
-    'empty',
-    'line',
-  )
-
-  // A fast cold reply can land before the first DOM commit. Both rotations
-  // expose the loading state, and their fresh answers control the next render.
-  const changes = observations.filter(
-    ({ visible }, index) =>
-      visible.length > 0 &&
-      visible.join() !== observations[index - 1]?.visible.join(),
-  )
-  const lifecycle =
-    changes[0]?.visible[0] === 'loading' ? changes.slice(1) : changes
-  expect(lifecycle.map(({ visible }) => visible)).toEqual([
-    ['line'],
-    ['loading'],
-    ['empty'],
-    ['loading'],
-    ['line'],
-  ])
-  const loaded = lifecycle.filter(({ visible }) => !visible.includes('loading'))
-  for (const [index, answer] of [initial, signedIn, signedOut].entries()) {
-    const paint = loaded[index]
-    expect(paint.socket).toBe(answer.socket)
-    expect(paint.message).toBeGreaterThanOrEqual(answer.message)
-  }
-  for (const [loading, answer] of [
-    [lifecycle[1], signedIn],
-    [lifecycle[3], signedOut],
-  ] as const) {
-    expect(
-      loading.socket < answer.socket ||
-        (loading.socket === answer.socket && loading.message < answer.message),
-      `Cart is loading before the whole on socket ${answer.socket}`,
-    ).toBe(true)
-  }
 })

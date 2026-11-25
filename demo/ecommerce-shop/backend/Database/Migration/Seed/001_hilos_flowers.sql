@@ -1,13 +1,14 @@
 -- Seed: 001_hilos_flowers
 -- The catalog of Hilos Flowers, a flower shop: 3 warehouses, 6 categories, 30 products with their
--- pictures and stock. Rerun with the daemon stopped. The seed clears the product lines from
--- guest and account carts, replaces the six catalog tables, and removes the old catalog picture
--- registry rows. Saved vouchers, history under its original catalog IDs, and uploaded files on
+-- pictures and stock. Rerun with the daemon stopped. The seed clears guest cart transfers and
+-- product lines from guest and account carts, replaces the six catalog tables, and removes the
+-- old catalog picture registry rows. Saved vouchers, history under its original catalog IDs, and uploaded files on
 -- disk remain. The pictures lie in the directory beside this file, under the stored names of
 -- their rows, and the seed command puts them into the files storage after this SQL.
 -- With the checks off the database cascades nothing, so the copies of a picture go by hand.
 
 SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE `shop_guest_cart_transfer`;
 DELETE FROM `session_product_cart`;
 DELETE FROM `user_product_cart`;
 DELETE FROM `hilos_file_variant` WHERE `file_id` IN (

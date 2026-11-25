@@ -70,6 +70,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Files\HilosFiles;
 use Hilos\Runtime\Snapshot\RtWorkDriver;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\State\Item\HilosSessionConnection as StateHilosSessionConnection;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -300,6 +301,13 @@ final class CartPageTest extends CartPageEnvironment
 
         $this->subscribe($guest, self::EMPTY);
         self::assertSame($first, $this->cart(self::EMPTY));
+
+        Database::sql('UPDATE hilos_session SET cart_epoch = 1 WHERE id = ?', [$sessionId]);
+        self::connect(self::ACCOUNT, null, $sessionId);
+        $this->subscribe($guest, self::ACCOUNT);
+        $next = $this->cart(self::ACCOUNT);
+        self::assertSame([...$first, 'guestCartKey' => self::expectedGuestCartKey($sessionId, 1)], $next);
+        self::assertNotSame($first['guestCartKey'], $next['guestCartKey']);
     }
 
     /** A fallback cannot guess the owner while identity is pending, missing a session, or already tied to an account. */
@@ -459,6 +467,7 @@ final class CartPageTest extends CartPageEnvironment
                 EcommerceShopDbContext::sessionVoucherCarts,
                 EcommerceShopDbContext::userVoucherCarts,
                 EcommerceShopDbContext::vouchers,
+                HilosDbContext::sessions,
             ], SourceInterestRegistry::collectionsOfConsumer($consumer, SourceChange::KIND_DB));
 
             $this->deliverCartWorkerMessage(new DaemonAgentMessageDTO($owner->getId(), new SignalDTO(
@@ -543,6 +552,51 @@ final class CartPageTest extends CartPageEnvironment
         };
         self::assertSame([], $this->flushBeforeStockRead($rotate, false, self::productPriceFact($product, 9000)));
         $this->assertRefusal(self::FIRST);
+    }
+
+    /** The first answer and live facts use the same active guest cart pair. */
+    public function testGuestCartPageObservesOnlyTheCurrentEpoch(): void
+    {
+        $sessionId = 101;
+        $oldProduct = self::product(ProductKind::STOCK);
+        $newProduct = self::product(ProductKind::STOCK);
+        $oldLine = self::guestLine($sessionId, $oldProduct, 2);
+        $newLine = self::guestLine($sessionId, $newProduct, 1, 1);
+        self::stock($oldProduct, self::warehouse(), 5);
+        $oldStock = Database::lastInsertId();
+        self::connect(self::FIRST, null, $sessionId);
+        Database::sql('UPDATE hilos_session SET cart_epoch = 1 WHERE id = ?', [$sessionId]);
+
+        $this->subscribe(new GuestCartsLibraryAgent(), self::FIRST);
+        $cart = $this->cart(self::FIRST);
+        self::assertSame([$newLine], array_column($cart['lines'], 'lineId'));
+        self::assertSame(self::expectedGuestCartKey($sessionId, 1), $cart['guestCartKey']);
+        self::assertSame([], $this->flushCartFacts(
+            self::productPriceFact($oldProduct, 9000),
+            self::stockUnitsFact($oldStock, 3),
+            new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+                EcommerceShopDbContext::sessionProductCarts, (string)$oldLine, [
+                    SessionProductCart::session_id => $sessionId, SessionProductCart::cart_epoch => 0, SessionProductCart::quantity => 2,
+                ],
+            )),
+        ));
+        self::assertSame([], $this->takePageFrames());
+
+        Database::sql('UPDATE session_product_cart SET quantity = 3 WHERE id = ?', [$newLine]);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+            EcommerceShopDbContext::sessionProductCarts, (string)$newLine, [SessionProductCart::quantity => 3],
+        ))));
+        $cart = $this->cart(self::FIRST);
+        self::assertSame([3], array_column($cart['lines'], 'quantity'));
+        self::assertSame(self::expectedGuestCartKey($sessionId, 1), $cart['guestCartKey']);
+
+        Database::sql('DELETE FROM session_product_cart WHERE id = ?', [$oldLine]);
+        self::assertSame([], $this->flushCartFacts(new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(
+            EcommerceShopDbContext::sessionProductCarts, (string)$oldLine, [
+                SessionProductCart::session_id => $sessionId, SessionProductCart::cart_epoch => 0,
+            ],
+        ))));
+        self::assertSame([], $this->takePageFrames());
     }
 
     /** Grouped stock, price and quantity facts refresh only their owner's cart, with final values. */
@@ -810,7 +864,9 @@ final class CartPageTest extends CartPageEnvironment
 
         Database::sql('DELETE FROM session_product_cart WHERE id = ?', [$oldLine]);
         self::assertSame([], $this->flushCartFacts(new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData(
-            EcommerceShopDbContext::sessionProductCarts, (string)$oldLine, [SessionProductCart::session_id => $sessionId],
+            EcommerceShopDbContext::sessionProductCarts, (string)$oldLine, [
+                SessionProductCart::session_id => $sessionId, SessionProductCart::cart_epoch => 0,
+            ],
         ))));
         self::assertSame([], $this->cart(self::FIRST)['lines']);
         $this->assertRemovalRefused($guest, $oldLine, 'guest');
@@ -820,7 +876,7 @@ final class CartPageTest extends CartPageEnvironment
             EcommerceShopDbContext::sessionProductCarts,
             (string)$replacement,
             [SessionProductCart::id => $replacement, SessionProductCart::session_id => $sessionId,
-                SessionProductCart::product_id => $product, SessionProductCart::quantity => 5],
+                SessionProductCart::cart_epoch => 0, SessionProductCart::product_id => $product, SessionProductCart::quantity => 5],
         ))));
         self::assertSame([$replacement], array_column($this->cart(self::FIRST)['lines'], 'lineId'));
         $this->assertRemovalRefused($guest, $oldLine, 'guest');
@@ -1394,10 +1450,28 @@ final class CartPageTest extends CartPageEnvironment
      */
     private static function connect(string $acceptKey, ?int $userId, ?int $sessionId): void
     {
-        $token = $sessionId === null ? null : Hilos::$db->sessions[$sessionId]->token;
+        $token = $userId === null && $sessionId !== null ? self::guestSessionToken($sessionId) : null;
         ExecutionContext::run(new ExecutionFrame(), static function () use ($acceptKey, $userId, $sessionId, $token): void {
             Hilos::$rt->connections->actions->register($acceptKey, $userId, $token, $sessionId);
         });
+    }
+
+    /**
+     * @param int $sessionId Session ID used by already-addressed fixtures
+     * @return string Token of the stored guest
+     */
+    private static function guestSessionToken(int $sessionId): string
+    {
+        $token = Database::sql('SELECT token FROM hilos_session WHERE id = ?', [$sessionId])->field('token');
+        if (is_string($token)) {
+            return $token;
+        }
+
+        $token = SessionToken::mint();
+        $now = TimeHelper::nowMs();
+        Database::sql('INSERT INTO hilos_session (id, token, created_at, last_seen_at) VALUES (?, ?, ?, ?)', [$sessionId, $token, $now, $now]);
+
+        return $token;
     }
 
     /** @return int Fixture account ID */
@@ -1424,24 +1498,26 @@ final class CartPageTest extends CartPageEnvironment
 
     /**
      * @param int $sessionId Saved guest session
+     * @param int $cartEpoch Active epoch expected in the key
      * @return string Expected opaque key of its active cart
      */
-    private static function expectedGuestCartKey(int $sessionId): string
+    private static function expectedGuestCartKey(int $sessionId, int $cartEpoch = 0): string
     {
-        return hash_hmac('sha256', "ecommerce-shop:guest-cart:v1:$sessionId:0", Hilos::$db->sessions[$sessionId]->token);
+        return hash_hmac('sha256', "ecommerce-shop:guest-cart:v1:$sessionId:$cartEpoch", Hilos::$db->sessions[$sessionId]->token);
     }
 
     /**
      * @param int $sessionId Guest session holding the line
      * @param int $productId Product in the cart
      * @param int $quantity Saved selection
+     * @param int $cartEpoch Cart generation holding the selection
      * @return int Inserted row id
      */
-    private static function guestLine(int $sessionId, int $productId, int $quantity): int
+    private static function guestLine(int $sessionId, int $productId, int $quantity, int $cartEpoch = 0): int
     {
         Database::sql(
-            'INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (?, ?, ?)',
-            [$sessionId, $productId, $quantity],
+            'INSERT INTO session_product_cart (session_id, cart_epoch, product_id, quantity) VALUES (?, ?, ?, ?)',
+            [$sessionId, $cartEpoch, $productId, $quantity],
         );
 
         return Database::lastInsertId();

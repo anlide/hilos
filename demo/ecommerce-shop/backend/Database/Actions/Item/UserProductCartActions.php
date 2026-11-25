@@ -54,7 +54,7 @@ final class UserProductCartActions extends DbActions
     }
 
     /**
-     * Steps the saved quantity without changing the line's identity.
+     * Steps the saved quantity of a line resolved under the cart line's lock.
      *
      * @param int $step One unit up or down
      * @throws ValidationException When the line is gone or the product or stock rules refuse the step

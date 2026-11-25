@@ -13,8 +13,8 @@ use Hilos\Database\PhpType;
  * SessionProductCart - Entity representing session_product_cart table row.
  *
  * How many units of a product the cart of a visitor without an account holds. The cart is the
- * browser session's: a row names the session by its number and holds one unit at least, and a
- * product out of the cart has no row.
+ * browser session's: a row names the session and its cart epoch and holds at least one unit.
+ * A product out of that cart has no row.
  *
  * @method static EntitySessionProductCarts get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntitySessionProductCarts getAll()
@@ -24,6 +24,7 @@ final class SessionProductCart extends Entity
     // Column name constants
     public const string id = 'id';
     public const string session_id = 'session_id';
+    public const string cart_epoch = 'cart_epoch';
     public const string product_id = 'product_id';
     public const string quantity = 'quantity';
 
@@ -33,6 +34,7 @@ final class SessionProductCart extends Entity
     public const array _columns = [
         self::id,
         self::session_id,
+        self::cart_epoch,
         self::product_id,
         self::quantity,
     ];
@@ -41,6 +43,7 @@ final class SessionProductCart extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::session_id => PhpType::INTEGER->value,
+        self::cart_epoch => PhpType::INTEGER->value,
         self::product_id => PhpType::INTEGER->value,
         self::quantity => PhpType::INTEGER->value,
     ];
@@ -53,7 +56,10 @@ final class SessionProductCart extends Entity
 
     // Indexes
     public const array _indexes = [
-        'uk_session_product_cart' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::session_id, self::product_id]],
+        'uk_session_product_cart' => [
+            Entity::INDEX_UNIQUE => true,
+            Entity::INDEX_COLUMNS => [self::session_id, self::cart_epoch, self::product_id],
+        ],
         'idx_session_product_cart_product' => [Entity::INDEX_COLUMNS => [self::product_id]],
     ];
 
@@ -69,6 +75,7 @@ final class SessionProductCart extends Entity
     // Properties
     public ?int $id = null;
     public int $session_id;
+    public int $cart_epoch;
     public int $product_id;
     public int $quantity;
 }

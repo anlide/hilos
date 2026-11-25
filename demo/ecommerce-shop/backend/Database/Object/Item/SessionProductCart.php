@@ -6,8 +6,10 @@ namespace Demo\EcommerceShop\Database\Object\Item;
 
 use Demo\EcommerceShop\Database\Entity\Item\SessionProductCart as EntitySessionProductCart;
 use Demo\EcommerceShop\Database\Object\Collection\SessionProductCarts as ObjectSessionProductCarts;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\HilosException;
 
 /**
  * SessionProductCart - Object wrapper for session_product_cart entity.
@@ -16,6 +18,7 @@ use Hilos\Database\Object\Item\Object_;
  *
  * @property-read ?int $id
  * @property int $sessionId
+ * @property int $cartEpoch
  * @property int $productId
  * @property int $quantity
  */
@@ -26,13 +29,14 @@ final class SessionProductCart extends Object_
 
     public const string id = 'id';
     public const string sessionId = 'sessionId';
+    public const string cartEpoch = 'cartEpoch';
     public const string productId = 'productId';
     public const string quantity = 'quantity';
 
     /**
      * Returns the value of a cart line object property by name.
      *
-     * @param string $property Property name (id, sessionId, productId, quantity)
+     * @param string $property Property name (id, sessionId, cartEpoch, productId, quantity)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity or collection access fails
      */
@@ -41,6 +45,7 @@ final class SessionProductCart extends Object_
         return match ($property) {
             self::id => $this->entity->id,
             self::sessionId => $this->entity->session_id,
+            self::cartEpoch => $this->entity->cart_epoch,
             self::productId => $this->entity->product_id,
             self::quantity => $this->entity->quantity,
             default => parent::__get($property),
@@ -50,7 +55,7 @@ final class SessionProductCart extends Object_
     /**
      * Sets the value of a cart line object property.
      *
-     * @param string $property Property name to set (sessionId, productId, quantity)
+     * @param string $property Property name to set (sessionId, cartEpoch, productId, quantity)
      * @param mixed $value New value
      * @throws DatabaseException If entity or collection access fails
      */
@@ -58,10 +63,32 @@ final class SessionProductCart extends Object_
     {
         match ($property) {
             self::sessionId => $this->entity->session_id = (int)$value,
+            self::cartEpoch => $this->entity->cart_epoch = (int)$value,
             self::productId => $this->entity->product_id = (int)$value,
             self::quantity => $this->entity->quantity = (int)$value,
             default => parent::__set($property, $value),
         };
+    }
+
+    /**
+     * Reconciles this object and its sync baseline with the locked cart row.
+     *
+     * @param EntitySessionProductCart $stored Cart line as read under its PRIMARY lock
+     * @throws HilosException When the backing database or rollback scope is unavailable
+     */
+    public function acceptStored(EntitySessionProductCart $stored): void
+    {
+        $before = $this->entitySync->toArray();
+        $after = $stored->toArray();
+        if ($after === $before) {
+            return;
+        }
+
+        Database::onRollback(
+            fn () => $this->restoreSaved($before, related: true),
+            index: $stored::getDatabase()->connectionIndex,
+        );
+        $this->restoreSaved($after, related: true);
     }
 
     /**
@@ -74,6 +101,7 @@ final class SessionProductCart extends Object_
         return [
             self::id => $this->entity->id,
             self::sessionId => $this->entity->session_id,
+            self::cartEpoch => $this->entity->cart_epoch,
             self::productId => $this->entity->product_id,
             self::quantity => $this->entity->quantity,
         ];

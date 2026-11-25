@@ -54,6 +54,8 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 
 /**
  * The public storefront category and its first products window at `/category/{slug}`.
@@ -116,10 +118,12 @@ final class CategoryPage extends AbstractPage
      * @throws CollectionNotFoundException When a catalog collection is not registered
      * @throws DbCollectionNotReadableException When a catalog collection is not readable here
      * @throws LogicException When a catalog collection is not configured
-     * @throws DatabaseException When the category or product cannot be read
+     * @throws DatabaseException When the category, product or session cannot be read
      * @throws ObjectCollectionNullException When the products collection is detached
      * @throws ObjectGetIdStringNotImplementedException When a matched category cannot provide its key
      * @throws CollectionNotManualException When a category selection cannot accept a matched item
+     * @throws RtActionsStateCollectionNullException When the connection state collection is unavailable
+     * @throws RtCollectionNotReadableException When the acting connection cannot yet be read
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -248,10 +252,12 @@ final class CategoryPage extends AbstractPage
      * @throws CollectionNotFoundException When a catalog collection is not registered
      * @throws DbCollectionNotReadableException When a catalog collection is not readable here
      * @throws LogicException When a catalog collection is not configured
-     * @throws DatabaseException When the category or product cannot be read
+     * @throws DatabaseException When the category, product or session cannot be read
      * @throws ObjectCollectionNullException When the products collection is detached
      * @throws ObjectGetIdStringNotImplementedException When a matched category cannot provide its key
      * @throws CollectionNotManualException When a category selection cannot accept a matched item
+     * @throws RtActionsStateCollectionNullException When the connection state collection is unavailable
+     * @throws RtCollectionNotReadableException When the acting connection cannot yet be read
      */
     private function forwardCartAdd(string $acceptKey, ProductAddToCartActionDTO $dto): void
     {
@@ -277,11 +283,22 @@ final class CategoryPage extends AbstractPage
             throw new ValidationException(self::PRODUCT_UNAVAILABLE);
         }
 
-        $connection = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey);
+        $connection = Hilos::$rt?->connections[$acceptKey];
         $sessionId = $connection?->sessionId;
         $userId = $connection?->userId;
         if ($sessionId === null || $sessionId <= 0 || ($userId !== null && $userId <= 0)) {
             throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+        }
+
+        $cartEpoch = null;
+        if ($userId === null) {
+            $token = $connection->sessionToken;
+            $cartEpoch = $token === null || $connection->staleSince() !== null
+                ? null
+                : Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $token);
+            if ($cartEpoch === null) {
+                throw new ValidationException(CartAddProductSignalData::CART_NOT_READY);
+            }
         }
 
         $this->forward(
@@ -296,6 +313,7 @@ final class CategoryPage extends AbstractPage
                 requestId: $this->currentActionRequestId(),
                 action: EcommerceShopSignalConstants::CATEGORY_ADD_TO_CART,
                 successMessage: null,
+                cartEpoch: $cartEpoch,
             ),
         );
     }

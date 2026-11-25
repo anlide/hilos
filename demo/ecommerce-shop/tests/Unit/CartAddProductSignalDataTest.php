@@ -58,9 +58,19 @@ final class CartAddProductSignalDataTest extends TestCase
 
             self::assertInstanceOf(HandoverAskInterface::class, $ask);
             self::assertSame($userId, $ask->userId);
+            self::assertSame($userId === null ? 3 : null, $ask->cartEpoch);
             self::assertSame($data, $ask->toArray());
             self::assertEquals($ask, CartAddProductSignalData::fromJson($ask->toJson()));
         }
+    }
+
+    public function testGuestHandoverRequiresTheEpochField(): void
+    {
+        $payload = self::askPayload(null);
+        unset($payload['cartEpoch']);
+
+        $this->expectException(InvalidFormatException::class);
+        CartAddProductSignalData::fromArray($payload);
     }
 
     /** @param array<string, mixed> $fields Invalid product or session identity fields */
@@ -79,6 +89,10 @@ final class CartAddProductSignalDataTest extends TestCase
         yield 'nonpositive product' => [['productId' => 0]];
         yield 'nonpositive session' => [['sessionId' => -1]];
         yield 'string session' => [['sessionId' => '82']];
+        yield 'negative epoch' => [['cartEpoch' => -1]];
+        yield 'string epoch' => [['cartEpoch' => '3']];
+        yield 'float epoch' => [['cartEpoch' => 3.0]];
+        yield 'null epoch' => [['cartEpoch' => null]];
         yield 'nonpositive account' => [['userId' => 0]];
         yield 'string account' => [['userId' => '92']];
     }
@@ -110,7 +124,7 @@ final class CartAddProductSignalDataTest extends TestCase
     /** @return array<string, mixed> Cart add handover as carried on the wire */
     private static function askPayload(?int $userId): array
     {
-        return [
+        $data = [
             'productId' => 31,
             'productSlug' => 'old-product-address',
             'sessionId' => 82,
@@ -121,5 +135,10 @@ final class CartAddProductSignalDataTest extends TestCase
             'action' => EcommerceShopSignalConstants::PRODUCT_ADD_TO_CART,
             'successMessage' => null,
         ];
+        if ($userId === null) {
+            $data['cartEpoch'] = 3;
+        }
+
+        return $data;
     }
 }

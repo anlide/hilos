@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Database\Object\Item;
 
+use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\Entity\Item\SessionVoucherCart as EntitySessionVoucherCart;
 use Demo\EcommerceShop\Database\Object\Collection\SessionVoucherCarts as ObjectSessionVoucherCarts;
 use Hilos\Database\DatabaseException;
@@ -50,6 +51,26 @@ final class SessionVoucherCart extends Object_
             self::voucherId => $this->entity->voucher_id = (int)$value,
             default => parent::__set($property, $value),
         };
+    }
+
+    /**
+     * Refreshes the held row in place so its item actions use the persisted baseline.
+     *
+     * @param EntitySessionVoucherCart $stored Binding read from PRIMARY
+     * @throws DatabaseException When the backing database cannot be resolved
+     */
+    public function acceptStored(EntitySessionVoucherCart $stored): void
+    {
+        if ($this->entitySync->voucher_id === $stored->voucher_id) {
+            return;
+        }
+
+        $before = $this->entitySync->toArray();
+        Database::onRollback(
+            fn () => $this->restoreSaved($before, related: true),
+            index: $stored::getDatabase()->connectionIndex,
+        );
+        $this->restoreSaved($stored->toArray(), related: true);
     }
 
     /** @return array<string, int> Cart owner and voucher keys */

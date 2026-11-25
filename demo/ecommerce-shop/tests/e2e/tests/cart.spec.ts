@@ -7,12 +7,16 @@ import {
   PAGE_READY,
   cleanupFixtures,
   clickSubmit,
+  createTestUser,
   drawPhotoFixture,
   expectDocumentUnchanged,
   expectPageReady,
   gotoPage,
   grantAdminToSelf,
+  login,
+  logout,
   markDocument,
+  openSignIn,
   sessionToken,
   type TestCleanup,
   typeInto,
@@ -306,5 +310,100 @@ test('a guest sees live prices in the cart and follows the product link', async 
     await expect(guest).toHaveURL(/\/product\/[^/]+$/)
     await expectPageReady(expect, guest)
     await expect(guest.getByRole('heading', { level: 1 })).toHaveText(name)
+  })
+
+  await test.step('remove the line and see the guest cart empty in place', async () => {
+    const cartLink = guest.getByTestId('nav-cart')
+    await cartLink.click()
+    await expect(guest).toHaveURL('/cart')
+    await expectPageReady(expect, guest)
+    await line
+      .getByRole('button', { name: `Remove ${name}`, exact: true })
+      .click()
+    await expect(guest.getByTestId('shop-cart-empty')).toBeVisible()
+    await expect(cartLink.getByTestId('cart-badge')).toHaveText('0')
+    await expectDocumentUnchanged(expect, guest)
+  })
+})
+
+test('signing in combines the guest and account carts and signing out opens an empty cart', async ({
+  page,
+  cleanup,
+}) => {
+  const chamomile = {
+    id: 4,
+    slug: 'small-bunch-of-chamomile',
+    name: 'Small bunch of chamomile',
+  }
+  const meadow = { id: 1, slug: 'morning-meadow', name: 'Morning meadow' }
+  const products = [chamomile, meadow]
+  const cartLink = page.getByTestId('nav-cart')
+  const badge = cartLink.getByTestId('cart-badge')
+
+  const addProducts = async () => {
+    for (const [index, { slug }] of products.entries()) {
+      await gotoPage(expect, page, `/product/${slug}`)
+      const addButton = page.getByTestId('shop-product-add-to-cart')
+      await addButton.click()
+      await expect(
+        addButton.and(page.locator('[aria-busy="true"]')),
+      ).toHaveCount(0)
+      await expect(badge).toHaveText(String(index + 1))
+    }
+  }
+
+  const user = await createTestUser(expect, page)
+  await test.step('add both products to the account cart', addProducts)
+
+  await test.step('sign out and add both products to the guest cart', async () => {
+    await logout(expect, page)
+    await expect(badge).toHaveText('0')
+
+    const guestToken = await sessionToken(page)
+    const command = createStandCommandChannel({ timeoutMs: 5_000 })
+    for (const { id: productId } of products) {
+      cleanup.defer(async () => {
+        // The transfer owns this cart after sign-in rotates the guest token.
+        if ((await sessionToken(page)) !== guestToken) return
+        await command('test:ecommerce-shop:guest-cart-set-quantity', {
+          sessionToken: guestToken,
+          productId,
+          quantity: 0,
+        })
+      })
+    }
+
+    await addProducts()
+  })
+
+  await test.step('sign in with a password and see the combined quantities', async () => {
+    await openSignIn(expect, page)
+    await login(expect, page, user.email)
+    await expect(page.getByTestId('nav-profile-name')).toBeVisible()
+    await expect(badge).toHaveText('3')
+
+    await cartLink.click()
+    await expect(page).toHaveURL('/cart')
+    await expectPageReady(expect, page)
+    const lines = page.getByTestId('shop-cart-line')
+    await expect(lines).toHaveCount(2)
+    const chamomileLine = lines.filter({
+      has: page.getByRole('link', { name: chamomile.name, exact: true }),
+    })
+    await expect(chamomileLine.getByTestId('shop-cart-quantity')).toHaveText(
+      'Quantity: 2',
+    )
+    const meadowLine = lines.filter({
+      has: page.getByRole('link', { name: meadow.name, exact: true }),
+    })
+    await expect(
+      meadowLine.getByText('1 · one of a kind', { exact: true }),
+    ).toBeVisible()
+  })
+
+  await test.step('sign out and see an empty cart', async () => {
+    await logout(expect, page)
+    await expect(page.getByTestId('shop-cart-empty')).toBeVisible()
+    await expect(badge).toHaveText('0')
   })
 })

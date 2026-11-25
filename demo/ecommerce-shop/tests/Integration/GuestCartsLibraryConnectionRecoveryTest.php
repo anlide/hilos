@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
+use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Hilos;
@@ -43,10 +44,14 @@ final class GuestCartsLibraryConnectionRecoveryTest extends IntegrationTestCase
         )->fetch_row()[0];
         $last = $first + 25;
         $late = $last + 1;
+        $assigned = $late + 1;
         $productId = (int)$observer->query('SELECT id FROM product ORDER BY id LIMIT 1')->fetch_row()[0];
         $observer->execute_query('INSERT INTO voucher (code, discount_percent, active) VALUES (?, 10, 1)', [RandomHelper::hex(8)]);
         $voucherId = (int)$observer->insert_id;
         $restorePrimary = false;
+        $previousRouter = Hilos::$sr;
+        Hilos::initSignalRouter(new EcommerceShopSignalRouter());
+        $recipient = null;
 
         try {
             for ($sessionId = $first; $sessionId <= $last; $sessionId++) {
@@ -91,15 +96,35 @@ final class GuestCartsLibraryConnectionRecoveryTest extends IntegrationTestCase
             $this->runScheduledTick($carts);
             self::assertSame($returns + 1, Database::returnsAfterLoss());
             self::assertCartKeys($observer, $first, $late, [$late]);
+            $lateLine = (int)$observer->execute_query('SELECT id FROM session_product_cart WHERE session_id = ?', [$late])->fetch_row()[0];
+            self::assertNull(Hilos::$db->sessionProductCarts[$lateLine] ?? null);
+            $recipient = $this->underAgent($this->usersLibrary(), static fn () => Hilos::$db->users->actions->createWithName('Orphan control'))->id;
+            $observer->execute_query(
+                'INSERT INTO session_product_cart (session_id, product_id, quantity) VALUES (?, ?, 1)',
+                [$assigned, $productId],
+            );
+            $observer->execute_query('INSERT INTO shop_guest_cart_transfer (session_id, cart_epoch, user_id) VALUES (?, 0, ?)', [
+                $assigned, $recipient,
+            ]);
+
+            $this->runScheduledTick($carts);
+
+            self::assertCartKeys($observer, $first, $late, []);
+            self::assertSame([$productId => 1], Hilos::$db->sessionProductCarts->storedCartQuantities($assigned, 0));
         } finally {
+            Hilos::$sr = $previousRouter;
             if ($restorePrimary) {
                 self::configurePrimary($primary, $primary->host, $primary->port);
             }
             TruthSourceRegistry::unregisterAgent($carts->getId());
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($carts->getId()));
+            $observer->execute_query('DELETE FROM shop_guest_cart_transfer WHERE session_id = ?', [$assigned]);
             $observer->execute_query('DELETE FROM session_product_cart WHERE product_id = ? AND session_id BETWEEN ? AND ?', [
-                $productId, $first, $late,
+                $productId, $first, $assigned,
             ]);
+            if ($recipient !== null) {
+                $observer->execute_query('DELETE FROM hilos_user WHERE id = ?', [$recipient]);
+            }
             $observer->execute_query('DELETE FROM session_voucher_cart WHERE voucher_id = ?', [$voucherId]);
             $observer->execute_query('DELETE FROM voucher WHERE id = ?', [$voucherId]);
             $observer->close();

@@ -19,6 +19,7 @@ use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\ProductPageSubscribeParams;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentManager;
@@ -50,6 +51,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionProperty;
 
 /** Runs a storefront subscription and its browser facts through the production worker. */
@@ -64,6 +66,7 @@ trait ProductPageWorkerFixture
 
     protected AgentManager $agents;
     protected EcommerceShopDbContext $reader;
+    protected int $guestCartSessionId;
     private EcommerceShopWorkerManager $worker;
     private ?SignalRouter $previousRouter = null;
     private ?BrowserContext $previousBrowser = null;
@@ -181,11 +184,26 @@ trait ProductPageWorkerFixture
         }
     }
 
-    /** @param int $productId Product added to the guest's stored cart */
-    protected static function addGuestCartLine(int $productId): WorkerDbSyncCreatedMessageDTO
+    /** @return int Saved anonymous session ID for cart writes */
+    protected static function createGuestCartSession(): int
     {
-        self::asFixtureOwner(new GuestCartsLibraryAgent(), static fn () => Hilos::$db->sessionProductCarts->actions->add(101, $productId));
-        $row = Database::sql('SELECT * FROM session_product_cart WHERE session_id = ? AND product_id = ?', [101, $productId])->rows()[0];
+        $now = TimeHelper::nowMs();
+        Database::sql('INSERT INTO hilos_session (token, created_at, last_seen_at) VALUES (?, ?, ?)', [SessionToken::mint(), $now, $now]);
+
+        return Database::lastInsertId();
+    }
+
+    /** @param int $productId Product added to the guest's stored cart */
+    protected function addGuestCartLine(int $productId): WorkerDbSyncCreatedMessageDTO
+    {
+        self::asFixtureOwner(
+            new GuestCartsLibraryAgent(),
+            fn () => Hilos::$db->sessionProductCarts->actions->add($this->guestCartSessionId, 0, $productId),
+        );
+        $row = Database::sql(
+            'SELECT * FROM session_product_cart WHERE session_id = ? AND cart_epoch = ? AND product_id = ?',
+            [$this->guestCartSessionId, 0, $productId],
+        )->rows()[0];
 
         return new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData(
             EcommerceShopDbContext::sessionProductCarts,

@@ -29,6 +29,7 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\DatabaseConnectionException;
@@ -63,6 +64,7 @@ final class ProductAgent extends AbstractAgent
         EcommerceShopDbContext::categories,
         EcommerceShopDbContext::sessionProductCarts,
         EcommerceShopDbContext::userProductCarts,
+        HilosDbContext::sessions,
     ];
 
     public const string AGENT_TYPE = AgentType::PRODUCT;
