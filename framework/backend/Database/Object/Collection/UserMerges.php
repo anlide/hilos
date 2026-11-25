@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\UserMerges as EntityUserMerges;
-use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
 use Hilos\Database\Object\Objects;
 
@@ -32,6 +32,7 @@ class UserMerges extends Objects
 
     /**
      * Reads fresh presence without hydrating the local mirror, including tombstones whose survivor is null.
+     * Inside PRIMARY a locking read also bypasses any consistent snapshot the caller opened earlier.
      *
      * @param int $userId Folded account whose own tombstone is checked
      * @return bool Whether the database currently holds that account's merge row
@@ -39,8 +40,13 @@ class UserMerges extends Objects
      */
     public function isMergedInDatabase(int $userId): bool
     {
-        return static::entityClass()::count( // fresh-sql: a committed merge closes pending publication before its DB sync is consumed.
-            [EntityUserMerge::user_id => $userId],
-        ) > 0;
+        $entity = static::entityClass();
+        $index = $entity::getDatabase()->connectionIndex;
+        $sql = 'SELECT `user_id` FROM ' . $entity::getSqlTableName() . ' WHERE `user_id` = ?';
+        if (Database::runtimeTransactionLevel($index) !== null) {
+            $sql .= ' LOCK IN SHARE MODE';
+        }
+
+        return Database::sql($sql, [$userId], index: $index)->firstRow() !== null;
     }
 }

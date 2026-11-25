@@ -8,7 +8,6 @@ use Demo\EcommerceShop\Database\Actions\Collection\ShopGuestCartTransfersActions
 use Demo\EcommerceShop\Database\Object\Collection\ShopGuestCartTransfers as ObjectShopGuestCartTransfers;
 use Demo\EcommerceShop\Database\View\Item\ShopGuestCartTransfer;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 use Hilos\HilosException;
@@ -41,20 +40,28 @@ final class ShopGuestCartTransfers extends DbCollection
     }
 
     /**
-     * Returns a fresh assignment even if its creation or receipt has yet to reach this worker.
+     * Locks a fresh assignment in PRIMARY even if its creation or receipt has yet to reach this worker.
      *
      * @param int $transferId Saved transfer key
      * @param int $userId Expected recipient
      * @return ?ShopGuestCartTransfer Assignment with its item actions, or null when absent or assigned elsewhere
-     * @throws DatabaseException When the row or its database cannot be read
-     * @throws InvalidArgumentException When the entity read or View item cannot be built
-     * @throws LogicException When the collection class constants are not configured
+     * @throws HilosException When PRIMARY, the locking read or View item cannot be resolved
      */
     public function storedTransferForRecipient(int $transferId, int $userId): ?ShopGuestCartTransfer
     {
         $transfer = $this->objectCollection->loadStoredForRecipient($transferId, $userId);
 
         return $transfer === null ? null : $this->getOrCreateItemForLoadedObject($transferId, $transfer);
+    }
+
+    /**
+     * @param int $userId Assigned recipient whose account row is already locked
+     * @return bool Whether PRIMARY holds a still-unreceived assignment for this person
+     * @throws HilosException When PRIMARY is not open or the locking read fails
+     */
+    public function hasUnreceivedForUser(int $userId): bool
+    {
+        return $this->objectCollection->hasUnreceivedForUser($userId);
     }
 
     /**

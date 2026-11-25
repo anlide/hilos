@@ -35,6 +35,7 @@ use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+use Hilos\Auth\AccountOperation\Exception\AccountMergedSignInException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldExpiredSignalData;
 use Hilos\Auth\Library\DTO\AuthRegistrationHoldReleaseSignalData;
@@ -2893,12 +2894,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * (HIL-582): the card may have been raised by a refused sign-in on a planted cookie. Live
      * siblings on the old token are dropped after the exchange and come back signed in. A failed
      * mint keeps the card and the old token - a sign-in on a token that was never rotated is not
-     * allowed - and the next handshake tries again.
+     * allowed - and the next handshake tries again. A merged account leaves an anonymous session
+     * with no card to return to.
      *
      * @param Session $session Anonymous session holding the card
      * @param string $sessionToken Token the browser presented
      * @param int $userId Person to sign back in
-     * @return HandshakeSession Signed-in session and the ticket owed to the connecting socket
+     * @return HandshakeSession Resolved session and the ticket owed if the account returned
      * @throws InvalidArgumentException When the throttle signal cannot be named
      * @throws HilosException On database or runtime failure
      */
@@ -2907,14 +2909,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $liveKeys = $this->sessionConnectionKeys($sessionToken);
         try {
             $ticket = SessionRotationTicket::mint();
-            (new ThrottleGate())->reportAuthenticated($sessionToken);
             $newToken = $this->rotateSessionToken($session, $userId);
+        } catch (AccountMergedSignInException) {
+            $session->actions->releaseBlockedNotice();
+            $session->actions->touch();
+
+            return new HandshakeSession($session, null);
         } catch (SessionTokenExhaustedException | RandomException $e) {
             $this->logAgentError('Unblock kept the Access closed card at the handshake: ' . $e->getMessage());
             $session->actions->touch();
 
             return new HandshakeSession($session, null);
         }
+        (new ThrottleGate())->reportAuthenticated($sessionToken);
         $this->logSignIn($session, $userId);
 
         $session->actions->releasePendingRegistration();
@@ -3018,16 +3025,13 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Read before the bind below: a session that already held this person is not signed in now.
         $heldThisPerson = $session->userId === $userId;
 
-        // Told before the rotation, and with the token the attempts were counted under: the
-        // throttle knows this session by what the browser presented, not by what it is about
-        // to be handed (HIL-420).
-        (new ThrottleGate())->reportAuthenticated($sessionToken);
-
         $rotated = $initiatorAcceptKey === null ? null : $this->rotateSessionToken($session, $userId);
         if ($rotated === null) {
             $session->actions->bindUser($userId);
         }
         $liveToken = $rotated ?? $sessionToken;
+        // The throttle tracks attempts under the token the browser presented (HIL-420).
+        (new ThrottleGate())->reportAuthenticated($sessionToken);
         $this->logSignIn($session, $userId);
         $this->reportBrowserTimeZone($session);
 
@@ -4011,7 +4015,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * racing for the identifier and lost it, so it is told the address is taken and sent
      * back to the identifier field under the sign-in intent - never subscribed into an
      * account it has no claim to. That subscription, made to whoever happened to be
-     * parked, was the second door of the same capture the reservation key closed.
+     * parked, was the second door of the same capture the reservation key closed. If the
+     * bind refused a merged account, the winner's tabs receive the merge refusal instead.
      *
      * NOBODY is signed in here, and the winner's own tabs are no exception (HIL-649). They
      * are moved to the done step and nothing more: the rotation the confirmation ran is what
@@ -4043,18 +4048,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * list alone would converge to whoever happened to be parked and silently miss the rest.
      *
      * @param string $identifier Normalized identifier that was just confirmed (lowercased email)
-     * @param int $userId User the confirmation created
      * @param string $initiatorAcceptKey Accept key of the connection that submitted the proof
      * @param string $winnerSessionToken Session cookie token of the browser whose registration this was
      * @param list<string> $losingSessionTokens Session tokens whose hold on the identifier was dropped
+     * @param bool $bindingRefused Whether the session writer refused the new account
      * @throws HilosException On runtime, database, or session failure
      */
     private function convergeRegistration(
         string $identifier,
-        int $userId,
         string $initiatorAcceptKey,
         string $winnerSessionToken,
         array $losingSessionTokens,
+        bool $bindingRefused,
     ): void {
         $parked = $this->parkedAcceptKeys($identifier);
         foreach ($losingSessionTokens as $sessionToken) {
@@ -4069,7 +4074,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 continue;
             }
 
-            if ($sessionToken !== $winnerSessionToken) {
+            $isWinner = $sessionToken === $winnerSessionToken;
+            if (!$isWinner || $bindingRefused) {
+                $notice = $isWinner ? AuthFlowOutcome::CODE_ACCOUNT_MERGING : AuthFlowOutcome::CODE_IDENTIFIER_TAKEN;
                 $this->sendToUser(
                     HilosSignalConstants::HILOS_AUTH_CONVERGE,
                     $acceptKey,
@@ -4078,8 +4085,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                         $identifier,
                         AuthFlowStep::IDENTIFIER,
                         AuthFlowIntent::LOGIN,
-                        AuthMessages::forNoticeCode(AuthFlowOutcome::CODE_IDENTIFIER_TAKEN),
-                        AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+                        AuthMessages::forNoticeCode($notice),
+                        $notice,
                     ),
                 );
 
@@ -4535,7 +4542,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, SessionRebindSignalData::class, $rebind);
                 }
 
-                $this->rebindSession($rebind);
+                $this->settleRequestedRebind($rebind);
 
                 return;
 
@@ -5678,6 +5685,32 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             );
 
         $this->replyToRebind($frame, null, $liveToken ?? $frame->sessionToken);
+    }
+
+    /**
+     * Answers a project's rebind request on the channel that is waiting for it.
+     *
+     * @param SessionRebindSignalData $frame Requested binding and reply address
+     * @throws HilosException When the session cannot be read or written or the answer cannot be sent
+     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
+     */
+    private function settleRequestedRebind(SessionRebindSignalData $frame): void
+    {
+        try {
+            $this->rebindSession($frame);
+        } catch (AccountMergedSignInException $refusal) {
+            if ($frame->correlationId !== null) {
+                $this->replyToRebind($frame, $refusal->getMessage());
+
+                return;
+            }
+            $this->publishMergingSignInRefusal(
+                Hilos::$db->sessions->findByToken($frame->sessionToken),
+                $frame->initiatorAcceptKey,
+                null,
+                null,
+            );
+        }
     }
 
     /**
@@ -6997,6 +7030,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     // The browser comes back on its own, not by the person signing in (HIL-294).
                     $this->authenticateSession($session->token, $userId, $liveKeys[0], announceSignIn: false);
                     $returned[] = $session->id;
+                } catch (AccountMergedSignInException) {
+                    $session->actions->releaseBlockedNotice();
+                    $this->publishBlockedCardState($session, null, null, null, null);
+                    $lowered[] = $session->id;
                 } catch (SessionTokenExhaustedException | RandomException $e) {
                     $this->logAgentError('Unblock kept the Access closed card on a session: ' . $e->getMessage());
                 }
@@ -8155,8 +8192,29 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if (!$blocked) {
             return false;
         }
+
+        $this->publishMergingSignInRefusal($session, $initiatorAcceptKey, $requestId, $action);
+
+        return true;
+    }
+
+    /**
+     * Delivers the existing merge refusal after the account was found closed.
+     *
+     * @param ?Session $session Session waiting for sign-in, if still present
+     * @param ?string $initiatorAcceptKey Submitting connection, if present
+     * @param ?string $requestId Submit being answered
+     * @param ?string $action Action being answered
+     * @throws HilosException When the pending sign-in cannot be released or the refusal cannot be published
+     */
+    private function publishMergingSignInRefusal(
+        ?Session $session,
+        ?string $initiatorAcceptKey,
+        ?string $requestId,
+        ?string $action,
+    ): void {
         if ($session === null) {
-            return true;
+            return;
         }
         if ($session->pendingSecondFactorUserId !== null) {
             $session->actions->releasePendingSecondFactor();
@@ -8179,8 +8237,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 outcome: $outcome,
             ));
         }
-
-        return true;
     }
 
     /**
@@ -8941,15 +8997,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             return;
         }
 
-        $this->authenticateSession(
-            $frame->sessionToken,
-            $frame->userId,
-            $frame->acceptKey,
-            ack: $frame->ack,
-            requestId: $frame->requestId,
-            action: $frame->action,
-            outcome: $frame->outcome,
-        );
+        try {
+            $this->authenticateSession(
+                $frame->sessionToken,
+                $frame->userId,
+                $frame->acceptKey,
+                ack: $frame->ack,
+                requestId: $frame->requestId,
+                action: $frame->action,
+                outcome: $frame->outcome,
+            );
+        } catch (AccountMergedSignInException) {
+            $this->publishMergingSignInRefusal($session, $frame->acceptKey, $frame->requestId, $frame->action);
+
+            return;
+        }
         if ($frame->secondFactorProven && $frame->trustDevice && $session?->id !== null) {
             $this->trustBrowser($session->id, $frame->userId);
         }
@@ -9118,15 +9180,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
 
             $this->logAgentWarning("OAuth sign-in granted with no trip on record; signing {$frame->acceptKey} in directly");
-            $this->authenticateSession(
-                $frame->sessionToken,
-                $frame->userId,
-                $frame->acceptKey,
-                ack: $frame->ack,
-                requestId: $frame->requestId,
-                action: $frame->action,
-                outcome: $frame->outcome,
-            );
+            try {
+                $this->authenticateSession(
+                    $frame->sessionToken,
+                    $frame->userId,
+                    $frame->acceptKey,
+                    ack: $frame->ack,
+                    requestId: $frame->requestId,
+                    action: $frame->action,
+                    outcome: $frame->outcome,
+                );
+            } catch (AccountMergedSignInException) {
+                $this->publishMergingSignInRefusal($session, $frame->acceptKey, $frame->requestId, $frame->action);
+            }
 
             return;
         }
@@ -9190,6 +9256,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 action: $frame->action,
                 outcome: $frame->outcome,
             );
+        } catch (AccountMergedSignInException) {
+            $this->publishMergingSignInRefusal($session, null, null, null);
+            $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_MERGING);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_MERGING);
+
+            return;
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $e) {
@@ -9310,6 +9382,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         try {
             $sessionId = Hilos::$db->sessions->findByToken($sessionToken)?->id;
             $liveToken = $sessionId === null ? null : $this->authenticateSession($sessionToken, $userId, $acceptKey);
+        } catch (AccountMergedSignInException) {
+            $this->publishMergingSignInRefusal($session, null, null, null);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_MERGING);
+
+            return;
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $e) {
@@ -9532,23 +9609,33 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         // The mark rides the sign-in rather than going ahead of it: the surface closes on
         // the session coming up, so the two have to reach the browser together (HIL-422).
-        $this->authenticateSession(
-            $frame->winnerSessionToken,
-            $frame->userId,
-            $frame->initiatorAcceptKey,
-            ack: SessionAck::REGISTERED,
-            requestId: $frame->requestId,
-            action: $frame->action,
-            outcome: $frame->outcome,
-        );
+        $bindingRefused = false;
+        try {
+            $this->authenticateSession(
+                $frame->winnerSessionToken,
+                $frame->userId,
+                $frame->initiatorAcceptKey,
+                ack: SessionAck::REGISTERED,
+                requestId: $frame->requestId,
+                action: $frame->action,
+                outcome: $frame->outcome,
+            );
+        } catch (AccountMergedSignInException) {
+            $bindingRefused = true;
+            $session = Hilos::$db->sessions->findByToken($frame->winnerSessionToken);
+            if ($session?->pendingRegistrationIdentifier === $frame->identifier) {
+                $session->actions->releasePendingRegistration();
+            }
+            $this->publishMergingSignInRefusal($session, $frame->initiatorAcceptKey, $frame->requestId, $frame->action);
+        }
 
         Hilos::$rt->hilosRegistrationWaiters->actions->release($frame->initiatorAcceptKey);
         $this->convergeRegistration(
             $frame->identifier,
-            $frame->userId,
             $frame->initiatorAcceptKey,
             $frame->winnerSessionToken,
             $frame->losingSessionTokens,
+            $bindingRefused,
         );
     }
 
@@ -9719,15 +9806,21 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         // The mark rides the sign-in rather than going ahead of it: the surface closes on
         // the session coming up, so the two have to reach the browser together (HIL-422).
-        $liveToken = $this->authenticateSession(
-            $frame->sessionToken,
-            $frame->userId,
-            $frame->acceptKey,
-            ack: SessionAck::PASSWORD_CHANGED,
-            requestId: $frame->requestId,
-            action: $frame->action,
-            outcome: $frame->outcome,
-        );
+        try {
+            $liveToken = $this->authenticateSession(
+                $frame->sessionToken,
+                $frame->userId,
+                $frame->acceptKey,
+                ack: SessionAck::PASSWORD_CHANGED,
+                requestId: $frame->requestId,
+                action: $frame->action,
+                outcome: $frame->outcome,
+            );
+        } catch (AccountMergedSignInException) {
+            $this->publishMergingSignInRefusal($session, $frame->acceptKey, $frame->requestId, $frame->action);
+
+            return;
+        }
         $this->convergeRecovery($frame->identifier, $frame->sessionToken, $frame->acceptKey);
         $this->deauthenticateOtherSessions($frame->userId, $liveToken ?? $frame->sessionToken, SessionAccessLossReason::PASSWORD_RECOVERED);
     }

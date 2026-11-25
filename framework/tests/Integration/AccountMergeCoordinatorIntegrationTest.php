@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\Auth\AccessLog\AccessLogEvent;
 use Hilos\Auth\AccountOperation\AccountMergeCancellationState;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
@@ -22,6 +23,7 @@ use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectedSet;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\Exception\AccountMergeGiveWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountMergeReceiveWaitsException;
 use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
@@ -507,6 +509,57 @@ final class AccountMergeCoordinatorIntegrationTest extends HilosSessionIntegrati
         self::assertSame([], Database::sql('SELECT * FROM `hilos_user_merge`')->rows());
     }
 
+    public function testGiveHookWaitsInPrimaryAndCancellationRefusesTheDelayedAsk(): void
+    {
+        self::seedIdentity(self::LOSER, IdentityType::MAGIC_LINK, 'loser@example.test');
+        [$operation, $give] = $this->readyGo();
+        $agent = $this->personAgent(self::LOSER);
+        self::assertInstanceOf(MergeCoordinatorUser::class, $agent);
+        $calls = [];
+        $rolledBack = false;
+        $agent->beforeGive = static function (AccountMergePart $part) use (&$calls, &$rolledBack): void {
+            $calls[] = $part;
+            self::assertSame((string)self::LOSER, Database::sql('SELECT `user_id` FROM `hilos_identity`')->row()['user_id']);
+            Database::onRollback(static function () use (&$rolledBack): void {
+                $rolledBack = true;
+            }, Database::getDatabase(DatabaseNames::PRIMARY)->connectionIndex);
+
+            throw new AccountMergeGiveWaitsException();
+        };
+        $before = $this->operationFacts();
+        $this->deliver($give);
+        $frames = $this->frames();
+        self::assertCount(1, $frames);
+        [$wait] = $frames;
+        self::assertInstanceOf(AccountOperationAnswerSignalData::class, $wait->data->data);
+        self::assertSame(AccountOperationAnswerKind::Waits, $wait->data->data->answer);
+        self::assertEquals([new AccountMergePart($operation->id, self::SURVIVOR, self::LOSER)], $calls);
+        self::assertTrue($rolledBack);
+        self::assertFalse(Database::hasOpenTransactions());
+        $this->deliver($wait);
+        self::assertSame([], $this->frames());
+        self::assertSame($before, $this->operationFacts());
+        self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->data->data->assignmentId));
+        self::assertSame((string)self::LOSER, Database::sql('SELECT `user_id` FROM `hilos_identity`')->row()['user_id']);
+        self::assertFalse(Hilos::$db->users[self::LOSER]->block);
+
+        self::assertSame(AccountMergeCancellationState::WaitingOwners, $this->asHolder(fn () => $this->holder->cancelMerge($operation)));
+        $this->finishCancellation($operation, $this->frames());
+        $afterCancellation = $this->operationFacts();
+        $this->deliver($give);
+        $frames = $this->frames();
+        self::assertCount(1, $frames);
+        [$refusal] = $frames;
+        self::assertInstanceOf(AccountOperationAnswerSignalData::class, $refusal->data->data);
+        self::assertSame(AccountOperationAnswerKind::Refused, $refusal->data->data->answer);
+        $this->deliver($refusal);
+        self::assertSame([], $this->frames());
+        self::assertCount(1, $calls);
+        self::assertSame($afterCancellation, $this->operationFacts());
+        self::assertSame((string)self::LOSER, Database::sql('SELECT `user_id` FROM `hilos_identity`')->row()['user_id']);
+        self::assertFalse(Hilos::$db->users[self::LOSER]->block);
+    }
+
     public function testCommittedGiveMakesCancelTooLateAndExactRepeatContinuesBeforePreflight(): void
     {
         self::seedIdentity(self::LOSER, IdentityType::MAGIC_LINK, 'loser@example.test');
@@ -522,7 +575,18 @@ final class AccountMergeCoordinatorIntegrationTest extends HilosSessionIntegrati
         self::assertCount(0, Hilos::$db->accountOperationAssignments->forOperationStage($operation->id, AccountMergeStage::Cancelling->value));
         self::assertSame($operation->id, $this->open()->id);
         self::assertSame(['give', 'receive'], $this->keys($this->frames()));
+        $agent = $this->personAgent(self::LOSER);
+        self::assertInstanceOf(MergeCoordinatorUser::class, $agent);
+        $agent->beforeGive = static function (): void {
+            self::fail('Saved Give must bypass the project hook.');
+        };
         $this->deliver($give);
+        [$replayedHandover, $replayedAnswer] = $this->frames();
+        self::assertInstanceOf(AccountMergeHandoverSignalData::class, $replayedHandover->data->data);
+        self::assertSame(AccountOperationAnswerKind::Done, $replayedAnswer->data->data->answer);
+        $replayedResult = $this->asPerson(self::LOSER, static fn (AbstractUserAgent $agent): AccountOperationResult =>
+            $agent->giveForMerge($give->data->data->assignmentId));
+        self::assertSame($result->toArray(), $replayedResult->toArray());
         self::assertSame($result->id, Hilos::$db->accountOperationResults->byAssignment($give->data->data->assignmentId)->id);
         self::assertSame((string)self::SURVIVOR, Database::sql('SELECT `user_id` FROM `hilos_identity`')->row()['user_id']);
         self::assertSame('go', $this->row($operation)['stage']);
@@ -1960,6 +2024,9 @@ final class MergeCoordinatorUser extends AbstractUserAgent
 {
     public bool $failHandover = false;
 
+    /** @var (Closure(AccountMergePart): void)|null Project work supplied to the real Give hook */
+    public ?Closure $beforeGive = null;
+
     /**
      * @param string $signalName Real routed frame name
      * @param SignalDataInterface $data Typed transport payload
@@ -1975,6 +2042,14 @@ final class MergeCoordinatorUser extends AbstractUserAgent
             }
         }
         parent::sendToAgent($signalName, $data);
+    }
+
+    /** @param AccountMergePart $part Operation coordinates passed to the project hook */
+    protected function beforeMergeGive(AccountMergePart $part): void
+    {
+        if ($this->beforeGive !== null) {
+            ($this->beforeGive)($part);
+        }
     }
 }
 

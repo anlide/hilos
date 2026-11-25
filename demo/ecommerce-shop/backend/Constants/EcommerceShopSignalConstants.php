@@ -155,6 +155,9 @@ final class EcommerceShopSignalConstants
     /** @var string Person's agent → guest carts library: the recipient committed the transfer */
     public const string GUEST_CART_TRANSFER_RECEIVED = 'guest_cart_transfer_received';
 
-    /** @var string Guest carts library → the person's agent: the source product lines are gone */
+    /** @var string Guest carts library → the person's agent: the source product lines and voucher are gone */
     public const string GUEST_CART_TRANSFER_CLEARED = 'guest_cart_transfer_cleared';
+
+    /** @var string Loser's agent → sessions library: reconsider Give after a guest cart receipt */
+    public const string SHOP_ACCOUNT_MERGE_CART_WAKE = 'shop_account_merge_cart_wake';
 }

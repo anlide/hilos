@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Database\Entity\Collection\Users as EntityUsers;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Object\Item\User as ObjectUser;
@@ -29,6 +30,29 @@ class Users extends Objects
     public const string COLLECTION_KEY = HilosDbContext::users;
 
     private const string DATABASE_REQUIRED_MESSAGE = 'User projections require a database-backed collection';
+
+    /**
+     * Locks the account row for the duration of the current PRIMARY transaction.
+     *
+     * @param int $userId Account primary key
+     * @throws ItemNotFoundForUpdateException When the account no longer exists
+     * @throws DatabaseException When PRIMARY is not open or the locking read fails
+     */
+    public function lockStoredAccount(int $userId): void
+    {
+        $binding = $this->getDatabase() ?? throw new DatabaseException(self::DATABASE_REQUIRED_MESSAGE);
+        if (Database::runtimeTransactionLevel($binding->connectionIndex) === null) {
+            throw new DatabaseException('The account row lock requires a PRIMARY transaction.');
+        }
+        $row = Database::sql(
+            'SELECT `id` FROM ' . $binding->getSqlTableName($this->getTableName()) . ' WHERE `id` = ? FOR UPDATE',
+            [$userId],
+            index: $binding->connectionIndex,
+        )->firstRow();
+        if ($row === null) {
+            throw new ItemNotFoundForUpdateException("No such user: {$userId}");
+        }
+    }
 
     /**
      * Projects every current match using SQL collation and literal LIKE semantics,

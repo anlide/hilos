@@ -9,6 +9,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Collection\Users as ObjectUsers;
 use Hilos\Database\View\Item\User;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
@@ -30,6 +31,18 @@ class Users extends DbCollection
 {
     public const string DB_ITEM_CLASS = User::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectUsers::class;
+
+    /**
+     * Locks the account in the caller's PRIMARY transaction before related writes.
+     *
+     * @param int $userId Account primary key
+     * @throws ItemNotFoundForUpdateException When the account no longer exists
+     * @throws DatabaseException When PRIMARY is not open or the locking read fails
+     */
+    public function lockStoredAccount(int $userId): void
+    {
+        $this->objectCollection->lockStoredAccount($userId);
+    }
 
     /**
      * Lists every user, loading the collection in full first.

@@ -5,19 +5,35 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Agents\Hilos;
 
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Core\Router\DTO\ShopAccountMergeCartWakeSignalData;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Hilos;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Feature\Definition\AuthFeature;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
+use Hilos\WiringRefusal;
+use Random\RandomException;
+use Throwable;
 
 /**
  * The ecommerce-shop demo's sessions library - its own way in and registration holds.
@@ -82,4 +98,76 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         StateHilosProfileNameChange::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
+    /** @var array<string, mixed> Framework frames and the shop's merge wake */
+    public const array AGENT_SIGNALS = [
+        ...parent::AGENT_SIGNALS,
+        EcommerceShopSignalConstants::SHOP_ACCOUNT_MERGE_CART_WAKE => ShopAccountMergeCartWakeSignalData::class,
+    ];
+
+    /**
+     * Handles the shop's merge wake and delegates the framework's frames.
+     *
+     * @param AgentSignalData $data Wrapped agent payload
+     * @param string $sender Full sender identity
+     * @param string $name Routed agent-signal name
+     * @throws AgentUnknownSignalException When neither handler owns the frame
+     * @throws InvalidAgentSignalPayloadException When the payload differs from its declaration
+     * @throws HilosException When storage, runtime, session or merge work fails
+     * @throws RandomException When a session token cannot be minted
+     * @throws InvalidArgumentException When a frame or reply cannot be named
+     */
+    public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
+    {
+        switch ($name) {
+            case EcommerceShopSignalConstants::SHOP_ACCOUNT_MERGE_CART_WAKE:
+                $wake = $data->data;
+                if (!$wake instanceof ShopAccountMergeCartWakeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ShopAccountMergeCartWakeSignalData::class, $wake);
+                }
+
+                $this->resumeMergeAfterGuestReceipt($wake, $sender);
+
+                return;
+
+            default:
+                parent::onSignalAgent($data, $sender, $name);
+        }
+    }
+
+    /**
+     * Drives the existing merge only while the canonical Give is still outstanding.
+     *
+     * @param ShopAccountMergeCartWakeSignalData $wake Merge operation addressed by the wake
+     * @param string $sender Full sender identity
+     * @throws HilosException When the stored facts cannot be read or the merge drive fails
+     */
+    private function resumeMergeAfterGuestReceipt(ShopAccountMergeCartWakeSignalData $wake, string $sender): void
+    {
+        $operation = Hilos::$db->accountOperations->fresh($wake->operationId);
+        if ($operation === null || $operation->kind !== AccountOperationKind::Merge
+            || $operation->stage !== AccountMergeStage::Go->value || $operation->finishedAt !== null) {
+            return;
+        }
+        $loser = new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_USER, (string)$operation->loserUserId);
+        if ($sender !== SignalSource::describe($loser)) {
+            return;
+        }
+
+        $give = Hilos::$db->accountOperationAssignments->byIdentity(
+            $wake->operationId,
+            AccountMergeStage::Go->value,
+            AccountMergeDuty::Give->value,
+        );
+        if ($give !== null && Hilos::$db->accountOperationResults->byAssignment($give->id) !== null) {
+            return;
+        }
+
+        try {
+            $this->driveAccountMerge($operation);
+        } catch (WiringRefusal $failure) {
+            throw $failure;
+        } catch (Throwable $failure) {
+            throw new AgentException("Account merge #{$wake->operationId} could not resume after the guest cart receipt.", previous: $failure);
+        }
+    }
 }

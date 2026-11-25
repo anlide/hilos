@@ -40,6 +40,7 @@ class UserMerges extends DbCollection
 
     /**
      * Reads fresh presence without hydrating the local mirror, including tombstones whose survivor is null.
+     * Inside PRIMARY the check also sees past an earlier consistent snapshot.
      *
      * @param int $userId Folded account whose own tombstone is checked
      * @return bool Whether the database currently holds that account's merge row

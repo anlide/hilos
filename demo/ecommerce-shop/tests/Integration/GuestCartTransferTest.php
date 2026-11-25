@@ -7,11 +7,13 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Closure;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferClearedSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferOfferSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferReceivedSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferWakeSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\ShopAccountMergeCartWakeSignalData;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
@@ -22,10 +24,43 @@ use Demo\EcommerceShop\Database\Object\Item\SessionVoucherCart;
 use Demo\EcommerceShop\Database\View\Item\SessionProductCart;
 use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
+use Hilos\Auth\AccountOperation\AccountMergeCancellationState;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeCoordinator;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeOpening;
+use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
+use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountMergePersonalHandoverSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
+use Hilos\Auth\AccountOperation\Exception\AccountMergedSignInException;
+use Hilos\Auth\Flow\AuthFlowIntent;
+use Hilos\Auth\Flow\AuthFlowOutcome;
+use Hilos\Auth\Flow\AuthFlowStep;
+use Hilos\Auth\Flow\DTO\AuthConvergeSignalData;
+use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
+use Hilos\Auth\Library\DTO\AuthRegistrationLandedSignalData;
+use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
+use Hilos\Auth\Library\DTO\LoginActionDTO;
+use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
+use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
+use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
+use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
+use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Auth\Session\SessionCookieName;
 use Hilos\Auth\Session\SessionToken;
+use Hilos\Auth\TestUserCommandConstants;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandConstants;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -33,25 +68,54 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalNameInterface;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Actions\Item\SessionActions as FrameworkSessionActions;
+use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseNames;
+use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Exception\SqlRuntime\LockWaitTimeoutException;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Runtime\State\Item\HilosOAuthTrip;
+use Hilos\Runtime\State\Item\HilosSessionRotation;
+use Hilos\Runtime\State\Item\OAuthPendingLogin;
+use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\DTO\UserAdminCommandDoneSignalData;
+use Hilos\Users\DTO\UserAdminCommandSignalData;
+use Hilos\Users\DTO\UserAdminCreateDoneSignalData;
+use Hilos\Users\DTO\UserAdminCreateSignalData;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\TimeHelper;
+use mysqli;
+use mysqli_sql_exception;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 
@@ -64,10 +128,20 @@ final class GuestCartTransferTest extends IntegrationTestCase
     private const int MAX_CART_QUANTITY = 9_007_199_254_740_991;
     private const int TRANSFERS_PER_PAGE = 25;
     private const string RECOVERY_RULE = 'guest_cart_sweep_recovery';
+    private const string MERGE_EMAIL = 'guest-cart-merge@example.test';
+    private const string MERGE_PASSWORD = 'guest cart proof password';
+    private const string MERGE_LOGIN_KEY = 'guest-cart-merge-login';
+    private const string MERGE_REQUEST = 'guest-cart-login-request';
+    private const string REGISTRATION_SIBLING = 'guest-cart-registration-sibling';
+    private const string REGISTRATION_OTHER_BROWSER = 'guest-cart-registration-other-browser';
+    private const string OAUTH_TRIP_KEY = 'fedcba9876543210fedcba9876543210';
+    private const string OAUTH_PROVIDER = 'oauth:github';
+    private const string OAUTH_OFFLINE_TAB = 'guest-cart-merge-offline';
     private const string WAKE = EcommerceShopSignalConstants::GUEST_CART_TRANSFER_WAKE;
     private const string OFFER = EcommerceShopSignalConstants::GUEST_CART_TRANSFER_OFFER;
     private const string CLEARED = EcommerceShopSignalConstants::GUEST_CART_TRANSFER_CLEARED;
     private const string RECEIVED = EcommerceShopSignalConstants::GUEST_CART_TRANSFER_RECEIVED;
+    private const string MERGE_WAKE = EcommerceShopSignalConstants::SHOP_ACCOUNT_MERGE_CART_WAKE;
 
     /** @var list<int> People created by the case */
     private array $userIds = [];
@@ -84,6 +158,17 @@ final class GuestCartTransferTest extends IntegrationTestCase
     protected function tearDown(): void
     {
         try {
+            if (isset(Hilos::$rt->connections[self::MERGE_LOGIN_KEY])) {
+                ExecutionContext::run(new ExecutionFrame(), static fn () =>
+                    Hilos::$rt->connections[self::MERGE_LOGIN_KEY]->actions->unregister(),
+                );
+                RtTruthSourceRegistry::unregisterDaemon(EcommerceShopRtContext::connections);
+            }
+            foreach ($this->userIds as $userId) {
+                Database::sqlRun('DELETE FROM hilos_account_operation WHERE loser_user_id = ?', [$userId]);
+                Database::sqlRun('DELETE FROM hilos_user_merge WHERE user_id = ?', [$userId]);
+                Database::sqlRun('DELETE FROM hilos_identity WHERE user_id = ?', [$userId]);
+            }
             foreach ([self::SOURCE_SESSION, ...$this->sessionIds] as $sessionId) {
                 Database::sqlRun('DELETE FROM shop_guest_cart_transfer WHERE session_id = ?', [$sessionId]);
                 Database::sqlRun('DELETE FROM session_product_cart WHERE session_id = ?', [$sessionId]);
@@ -96,6 +181,7 @@ final class GuestCartTransferTest extends IntegrationTestCase
                 Database::sqlRun('DELETE FROM user_product_cart WHERE user_id = ?', [$userId]);
                 Database::sqlRun('DELETE FROM user_voucher_cart WHERE user_id = ?', [$userId]);
                 Database::sqlRun('DELETE FROM hilos_account_deletion WHERE user_id = ?', [$userId]);
+                Database::sqlRun('DELETE FROM hilos_access_log WHERE user_id = ?', [$userId]);
                 Database::sqlRun('DELETE FROM hilos_user WHERE id = ?', [$userId]);
             }
             Hilos::$db->forgetLoadedDataForTest();
@@ -201,6 +287,429 @@ final class GuestCartTransferTest extends IntegrationTestCase
             self::assertSame(self::NEXT_EPOCH, Hilos::$db->sessions->findByToken($newToken)?->cartEpoch);
             self::assertNotNull(self::savedAssignment($session->id, self::SOURCE_EPOCH));
         });
+    }
+
+    public function testBindBeforeGiveWaitsForTheAssignedCartDuringGo(): void
+    {
+        $loser = $this->person('Cart merge loser');
+        $survivor = $this->person('Cart merge survivor');
+        $this->seedMergePassword($loser);
+        $give = $this->readyGive($survivor, $loser);
+        $session = $this->guest();
+        $product = self::product('pine-bark-5-l');
+        self::addSourceLine(self::SOURCE_EPOCH, $product, 3, $session->id);
+        $peer = self::mergePeer();
+        try {
+            $bound = self::withUserLockProbe($peer, $loser, HilosDbContext::sessions, fn () =>
+                $this->underAgent($this->sessionsLibrary(), static fn () => $session->actions->bindUser($loser)),
+            );
+            $transfer = self::savedAssignment($session->id, self::SOURCE_EPOCH);
+            self::assertNotNull($transfer);
+            self::assertSame($loser, (int)$peer->execute_query(
+                'SELECT user_id FROM hilos_session WHERE id = ?', [$session->id],
+            )->fetch_column());
+            self::assertSame(0, (int)$peer->execute_query(
+                'SELECT received FROM shop_guest_cart_transfer WHERE id = ?', [$transfer],
+            )->fetch_column());
+
+            $login = $this->guest();
+            $rotations = count(Hilos::$rt->hilosSessionRotations);
+            RtTruthSourceRegistry::registerDaemon(HilosSessionRotation::RT_COLLECTION);
+            try {
+                $answer = $this->deliverLoginGrant($this->passwordGrant($login, $loser));
+                self::assertSame($loser, $answer->userId);
+                self::assertNotNull($answer->rotationTicket);
+                self::assertSame($rotations + 1, count(Hilos::$rt->hilosSessionRotations));
+                $this->underAgent($this->sessionsLibrary(), static fn () =>
+                    Hilos::$rt->hilosSessionRotations->actions->forget($answer->rotationTicket),
+                );
+            } finally {
+                RtTruthSourceRegistry::unregisterDaemon(HilosSessionRotation::RT_COLLECTION);
+            }
+
+            self::assertSame(AccountOperationAnswerKind::Waits, $this->deliverMergeStep($give));
+            self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+            self::assertFalse(Hilos::$db->userMerges->isMergedInDatabase($loser));
+            self::assertSame($loser, (int)$peer->execute_query(
+                'SELECT user_id FROM hilos_identity WHERE identifier = ?', [self::MERGE_EMAIL],
+            )->fetch_column());
+            self::assertSame([], self::accountLines($loser));
+            self::assertUserLockHeld($bound);
+
+            $accepted = self::withUserLockProbe($peer, $loser, EcommerceShopDbContext::shopGuestCartTransfers, fn () =>
+                $this->deliver($loser, self::OFFER, new GuestCartTransferOfferSignalData($transfer, $loser)),
+            );
+            self::assertUserLockHeld($accepted);
+            self::assertSame([$product => 3], self::accountLines($loser));
+            self::assertSame(1, (int)$peer->execute_query(
+                'SELECT received FROM shop_guest_cart_transfer WHERE id = ?', [$transfer],
+            )->fetch_column());
+            self::assertSame(AccountOperationAnswerKind::Done, $this->deliverMergeStep($give));
+            self::assertSame([$product => 3], Hilos::$db->sessionProductCarts->storedCartQuantities($session->id, self::SOURCE_EPOCH));
+            self::assertTrue(Hilos::$db->userMerges->isMergedInDatabase($loser));
+        } finally {
+            $peer->close();
+        }
+    }
+
+    public function testGiveBeforeAProvenLoginLeavesTheGuestSessionAndCartIntact(): void
+    {
+        $loser = $this->person('Late proof loser');
+        $survivor = $this->person('Late proof survivor');
+        $this->seedMergePassword($loser);
+        $session = $this->guest();
+        $token = $session->token;
+        $product = self::product('pine-bark-5-l');
+        self::addSourceLine(self::SOURCE_EPOCH, $product, 4, $session->id);
+        $give = $this->readyGive($survivor, $loser);
+        $grant = $this->passwordGrant($session, $loser);
+        $peer = self::mergePeer();
+        try {
+            self::assertFalse(Hilos::$db->users[$loser]->block);
+            self::giveInPeerProcess($give);
+            self::assertSame($survivor, (int)$peer->execute_query(
+                'SELECT survivor_user_id FROM hilos_user_merge WHERE user_id = ?', [$loser],
+            )->fetch_column());
+            self::assertFalse(Hilos::$db->users[$loser]->block, 'The sessions holder has yet to consume the Give sync.');
+            $rotations = count(Hilos::$rt->hilosSessionRotations);
+            RtTruthSourceRegistry::registerDaemon(HilosSessionRotation::RT_COLLECTION);
+            try {
+                $answer = $this->deliverLoginGrant($grant, refused: true);
+                self::assertSame(AuthFlowOutcome::rejectTo(
+                    AuthFlowOutcome::CODE_ACCOUNT_MERGING,
+                    AuthFlowStep::IDENTIFIER,
+                    AuthFlowIntent::LOGIN,
+                    AccountMergeAccess::REFUSED_MESSAGE,
+                )->toArray(), $answer->outcome);
+                self::assertSame([$token, null, self::SOURCE_EPOCH], $peer->execute_query(
+                    'SELECT token, user_id, cart_epoch FROM hilos_session WHERE id = ?', [$session->id],
+                )->fetch_row());
+                self::assertNull($answer->userId);
+                self::assertNull($answer->rotationTicket);
+                self::assertSame($rotations, count(Hilos::$rt->hilosSessionRotations));
+                self::assertSame(0, (int)$peer->execute_query(
+                    'SELECT COUNT(*) FROM shop_guest_cart_transfer WHERE session_id = ?', [$session->id],
+                )->fetch_column());
+                self::assertSame(4, (int)$peer->execute_query(
+                    'SELECT quantity FROM session_product_cart WHERE session_id = ? AND product_id = ? AND cart_epoch = ?',
+                    [$session->id, $product, self::SOURCE_EPOCH],
+                )->fetch_column());
+            } finally {
+                RtTruthSourceRegistry::unregisterDaemon(HilosSessionRotation::RT_COLLECTION);
+            }
+        } finally {
+            $peer->close();
+        }
+    }
+
+    #[DataProvider('browserProofs')]
+    public function testRefusedSessionWriteAnswersTheBrowserProof(string $action): void
+    {
+        $userId = $this->person('Browser proof account');
+        $session = $this->guest();
+        $this->registerLoginTab($session);
+
+        [$name, $payload] = match ($action) {
+            HilosSignalConstants::HILOS_LOGIN => [
+                HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
+                new AuthSessionGrantSignalData($session->token, $userId, self::MERGE_LOGIN_KEY, self::MERGE_REQUEST, $action),
+            ],
+            HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET => [
+                HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED,
+                new AuthPasswordChangedSignalData($userId, $session->token, self::MERGE_LOGIN_KEY, self::MERGE_EMAIL, self::MERGE_REQUEST, $action),
+            ],
+            HilosSignalConstants::HILOS_COMPLETE_REGISTRATION => [
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED,
+                new AuthRegistrationLandedSignalData(
+                    self::MERGE_EMAIL, $userId, $session->token, self::MERGE_LOGIN_KEY,
+                    requestId: self::MERGE_REQUEST, action: $action,
+                ),
+            ],
+        };
+
+        $frames = $this->withRefusedSessionWrite($session, fn () => $this->deliverToSessions($name, $payload));
+        self::assertCount(1, $frames);
+        $answer = $frames[0];
+        self::assertInstanceOf(SessionStateSignalData::class, $answer);
+        self::assertSame([self::MERGE_LOGIN_KEY], $answer->acceptKeys);
+        self::assertSame(self::MERGE_REQUEST, $answer->requestId);
+        self::assertSame($action, $answer->action);
+        self::assertSame(AuthFlowOutcome::CODE_ACCOUNT_MERGING, $answer->outcome['code'] ?? null);
+    }
+
+    /** @return iterable<string, array{string}> Browser actions that complete a proof */
+    public static function browserProofs(): iterable
+    {
+        yield 'sign-in' => [HilosSignalConstants::HILOS_LOGIN];
+        yield 'password recovery' => [HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET];
+        yield 'registration' => [HilosSignalConstants::HILOS_COMPLETE_REGISTRATION];
+    }
+
+    public function testRefusedSessionWriteSettlesRegistrationWaiters(): void
+    {
+        $userId = $this->person('Registration account');
+        $session = $this->guest();
+        $other = $this->guest();
+        $holder = $this->sessionsLibrary();
+        $this->registerLoginTab($session);
+        $this->underAgent($holder, static function () use ($session, $other): void {
+            $session->actions->holdPendingRegistration(self::MERGE_EMAIL);
+            $waiters = Hilos::$rt->hilosRegistrationWaiters;
+            $waiters->actions->park(self::REGISTRATION_SIBLING, self::MERGE_EMAIL, $session->token);
+            $waiters->actions->park(self::REGISTRATION_OTHER_BROWSER, self::MERGE_EMAIL, $other->token);
+        });
+        try {
+            $frames = $this->withRefusedSessionWrite($session, fn () => $this->deliverToSessions(
+                HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED,
+                new AuthRegistrationLandedSignalData(
+                    self::MERGE_EMAIL,
+                    $userId,
+                    $session->token,
+                    self::MERGE_LOGIN_KEY,
+                    requestId: self::MERGE_REQUEST,
+                    action: HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
+                ),
+            ));
+            $notices = [];
+            foreach ($frames as $frame) {
+                if ($frame instanceof AuthConvergeSignalData) {
+                    self::assertSame(AuthFlowStep::IDENTIFIER, $frame->step);
+                    self::assertSame(AuthFlowIntent::LOGIN, $frame->intent);
+                    $notices[$frame->acceptKey] = $frame->code;
+                }
+            }
+            self::assertEquals([
+                self::REGISTRATION_SIBLING => AuthFlowOutcome::CODE_ACCOUNT_MERGING,
+                self::REGISTRATION_OTHER_BROWSER => AuthFlowOutcome::CODE_IDENTIFIER_TAKEN,
+            ], $notices);
+            self::assertNull(Hilos::$db->sessions[$session->id]->pendingRegistrationIdentifier);
+            self::assertNull(Hilos::$rt->hilosRegistrationWaiters[self::REGISTRATION_SIBLING]);
+            self::assertNull(Hilos::$rt->hilosRegistrationWaiters[self::REGISTRATION_OTHER_BROWSER]);
+        } finally {
+            $this->underAgent($holder, static function (): void {
+                Hilos::$rt->hilosRegistrationWaiters->actions->release(self::REGISTRATION_SIBLING);
+                Hilos::$rt->hilosRegistrationWaiters->actions->release(self::REGISTRATION_OTHER_BROWSER);
+            });
+        }
+    }
+
+    #[DataProvider('oauthTripKinds')]
+    public function testRefusedSessionWriteAnswersOAuth(bool $hasTrip, bool $held): void
+    {
+        $userId = $this->person('OAuth proof account');
+        $session = $this->guest();
+        $this->registerLoginTab($session);
+        $hash = HilosOAuthTrip::hashKey(self::OAUTH_TRIP_KEY);
+        $grant = new AuthSessionGrantSignalData($session->token, $userId, self::MERGE_LOGIN_KEY, tripKeyHash: $hash);
+        RtTruthSourceRegistry::registerDaemon(HilosOAuthTrip::RT_COLLECTION);
+        try {
+            if ($hasTrip) {
+                $this->deliverToSessions(HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED, new OAuthTripOpenedSignalData(
+                    $hash,
+                    ProtectedModeRuntime::hashSessionToken($session->token),
+                    $held ? self::OAUTH_OFFLINE_TAB : self::MERGE_LOGIN_KEY,
+                    OAuthPendingLogin::MODE_LOGIN,
+                    self::OAUTH_PROVIDER,
+                ));
+            }
+            if ($held) {
+                $this->deliverToSessions(HilosSignalConstants::HILOS_AUTH_SESSION_GRANT, $grant);
+                self::assertSame(HilosOAuthTrip::ENDING_GRANTED, Hilos::$rt->hilosOAuthTrips[$hash]?->ending);
+            }
+
+            $frames = $this->withRefusedSessionWrite($session, function () use ($grant, $held): void {
+                if (!$held) {
+                    $this->deliverToSessions(HilosSignalConstants::HILOS_AUTH_SESSION_GRANT, $grant);
+
+                    return;
+                }
+
+                $holder = $this->sessionsLibrary();
+                $reply = $this->underAgent($holder, static fn () => $holder->onAgentAction(
+                    self::MERGE_LOGIN_KEY,
+                    HilosSignalConstants::HILOS_OAUTH_RESUME,
+                    new OAuthResumeActionDTO(self::OAUTH_TRIP_KEY),
+                ));
+                self::assertInstanceOf(OAuthResumeReplyDTO::class, $reply);
+                self::assertTrue($reply->known);
+            });
+            if (!$hasTrip) {
+                self::assertNotEmpty($frames);
+                $answer = $frames[array_key_last($frames)];
+                self::assertInstanceOf(SessionStateSignalData::class, $answer);
+                self::assertSame([self::MERGE_LOGIN_KEY], $answer->acceptKeys);
+                self::assertSame(AuthFlowOutcome::CODE_ACCOUNT_MERGING, $answer->outcome['code'] ?? null);
+
+                return;
+            }
+
+            $results = array_values(array_filter($frames, static fn ($frame): bool => $frame instanceof OAuthResultSignalData));
+            self::assertCount(1, $results);
+            self::assertSame(self::MERGE_LOGIN_KEY, $results[0]->acceptKey);
+            self::assertSame(OAuthResultSignalData::REASON_ACCOUNT_MERGING, $results[0]->reason);
+            self::assertSame(
+                $held ? HilosOAuthTrip::ENDING_GRANTED : OAuthResultSignalData::REASON_ACCOUNT_MERGING,
+                Hilos::$rt->hilosOAuthTrips[$hash]?->ending,
+            );
+        } finally {
+            $this->underAgent($this->sessionsLibrary(), static function () use ($hash): void {
+                Hilos::$rt->hilosOAuthTrips[$hash]?->actions->end(OAuthResultSignalData::REASON_LOGIN_FAILED);
+                Hilos::$rt->hilosOAuthTrips->actions->forgetEnded(-1);
+            });
+            RtTruthSourceRegistry::unregisterDaemon(HilosOAuthTrip::RT_COLLECTION);
+        }
+    }
+
+    /** @return iterable<string, array{bool, bool}> Provider grants with and without an originating tab */
+    public static function oauthTripKinds(): iterable
+    {
+        yield 'no trip' => [false, false];
+        yield 'live trip' => [true, false];
+        yield 'held trip' => [true, true];
+    }
+
+    #[DataProvider('unblockEntryPoints')]
+    public function testRefusedSessionWriteLeavesAnUnblockedBrowserAnonymous(bool $handshake): void
+    {
+        $userId = $this->person('Unblocked account');
+        $session = $this->guest();
+        $holder = $this->sessionsLibrary();
+        $this->underAgent($holder, static fn () => $session->actions->holdBlockedNotice($userId, true));
+        if (!$handshake) {
+            $this->registerLoginTab($session);
+        }
+
+        $frames = $this->withRefusedSessionWrite($session, function () use ($session, $holder, $userId, $handshake): void {
+            if (!$handshake) {
+                $this->deliverToSessions(HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED, new AccountBlockChangedSignalData($userId));
+
+                return;
+            }
+
+            $this->underAgent($holder, static fn () => $holder->onSignalHandshake(new WebSocketHandshakeSignalDTO(
+                [], self::MERGE_LOGIN_KEY, [SessionCookieName::resolve() => $session->token], null, sessionToken: $session->token,
+            ), '', ''));
+        });
+        $states = array_values(array_filter($frames, static fn ($frame): bool => $frame instanceof SessionStateSignalData));
+        self::assertCount(1, $states);
+        self::assertSame([self::MERGE_LOGIN_KEY], $states[0]->acceptKeys);
+        self::assertNull($states[0]->accountBlocked);
+        self::assertNull(Hilos::$db->sessions[$session->id]->blockedUserId);
+    }
+
+    /** @return iterable<string, array{bool}> Live and returning browsers */
+    public static function unblockEntryPoints(): iterable
+    {
+        yield 'live tab' => [false];
+        yield 'handshake' => [true];
+    }
+
+    #[DataProvider('serviceBindEntryPoints')]
+    public function testRefusedSessionWriteAnswersTheWaitingCommand(string $route): void
+    {
+        $userId = $this->person('Service bind account');
+        $session = $this->guest();
+        $holder = $this->sessionsLibrary();
+
+        if ($route === HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE) {
+            $request = new CommandRequestDTO(self::MERGE_REQUEST, CliCommands::ADMIN_CREATE, [
+                AdminCommandConstants::FIELD_SESSION_TOKEN => $session->token,
+            ]);
+            $this->underAgent($holder, static fn () => $holder->onSignalCommand($request, '', ''));
+        }
+
+        $frames = $this->withRefusedSessionWrite($session, function () use ($session, $userId, $route, $holder): void {
+            if ($route === CliCommands::SESSION_TEST_BIND) {
+                $request = new CommandRequestDTO(self::MERGE_REQUEST, CliCommands::SESSION_TEST_BIND, [
+                    TestUserCommandConstants::FIELD_SESSION_TOKEN => $session->token,
+                    TestUserCommandConstants::FIELD_USER_ID => $userId,
+                ]);
+                $this->underAgent($holder, static fn () => $holder->onSignalCommand($request, '', ''));
+
+                return;
+            }
+
+            $payload = match ($route) {
+                HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE => UserAdminCreateDoneSignalData::created(
+                    new UserAdminCreateSignalData(self::MERGE_REQUEST, $session->token, false), $userId,
+                ),
+                HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE => UserAdminCommandDoneSignalData::to(
+                    new UserAdminCommandSignalData(
+                        $userId, true, $route, self::MERGE_REQUEST, CliCommands::ADMIN_CREATE, $session->token, false,
+                    ),
+                    null,
+                ),
+                HilosSignalConstants::HILOS_SESSION_REBIND => new SessionRebindSignalData(
+                    $session->token, $userId, correlationId: self::MERGE_REQUEST,
+                ),
+            };
+            $this->deliverToSessions($route, $payload);
+        });
+        self::assertCount(1, $frames);
+        $reply = $frames[0];
+        self::assertInstanceOf(CommandReplyDTO::class, $reply);
+        self::assertSame(self::MERGE_REQUEST, $reply->correlationId);
+        self::assertFalse($reply->isOk());
+        self::assertSame((new AccountMergedSignInException())->getMessage(), $reply->payload[CommandConstants::FIELD_MESSAGE]);
+    }
+
+    /** @return iterable<string, array{string}> Command routes that perform the plain bind */
+    public static function serviceBindEntryPoints(): iterable
+    {
+        yield 'rebind signal' => [HilosSignalConstants::HILOS_SESSION_REBIND];
+        yield 'fixture command' => [CliCommands::SESSION_TEST_BIND];
+        yield 'administrator creation' => [HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE];
+        yield 'administrator command' => [HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE];
+    }
+
+    public function testRefusedSessionWriteAnswersARebindRequestedByATab(): void
+    {
+        $userId = $this->person('Rebind account');
+        $session = $this->guest();
+        $this->registerLoginTab($session);
+        $frames = $this->withRefusedSessionWrite($session, fn () => $this->deliverToSessions(
+            HilosSignalConstants::HILOS_SESSION_REBIND,
+            new SessionRebindSignalData($session->token, $userId, initiatorAcceptKey: self::MERGE_LOGIN_KEY),
+        ));
+        self::assertNotEmpty($frames);
+        $answer = $frames[array_key_last($frames)];
+        self::assertInstanceOf(SessionStateSignalData::class, $answer);
+        self::assertSame([self::MERGE_LOGIN_KEY], $answer->acceptKeys);
+        self::assertSame(AuthFlowOutcome::CODE_ACCOUNT_MERGING, $answer->outcome['code'] ?? null);
+    }
+
+    public function testPlainBindSeesGiveInAnEarlierPrimarySnapshot(): void
+    {
+        $loser = $this->person('Earlier snapshot loser');
+        $survivor = $this->person('Earlier snapshot survivor');
+        $give = $this->readyGive($survivor, $loser);
+        $session = $this->guest();
+        $peer = self::mergePeer();
+        try {
+            self::assertFalse(Hilos::$db->users[$loser]->block);
+            $snapshotRefusal = Database::readSnapshot(DatabaseNames::PRIMARY, function () use ($give, $loser, $survivor, $session, $peer): ?string {
+                $tombstone = static fn () => Database::sql(
+                    'SELECT survivor_user_id FROM hilos_user_merge WHERE user_id = ?', [$loser],
+                )->field('survivor_user_id');
+                self::assertNull($tombstone());
+                self::giveInPeerProcess($give);
+                self::assertSame($survivor, (int)$peer->execute_query(
+                    'SELECT survivor_user_id FROM hilos_user_merge WHERE user_id = ?', [$loser],
+                )->fetch_column());
+                self::assertNull($tombstone(), 'The consistent snapshot predates the committed Give.');
+                try {
+                    $this->underAgent($this->sessionsLibrary(), static fn () => $session->actions->bindUser($loser));
+                } catch (ValidationException $refusal) {
+                    return $refusal->getMessage();
+                }
+
+                self::fail('The bind accepted a folded account inside the earlier snapshot.');
+            });
+            self::assertSame('This account was merged into another one', $snapshotRefusal);
+            self::assertFalse(Hilos::$db->users[$loser]->block, 'The sessions holder has yet to consume the Give sync.');
+        } finally {
+            $peer->close();
+        }
     }
 
     public function testSessionStateWithoutTabsWakesItsRecipientAndRecoveryRepairsLostReplies(): void
@@ -614,6 +1123,245 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::assertSame($voucherId, self::accountVoucherId($userId));
     }
 
+    public function testLateMergeCartOfferCannotRepeatTheReceiptAfterGive(): void
+    {
+        $loser = $this->person('Late cart offer loser');
+        $survivor = $this->person('Late cart offer survivor');
+        self::addSourceLine(self::SOURCE_EPOCH, self::product('pine-bark-5-l'), 3);
+        $transferId = $this->assign($loser);
+        $offer = new GuestCartTransferOfferSignalData($transferId, $loser);
+        $give = $this->readyGive($survivor, $loser);
+        self::assertSame(AccountOperationAnswerKind::Waits, $this->deliverMergeStep($give));
+        $this->deliver($loser, self::OFFER, $offer);
+        self::assertSame(AccountOperationAnswerKind::Done, $this->deliverMergeStep($give));
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+
+        try {
+            $this->deliver($loser, self::OFFER, $offer);
+            self::fail('A folded account repeated a guest cart receipt.');
+        } catch (AgentException $failure) {
+            self::assertInstanceOf(ValidationException::class, $failure->getPrevious());
+        }
+        self::assertSame([], $this->transferFrames($loser));
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+    }
+
+    /** @param bool $deliverWake Whether the new frame is delivered or lost */
+    #[DataProvider('mergeWakeDelivery')]
+    public function testMergeWakeResumesGiveFromTheCommittedReceipt(bool $deliverWake): void
+    {
+        $loser = $this->person('Guest cart merge loser');
+        $survivor = $this->person('Guest cart merge survivor');
+        $product = self::product('pine-bark-5-l');
+        self::addSourceLine(self::SOURCE_EPOCH, $product, 3);
+        $transferId = $this->assign($loser);
+        $offer = new GuestCartTransferOfferSignalData($transferId, $loser);
+        $give = $this->readyGive($survivor, $loser);
+        self::assertSame(AccountOperationAnswerKind::Waits, $this->deliverMergeStep($give));
+        self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+
+        $peer = self::mergePeer();
+        $router = Hilos::$sr;
+        $observed = new class ($peer, $transferId, $loser) extends SignalRouter {
+            public int $wakes = 0;
+
+            public function __construct(
+                private readonly mysqli $peer,
+                private readonly int $transferId,
+                private readonly int $loser,
+            ) {
+                parent::__construct();
+            }
+
+            public function queueSignal(
+                SignalSourceInterface $signalSource,
+                SignalTypeInterface $signalType,
+                SignalNameInterface $signalName,
+                SignalDataInterface $signalData,
+            ): void {
+                if ($signalName->getName() === EcommerceShopSignalConstants::SHOP_ACCOUNT_MERGE_CART_WAKE) {
+                    GuestCartTransferTest::assertNull(Database::runtimeTransactionLevel(DatabaseConnectionDefaults::PRIMARY_INDEX));
+                    GuestCartTransferTest::assertSame(1, (int)$this->peer->execute_query(
+                        'SELECT received FROM shop_guest_cart_transfer WHERE id = ?', [$this->transferId],
+                    )->fetch_column());
+                    $this->peer->begin_transaction();
+                    try {
+                        $this->peer->execute_query('SELECT id FROM hilos_user WHERE id = ? FOR UPDATE NOWAIT', [$this->loser])->free();
+                    } finally {
+                        $this->peer->rollback();
+                    }
+                    ++$this->wakes;
+                }
+                parent::queueSignal($signalSource, $signalType, $signalName, $signalData);
+            }
+        };
+        Hilos::initSignalRouter($observed);
+        try {
+            $this->deliver($loser, self::OFFER, $offer);
+            $this->deliver($loser, self::OFFER, $offer);
+            self::assertSame(1, $observed->wakes);
+            $wake = $this->queuedTransferFrame(self::MERGE_WAKE);
+            self::assertInstanceOf(ShopAccountMergeCartWakeSignalData::class, $wake->data->data);
+            self::assertSame($give->operationId, $wake->data->data->operationId);
+            self::assertSame(
+                SignalSource::describe($this->personAgent($loser)->getAgentSignalSource()),
+                SignalSource::describe($wake->signalSource),
+            );
+            self::assertSame([[self::RECEIVED, ['transferId' => $transferId, 'userId' => $loser]]], $this->transferFrames($loser));
+        } finally {
+            Hilos::initSignalRouter($router);
+            $peer->close();
+        }
+        self::assertSame([$product => 3], self::accountLines($loser));
+
+        if ($deliverWake) {
+            foreach ([
+                new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_USER, (string)$survivor),
+                new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_USER),
+                new SignalSource(SignalSource::AGENT, GuestCartsLibraryAgent::AGENT_TYPE, (string)$loser),
+            ] as $sender) {
+                $this->dispatchMergeFrame(new SignalDTO($sender, $wake->signalType, $wake->signalName, $wake->data));
+                self::assertFalse(Hilos::$sr->hasQueuedSignals());
+            }
+            $this->dispatchMergeFrame(new SignalDTO(
+                $wake->signalSource,
+                $wake->signalType,
+                $wake->signalName,
+                new AgentSignalData(new ShopAccountMergeCartWakeSignalData(PHP_INT_MAX)),
+            ));
+            self::assertFalse(Hilos::$sr->hasQueuedSignals());
+            $this->dispatchMergeFrame($wake);
+        } else {
+            $holder = $this->sessionsLibrary();
+            self::assertNotNull($holder->armCronRuleForTest('hilos_account_erasure_recovery'));
+            $this->underAgent($holder, $holder->onTick(...));
+        }
+        $ask = $this->queuedTransferFrame(HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP);
+        self::assertInstanceOf(AccountOperationAskSignalData::class, $ask->data->data);
+        self::assertSame($give->id, $ask->data->data->assignmentId);
+        if ($deliverWake) {
+            $this->dispatchMergeFrame($wake);
+            $repeat = $this->queuedTransferFrame(HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP);
+            self::assertSame($ask->data->data->toArray(), $repeat->data->data->toArray());
+        }
+        self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+
+        $this->dispatchMergeFrame($ask);
+        self::assertSame(AccountOperationAnswerKind::Done, self::readMergeAnswer($give));
+        $this->drainSignals();
+        $this->dispatchMergeFrame($wake);
+        self::assertFalse(Hilos::$sr->hasQueuedSignals());
+        self::assertNotNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+    }
+
+    /** @return iterable<string, array{bool}> Whether the wake reaches the holder */
+    public static function mergeWakeDelivery(): iterable
+    {
+        yield 'wake' => [true];
+        yield 'recovery after loss' => [false];
+    }
+
+    public function testMergeWakeIgnoresCancellationBeforeGive(): void
+    {
+        $loser = $this->person('Canceled cart merge loser');
+        $survivor = $this->person('Canceled cart merge survivor');
+        self::addSourceLine(self::SOURCE_EPOCH, self::product('pine-bark-5-l'), 3);
+        $transferId = $this->assign($loser);
+        $give = $this->readyGive($survivor, $loser);
+        self::assertSame(AccountOperationAnswerKind::Waits, $this->deliverMergeStep($give));
+        $this->deliver($loser, self::OFFER, new GuestCartTransferOfferSignalData($transferId, $loser));
+        $wake = $this->queuedTransferFrame(self::MERGE_WAKE);
+        $this->drainSignals();
+
+        $state = $this->underAgent($this->sessionsLibrary(), static fn () => AccountMergeCoordinator::cancel($give->operation));
+        self::assertSame(AccountMergeCancellationState::WaitingOwners, $state);
+        $this->drainSignals();
+        $this->dispatchMergeFrame($wake);
+        self::assertFalse(Hilos::$sr->hasQueuedSignals());
+        self::assertSame(AccountOperationAnswerKind::Refused, $this->deliverMergeStep($give));
+        self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+    }
+
+    /** @param bool $voucherOnly Whether the saved pair contains only a voucher */
+    #[DataProvider('singleSourceParts')]
+    public function testLateMergeCartClearanceAfterCompletionUsesTheSavedPair(bool $voucherOnly): void
+    {
+        $loser = $this->person('Completed cart merge loser');
+        $survivor = $this->person('Completed cart merge survivor');
+        $product = self::product('pine-bark-5-l');
+        if ($voucherOnly) {
+            self::addSourceVoucher(self::SOURCE_EPOCH, self::voucherId('SPRING10'));
+        } else {
+            self::addSourceLine(self::SOURCE_EPOCH, $product, 3);
+        }
+        $transferId = $this->assign($loser);
+        self::addSourceLine(self::NEXT_EPOCH, $product, 4);
+        $nextId = $this->assign($survivor, self::NEXT_EPOCH);
+        $give = $this->readyGive($survivor, $loser);
+        $offer = new GuestCartTransferOfferSignalData($transferId, $loser);
+        $cleared = new GuestCartTransferClearedSignalData($transferId, $loser);
+        $this->deliver($loser, self::OFFER, $offer);
+        $wake = $this->queuedTransferFrame(self::MERGE_WAKE);
+        $this->dispatchMergeFrame($wake);
+        $this->finishMergeExchange($give->operationId);
+        self::assertSame([], self::accountLines($loser));
+        self::assertNull(self::accountVoucherId($loser));
+        self::assertSame($voucherOnly ? [] : [$product => 3], self::accountLines($survivor));
+        self::assertSame($voucherOnly ? self::voucherId('SPRING10') : null, self::accountVoucherId($survivor));
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+        $this->dispatchMergeFrame($wake);
+        self::assertFalse(Hilos::$sr->hasQueuedSignals());
+
+        try {
+            $this->deliver($loser, self::OFFER, $offer);
+            self::fail('A completed merge replayed a guest cart receipt.');
+        } catch (AgentException $failure) {
+            self::assertInstanceOf(ValidationException::class, $failure->getPrevious());
+        }
+        self::assertSame([], $this->transferFrames($loser));
+        $this->deliver($loser, self::CLEARED, $cleared);
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+
+        $this->runRecoveryTick($this->startGuestCarts());
+        $clearance = $this->queuedTransferFrame(self::CLEARED);
+        self::assertEquals($cleared, $clearance->data->data);
+        try {
+            $wrongSender = new SignalSource(SignalSource::AGENT, GuestCartsLibraryAgent::AGENT_TYPE, (string)$loser);
+            $this->deliver($loser, self::CLEARED, $cleared, $wrongSender);
+            self::fail('A clearance with a different source address was accepted.');
+        } catch (AgentException $failure) {
+            self::assertStringContainsString('as the sender', $failure->getMessage());
+        }
+        $this->deliver($survivor, self::CLEARED, new GuestCartTransferClearedSignalData($transferId, $survivor));
+        self::assertTrue(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+
+        $oldOwner = $this->personAgent($loser);
+        $this->underAgent($oldOwner, $oldOwner->onStop(...));
+        TruthSourceRegistry::unregisterAgent($oldOwner->getId());
+        RtTruthSourceRegistry::unregisterAgent($oldOwner->getId());
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($oldOwner->getId()));
+        Hilos::$db->forgetLoadedDataForTest();
+        $restarted = new UserAgent((string)$loser);
+        $this->underAgent($restarted, fn () => $this->startAgent($restarted));
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $this->underAgent($restarted, static fn () => $restarted->onSignalAgent(
+                $clearance->data, SignalSource::describe($clearance->signalSource), self::CLEARED,
+            ));
+            self::assertNull(Hilos::$db->shopGuestCartTransfers->storedReceipt($transferId, $loser));
+        }
+        self::assertSame([$product => 4], Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
+        self::assertFalse(Hilos::$db->shopGuestCartTransfers->storedReceipt($nextId, $survivor));
+    }
+
+    /** @return iterable<string, array{bool}> The only remaining source part */
+    public static function singleSourceParts(): iterable
+    {
+        yield 'product' => [false];
+        yield 'voucher' => [true];
+    }
+
     public function testRejectsTheWrongSenderAddressPayloadAndStoredSource(): void
     {
         $userId = $this->person('Assigned recipient');
@@ -720,8 +1468,8 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::assertSame([$last => 7], Hilos::$db->sessionProductCarts->storedCartQuantities(self::SOURCE_SESSION, self::NEXT_EPOCH));
     }
 
-    /** A receipt write failure rolls back the already written cart and restores the same held objects. */
-    public function testReceiptFailureRollsBackProductsVoucherAndReceiptBeforeReplay(): void
+    /** A receipt write failure rolls back the already written cart, restores held objects and emits no wake. */
+    public function testMergeWakeReceiptFailureRollsBackProductsVoucherAndReceiptBeforeReplay(): void
     {
         $userId = $this->person('Recipient with an interrupted receipt');
         $product = self::product('pine-bark-5-l');
@@ -734,6 +1482,8 @@ final class GuestCartTransferTest extends IntegrationTestCase
         self::addSourceVoucher(self::SOURCE_EPOCH, $incoming);
         $transferId = $this->assign($userId);
         $offer = new GuestCartTransferOfferSignalData($transferId, $userId);
+        $give = $this->readyGive($this->person('Interrupted receipt survivor'), $userId);
+        self::assertSame(AccountOperationAnswerKind::Waits, $this->deliverMergeStep($give));
         $heldLine = Hilos::$db->userProductCarts->whereColumnIs(UserProductCart::user_id, $userId)->first();
         self::assertNotNull($heldLine);
         $heldVoucher = Hilos::$db->userVoucherCarts[$userId]->getObject();
@@ -801,6 +1551,7 @@ final class GuestCartTransferTest extends IntegrationTestCase
                 'userId' => $userId, 'lines' => [['productId' => $product, 'quantity' => 5]], 'voucherId' => $incoming,
             ]],
             $receipt,
+            [self::MERGE_WAKE, ['operationId' => $give->operationId]],
         ], $this->transferFrames($userId));
         self::assertSame(5, $heldLine->quantity);
         self::assertSame($incoming, $heldVoucher->voucherId);
@@ -1123,14 +1874,14 @@ final class GuestCartTransferTest extends IntegrationTestCase
     /**
      * @param int $userId Recipient whose frames are expected
      * @param bool $expectNoVoucherWrite Whether emitting a voucher slot fact fails the test
-     * @return list<array{string, array<string, mixed>}> The receipt and cart state announced by the recipient
+     * @return list<array{string, array<string, mixed>}> The receipt, cart state and any merge wake announced by the recipient
      */
     private function transferFrames(int $userId, bool $expectNoVoucherWrite = false): array
     {
         $frames = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             $name = $signal->signalName->getName();
-            if ($name === self::RECEIVED) {
+            if ($name === self::RECEIVED || $name === self::MERGE_WAKE) {
                 self::assertInstanceOf(AgentSignalData::class, $signal->data);
                 self::assertEquals($this->personAgent($userId)->getAgentSignalSource(), $signal->signalSource);
                 $frames[] = [$name, $signal->data->data->toArray()];
@@ -1144,6 +1895,346 @@ final class GuestCartTransferTest extends IntegrationTestCase
         }
 
         return $frames;
+    }
+
+    /**
+     * Delivers a typed frame to the shop worker named by the topology.
+     *
+     * @param SignalDTO $queued Merge wake, participant ask, handover or answer
+     */
+    private function dispatchMergeFrame(SignalDTO $queued): void
+    {
+        $frame = SignalDTO::fromJson($queued->toJson());
+        $destinations = Hilos::$sr->getDestinations($frame);
+        self::assertCount(1, $destinations);
+        $destination = $destinations[0];
+        self::assertInstanceOf(AgentDestination::class, $destination);
+        self::assertInstanceOf(AgentSignalData::class, $frame->data);
+        if ($destination->agentType === HilosAgentType::HILOS_SESSIONS_LIBRARY) {
+            self::assertNull($destination->agentIndex);
+            $agent = $this->sessionsLibrary();
+        } else {
+            self::assertSame(HilosAgentType::HILOS_USER, $destination->agentType);
+            self::assertNotNull($destination->agentIndex);
+            $agent = $this->personAgent((int)$destination->agentIndex);
+        }
+        $name = $frame->signalName->getName();
+        $data = Hilos::$sr->createAgentSignalPayloadDTO($name, $frame->data);
+        $this->underAgent($agent, static fn () => $agent->onSignalAgent($data, SignalSource::describe($frame->signalSource), $name));
+    }
+
+    /**
+     * Delivers the queued merge work to completion while the guest library remains idle.
+     *
+     * @param int $operationId Merge whose cart source has yet to be swept
+     */
+    private function finishMergeExchange(int $operationId): void
+    {
+        for ($frameCount = 0; ($frame = Hilos::$sr->getNextQueuedSignal()) !== null; $frameCount++) {
+            self::assertLessThan(100, $frameCount, 'The merge exchange must settle without replay loops.');
+            if ($frame->data instanceof AgentSignalData
+                && ($frame->data->data instanceof AccountOperationAskSignalData
+                    || $frame->data->data instanceof AccountMergeHandoverSignalData
+                    || $frame->data->data instanceof AccountMergePersonalHandoverSignalData
+                    || $frame->data->data instanceof AccountOperationAnswerSignalData)) {
+                $this->dispatchMergeFrame($frame);
+            }
+        }
+        $operation = Hilos::$db->accountOperations->fresh($operationId);
+        self::assertSame(AccountOperationOutcome::Completed->value, $operation?->outcome);
+        self::assertNotNull($operation->finishedAt);
+    }
+
+    /** @return AccountOperationAssignment Real Go/Give duty after both person owners reserve their work */
+    private function readyGive(int $survivor, int $loser): AccountOperationAssignment
+    {
+        $this->personAgent($survivor);
+        $this->personAgent($loser);
+        $holder = $this->sessionsLibrary();
+        $operation = $this->underAgent($holder, static fn () =>
+            AccountMergeOpening::open($survivor, $loser, new AccountMergeChoice(null, null, null, null)),
+        );
+        $preparations = $this->underAgent($holder, static fn () => AccountMergeCoordinator::begin($operation));
+        self::assertCount(2, $preparations);
+        foreach ($preparations as $preparation) {
+            self::assertSame(AccountOperationAnswerKind::Done, $this->deliverMergeStep($preparation));
+        }
+        $go = $this->underAgent($holder, static fn () => AccountMergeCoordinator::begin($operation));
+        self::assertCount(1, $go);
+        self::assertSame(AccountMergeDuty::Give->value, $go[0]->assignmentKey);
+
+        return $go[0];
+    }
+
+    /** @return AccountOperationAnswerKind Answer from the shop's actual participant handler */
+    private function deliverMergeStep(AccountOperationAssignment $assignment): AccountOperationAnswerKind
+    {
+        $this->drainSignals();
+        self::runMergeStep($this->personAgent($assignment->userId), $assignment);
+
+        return self::readMergeAnswer($assignment);
+    }
+
+    private static function runMergeStep(UserAgent $owner, AccountOperationAssignment $assignment): void
+    {
+        $ask = new AccountOperationAskSignalData($assignment->operationId, $assignment->stage, $assignment->id, $assignment->owner->ownerIndex);
+        $sender = SignalSource::describe(new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_SESSIONS_LIBRARY));
+        ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), static fn () => $owner->onSignalAgent(
+            new AgentSignalData($ask), $sender, HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP,
+        ));
+    }
+
+    private static function readMergeAnswer(AccountOperationAssignment $assignment): AccountOperationAnswerKind
+    {
+        while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($frame->data instanceof AgentSignalData && $frame->data->data instanceof AccountOperationAnswerSignalData) {
+                self::assertSame($assignment->id, $frame->data->data->assignmentId);
+
+                return $frame->data->data->answer;
+            }
+        }
+        self::fail('The participant did not answer its merge duty.');
+    }
+
+    /**
+     * Give runs in its own PHP process so its PRIMARY can commit while the caller holds a snapshot.
+     * The process exit is the commit barrier and the child checks the account lock before committing.
+     */
+    private static function giveInPeerProcess(AccountOperationAssignment $give): void
+    {
+        $process = proc_open([
+            PHP_BINARY,
+            '-r',
+            'require $argv[1]; require $argv[2]; Demo\\EcommerceShop\\Tests\\Integration\\GuestCartTransferTest::runPeerGive((int)$argv[3]);',
+            dirname(__DIR__, 2) . '/backend/Bootstrap/phpunit.php',
+            __FILE__,
+            (string)$give->id,
+        ], [1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes);
+        self::assertIsResource($process);
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        self::assertSame(0, proc_close($process), $output);
+    }
+
+    /** @param int $assignmentId Persisted Go/Give duty reached by the child process */
+    public static function runPeerGive(int $assignmentId): void
+    {
+        Database::initialize(initHilos: true);
+        Hilos::initSignalRouter(new EcommerceShopSignalRouter());
+        Database::handlerStart();
+        $peer = self::mergePeer();
+        try {
+            $give = Hilos::$db->accountOperationAssignments[$assignmentId];
+            $owner = new UserAgent((string)$give->userId);
+            OwnershipDeclaration::claimAll($owner);
+            $probed = self::withUserLockProbe($peer, $give->userId, HilosDbContext::accountMergeCopies, static fn () =>
+                self::runMergeStep($owner, $give),
+            );
+            self::assertSame(AccountOperationAnswerKind::Done, self::readMergeAnswer($give));
+            // The loser row is also updated by Give before the copy is announced.
+            self::assertUserLockHeld($probed);
+        } finally {
+            $peer->close();
+            self::assertSame([], Database::handlerEnd());
+        }
+    }
+
+    private function seedMergePassword(int $loser): void
+    {
+        $now = TimeHelper::nowMs();
+        Database::sqlRun(
+            'INSERT INTO hilos_identity (user_id, type, identifier, secret, verified, created_at, updated_at)'
+            . ' VALUES (?, ?, ?, ?, TRUE, ?, ?)',
+            [$loser, IdentityType::PASSWORD, self::MERGE_EMAIL, Hilos::$db->identities->hashPassword(self::MERGE_PASSWORD), $now, $now],
+        );
+    }
+
+    /** @return SignalDTO Password proof parked between the two auth owners */
+    private function passwordGrant(Session $session, int $loser): SignalDTO
+    {
+        $users = $this->usersLibrary();
+        $this->registerLoginTab($session);
+        $this->drainSignals();
+        $users->beginActionDispatch(self::MERGE_REQUEST);
+        try {
+            $this->underAgent($users, static fn () => $users->onAgentAction(
+                self::MERGE_LOGIN_KEY,
+                HilosSignalConstants::HILOS_LOGIN,
+                new LoginActionDTO(self::MERGE_EMAIL, self::MERGE_PASSWORD),
+            ));
+            self::assertTrue($users->actionReplyDeferred());
+        } finally {
+            $users->endActionDispatch();
+        }
+        $grant = Hilos::$sr->getNextQueuedSignal();
+        self::assertSame(HilosSignalConstants::HILOS_AUTH_SESSION_GRANT, $grant?->signalName->getName());
+        self::assertSame($loser, $grant->data->data->userId);
+        self::assertSame(self::MERGE_REQUEST, $grant->data->data->requestId);
+
+        return $grant;
+    }
+
+    private function deliverLoginGrant(SignalDTO $grant, bool $refused = false): SessionStateSignalData
+    {
+        $this->drainSignals();
+        $holder = $this->sessionsLibrary();
+        $this->underAgent($holder, static fn () => $holder->onSignalAgent(
+            Hilos::$sr->createAgentSignalPayloadDTO($grant->signalName->getName(), $grant->data),
+            SignalSource::describe($grant->signalSource),
+            $grant->signalName->getName(),
+        ));
+        $answer = null;
+        while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($refused) {
+                self::assertNotSame(HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED, $frame->signalName->getName());
+            }
+            if ($frame->data instanceof AgentSignalData && $frame->data->data instanceof SessionStateSignalData) {
+                if ($refused) {
+                    self::assertNull($frame->data->data->userId);
+                    self::assertNull($frame->data->data->rotationTicket);
+                }
+                if ($frame->data->data->requestId === self::MERGE_REQUEST) {
+                    self::assertNull($answer);
+                    $answer = $frame->data->data;
+                }
+            }
+        }
+        self::assertNotNull($answer);
+        self::assertSame(HilosSignalConstants::HILOS_LOGIN, $answer->action);
+        self::assertSame([self::MERGE_LOGIN_KEY], $answer->acceptKeys);
+
+        return $answer;
+    }
+
+    private function registerLoginTab(Session $session): void
+    {
+        RtTruthSourceRegistry::registerDaemon(EcommerceShopRtContext::connections);
+        ExecutionContext::run(new ExecutionFrame(), static function () use ($session): void {
+            Hilos::$rt->connections->actions->register(self::MERGE_LOGIN_KEY, null, $session->token, $session->id);
+        });
+    }
+
+    private function deliverToSessions(string $name, SignalDataInterface $payload): void
+    {
+        $holder = $this->sessionsLibrary();
+        $this->underAgent($holder, static fn () => $holder->onSignalAgent(new AgentSignalData(data: $payload), '', $name));
+    }
+
+    /**
+     * @param Session $session Guest session whose cart must survive the refusal
+     * @param Closure(): void $dispatch Handler that attempts to bind the session
+     * @return list<SignalDataInterface> Replies and session states queued by the holder
+     */
+    private function withRefusedSessionWrite(Session $session, Closure $dispatch): array
+    {
+        $id = $session->id;
+        $token = $session->token;
+        $product = self::product('pine-bark-5-l');
+        self::addSourceLine(self::SOURCE_EPOCH, $product, 3, $id);
+        $this->drainSignals();
+        $sessions = Hilos::$db->sessions;
+        $actions = $sessions->getItemActionsClass();
+        $rotations = count(Hilos::$rt->hilosSessionRotations);
+        $sessions->setItemActionsClass(RefusingGuestSessionActions::class);
+        $sessions->forgetCachedItem($id);
+        RtTruthSourceRegistry::registerDaemon(HilosSessionRotation::RT_COLLECTION);
+        try {
+            $dispatch();
+        } finally {
+            RtTruthSourceRegistry::unregisterDaemon(HilosSessionRotation::RT_COLLECTION);
+            $sessions->setItemActionsClass($actions);
+            $sessions->forgetCachedItem($id);
+        }
+
+        self::assertSame(self::SOURCE_EPOCH, $sessions->activeGuestCartEpoch($id, $token));
+        self::assertSame([$product => 3], Hilos::$db->sessionProductCarts->storedCartQuantities($id, self::SOURCE_EPOCH));
+        self::assertNull(self::savedAssignment($id, self::SOURCE_EPOCH));
+        self::assertSame($rotations, count(Hilos::$rt->hilosSessionRotations));
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            self::assertNotSame(HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED, $signal->signalName->getName());
+            $payload = $signal->data;
+            if ($payload instanceof AgentSignalData || $payload instanceof WebSocketSignalData) {
+                $payload = $payload->data;
+            }
+            if ($payload instanceof SessionStateSignalData) {
+                self::assertSame($token, $payload->sessionToken);
+                self::assertNull($payload->userId);
+                self::assertNull($payload->rotationTicket);
+                self::assertNull($payload->pendingAck);
+            }
+            if (
+                $payload instanceof SessionStateSignalData
+                || $payload instanceof CommandReplyDTO
+                || $payload instanceof OAuthResultSignalData
+                || $payload instanceof AuthConvergeSignalData
+            ) {
+                $frames[] = $payload;
+            }
+        }
+
+        return $frames;
+    }
+
+    private static function mergePeer(): mysqli
+    {
+        $config = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+
+        return new mysqli($config->host, $config->user, $config->password, $config->database, $config->port, $config->socket);
+    }
+
+    /**
+     * @param mysqli $peer Independent connection to the committed fixtures
+     * @param int $userId Account that must stay locked through the write
+     * @param string $sourceKey Source mirror to observe before commit
+     * @param Closure(): void $operation Actual owner handler
+     * @return list<?int> Error codes from immediate lock attempts, null for an open row
+     */
+    private static function withUserLockProbe(mysqli $peer, int $userId, string $sourceKey, Closure $operation): array
+    {
+        $probe = new class ($sourceKey) implements SourceMirrorSubscriberInterface {
+            public ?Closure $check = null;
+
+            public function __construct(private readonly string $sourceKey)
+            {
+            }
+
+            public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+            {
+                if ($change->sourceKey === $this->sourceKey) {
+                    ($this->check)?->__invoke();
+                }
+            }
+        };
+        $outcomes = [];
+        $probe->check = static function () use ($peer, $userId, &$outcomes): void {
+            $peer->begin_transaction();
+            try {
+                $peer->execute_query('SELECT id FROM hilos_user WHERE id = ? LOCK IN SHARE MODE NOWAIT', [$userId])->free();
+                $outcomes[] = null;
+            } catch (mysqli_sql_exception $failure) {
+                $outcomes[] = $failure->getCode();
+            } finally {
+                $peer->rollback();
+            }
+        };
+        SourceChangeBus::subscribe($probe);
+        try {
+            $operation();
+        } finally {
+            $probe->check = null;
+        }
+
+        return $outcomes;
+    }
+
+    /** @param list<?int> $outcomes Results of probing the account lock from a peer */
+    private static function assertUserLockHeld(array $outcomes): void
+    {
+        self::assertNotEmpty($outcomes);
+        foreach ($outcomes as $outcome) {
+            self::assertSame(LockWaitTimeoutException::MYSQL_ERROR_CODE, $outcome);
+        }
     }
 
     private function person(string $name): int
@@ -1266,5 +2357,21 @@ final class GuestCartTransferTest extends IntegrationTestCase
         }
 
         return $lines;
+    }
+}
+
+/** Refuses at the session writer after the handler has accepted the proof or command. */
+final class RefusingGuestSessionActions extends FrameworkSessionActions
+{
+    /** @inheritDoc */
+    public function bindUser(int $userId): void
+    {
+        throw new AccountMergedSignInException();
+    }
+
+    /** @inheritDoc */
+    public function rotateTokenAndBindUser(string $newToken, int $userId): void
+    {
+        throw new AccountMergedSignInException();
     }
 }

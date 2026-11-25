@@ -45,22 +45,48 @@ final class ShopGuestCartTransfers extends Objects
     }
 
     /**
-     * Loads the assigned row and gives its item action the same saved baseline.
+     * Locks the assigned row and gives its item action the same saved baseline.
      *
      * @param int $transferId Saved transfer key
      * @param int $userId Expected recipient
      * @return ?ObjectShopGuestCartTransfer Fresh row, or null when absent or assigned elsewhere
-     * @throws DatabaseException When the row or its database cannot be read
-     * @throws InvalidArgumentException When the entity read cannot be built
+     * @throws HilosException When the transaction, locking read or reconciliation fails
      */
     public function loadStoredForRecipient(int $transferId, int $userId): ?ObjectShopGuestCartTransfer
     {
-        $stored = EntityShopGuestCartTransfer::getById($transferId);
-        if ($stored?->user_id !== $userId) {
-            return null;
+        $index = EntityShopGuestCartTransfer::getDatabase()->connectionIndex;
+        if (Database::runtimeTransactionLevel($index) === null) {
+            throw new DatabaseException('Receiving an assigned cart requires a PRIMARY transaction.');
+        }
+        $row = Database::sql(
+            'SELECT * FROM ' . EntityShopGuestCartTransfer::getSqlTableName() . ' WHERE `id` = ? AND `user_id` = ? FOR UPDATE',
+            [$transferId, $userId],
+            index: $index,
+        )->firstRow();
+
+        return $row === null ? null : $this->holdStored(EntityShopGuestCartTransfer::fromRow($row));
+    }
+
+    /**
+     * Checks the durable assignments under the recipient's account lock, including rows ahead of DB sync.
+     *
+     * @param int $userId Assigned recipient
+     * @return bool Whether an assignment still has to be received
+     * @throws HilosException When PRIMARY is not open or the locking read fails
+     */
+    public function hasUnreceivedForUser(int $userId): bool
+    {
+        $index = EntityShopGuestCartTransfer::getDatabase()->connectionIndex;
+        if (Database::runtimeTransactionLevel($index) === null) {
+            throw new DatabaseException('Checking pending guest carts requires a PRIMARY transaction.');
         }
 
-        return $this->holdStored($stored);
+        return Database::sql(
+            'SELECT `id` FROM ' . EntityShopGuestCartTransfer::getSqlTableName() . ' FORCE INDEX (idx_shop_guest_cart_transfer_user)'
+            . ' WHERE `user_id` = ? AND `received` = FALSE LIMIT 1 FOR UPDATE',
+            [$userId],
+            index: $index,
+        )->firstRow() !== null;
     }
 
     /**

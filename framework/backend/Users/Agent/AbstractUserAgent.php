@@ -28,6 +28,7 @@ use Hilos\Auth\AccountOperation\AccountMergeGiving;
 use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountMergeHandover;
+use Hilos\Auth\AccountOperation\AccountMergePart;
 use Hilos\Auth\AccountOperation\AccountMergePersonalJoin;
 use Hilos\Auth\AccountOperation\AccountMergePersonalStep;
 use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
@@ -50,6 +51,7 @@ use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
+use Hilos\Auth\AccountOperation\Exception\AccountMergeGiveWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Identity\IdentityPersonEdits;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
@@ -749,12 +751,13 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * @param int $assignmentId Immutable loser go/give assignment
      * @return AccountOperationResult Committed give or its saved durable fact
+     * @throws AccountMergeGiveWaitsException When the project is still waiting for the receiving account
      * @throws Throwable When admission, storage or transactional work fails
      */
     public function giveForMerge(int $assignmentId): AccountOperationResult
     {
         $this->requireMergeContinuation(Hilos::$db->accountOperationAssignments[$assignmentId]);
-        $result = AccountMergeGiving::run($assignmentId, $this->userId);
+        $result = AccountMergeGiving::run($assignmentId, $this->userId, $this->beforeMergeGive(...));
         $this->refreshMergeFinishing();
         $this->sendMergeHandover($assignmentId);
 
@@ -2487,6 +2490,18 @@ abstract class AbstractUserAgent extends AbstractAgent
         $deletion = Hilos::$db->accountDeletions->liveOf($this->userId);
 
         return $deletion !== null && $deletion->actions->cancel();
+    }
+
+    /**
+     * Runs the project's work in the loser's Give transaction after admission and before the framework writes.
+     * The hook joins that transaction and must complete synchronously without external calls or waits.
+     *
+     * @param AccountMergePart $part Canonical merge operation and its two accounts
+     * @throws AccountMergeGiveWaitsException When the receiving account has yet to accept its assignment
+     * @throws HilosException When the project cannot complete its work in the Give transaction
+     */
+    protected function beforeMergeGive(AccountMergePart $part): void
+    {
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccountOperation;
 
+use Closure;
+use Hilos\Auth\AccountOperation\Exception\AccountMergeGiveWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorResetWait;
@@ -37,10 +39,12 @@ final class AccountMergeGiving
      *
      * @param int $assignmentId Immutable loser go/give assignment
      * @param int $userId Account represented by the current person owner
+     * @param (Closure(AccountMergePart): void)|null $beforeGive Synchronous project work before the transfer writes
      * @return AccountOperationResult Committed give or its exact saved fact
+     * @throws AccountMergeGiveWaitsException When the project is still waiting for the receiving account
      * @throws Throwable When admission, storage or transactional work fails, preserving the original failure
      */
-    public static function run(int $assignmentId, int $userId): AccountOperationResult
+    public static function run(int $assignmentId, int $userId, ?Closure $beforeGive = null): AccountOperationResult
     {
         $assignment = self::assignment($assignmentId, $userId);
         $saved = self::saved($assignment);
@@ -91,8 +95,11 @@ final class AccountMergeGiving
 
         $result = AccountMergeTransfer::run($assignmentId, $rows, static function (AccountMergeTransfer $transfer) use (
             $assignment, $source, $target, $choice, $password, $demote, $deletePassword, $keepFactors,
-            $identities, $passkeys, $factors, $codes, $rows,
+            $identities, $passkeys, $factors, $codes, $rows, $beforeGive,
         ): AccountOperationResultPayload {
+            if ($beforeGive !== null) {
+                $beforeGive(new AccountMergePart($transfer->operationId, $transfer->survivorUserId, $transfer->loserUserId));
+            }
             $wait = $keepFactors
                 ? SecondFactorResetWait::of($transfer->loserUserId)->effectiveDays(SecondFactorPolicy::current(), TimeHelper::nowMs())
                 : null;

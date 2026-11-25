@@ -14,6 +14,7 @@ use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferClearedSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferOfferSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferReceivedSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\ShopAccountMergeCartWakeSignalData;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
 use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
@@ -26,7 +27,12 @@ use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\AccountOperation\AccountMergeAccess;
+use Hilos\Auth\AccountOperation\AccountMergePart;
+use Hilos\Auth\AccountOperation\AccountMergePersonalJoin;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
+use Hilos\Auth\AccountOperation\Exception\AccountMergeGiveWaitsException;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
@@ -76,11 +82,11 @@ use Throwable;
 /**
  * Person agent bound to the ecommerce-shop project.
  *
- * Owns the person's product lines, voucher binding and guest cart transfers, and erases them in its assigned part
- * of account erasure. It reads the cart on demand and sends the whole cart to the person's
- * tabs and devices through {@see CartGroup}.
+ * Owns the person's product lines, voucher binding and guest cart transfers. It erases them in its
+ * assigned part of account erasure and hands over the personal cart in an account merge. It reads
+ * the cart on demand and sends the whole cart to the person's tabs and devices through {@see CartGroup}.
  */
-final class UserAgent extends AbstractUserAgent
+final class UserAgent extends AbstractUserAgent implements AccountMergePersonalJoin
 {
     /**
      * @var array<string, list<TruthSourceOperation>> The person's framework sets, cart lines, voucher binding and transfers
@@ -447,6 +453,97 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
+     * Reads the loser's saved cart after Give has closed it to further changes.
+     *
+     * @param AccountMergePart $part Merge whose personal give belongs to this agent
+     * @return array{lines: list<array{productId: int, quantity: int}>, voucherId: ?int} The loser's personal cart
+     * @throws DatabaseException When the stored cart cannot be read
+     * @throws InvalidArgumentException When the stored cart query is invalid
+     */
+    public function personalRowsToGive(AccountMergePart $part): array
+    {
+        return [
+            CartStateSignalData::LINES => $this->storedProductLines($part->loserUserId),
+            CartStateSignalData::VOUCHER_ID => Hilos::$db->userVoucherCarts->storedVoucherId($part->loserUserId),
+        ];
+    }
+
+    /**
+     * Joins the cart in the participant's transaction, which already holds the operation lock.
+     *
+     * @param AccountMergePart $part Merge whose personal receive belongs to this agent
+     * @param array<string, mixed> $given The loser's cart as received by the personal handover
+     * @return array<string, int> Counts of incoming rows by cart table
+     * @throws InvalidFormatException When the personal cart snapshot is malformed
+     * @throws ValidationException When a product or a combined quantity is invalid
+     * @throws ItemNotFoundForUpdateException When the survivor no longer exists
+     * @throws DatabaseException When the account lock, cart read or line write fails
+     * @throws CreateNotAllowedException When the agent may not create a line in this cart
+     * @throws WriteNotAllowedException When the agent may not change a line in this cart
+     * @throws LogicException When a cart collection is misconfigured
+     * @throws InvalidArgumentException When a cart object or announcement is invalid
+     * @throws ObjectGetIdStringNotImplementedException When a matched line cannot be keyed
+     * @throws CollectionNotManualException When the collection refuses a matched line
+     * @throws SourceChangeSubscriberException When a store announcement subscriber fails
+     * @throws HilosException When the cart or its pending voucher choices cannot be read, written or published
+     */
+    public function joinPersonalRows(AccountMergePart $part, array $given): array
+    {
+        if (count($given) !== 2 || !isset($given[CartStateSignalData::LINES]) || !array_key_exists(CartStateSignalData::VOUCHER_ID, $given)) {
+            throw new InvalidFormatException('The personal cart handover requires lines and a voucher slot.');
+        }
+        $voucherId = $given[CartStateSignalData::VOUCHER_ID];
+        if ($voucherId !== null && (!is_int($voucherId) || $voucherId <= 0)) {
+            throw new InvalidFormatException('The personal cart handover carries an invalid voucher ID.');
+        }
+        $quantities = $this->personalCartQuantities($given[CartStateSignalData::LINES]);
+
+        $userId = $part->survivorUserId;
+        if ($voucherId !== null) {
+            Hilos::$db->users->lockStoredAccount($userId);
+        }
+        $joined = [];
+        foreach ($quantities as $productId => $quantity) {
+            Hilos::$db->userProductCarts->actions->mergeLine($userId, $productId, $quantity);
+        }
+        if ($quantities !== []) {
+            $joined[UserProductCart::_table] = count($quantities);
+        }
+        if ($voucherId !== null) {
+            $this->saveCartVoucher($userId, $voucherId);
+            $this->supersedePendingGuestVouchers($userId);
+            $joined[UserVoucherCart::_table] = 1;
+        }
+        if ($joined !== []) {
+            $this->publishCart($userId);
+        }
+
+        return $joined;
+    }
+
+    /**
+     * Deletes the loser's own personal cart inside the participant step, after the receipt was saved.
+     *
+     * @param AccountMergePart $part Merge whose personal give belongs to this agent
+     * @return array<string, int> Counts of deleted rows by cart table
+     * @throws WriteNotAllowedException When this process may not remove a cart row
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
+     * @throws LogicException When a cart collection is misconfigured
+     * @throws InvalidArgumentException When a cart object or announcement is invalid
+     * @throws ItemNotFoundException When the binding disappears during a keyed read
+     * @throws ObjectCollectionNullException When the binding has no backing collection
+     * @throws ObjectGetIdStringNotImplementedException When a matched item cannot be keyed
+     * @throws CollectionNotManualException When the collection refuses a matched line
+     * @throws DatabaseException When a cart read or delete fails
+     * @throws SourceChangeSubscriberException When a store announcement subscriber fails
+     * @throws HilosException When the cart cannot be cleared or published
+     */
+    public function deleteGivenPersonalRows(AccountMergePart $part): array
+    {
+        return $this->deleteCartRows($part->loserUserId);
+    }
+
+    /**
      * Deletes the person's product lines, voucher binding and guest cart transfers inside the assigned erasure step.
      * If any cart rows were removed, the person's tabs learn the cart is empty once the erasure commits.
      *
@@ -466,6 +563,71 @@ final class UserAgent extends AbstractUserAgent
      */
     protected function eraseProjectChildren(int $userId): AccountErasure
     {
+        $deletedRows = $this->deleteCartRows($userId);
+
+        $removedTransfers = 0;
+        foreach (Hilos::$db->shopGuestCartTransfers->whereColumnIs(ShopGuestCartTransfer::user_id, $userId) as $transfer) {
+            $transfer->actions->remove();
+            $removedTransfers++;
+        }
+        if ($removedTransfers > 0) {
+            $deletedRows[ShopGuestCartTransfer::_table] = $removedTransfers;
+        }
+
+        return new AccountErasure($deletedRows, []);
+    }
+
+    /**
+     * Validates every incoming line before the caller can apply any of them.
+     *
+     * @param mixed $lines The lines field of the personal cart snapshot
+     * @return array<int, int> Quantities by unique product ID, in handover order
+     * @throws InvalidFormatException When the list, a line, or its product uniqueness is invalid
+     */
+    private function personalCartQuantities(mixed $lines): array
+    {
+        if (!is_array($lines) || !array_is_list($lines)) {
+            throw new InvalidFormatException('The personal cart handover requires a list of lines.');
+        }
+        $quantities = [];
+        foreach ($lines as $line) {
+            if (!is_array($line) || count($line) !== 2 || !isset($line[CartStateSignalData::PRODUCT_ID], $line[CartStateSignalData::QUANTITY])) {
+                throw new InvalidFormatException('A personal cart line requires only a product ID and quantity.');
+            }
+            $productId = $line[CartStateSignalData::PRODUCT_ID];
+            $quantity = $line[CartStateSignalData::QUANTITY];
+            if (!is_int($productId) || $productId <= 0 || !is_int($quantity)
+                || $quantity < CartLineRules::QUANTITY_MIN || $quantity > CartLineRules::STORED_ACCOUNT_QUANTITY_MAX) {
+                throw new InvalidFormatException('A personal cart line carries an invalid product ID or quantity.');
+            }
+            if (isset($quantities[$productId])) {
+                throw new InvalidFormatException('A personal cart handover can carry only one line per product.');
+            }
+            $quantities[$productId] = $quantity;
+        }
+
+        return $quantities;
+    }
+
+    /**
+     * Clears the person's product lines and voucher slot and publishes the empty cart after commit.
+     *
+     * @param int $userId Owner of the cart being cleared
+     * @return array<string, int> Counts of deleted rows by cart table
+     * @throws WriteNotAllowedException When this process may not remove a cart row
+     * @throws CreateNotAllowedException When the ORM refuses a new row at its write door
+     * @throws LogicException When a cart collection is misconfigured
+     * @throws InvalidArgumentException When a cart object or announcement is invalid
+     * @throws ItemNotFoundException When the binding disappears during a keyed read
+     * @throws ObjectCollectionNullException When the binding has no backing collection
+     * @throws ObjectGetIdStringNotImplementedException When a matched item cannot be keyed
+     * @throws CollectionNotManualException When the collection refuses a matched line
+     * @throws DatabaseException When a cart read or delete fails
+     * @throws SourceChangeSubscriberException When a store announcement subscriber fails
+     * @throws HilosException When the cart cannot be cleared or published
+     */
+    private function deleteCartRows(int $userId): array
+    {
         $deletedRows = [];
         $lines = Hilos::$db->userProductCarts->actions->deleteForUser($userId);
         if ($lines > 0) {
@@ -482,16 +644,7 @@ final class UserAgent extends AbstractUserAgent
             $this->publishCart($userId);
         }
 
-        $removedTransfers = 0;
-        foreach (Hilos::$db->shopGuestCartTransfers->whereColumnIs(ShopGuestCartTransfer::user_id, $userId) as $transfer) {
-            $transfer->actions->remove();
-            $removedTransfers++;
-        }
-        if ($removedTransfers > 0) {
-            $deletedRows[ShopGuestCartTransfer::_table] = $removedTransfers;
-        }
-
-        return new AccountErasure($deletedRows, []);
+        return $deletedRows;
     }
 
     /**
@@ -602,6 +755,19 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
+     * @param AccountMergePart $part Merge whose Give owns the loser
+     * @throws AccountMergeGiveWaitsException When assigned guest cart work is still due
+     * @throws HilosException When the account or pending assignments cannot be locked
+     */
+    protected function beforeMergeGive(AccountMergePart $part): void
+    {
+        Hilos::$db->users->lockStoredAccount($part->loserUserId);
+        if (Hilos::$db->shopGuestCartTransfers->hasUnreceivedForUser($part->loserUserId)) {
+            throw new AccountMergeGiveWaitsException();
+        }
+    }
+
+    /**
      * Commits the saved source and its receipt together, or repeats an already committed receipt.
      *
      * @param GuestCartTransferOfferSignalData $offer Offer addressed to this person by the library
@@ -610,12 +776,17 @@ final class UserAgent extends AbstractUserAgent
     private function receiveGuestCart(GuestCartTransferOfferSignalData $offer): void
     {
         $this->runGuestCartTransfer($offer->transferId, function () use ($offer): void {
+            Hilos::$db->users->lockStoredAccount($offer->userId);
             $transfer = Hilos::$db->shopGuestCartTransfers->storedTransferForRecipient($offer->transferId, $offer->userId);
             if ($transfer === null) {
                 return;
             }
+            if (Hilos::$db->userMerges->isMergedInDatabase($offer->userId)) {
+                throw new ValidationException(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE);
+            }
 
-            if (!$transfer->received) {
+            $firstReceipt = !$transfer->received;
+            if ($firstReceipt) {
                 $quantities = Hilos::$db->sessionProductCarts->storedCartQuantityPage($transfer->sessionId, $transfer->cartEpoch, 0);
                 $voucherId = Hilos::$db->sessionVoucherCarts->storedVoucherId($transfer->sessionId, $transfer->cartEpoch);
                 if ($quantities === [] && $voucherId === null) {
@@ -623,7 +794,10 @@ final class UserAgent extends AbstractUserAgent
                 }
 
                 AddressablePerson::require($offer->userId);
-                if (AccountMergeAccess::reservation($offer->userId) !== null) {
+                $reservation = AccountMergeAccess::reservation($offer->userId);
+                // Give waits for this receipt. Other reserved accounts and stages still refuse cart changes.
+                if ($reservation !== null && ($reservation->loserUserId !== $offer->userId
+                    || $reservation->stage !== AccountMergeStage::Go->value)) {
                     throw new ValidationException(AccountMergeAccess::REFUSED_MESSAGE);
                 }
                 while ($quantities !== []) {
@@ -647,7 +821,26 @@ final class UserAgent extends AbstractUserAgent
 
             $receipt = new GuestCartTransferReceivedSignalData($offer->transferId, $offer->userId);
             Database::afterCommit(fn () => $this->sendToAgent(EcommerceShopSignalConstants::GUEST_CART_TRANSFER_RECEIVED, $receipt));
+            if ($firstReceipt) {
+                Database::afterCommit(fn () => $this->wakeMergeAfterGuestReceipt($offer->userId));
+            }
         });
+    }
+
+    /**
+     * Looks for Give after the receipt has committed and released the account lock.
+     *
+     * @param int $userId Recipient of the committed guest cart
+     * @throws HilosException When the open merge cannot be read or the wake cannot be built or sent
+     */
+    private function wakeMergeAfterGuestReceipt(int $userId): void
+    {
+        $operation = Hilos::$db->accountOperations->openMergeOfLoser($userId);
+        if ($operation?->id === null || $operation->stage !== AccountMergeStage::Go->value) {
+            return;
+        }
+
+        $this->sendToAgent(EcommerceShopSignalConstants::SHOP_ACCOUNT_MERGE_CART_WAKE, new ShopAccountMergeCartWakeSignalData($operation->id));
     }
 
     /**
@@ -659,11 +852,12 @@ final class UserAgent extends AbstractUserAgent
     private function finishGuestCartTransfer(GuestCartTransferClearedSignalData $cleared): void
     {
         $this->runGuestCartTransfer($cleared->transferId, static function () use ($cleared): void {
-            if (Hilos::$db->shopGuestCartTransfers->storedReceipt($cleared->transferId, $cleared->userId) !== true) {
+            $transfer = Hilos::$db->shopGuestCartTransfers->storedTransferForRecipient($cleared->transferId, $cleared->userId);
+            if ($transfer === null || !$transfer->received) {
                 return;
             }
 
-            $transfer = Hilos::$db->shopGuestCartTransfers[$cleared->transferId];
+            // The library locks source rows before this marker, so read the pair without locking the source.
             if (
                 !Hilos::$db->sessionProductCarts->hasCartLine($transfer->sessionId, $transfer->cartEpoch)
                 && Hilos::$db->sessionVoucherCarts->storedVoucherId($transfer->sessionId, $transfer->cartEpoch) === null
@@ -696,21 +890,33 @@ final class UserAgent extends AbstractUserAgent
      * read in the order they were added. The snapshot leaves after the commit.
      *
      * @param int $userId Person whose cart is told
-     * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction
+     * @throws InvalidArgumentException When a cart query or the frame is invalid
+     * @throws DatabaseException When the persisted cart cannot be read
      * @throws HilosException When the collection refuses the read
      */
     private function publishCart(int $userId): void
+    {
+        $frame = new CartStateSignalData(
+            $userId,
+            $this->storedProductLines($userId),
+            Hilos::$db->userVoucherCarts->storedVoucherId($userId),
+        );
+        Database::afterCommit(fn () => $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forUser($userId), $frame));
+    }
+
+    /**
+     * @param int $userId Owner of the saved cart
+     * @return list<array{productId: int, quantity: int}> Product lines in saved order
+     * @throws DatabaseException When the lines cannot be read
+     * @throws InvalidArgumentException When the stored cart query is invalid
+     */
+    private function storedProductLines(int $userId): array
     {
         $lines = [];
         foreach (Hilos::$db->userProductCarts->storedCartLines($userId) as [$productId, $quantity]) {
             $lines[] = [CartStateSignalData::PRODUCT_ID => $productId, CartStateSignalData::QUANTITY => $quantity];
         }
 
-        $frame = new CartStateSignalData(
-            $userId,
-            $lines,
-            Hilos::$db->userVoucherCarts->storedVoucherId($userId),
-        );
-        Database::afterCommit(fn () => $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forUser($userId), $frame));
+        return $lines;
     }
 }

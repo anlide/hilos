@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
 use Demo\EcommerceShop\Database\Object\Collection\Sessions as ObjectSessions;
 use Demo\EcommerceShop\Database\Object\Item\Session as ObjectSession;
 use Demo\EcommerceShop\Hilos;
+use Hilos\Auth\AccountOperation\Exception\AccountMergedSignInException;
 use Hilos\Auth\Session\SessionToken;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -27,7 +28,8 @@ final class SessionActions extends FrameworkSessionActions
 {
     /**
      * @param int $userId User id to bind the session to
-     * @throws ItemNotFoundForUpdateException When the session is absent or has moved off its token
+     * @throws AccountMergedSignInException When the guest's target account was folded
+     * @throws ItemNotFoundForUpdateException When the account or session is absent or the token has moved
      * @throws HilosException When the session or cart assignment cannot be saved
      */
     public function bindUser(int $userId): void
@@ -40,7 +42,8 @@ final class SessionActions extends FrameworkSessionActions
      * @param int $userId User id to bind the session to
      * @throws InvalidFormatException When the new token is invalid
      * @throws DuplicateValueException When the new token is already held
-     * @throws ItemNotFoundForUpdateException When the session is absent or has moved off its token
+     * @throws AccountMergedSignInException When the guest's target account was folded
+     * @throws ItemNotFoundForUpdateException When the account or session is absent or the token has moved
      * @throws HilosException When the session or cart assignment cannot be saved
      */
     public function rotateTokenAndBindUser(string $newToken, int $userId): void
@@ -52,6 +55,7 @@ final class SessionActions extends FrameworkSessionActions
      * @param int $userId User id requested by the caller
      * @param ?string $newToken Rotation candidate, when minting
      * @param Closure(): void $bind Framework write at the same transaction boundary
+     * @throws AccountMergedSignInException When the guest's target account was folded
      * @throws HilosException When the storage checks, write guard or framework bind refuses
      */
     private function bindAndAssign(int $userId, ?string $newToken, Closure $bind): void
@@ -67,9 +71,16 @@ final class SessionActions extends FrameworkSessionActions
         $sessions = $this->getObjectCollection();
         try {
             SessionProductCartsActions::inPrimaryTransaction(static function () use ($userId, $newToken, $bind, $session, $sessions): void {
+                if ($userId > 0) {
+                    Hilos::$db->users->lockStoredAccount($userId);
+                }
                 $stored = $sessions->lockStoredSession($session->id);
                 if ($stored === null || $stored->token !== $session->token) {
                     throw new ItemNotFoundForUpdateException('The session no longer holds its token.');
+                }
+                $leavesGuestCart = $stored->user_id === null && $stored->impersonator_user_id === null && $userId > 0;
+                if ($leavesGuestCart && Hilos::$db->userMerges->isMergedInDatabase($userId)) {
+                    throw new AccountMergedSignInException();
                 }
                 if ($newToken !== null) {
                     SessionToken::ensureValid($newToken);
@@ -78,7 +89,6 @@ final class SessionActions extends FrameworkSessionActions
                     }
                 }
 
-                $leavesGuestCart = $stored->user_id === null && $stored->impersonator_user_id === null && $userId > 0;
                 $hasLines = $leavesGuestCart && Hilos::$db->sessionProductCarts->hasLockedCartLine($session->id, $stored->cart_epoch);
                 $hasVoucher = $leavesGuestCart && Hilos::$db->sessionVoucherCarts->hasLockedSlot($session->id, $stored->cart_epoch);
                 $session->acceptStored($stored);

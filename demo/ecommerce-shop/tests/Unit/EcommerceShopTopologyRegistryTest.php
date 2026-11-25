@@ -110,6 +110,7 @@ use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferClearedSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferOfferSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferReceivedSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\GuestCartTransferWakeSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\ShopAccountMergeCartWakeSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\StockSetUnitsSignalData;
 use Demo\EcommerceShop\Groups\CartGroup;
@@ -235,6 +236,8 @@ use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Demo\EcommerceShop\Tables\Voucher\VouchersTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Auth\AccountOperation\AccountErasureExemption;
+use Hilos\Auth\AccountOperation\AccountMergePersonalJoin;
+use Hilos\Auth\AccountOperation\DTO\AccountMergePersonalHandoverSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Throttle\AuthThrottleSettings;
@@ -485,6 +488,35 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             EcommerceShopSignalConstants::GUEST_CART_TRANSFER_OFFER,
             new AgentSignalData(SignalData::fromArray(['transferId' => 50, 'userId' => '92'])),
         );
+    }
+
+    public function testAccountMergeCartWakeTargetsTheSingletonSessionsLibrary(): void
+    {
+        $name = 'shop_account_merge_cart_wake';
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, Hilos::getAgentSignalRoutes()[$name]);
+        self::assertSame(ShopAccountMergeCartWakeSignalData::class, Hilos::getAgentSignalDtoRoutes()[$name]);
+        self::assertArrayNotHasKey($name, Hilos::getAgentSignalIndexFields());
+
+        $router = new EcommerceShopSignalRouter();
+        $data = $router->createAgentSignalPayloadDTO($name, new AgentSignalData(SignalData::fromArray(['operationId' => 50])));
+        self::assertInstanceOf(ShopAccountMergeCartWakeSignalData::class, $data->data);
+        self::assertSame(50, $data->data->operationId);
+        $frame = new SignalDTO(
+            new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_USER, '92'),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName($name),
+            $data,
+        );
+        self::assertEquals([new AgentDestination(HilosAgentType::HILOS_SESSIONS_LIBRARY)], $router->getDestinations($frame));
+    }
+
+    public function testPersonalCartHandoverUsesTheRegisteredIndexedPersonWorker(): void
+    {
+        $name = HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER;
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[$name]);
+        self::assertSame(AccountMergePersonalHandoverSignalData::class, Hilos::getAgentSignalDtoRoutes()[$name]);
+        self::assertSame(AccountMergePersonalHandoverSignalData::ownerIndex, Hilos::getAgentSignalIndexFields()[$name]);
+        self::assertTrue(is_subclass_of(AgentRegistry::workerClass(Hilos::AGENTS[HilosAgentType::HILOS_USER]), AccountMergePersonalJoin::class));
     }
 
     public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
@@ -2374,6 +2406,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_BROWSER_TRUST_REVOKE_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT_DONE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+                EcommerceShopSignalConstants::SHOP_ACCOUNT_MERGE_CART_WAKE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
                 // Sign-in's own frames (HIL-623): the users library waits for the throttle
                 // verdict, and the mail agent and the node-scoped throttle answer on their own
                 // names.
