@@ -16,11 +16,6 @@ export const AUTHOR_CONTACTS: readonly AuthorContact[] = [
     icon: 'bi-linkedin',
   },
   {
-    label: 'alexander.baranov@anlide.online',
-    href: 'mailto:alexander.baranov@anlide.online',
-    icon: 'bi-envelope',
-  },
-  {
     label: 'elfanlide@gmail.com',
     href: 'mailto:elfanlide@gmail.com',
     icon: 'bi-envelope',
