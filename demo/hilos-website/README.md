@@ -26,6 +26,9 @@ A Vue site on Hilos:
   demo" link. Entries without a public address say so. The markup lives in
   `frontend/src/views/Main/DemoCatalog.vue`; edit it and rebuild to change
   the catalog.
+- **Contacts**: the author's name and links — LinkedIn, two email addresses,
+  Telegram and GitHub — close the home page under "Contact the author" and
+  follow the About text. They live in `frontend/src/contacts/authorContacts.ts`.
 - **Video**: put `hilos.mp4` in the installation's `media/` data directory
   (`demo/hilos-website/data/media/hilos.mp4` locally). nginx serves it
   read-only at `/media/hilos.mp4`. The file stays out of git; when it is

@@ -6,6 +6,8 @@ here depends on the socket. -->
 <script setup lang="ts">
 import { HilosAboutPage } from '@hilos/vue/base'
 
+import AuthorContacts from '../../contacts/AuthorContacts.vue'
+
 defineOptions({ name: 'AboutPage' })
 </script>
 
@@ -20,10 +22,11 @@ defineOptions({ name: 'AboutPage' })
       The site is itself an application on Hilos, built from the same SDK as the
       framework's demos.
     </p>
-    <p class="mb-0">
+    <p>
       Today it is the frame of that site: the home page carries the name, and
       the footer carries these pages. What Hilos is, the video about it and the
       catalog of the demos arrive one by one.
     </p>
+    <AuthorContacts />
   </HilosAboutPage>
 </template>

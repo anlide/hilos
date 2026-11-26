@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { HilosLink } from '@hilos/vue/base'
 
+import AuthorContacts from '../../contacts/AuthorContacts.vue'
 import { PAGE_HISTORY } from '../../pages/keys.js'
 import { router } from '../../pages/routes.js'
 import DemoCatalog from './DemoCatalog.vue'
@@ -51,5 +52,10 @@ const historyHref = router.path(PAGE_HISTORY) ?? ''
 
     <HomeVideo />
     <DemoCatalog />
+
+    <section aria-labelledby="home-contact-title">
+      <h2 id="home-contact-title">Contact the author</h2>
+      <AuthorContacts />
+    </section>
   </div>
 </template>
