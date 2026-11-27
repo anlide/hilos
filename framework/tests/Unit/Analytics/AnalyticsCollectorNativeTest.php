@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Analytics;
 
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Analytics\AnalyticsJournalOutbox;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
@@ -59,10 +60,10 @@ final class AnalyticsCollectorNativeTest extends TestCase
         $this->loop->tick();
         $this->assertSame($reads, Hilos::$rt->reads);
         $this->assertFalse($this->loop->hasReadyWork());
-        $this->basis($collector, $this->nowMs() + 60_000);
+        $this->basis($collector, $this->wholeSecondMs() + 60_000);
         $collector->openWorkerSession(1, false);
         $deadline = $this->timer()->getDeadline();
-        $this->assertSame($this->outbox($collector)->nextFlushAt() / 1000, $deadline);
+        $this->assertSame((float) ($this->outbox($collector)->nextFlushAt() / TimeConstants::MS_PER_SECOND), $deadline);
         $collector->logWorkerSystemSignal('later', null);
         $collector->openAgentSession('ordinary', null);
         $this->assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $this->sockets));
@@ -233,7 +234,7 @@ final class AnalyticsCollectorNativeTest extends TestCase
         foreach (['rebind', 'replacement', 'detach'] as $change) {
             $collector = Hilos::$ac = new AnalyticsCollector();
             $collector->openWsConnection('aged', null);
-            $this->basis($collector, $this->nowMs() - 2000);
+            $this->basis($collector, $this->wholeSecondMs() - 2000);
             $original = $this->outbox($collector)->nextFlushAt();
             $this->invoke('attachAnalyticsEventLoop');
             $activated = false;
@@ -255,7 +256,7 @@ final class AnalyticsCollectorNativeTest extends TestCase
             $this->invoke('dispatchAnalyticsFlush');
             $this->assertSame([], $this->frames(), 'old activation must not run guarded business');
             if ($change === 'rebind') {
-                $this->assertSame($original / 1000, $this->timer()->getDeadline());
+                $this->assertSame((float) ($original / TimeConstants::MS_PER_SECOND), $this->timer()->getDeadline());
                 $this->native();
                 $this->invoke('dispatchAnalyticsFlush');
                 $this->assertCount(1, $this->frames());
@@ -407,6 +408,12 @@ final class AnalyticsCollectorNativeTest extends TestCase
     private function basis(AnalyticsCollector $collector, int $milliseconds): void
     {
         new ReflectionProperty(AnalyticsJournalOutbox::class, 'lastFlushAtMs')->setValue($this->outbox($collector), $milliseconds);
+    }
+
+    /** @return int Monotonic milliseconds floored to a whole second, so a flush deadline divides into an exact integer */
+    private function wholeSecondMs(): int
+    {
+        return intdiv($this->nowMs(), TimeConstants::MS_PER_SECOND) * TimeConstants::MS_PER_SECOND;
     }
 
     /** @return int Monotonic process milliseconds, never a record timestamp */
