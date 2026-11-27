@@ -55,6 +55,24 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## MaxMind DB test data
+
+The test databases in `framework/tests/Fixtures/Mmdb/` — `GeoIP2-Country-Test.mmdb`,
+`MaxMind-DB-test-ipv4-24.mmdb`, `MaxMind-DB-test-ipv6-24.mmdb`,
+`MaxMind-DB-test-ipv6-28.mmdb` and `MaxMind-DB-test-ipv6-32.mmdb` — are copied
+unchanged from the `test-data/` directory of
+[MaxMind DB](https://github.com/maxmind/MaxMind-DB), pinned to commit
+`5c972a8a85df5557c122f79d6e172c7a5cfe93c5`
+([test-data/](https://github.com/maxmind/MaxMind-DB/tree/5c972a8a85df5557c122f79d6e172c7a5cfe93c5/test-data)).
+The tests of the framework's MaxMind DB reader take their addresses and expected
+records from `source-data/` and `pkg/writer/maxmind.go` of the same commit.
+
+Copyright (c) 2013 - 2026 by MaxMind, Inc. Licensed under the
+[Apache License, Version 2.0](https://github.com/maxmind/MaxMind-DB/blob/5c972a8a85df5557c122f79d6e172c7a5cfe93c5/LICENSE-APACHE)
+or the
+[MIT License](https://github.com/maxmind/MaxMind-DB/blob/5c972a8a85df5557c122f79d6e172c7a5cfe93c5/LICENSE-MIT),
+at your option.
+
 ## Bootstrap Icons
 
 The 36 pictures in `demo/ecommerce-shop/backend/Database/Migration/Seed/001_hilos_flowers/` — six category

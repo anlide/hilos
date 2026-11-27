@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Fs;
 
 use Demo\EcommerceShop\Hilos;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 
 /** Shared account exports, public Status files and catalog pictures, and the node-local analytics journal. */
 final class EcommerceShopFsContext extends FsContext
 {
-    /** Registers shared account export, Status, upload and published-file storage beside the node's analytics journal. */
+    /**
+     * Registers shared account export, Status, upload and published-file storage beside the node's analytics journal.
+     *
+     * @throws EnvException When the IP-to-country directory override cannot be read
+     */
     public function configure(): void
     {
         $this->setTmpPath(dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/files/tmp', DirectoryScope::CLUSTER);
@@ -35,5 +40,6 @@ final class EcommerceShopFsContext extends FsContext
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/files/published',
             DirectoryScope::CLUSTER,
         );
+        $this->registerIpCountryDirectory(dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/ip_country');
     }
 }

@@ -58,6 +58,7 @@ final class TasksFsContextTest extends TestCase
             FsContext::DATA_EXPORT,
             FsContext::LEGAL_EXPORT,
             FsContext::STATUS,
+            FsContext::IP_COUNTRY,
         ], array_keys($context->getDirectories()));
         self::assertSame(DirectoryScope::CLUSTER, $context->getTmp()->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::FILES)->getScope());

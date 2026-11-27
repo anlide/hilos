@@ -8,6 +8,7 @@ use Demo\Polls\Constants\PollsEnvConstants;
 use Demo\Polls\Environment\PollsEnvCatalog;
 use Demo\Polls\Fs\PollsFsContext;
 use Demo\Polls\Hilos;
+use Hilos\Constants\EnvConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
@@ -42,8 +43,10 @@ final class PollsFsContextTest extends TestCase
             ->setConstructorArgs([PollsEnvCatalog::class])
             ->onlyMethods(['effectiveValueFor'])
             ->getMock();
-        $env->expects(self::once())->method('effectiveValueFor')
-            ->with(PollsEnvConstants::POLLS_FILES_PUBLISHED_DIR)->willReturn($override);
+        $env->expects(self::exactly(2))->method('effectiveValueFor')->willReturnMap([
+            [PollsEnvConstants::POLLS_FILES_PUBLISHED_DIR, $override],
+            [EnvConstants::HILOS_IP_COUNTRY_DIR->name, ''],
+        ]);
         Hilos::$env = $env;
 
         try {
@@ -56,6 +59,7 @@ final class PollsFsContextTest extends TestCase
                 FsContext::DATA_EXPORT,
                 FsContext::LEGAL_EXPORT,
                 FsContext::STATUS,
+                FsContext::IP_COUNTRY,
             ], array_keys($context->getDirectories()));
             self::assertSame($publishedPath, $context->getDirectory(FsContext::FILES)->getPath());
             self::assertSame(dirname(__DIR__, 2) . '/data/files/tmp', $context->tmp->getPath());
@@ -64,6 +68,8 @@ final class PollsFsContextTest extends TestCase
             self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());
             self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::DATA_EXPORT)->getScope());
             self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::LEGAL_EXPORT)->getScope());
+            self::assertSame(dirname(__DIR__, 2) . '/data/ip_country', $context->getDirectory(FsContext::IP_COUNTRY)->getPath());
+            self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::IP_COUNTRY)->getScope());
             self::assertSame([], $context->declarationErrors());
         } finally {
             Hilos::$env = $previousEnv;

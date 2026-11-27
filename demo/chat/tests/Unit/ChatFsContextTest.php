@@ -46,6 +46,7 @@ final class ChatFsContextTest extends TestCase
                 FsContext::LEGAL_EXPORT => DirectoryScope::CLUSTER,
                 FsContext::ANALYTICS_JOURNAL => DirectoryScope::NODE,
                 FsContext::STATUS => DirectoryScope::CLUSTER,
+                FsContext::IP_COUNTRY => DirectoryScope::CLUSTER,
             ],
             array_map(static fn(FsDirectory $directory): DirectoryScope => $directory->getScope(), $context->getDirectories()),
         );

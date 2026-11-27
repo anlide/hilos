@@ -1334,6 +1334,7 @@ abstract class Hilos implements TruthSourceOwner
         static::refuseAccessLogWithoutSessionAddress();
         static::refuseAnalyticsWithoutPrivacyDeclaration();
         static::refuseAnalyticsWithoutJournalDirectory();
+        static::refuseI18nWithoutIpCountryDirectory();
         static::refuseClosedRegistrationWithSelfRegisteringMethods();
         static::refuseMisdeclaredDirectories();
 
@@ -1624,6 +1625,30 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::ANALYTICS keeps the node journal in the analytics_journal directory, but the FS context registers none'],
+        );
+    }
+
+    /**
+     * Refuses a project that declares I18N and registers no directory for the IP-to-country file (HIL-2310).
+     *
+     * The country of a connection is read from a file in that directory. The file itself is the
+     * operator's and may be missing - every country is unknown then - but the directory is the
+     * project's declaration of where the file lives, and without it no installation of the
+     * project could ever learn a country, which is a wiring mistake to hear of at the start.
+     *
+     * @throws IncompleteFeatureActivationException When I18N is declared and no ip_country directory is registered
+     */
+    protected static function refuseI18nWithoutIpCountryDirectory(): void
+    {
+        if (!in_array(HilosFeature::I18N, static::FEATURES, true)
+            || static::$fs?->hasDirectory(FsContext::IP_COUNTRY) === true
+        ) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            ['HilosFeature::I18N reads the country of a connection from the ip_country directory, but the FS context registers none'],
         );
     }
 

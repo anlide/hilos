@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Fs;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -111,6 +114,53 @@ final class FsContextDeclarationTest extends TestCase
             ],
             $context->declarationErrors(),
         );
+    }
+
+    public function testTheIpCountryDirectoryDeclaredNodeIsNamed(): void
+    {
+        $context = (new DeclaringFsContext())
+            ->declareDirectory(FsContext::IP_COUNTRY, '/srv/node/ip-country', DirectoryScope::NODE);
+
+        self::assertSame(
+            ["FS directory [ip_country] is the cluster's: register it with DirectoryScope::CLUSTER"],
+            $context->declarationErrors(),
+        );
+    }
+
+    /**
+     * @return iterable<string, array{string, string}> Directory variable value and the registered path
+     */
+    public static function ipCountryPathProvider(): iterable
+    {
+        yield 'default' => ['', '/srv/project/data/ip_country'];
+        yield 'override' => ['/mnt/shared/ip-country', '/mnt/shared/ip-country'];
+    }
+
+    /**
+     * @param string $variable Value of HILOS_IP_COUNTRY_DIR
+     * @param string $path Expected registered path
+     */
+    #[DataProvider('ipCountryPathProvider')]
+    public function testTheIpCountryDirectoryIsTheClustersAtTheVariablePathOrTheDefault(string $variable, string $path): void
+    {
+        $previousEnv = Hilos::$env;
+        $env = $this->getMockBuilder(EnvAccessor::class)
+            ->onlyMethods(['effectiveValueFor'])
+            ->getMock();
+        $env->expects(self::once())->method('effectiveValueFor')
+            ->with(EnvConstants::HILOS_IP_COUNTRY_DIR->name)->willReturn($variable);
+        Hilos::$env = $env;
+
+        try {
+            $context = (new DeclaringFsContext())->declareIpCountry('/srv/project/data/ip_country');
+
+            self::assertSame([FsContext::IP_COUNTRY], array_keys($context->getDirectories()));
+            self::assertSame($path, $context->ip_country->getPath());
+            self::assertSame(DirectoryScope::CLUSTER, $context->ip_country->getScope());
+            self::assertSame([], $context->declarationErrors());
+        } finally {
+            Hilos::$env = $previousEnv;
+        }
     }
 
     public function testATmpDeclaredNodeIsNamedFirst(): void
@@ -271,6 +321,17 @@ final class DeclaringFsContext extends FsContext
     public function declareDirectory(string $name, string $path, DirectoryScope $scope): self
     {
         $this->registerDirectory($name, $path, $scope);
+
+        return $this;
+    }
+
+    /**
+     * @param string $defaultPath Path when HILOS_IP_COUNTRY_DIR is empty, never created
+     * @return self This context, for chaining
+     */
+    public function declareIpCountry(string $defaultPath): self
+    {
+        $this->registerIpCountryDirectory($defaultPath);
 
         return $this;
     }

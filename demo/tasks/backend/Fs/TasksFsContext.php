@@ -16,7 +16,7 @@ final class TasksFsContext extends FsContext
     /**
      * Registers shared upload, registry, export and Status storage beside the node's analytics journal.
      *
-     * @throws EnvException When the published-files directory override cannot be read
+     * @throws EnvException When the published-files directory override or the IP-to-country directory override cannot be read
      */
     public function configure(): void
     {
@@ -47,5 +47,6 @@ final class TasksFsContext extends FsContext
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/status',
             DirectoryScope::CLUSTER,
         );
+        $this->registerIpCountryDirectory(dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/ip_country');
     }
 }

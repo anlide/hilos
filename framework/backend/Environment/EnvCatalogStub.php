@@ -252,6 +252,8 @@ final class EnvCatalogStub implements CatalogProviderInterface
             // named variable in each deployment and says exactly what is missing.
             EnvConstants::APP_ENV->name => self::required(EnvCatalogConstants::TYPE_STRING),
             EnvConstants::HILOS_DEFAULT_LANGUAGE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
+            // Per node: every node mounts the shared volume at a path of its own (names, never paths).
+            EnvConstants::HILOS_IP_COUNTRY_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
             // Absent falls through to UTC. An explicit empty string stays empty: startup refuses it.
             EnvConstants::HILOS_PROJECT_TIME_ZONE->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,

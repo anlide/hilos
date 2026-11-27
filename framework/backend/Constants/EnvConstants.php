@@ -309,6 +309,9 @@ enum EnvConstants
     /** @var string Exact lowercase built-in language code for installations with i18n */
     case HILOS_DEFAULT_LANGUAGE;
 
+    /** @var string Path of the cluster's IP-to-country directory (HIL-2310); empty uses the project's default under data/ */
+    case HILOS_IP_COUNTRY_DIR;
+
     /**
      * IANA time zone of the project clock.
      *

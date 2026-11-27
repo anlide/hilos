@@ -24,7 +24,7 @@ final class EcommerceShopFsContextTest extends TestCase
         $context->configure();
 
         self::assertSame(
-            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::STATUS, FsContext::FILES],
+            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::STATUS, FsContext::FILES, FsContext::IP_COUNTRY],
             array_keys($context->getDirectories()),
         );
         self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());

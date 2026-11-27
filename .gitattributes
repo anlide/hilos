@@ -6,3 +6,6 @@
 
 # Heavy framework data belongs in Git LFS, outside ordinary Git history (HIL-650).
 framework/data/** filter=lfs diff=lfs merge=lfs -text
+
+# MaxMind DB files are binary: keep them out of text=auto eol=lf normalization (HIL-2310).
+*.mmdb binary

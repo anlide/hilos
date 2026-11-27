@@ -23,7 +23,7 @@ final class PreferansFsContextTest extends TestCase
         $context->configure();
 
         self::assertSame(
-            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT],
+            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::IP_COUNTRY],
             array_keys($context->getDirectories()),
         );
         self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());
@@ -38,7 +38,10 @@ final class PreferansFsContextTest extends TestCase
 
         self::assertFalse($context->hasDirectory(FsContext::STATUS));
         self::assertSame(
-            [FsContext::DATA_EXPORT => dirname(__DIR__, 2) . '/data/data_export'],
+            [
+                FsContext::DATA_EXPORT => dirname(__DIR__, 2) . '/data/data_export',
+                FsContext::IP_COUNTRY => dirname(__DIR__, 2) . '/data/ip_country',
+            ],
             $context->clusterDirectories(),
         );
     }

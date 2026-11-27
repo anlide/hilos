@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Fs\Context;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\ClusterDirectoryMarker;
@@ -29,6 +30,7 @@ use Hilos\Hilos;
  * @property-read FsDirectory $files Published files of the files registry, where the project registers it
  * @property-read FsDirectory $analytics_journal The node's analytics journal, where the project registers it
  * @property-read FsDirectory $status Shared public Status files, where the project registers it
+ * @property-read FsDirectory $ip_country The cluster's IP-to-country directory, where an I18N project registers it
  */
 abstract class FsContext
 {
@@ -86,6 +88,18 @@ abstract class FsContext
      */
     public const string ANALYTICS_JOURNAL = 'analytics_journal';
 
+    /**
+     * The IP-to-country file the operator puts in (HIL-2310); of the files there the framework only
+     * reads `country.mmdb`.
+     *
+     * A project declaring {@see HilosFeature::I18N} registers it in configure() with
+     * {@see registerIpCountryDirectory()}. A cluster directory: registered as
+     * DirectoryScope::CLUSTER, the start refuses it declared NODE. In a cluster the start of a node
+     * writes the cluster directory marker into it ({@see ClusterDirectoryMarker}), so the directory
+     * must be writable.
+     */
+    public const string IP_COUNTRY = 'ip_country';
+
     /** Trailing characters a path is compared without: "/x" and "/x/" name one directory. */
     private const string PATH_SEPARATORS = '/\\';
 
@@ -120,6 +134,22 @@ abstract class FsContext
     protected function registerDirectory(string $name, string $path, DirectoryScope $scope): void
     {
         $this->_directories[$name] = new FsDirectory($this, $name, $path, $scope);
+    }
+
+    /**
+     * Registers the cluster's IP-to-country directory, {@see self::IP_COUNTRY}.
+     *
+     * The variable HILOS_IP_COUNTRY_DIR names the path on this node, because every node mounts
+     * the shared volume where it likes; empty keeps the project's own default.
+     *
+     * @param string $defaultPath Absolute filesystem path used when the variable is empty
+     *
+     * @throws EnvException When the directory variable cannot be read
+     */
+    protected function registerIpCountryDirectory(string $defaultPath): void
+    {
+        $path = Hilos::$env[EnvConstants::HILOS_IP_COUNTRY_DIR]->string();
+        $this->registerDirectory(self::IP_COUNTRY, $path !== '' ? $path : $defaultPath, DirectoryScope::CLUSTER);
     }
 
     /**
@@ -206,12 +236,12 @@ abstract class FsContext
      * What the registrations declare wrong; every fault is collected, none stops the walk.
      *
      * Three rules. Tmp is the cluster's whatever features the project declares. The reserved
-     * files, data_export, legal_export and status are the cluster's, so any declared NODE is a fault; the
-     * reserved analytics_journal is the node's, so it declared CLUSTER is one. One path is one
-     * directory with one owner, so names registered on one path with different owners are a fault,
-     * tmp counted under its reserved name. Paths are compared as written, less trailing
-     * separators: a directory is created on first use and may not exist at start, so there is
-     * nothing to resolve yet.
+     * files, data_export, legal_export, status and ip_country are the cluster's, so any declared
+     * NODE is a fault; the reserved analytics_journal is the node's, so it declared CLUSTER is one.
+     * One path is one directory with one owner, so names registered on one path with different
+     * owners are a fault, tmp counted under its reserved name. Paths are compared as written, less
+     * trailing separators: a directory is created on first use and may not exist at start, so
+     * there is nothing to resolve yet.
      *
      * @return list<string> Fault messages, tmp first, then reserved directories, then paths; empty when the declaration holds
      */
@@ -221,7 +251,7 @@ abstract class FsContext
         if ($this->_tmp !== null && $this->_tmp->getScope() === DirectoryScope::NODE) {
             $errors[] = "FS tmp directory is the cluster's: set it with DirectoryScope::CLUSTER";
         }
-        foreach ([self::FILES, self::DATA_EXPORT, self::LEGAL_EXPORT, self::STATUS] as $reserved) {
+        foreach ([self::FILES, self::DATA_EXPORT, self::LEGAL_EXPORT, self::STATUS, self::IP_COUNTRY] as $reserved) {
             if ($this->hasDirectory($reserved) && $this->_directories[$reserved]->getScope() === DirectoryScope::NODE) {
                 $errors[] = "FS directory [{$reserved}] is the cluster's: register it with DirectoryScope::CLUSTER";
             }

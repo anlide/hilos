@@ -659,6 +659,9 @@ The project:
 - registers the three thin section pages in the server topology;
 - migrates the six framework stubs: the five reference tables and `hilos_i18n_reflow`;
 - supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code;
+- registers the `ip_country` directory with `registerIpCountryDirectory()` in
+  its `FsContext::configure()` — the start refuses the feature without it
+  (HIL-2310, [filesystem.md](filesystem.md#node-or-cluster)).
 
 The six demos have the feature, agent, server pages and migrations (HIL-1470).
 The names tables of a language and of a country (`hilosI18nLanguageNames`,

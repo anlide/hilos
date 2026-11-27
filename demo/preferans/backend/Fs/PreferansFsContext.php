@@ -5,13 +5,18 @@ declare(strict_types=1);
 namespace Demo\Preferans\Fs;
 
 use Demo\Preferans\Hilos;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 
 /** Shared account exports and the node-local analytics journal. */
 final class PreferansFsContext extends FsContext
 {
-    /** Registers shared account exports and node-local analytics journal storage. */
+    /**
+     * Registers shared account exports and node-local analytics journal storage.
+     *
+     * @throws EnvException When the IP-to-country directory override cannot be read
+     */
     public function configure(): void
     {
         $this->registerDirectory(
@@ -24,5 +29,6 @@ final class PreferansFsContext extends FsContext
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/data_export',
             DirectoryScope::CLUSTER,
         );
+        $this->registerIpCountryDirectory(dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/ip_country');
     }
 }

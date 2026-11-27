@@ -249,18 +249,21 @@ The address of a connection is what `resolveClientIp()` in
 answers under `HILOS_TRUSTED_PROXIES`. That part is in the code.
 
 - The country of an address comes from an IP-to-country database file in the
-  MMDB format — DB-IP Lite Country or GeoLite2 Country
-  (not in the code yet — HIL-2310).
-- The operator puts that file into the installation's country directory: a
-  logical `$fs` directory registered `CLUSTER` (see
-  [Node Or Cluster](filesystem.md#node-or-cluster)), whose path an environment
-  value can override (not in the code yet — HIL-2310).
+  MMDB format — DB-IP Lite Country or GeoLite2 Country. The lookup is
+  `countryOf()` of
+  [`IpCountryFile`](../../../framework/backend/I18n/Country/IpCountryFile.php):
+  an ISO 3166-1 alpha-2 code, or `null` when the country is unknown.
+- The operator puts that file, named `country.mmdb`, into the installation's
+  country directory: the logical `$fs` directory `ip_country`
+  (`FsContext::IP_COUNTRY`) registered `CLUSTER` (see
+  [Node Or Cluster](filesystem.md#node-or-cluster)), whose path the environment
+  value `HILOS_IP_COUNTRY_DIR` can override.
 - With no file, or with no such address in the file, the country is unknown
-  and nothing fails (not in the code yet — HIL-2310).
+  and nothing fails.
 - A file that cannot be read leaves one line in the log, and the country is
-  unknown (not in the code yet — HIL-2310).
+  unknown.
 - By the owner's decision of 2026-11-26, a new file is seen after the daemon
-  restarts and is not picked up on the fly (not in the code yet — HIL-2310).
+  restarts and is not picked up on the fly.
 - A rung takes the country as given and does not know where it came from
   (not in the code yet — HIL-2311).
 - An unknown country silently skips the rung, behind a VPN the country is the
@@ -305,7 +308,6 @@ These keys are pointers to later work, not implementation markers:
 
 - What carries a guest's choice in the browser — HIL-2299.
 - Where the menu takes the browser's suggestions from — HIL-2301.
-- The reader of the country database file — HIL-2310.
 - Whose formats the last rung of the region ladder gives when the default
   language has no countryless locale in the reference — HIL-109. Of the 50
   built-in languages eight have one (`en`, `zh`, `es`, `hi`, `ar`, `ru`, `pt`,

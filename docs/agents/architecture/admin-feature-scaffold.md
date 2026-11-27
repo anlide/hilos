@@ -557,7 +557,9 @@ language and country contexts. The context-required pages stay outside
 `hilosAdminViews()`; the root remains the self-contained default shell, showing
 Languages and Countries.
 It supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code.
-Startup refuses a missing page or agent; topology tests check the required migrations.
+It registers the `ip_country` directory with `registerIpCountryDirectory()` in its
+`FsContext::configure()` ([filesystem.md](filesystem.md#node-or-cluster), HIL-2310).
+Startup refuses a missing page, agent or `ip_country` directory; topology tests check the required migrations.
 For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.
 
 ### daemon — the Daemon section

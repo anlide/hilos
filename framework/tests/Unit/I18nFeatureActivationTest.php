@@ -17,12 +17,15 @@ use Hilos\Database\Entity\Item\I18nReflow;
 use Hilos\Database\Entity\Item\Language;
 use Hilos\Database\Entity\Item\LanguageName;
 use Hilos\Database\Entity\Item\Locale;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos as HilosFacade;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
 use Hilos\Pages\AbstractHilosI18nPage;
 use Hilos\Pages\I18n\Lists\AbstractHilosI18nCountriesListPage;
 use Hilos\Pages\I18n\Lists\AbstractHilosI18nLanguagesListPage;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** Pins the framework i18n feature definition and its activation refusals. */
@@ -85,6 +88,44 @@ final class I18nFeatureActivationTest extends TestCase
 
         I18nFeatureUndeclaredHilos::validateFeatureActivation();
     }
+
+    /** @return iterable<string, array{?FsContext}> Filesystem states without an ip_country directory */
+    public static function missingIpCountryDirectory(): iterable
+    {
+        yield 'no filesystem' => [null];
+        yield 'no ip_country directory' => [new I18nFeatureFsContext()];
+    }
+
+    /** @param ?FsContext $context Filesystem without the ip_country directory */
+    #[DataProvider('missingIpCountryDirectory')]
+    public function testMissingIpCountryDirectoryIsRefusedOnlyWhenDeclared(?FsContext $context): void
+    {
+        $previousFs = HilosFacade::$fs;
+        HilosFacade::$fs = $context;
+        try {
+            I18nFeatureUndeclaredHilos::checkIpCountryDirectory();
+            $this->expectException(IncompleteFeatureActivationException::class);
+            $this->expectExceptionMessage('HilosFeature::I18N reads the country of a connection from the ip_country directory');
+            I18nFeatureCompleteHilos::checkIpCountryDirectory();
+        } finally {
+            HilosFacade::$fs = $previousFs;
+        }
+    }
+
+    public function testRegisteredIpCountryDirectoryPassesWithoutCreatingIt(): void
+    {
+        $previousFs = HilosFacade::$fs;
+        HilosFacade::$fs = new I18nFeatureFsContext();
+        HilosFacade::$fs->configure();
+        try {
+            I18nFeatureCompleteHilos::checkIpCountryDirectory();
+            self::assertSame('/uncreated/ip_country', HilosFacade::$fs->ip_country->getPath());
+            self::assertSame([], HilosFacade::$fs->declarationErrors());
+            self::assertDirectoryDoesNotExist('/uncreated/ip_country');
+        } finally {
+            HilosFacade::$fs = $previousFs;
+        }
+    }
 }
 
 /** Complete test-only registration of the i18n feature. */
@@ -110,6 +151,12 @@ class I18nFeatureCompleteHilos extends HilosFacade
     {
         return new I18nFeatureTestDbContext();
     }
+
+    /** Checks the ip_country directory against the fixture context. */
+    public static function checkIpCountryDirectory(): void
+    {
+        static::refuseI18nWithoutIpCountryDirectory();
+    }
 }
 
 final class I18nFeatureTestDbContext extends HilosDbContext
@@ -117,6 +164,15 @@ final class I18nFeatureTestDbContext extends HilosDbContext
     /** No collections are read by the activation test. */
     public function configure(): void
     {
+    }
+}
+
+final class I18nFeatureFsContext extends FsContext
+{
+    /** Registers an intentionally uncreated shared ip_country path. */
+    public function configure(): void
+    {
+        $this->registerDirectory(self::IP_COUNTRY, '/uncreated/ip_country', DirectoryScope::CLUSTER);
     }
 }
 

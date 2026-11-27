@@ -43,7 +43,7 @@ final class ChatFsContext extends FsContext
     /**
      * Registers the chat filesystem directories from project and environment paths.
      *
-     * @throws EnvException When the published-files directory setting cannot be read
+     * @throws EnvException When the published-files directory setting or the IP-to-country directory override cannot be read
      */
     public function configure(): void
     {
@@ -80,5 +80,6 @@ final class ChatFsContext extends FsContext
             dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/status',
             DirectoryScope::CLUSTER,
         );
+        $this->registerIpCountryDirectory(dirname(__DIR__, 2) . '/' . Hilos::DATA_DIR . '/ip_country');
     }
 }

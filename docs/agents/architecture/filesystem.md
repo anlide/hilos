@@ -30,26 +30,30 @@ name through the directory's ArrayAccess
 (`framework/backend/Fs/FsDirectory.php`), and a temporary file by the 32-hex
 index that `create()` returns (`framework/backend/Fs/FsTmpDirectory.php`).
 
-The framework reserves six names: `tmp` (`FsContext::TMP`, the cluster's: files
+The framework reserves seven names: `tmp` (`FsContext::TMP`, the cluster's: files
 are handed to the files library through it), `files` (`FsContext::FILES`,
 HIL-336), `data_export` (`FsContext::DATA_EXPORT`, HIL-303), `legal_export`
 (`FsContext::LEGAL_EXPORT`, HIL-1234, the administrators' exports of acceptance
 records — [legal-documents.md](legal-documents.md)), `status`
-(`FsContext::STATUS`, public Status files) and `analytics_journal`
+(`FsContext::STATUS`, public Status files), `analytics_journal`
 (`FsContext::ANALYTICS_JOURNAL`, HIL-1154, a node directory whose one owner is
-the node's journal agent — [analytics.md](analytics.md)). During `Hilos::init()`
-the start refuses `UPLOADS` or `IMAGES` without tmp, `FILES` without `files`,
-`AUTH` without `data_export`, a registered legal agent
+the node's journal agent — [analytics.md](analytics.md)) and `ip_country`
+(`FsContext::IP_COUNTRY`, HIL-2310, the operator's IP-to-country file —
+[language-and-region.md](language-and-region.md#the-country-of-a-connection)).
+During `Hilos::init()` the start refuses `UPLOADS` or `IMAGES` without tmp,
+`FILES` without `files`, `AUTH` without `data_export`, a registered legal agent
 (`HilosAgentType::HILOS_LEGAL`) without `legal_export`, `HilosFeature::STATUS`
-without `status`, and `ANALYTICS` without `analytics_journal`
+without `status`, `ANALYTICS` without `analytics_journal`, and
+`HilosFeature::I18N` without `ip_country`
 (`refuseUploadsWithoutTmp()`, `refuseImagesWithoutTmp()`,
 `refuseFilesWithoutDirectory()`, `refuseDataExportWithoutDirectory()`,
-`refuseLegalExportWithoutDirectory()`, `refuseStatusWithoutDirectory()` and
-`refuseAnalyticsWithoutJournalDirectory()` in `framework/backend/Hilos.php`).
+`refuseLegalExportWithoutDirectory()`, `refuseStatusWithoutDirectory()`,
+`refuseAnalyticsWithoutJournalDirectory()` and
+`refuseI18nWithoutIpCountryDirectory()` in `framework/backend/Hilos.php`).
 The general declaration guard `refuseMisdeclaredDirectories()` throws
-`InvalidTopologyException` when `tmp`, `files`, `data_export`, `legal_export`
-or `status` is declared `NODE`, when `analytics_journal` is declared `CLUSTER`,
-or when one path is declared by two owners; the rules live in
+`InvalidTopologyException` when `tmp`, `files`, `data_export`, `legal_export`,
+`status` or `ip_country` is declared `NODE`, when `analytics_journal` is
+declared `CLUSTER`, or when one path is declared by two owners; the rules live in
 `FsContext::declarationErrors()`, which a project's unit test can call on its
 own context.
 
@@ -72,9 +76,9 @@ The test is one question: will a process of another node open a file from
 this directory? An agent placed by POLICY moves between nodes, so its
 directory answers yes.
 
-`tmp`, `files`, `data_export` and `legal_export` are declared cluster directories,
-whatever features the project declares; any of them declared `NODE` fails the
-start. `files`, because
+`tmp`, `files`, `data_export`, `legal_export` and `ip_country` are declared
+cluster directories, whatever features the project declares; any of them
+declared `NODE` fails the start. `files`, because
 the library is one per cluster and puts a file in from its own node, while the
 bytes are sent by X-Accel from the nginx of the node that holds the browser's
 connection
@@ -87,6 +91,17 @@ too, is sent by the nginx of the browser's node. `legal_export` for the same
 two reasons: its agent is a cluster singleton that removes on start every ready
 export whose file it cannot see, and the file is sent by the nginx of the
 browser's node.
+
+`ip_country` (HIL-2310) is the cluster's, because a process of any node looks up
+the country of an address: the operator puts one file
+([The Country Of A Connection](language-and-region.md#the-country-of-a-connection))
+into one directory for the whole cluster, on a shared volume. A project
+registers it with `registerIpCountryDirectory($defaultPath)`, which always
+declares it `CLUSTER`. The path is the environment value `HILOS_IP_COUNTRY_DIR`,
+read by each node for itself, since every node mounts the volume where it likes;
+empty leaves the project's default. The framework reads only `country.mmdb`
+there, but in a cluster the start of a node writes the cluster directory marker
+into the directory, as into every `CLUSTER` one, so it must be writable.
 
 A Status installation also registers reserved logical name `status`
 (`FsContext::STATUS`, `Hilos::$fs->status`) as `CLUSTER`: one publisher and every

@@ -23,7 +23,7 @@ final class OnlineTestingFsContextTest extends TestCase
         $context->configure();
 
         self::assertSame(
-            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::STATUS],
+            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::STATUS, FsContext::IP_COUNTRY],
             array_keys($context->getDirectories()),
         );
         self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());

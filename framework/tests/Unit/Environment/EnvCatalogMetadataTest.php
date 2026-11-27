@@ -40,7 +40,7 @@ final class EnvCatalogMetadataTest extends TestCase
             'DAEMON_LOG_FILE', 'DAEMON_ERROR_LOG_FILE', 'DOCKER_DAEMON_IP', 'WEBSOCKET_HOST',
             'FRONTEND_HTML_HOST', 'CLUSTER_NODE_ID', 'CLUSTER_NODE_NAME', 'CLUSTER_NODE_ROLE',
             'CLUSTER_NODE_CAPABILITIES', 'CLUSTER_PEER_HOST', 'CLUSTER_PEER_ADVERTISE',
-            'CLUSTER_TLS_CERT_FILE',
+            'CLUSTER_TLS_CERT_FILE', 'HILOS_IP_COUNTRY_DIR',
         ];
         sort($sensitive);
         sort($perNode);
