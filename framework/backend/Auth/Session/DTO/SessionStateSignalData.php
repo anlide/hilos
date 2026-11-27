@@ -50,6 +50,11 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  *
  * {@see self::$accountStanding} is stamped at the same door (HIL-945): the standing of the person
  * the session acts as, composed by the framework, so no place that builds a frame passes it.
+ *
+ * {@see self::$acceptLanguage} travels here (HIL-2309) because only the library sees the headers of a
+ * connection - the handshake is addressed to it - while the language a tab shows is decided by the
+ * project. It is sent raw: the project reads it. The header belongs to one socket, so a frame carrying
+ * it names one socket, like a frame with a ticket; every frame but the handshake carries none.
  */
 final class SessionStateSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -57,6 +62,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     public const string accountBlocked = 'accountBlocked';
     public const string accountStanding = 'accountStanding';
     public const string accessLossReason = 'accessLossReason';
+    public const string acceptLanguage = 'acceptLanguage';
 
     /**
      * @param string $sessionToken Session cookie token the named sockets belong to now
@@ -82,7 +88,10 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding Standing of the person
      *     the session acts as, or null when it is anonymous
      * @param ?string $accessLossReason Live reason access was lost, or null when this frame reports no loss
-     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
+     * @param ?string $acceptLanguage Accept-Language header of the socket that connected, as its browser sent it;
+     *     only on the handshake frame, null on every other
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
+     *     sockets, or the access-loss reason is invalid for the identity
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -98,6 +107,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?array $accountBlocked = null,
         public readonly ?array $accountStanding = null,
         public readonly ?string $accessLossReason = null,
+        public readonly ?string $acceptLanguage = null,
     ) {
         if ($accessLossReason !== null) {
             if (!in_array($accessLossReason, SessionAccessLossReason::ALL, true)) {
@@ -110,10 +120,11 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
 
         if (
             count($acceptKeys) > 1
-            && ($rotationTicket !== null || $requestId !== null || $action !== null || $outcome !== null)
+            && ($rotationTicket !== null || $requestId !== null || $action !== null || $outcome !== null || $acceptLanguage !== null)
         ) {
             throw new InvalidArgumentException(
-                'A session state frame that answers an action or hands over a rotation ticket names one socket at most, this one names '
+                'A session state frame that answers an action, hands over a rotation ticket or carries the browser\'s Accept-Language'
+                . ' names one socket at most, this one names '
                 . count($acceptKeys)
             );
         }
@@ -140,6 +151,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             outcome: $this->outcome,
             accountBlocked: $this->accountBlocked,
             accountStanding: $this->accountStanding,
+            acceptLanguage: $this->acceptLanguage,
         );
     }
 
@@ -149,7 +161,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
      *     Blocked account the session lost, or null when it holds no card
      * @return self The same frame carrying that card
-     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
+     *     sockets, or the access-loss reason is invalid for the identity
      */
     public function withAccountBlocked(?array $accountBlocked): self
     {
@@ -167,6 +180,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             outcome: $this->outcome,
             accountBlocked: $accountBlocked,
             accountStanding: $this->accountStanding,
+            acceptLanguage: $this->acceptLanguage,
         );
     }
 
@@ -179,7 +193,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding
      *     Standing of the person the session acts as, or null when it is anonymous
      * @return self The same frame carrying that standing
-     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
+     *     sockets, or the access-loss reason is invalid for the identity
      */
     public function withAccountStanding(?array $accountStanding): self
     {
@@ -197,6 +212,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             outcome: $this->outcome,
             accountBlocked: $this->accountBlocked,
             accountStanding: $accountStanding,
+            acceptLanguage: $this->acceptLanguage,
         );
     }
 
@@ -221,6 +237,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             self::accountBlocked => $this->accountBlocked,
             self::accountStanding => $this->accountStanding,
             self::accessLossReason => $this->accessLossReason,
+            self::acceptLanguage => $this->acceptLanguage,
         ];
     }
 
@@ -234,7 +251,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
      * @throws InvalidFormatException When the payload names no session, omits accessLossReason, or a present field is not of its declared type
-     * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
+     *     sockets, or the access-loss reason is invalid for the identity
      */
     public static function fromArray(array $data): static
     {
@@ -264,6 +282,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             accountBlocked: HandshakeResponseSignalData::readAccountBlocked($data),
             accountStanding: HandshakeResponseSignalData::readAccountStanding($data),
             accessLossReason: self::requireNullableString($data, self::accessLossReason),
+            acceptLanguage: self::optionalString($data, self::acceptLanguage),
         );
     }
 

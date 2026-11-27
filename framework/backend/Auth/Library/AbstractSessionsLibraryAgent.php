@@ -1556,6 +1556,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * onto the session what it named - a guest's too, and a name that is not a usable zone as none -
      * and a signed-in browser hands it to the person at the keyboard ({@see self::reportBrowserTimeZone()}).
      *
+     * The browser names the languages it asks for in its Accept-Language header (HIL-2309). The
+     * handshake frame carries that header raw, for the connected socket alone
+     * ({@see SessionStateSignalData::$acceptLanguage}): the library reads no language out of it, the
+     * project decides the tab's language and region from it, and a missing or malformed header is
+     * never a reason to refuse the handshake.
+     *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
@@ -1606,6 +1612,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             pendingAck: $this->sessionPendingAck($session),
             pendingAuthStep: $pendingAuthStep,
             rotationTicket: $resolved->rotationTicket,
+            acceptLanguage: HttpHeaderHelper::get($data->headers, HttpConstants::HEADER_ACCEPT_LANGUAGE),
         ));
         $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($session->token);
         $this->publishSessionToasts($sessionTokenHash);

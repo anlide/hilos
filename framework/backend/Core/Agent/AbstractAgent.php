@@ -75,6 +75,7 @@ use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\BrowserLanguages;
 use Hilos\I18n\DTO\TabLanguage;
 use Hilos\I18n\TabLanguageLadder;
 use Hilos\WiringRefusal;
@@ -89,6 +90,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\RtWriteBackpressureException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
+use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeProgressSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeRefreezeSignalData;
@@ -619,9 +621,10 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      *
      * The language and the region are decided here for each tab on every session-state frame -
      * connecting, signing in, signing out, a re-sent state - and written on the tab's connection
-     * row before the response leaves ({@see settleTabLanguage()}). Neither deciding them nor a write
-     * of them the row cannot take now fails the response: a tab that cannot be told its language is
-     * told null.
+     * row before the response leaves ({@see settleTabLanguage()}). They are decided with what the
+     * tab's browser asked for (HIL-2309), which the row remembers from the moment the tab connected.
+     * Neither deciding them nor a write of them the row cannot take now fails the response: a tab
+     * that cannot be told its language is told null.
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
@@ -666,7 +669,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
         } elseif ($state->userId === null) {
             DataExportGroup::leave($acceptKey, $this->getAgentSignalSource());
         }
-        $tabLanguage = $this->settleTabLanguage($acceptKey);
+        $tabLanguage = $this->settleTabLanguage($acceptKey, $state);
 
         $this->sendToUser(
             $signalName,
@@ -2082,11 +2085,19 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Decides the language and the region one tab shows and writes them on its connection row (HIL-109).
      *
      * The choice of the person is not read yet - the account's and the guest's join later (HIL-2298,
-     * HIL-2299) - so the ladder decides from the reference alone. A project without the I18N feature
-     * has no language to decide and writes nothing. The row is written before the response leaves,
-     * and the master holds the response behind that write ({@see WorkerManager::readsBehindRtWrites()}),
-     * so a reader of the row learns the language no later than the browser does; a frame that restates
-     * the language the row holds leaves the row alone.
+     * HIL-2299) - so the ladder decides from the reference and the tab's browser alone. A project
+     * without the I18N feature has no language to decide and writes nothing. The row is written before
+     * the response leaves, and the master holds the response behind that write
+     * ({@see WorkerManager::readsBehindRtWrites()}), so a reader of the row learns the language no later
+     * than the browser does; a frame that restates the request and the language the row holds leaves
+     * the row alone.
+     *
+     * What the browser asks for (HIL-2309) comes with the handshake frame, raw, for the one socket that
+     * connected: that socket's ladder reads the header, and the list it names is written on its row
+     * beside the language, in the same write. Every other socket the frame reaches - the handshake of a
+     * new tab goes to every tab of the session ({@see HilosSessionConnections::acceptKeysForSessionFrame()})
+     * - and every frame without a header read the list their own row remembers. A tab with no row
+     * decides from the frame's list, or from none, and nothing is written.
      *
      * The handshake never fails over the language. Whatever Hilos exception the ladder raises is logged
      * under this agent and the tab is told null - the answer it also gets while the default language has
@@ -2094,40 +2105,47 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * is named a refusal in the log, beside the line the refusal writes itself. A language write the
      * source's ordinary RT FIFO has no room for is logged too, and the row keeps what it held; the tab is
      * then told null rather than the decided language, which its browser would otherwise learn before a
-     * reader of the row. Either way the next frame decides again. A write this agent has no right to is
-     * the project's wiring error, not a language one, and travels.
+     * reader of the row. Either way the next frame decides again. A read of the tab's row that fails is
+     * handled as a failed ladder, and the row, whose request is then unknown, is not written. A write this
+     * agent has no right to is the project's wiring error, not a language one, and travels.
      *
      * @param string $acceptKey Accept key of the tab's connection
+     * @param SessionStateSignalData $state Session state frame the response answers; its header belongs to its initiator
      * @return ?TabLanguage The tab's language and region; null without the I18N feature, while the default
-     *     language has no row, when the ladder failed, or when the row could not take the write
+     *     language has no row, when the ladder or the read of the tab's row failed, or when the row could not take the write
      * @throws RtActionsCollectionNameNullException When the connections collection name is unavailable
      * @throws RtActionsStateCollectionNullException When the connections state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent does not own the connection row
      * @throws InvalidArgumentException When the queued RT-sync signal of the language write cannot be named
      * @throws HilosException Whatever the project's read of its own connection fields raises
      */
-    private function settleTabLanguage(string $acceptKey): ?TabLanguage
+    private function settleTabLanguage(string $acceptKey, SessionStateSignalData $state): ?TabLanguage
     {
         if (!Hilos::hasFeature(HilosFeature::I18N)) {
             return null;
         }
 
+        $connections = Hilos::$rt?->sessionConnectionsRegistry();
+        $browser = null;
         try {
-            $tabLanguage = TabLanguageLadder::resolve(null, null);
+            $browser = $state->acceptLanguage !== null && $acceptKey === $state->initiatorAcceptKey()
+                ? BrowserLanguages::fromAcceptLanguage($state->acceptLanguage)
+                : BrowserLanguages::fromStored(($connections[$acceptKey] ?? null)?->browserLanguages);
+            $tabLanguage = TabLanguageLadder::resolve(null, null, $browser);
         } catch (WiringRefusal) {
-            $this->logAgentError('The tab language could not be decided: a read of the language reference was refused');
+            $this->logAgentError('The tab language could not be decided: a read of the language reference or of the tab\'s row was refused');
             $tabLanguage = null;
         } catch (HilosException $exception) {
             $this->logAgentError('The tab language could not be decided: ' . $exception->getMessage());
             $tabLanguage = null;
         }
 
-        $actions = Hilos::$rt?->sessionConnectionsRegistry()?->actions;
-        if (!$actions instanceof HilosSessionConnectionsActions) {
+        $actions = $connections?->actions;
+        if ($browser === null || !$actions instanceof HilosSessionConnectionsActions) {
             return $tabLanguage;
         }
         try {
-            $actions->setTabLanguage($acceptKey, $tabLanguage?->languageId, $tabLanguage?->localeId);
+            $actions->setTabLanguage($acceptKey, $browser->toStored(), $tabLanguage?->languageId, $tabLanguage?->localeId);
         } catch (RtWriteBackpressureException $refusal) {
             $this->logAgentError('The tab language could not be written on its connection row: ' . $refusal->getMessage());
 

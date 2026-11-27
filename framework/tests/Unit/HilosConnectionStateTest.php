@@ -153,13 +153,15 @@ final class HilosConnectionStateTest extends TestCase
             HilosSessionConnection::sessionId => 17,
             HilosSessionConnection::languageId => 3,
             HilosSessionConnection::localeId => 11,
+            HilosSessionConnection::browserLanguages => 'ru-UA,ru,en',
             SessionConnectionFixture::label => 'old',
         ]);
     }
 
     /**
-     * The language and the region are nullable session-stage fields: a full row that does not carry
-     * them reads them as null, as it reads the session token and id, and nothing is minted in their place.
+     * The language, the region and the browser's request are nullable session-stage fields: a full row
+     * that does not carry them reads them as null, as it reads the session token and id, and nothing is
+     * minted in their place.
      */
     public function testASessionRowWithoutTheTabLanguageReadsItAsNull(): void
     {
@@ -175,6 +177,7 @@ final class HilosConnectionStateTest extends TestCase
 
         $this->assertNull($hydrated->languageId);
         $this->assertNull($hydrated->localeId);
+        $this->assertNull($hydrated->browserLanguages);
         $this->assertSame('tok-a', $hydrated->sessionToken);
     }
 
@@ -207,8 +210,41 @@ final class HilosConnectionStateTest extends TestCase
             HilosSessionConnection::sessionId => 17,
             HilosSessionConnection::languageId => 3,
             HilosSessionConnection::localeId => 11,
+            HilosSessionConnection::browserLanguages => 'ru-UA,ru,en',
             SessionConnectionFixture::label => 'old',
             $field => $value,
+        ]);
+    }
+
+    /** @return array<string, array{mixed}> Browser requests that are not a stored list of tags */
+    public static function nonTextBrowserLanguages(): array
+    {
+        return [
+            'a number' => [3],
+            'a flag' => [true],
+            'a list' => [['ru-UA', 'ru']],
+        ];
+    }
+
+    /**
+     * @param mixed $value Value that is not the text of a stored list
+     */
+    #[DataProvider('nonTextBrowserLanguages')]
+    public function testFromRowRefusesABrowserRequestThatIsNotText(mixed $value): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        SessionConnectionFixture::fromRow([
+            HilosConnection::acceptKey => 'ak-16',
+            HilosConnection::userId => 5,
+            HilosConnection::connectedAt => 1710000000123,
+            HilosConnection::probablyOffline => false,
+            HilosSessionConnection::sessionToken => 'tok-a',
+            HilosSessionConnection::sessionId => 17,
+            HilosSessionConnection::languageId => 3,
+            HilosSessionConnection::localeId => 11,
+            HilosSessionConnection::browserLanguages => $value,
+            SessionConnectionFixture::label => 'old',
         ]);
     }
 
@@ -233,6 +269,12 @@ final class HilosConnectionStateTest extends TestCase
         $connection->applyDiff([HilosSessionConnection::localeId => null]);
         $this->assertSame(3, $connection->languageId);
         $this->assertNull($connection->localeId);
+
+        $connection->applyDiff([HilosSessionConnection::browserLanguages => 'de,en']);
+        $this->assertSame('de,en', $connection->browserLanguages);
+        $this->assertSame(3, $connection->languageId);
+        $connection->applyDiff([HilosSessionConnection::languageId => 4]);
+        $this->assertSame('de,en', $connection->browserLanguages);
     }
 
     /**
@@ -309,6 +351,7 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::sessionId));
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::languageId));
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::localeId));
+        $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::browserLanguages));
         $this->assertFalse(method_exists(PresenceConnectionFixtures::class, 'findAllBySessionToken'));
     }
 
@@ -329,6 +372,7 @@ final class HilosConnectionStateTest extends TestCase
                 HilosSessionConnection::sessionId => 17,
                 HilosSessionConnection::languageId => null,
                 HilosSessionConnection::localeId => null,
+                HilosSessionConnection::browserLanguages => null,
                 SessionConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),

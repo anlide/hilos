@@ -23,13 +23,14 @@ use Hilos\HilosException;
  * @property-read ?int $sessionId Database session row id, or null when none is attached
  * @property-read ?int $languageId Language the tab shows, or null without the I18N feature or before one is decided
  * @property-read ?int $localeId Locale the tab shows, or null when no stored locale fits or no language is decided
+ * @property-read ?string $browserLanguages Stored tags the tab's browser asked for, by weight, or null when it named nothing usable
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
     /**
      * Adds the session-stage fields to the base ones of {@see HilosConnection::__get()}.
      *
-     * @param string $name Property name (sessionToken, sessionId, languageId, localeId, or a presence-stage one)
+     * @param string $name Property name (sessionToken, sessionId, languageId, localeId, browserLanguages, or a presence-stage one)
      * @return mixed Property value or item actions
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
@@ -42,6 +43,7 @@ abstract class HilosSessionConnection extends HilosConnection
             StateHilosSessionConnection::sessionId => $this->_state->sessionId,
             StateHilosSessionConnection::languageId => $this->_state->languageId,
             StateHilosSessionConnection::localeId => $this->_state->localeId,
+            StateHilosSessionConnection::browserLanguages => $this->_state->browserLanguages,
             default => parent::__get($name),
         };
     }

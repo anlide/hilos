@@ -83,7 +83,7 @@ Take the first rung that fits, top down:
    (not in the code yet — HIL-2299); for a signed-in person, the language of
    the account (not in the code yet — HIL-2298).
 3. **The browser.** The first available language of `Accept-Language`, taken by
-   weight (not in the code yet — HIL-2309).
+   weight.
 4. **The country of the connection.** The language of the locale that country
    holds as its default, `hilos_country.default_locale_id`, when that language
    is available (not in the code yet — HIL-2311).
@@ -94,6 +94,17 @@ Take the first rung that fits, top down:
 
 A chosen language that is not available sends the tab straight to rung 5, past
 the browser and the country; the choice is not erased and waits.
+
+The sessions library reads the header at the handshake and sends it raw in the
+state frame, `SessionStateSignalData::$acceptLanguage`, for the one socket that
+connected; the project's side parses it with
+[`BrowserLanguages`](../../../framework/backend/I18n/BrowserLanguages.php) —
+weights by RFC 9110, the language is the first subtag taken literally with no
+synonyms, the region the subtag after it or after an optional script, at most
+16 tags. The tab's connection row remembers the list as `browserLanguages`, and
+every later frame takes it from there, the frames that reach every tab of a
+session included; a browser whose language changed reaches an open tab when
+that tab reconnects.
 
 ## The Region Ladder
 
@@ -106,8 +117,7 @@ fits, top down:
    (not in the code yet — HIL-2298).
 2. The variant of this language for the country of the connection
    (not in the code yet — HIL-2311).
-3. The first available variant of this language that the browser names
-   (not in the code yet — HIL-2309).
+3. The first available variant of this language that the browser names.
 4. The countryless locale of this language, when it is available.
 5. The countryless locale of the default language, when it is switched on.
 

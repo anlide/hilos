@@ -326,6 +326,65 @@ final class SessionStateSignalDataTest extends TestCase
         );
     }
 
+    /** @return array<string, array{?string}> Headers a browser sends and an explicit absence */
+    public static function acceptLanguageHeaders(): array
+    {
+        return [
+            'weighted list' => ['ru-UA,ru;q=0.9,en;q=0.5'],
+            'malformed' => [';;q=x'],
+            'no header' => [null],
+        ];
+    }
+
+    /**
+     * The handshake frame passes the library's stamping door, so the browser's header must survive
+     * each copy made there and the trip to the project agent; a frame that leaves it out reads null.
+     *
+     * @param ?string $header Accept-Language of the socket that connected
+     */
+    #[DataProvider('acceptLanguageHeaders')]
+    public function testAcceptLanguageSurvivesEveryCopyAndRoundtrip(?string $header): void
+    {
+        foreach ([[], ['socket-a']] as $keys) {
+            $frame = new SessionStateSignalData(
+                sessionToken: 'token',
+                sessionId: 17,
+                userId: null,
+                acceptKeys: $keys,
+                pendingAck: 'auth_registered',
+                rotationTicket: 'ticket',
+                accountBlocked: ['identifier' => 'ada@example.test', 'dataExport' => null],
+                acceptLanguage: $header,
+            );
+            $copies = [
+                $frame->withAccountBlocked(null),
+                $frame->withAccountStanding(null),
+                $frame->withAccessLossReason(null),
+            ];
+            foreach ($copies as $copy) {
+                self::assertSame($header, $copy->acceptLanguage);
+                self::assertSame($header, $copy->toArray()[SessionStateSignalData::acceptLanguage]);
+                self::assertEquals($copy, SessionStateSignalData::fromArray($copy->toArray()));
+            }
+            $payload = $frame->toArray();
+            unset($payload[SessionStateSignalData::acceptLanguage]);
+            self::assertNull(SessionStateSignalData::fromArray($payload)->acceptLanguage);
+        }
+    }
+
+    public function testFrameWithABrowserHeaderAndMultipleSocketsIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: null,
+            acceptKeys: ['socket-a', 'socket-b'],
+            acceptLanguage: 'ru-UA,ru;q=0.9',
+        );
+    }
+
     public function testFrameWithAnAnswerAndOneSocketRoundtrips(): void
     {
         $frame = new SessionStateSignalData(

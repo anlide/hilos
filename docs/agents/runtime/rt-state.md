@@ -74,7 +74,7 @@ removing it. It is said by standing on a lower stage:
 | Stage | Row carries | Seams it unlocks |
 |---|---|---|
 | `HilosConnection` | `acceptKey`, `?int userId`, `connectedAt`, `bool probablyOffline` | `findAuthenticated()`, `findByUser()`, presence in the users table: `online`, `probably_offline` or `offline` |
-| `HilosSessionConnection` | the above plus `?string sessionToken`, `?int sessionId`, `?int languageId`, `?int localeId` | `findAllBySessionToken()`, the sessions library's read of a session's sockets, the session carry-over, the tab's language and region (`setTabLanguage()`) |
+| `HilosSessionConnection` | the above plus `?string sessionToken`, `?int sessionId`, `?int languageId`, `?int localeId`, `?string browserLanguages` | `findAllBySessionToken()`, the sessions library's read of a session's sockets, the session carry-over, the tab's language and region with what its browser asked for (`setTabLanguage()`) |
 
 A new framework seam names the **minimum** stage it needs, never the fullest. A
 project that has not reached that stage then lacks the *method*, so the gap is a

@@ -9,6 +9,7 @@ use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -73,7 +74,8 @@ use ReflectionProperty;
  * A guest and a signed-in person each hold one tab. The harness carries queued frames through the
  * ordinary declarative router from the real sessions library to a minimal project host, which sends
  * through the framework's stamped handshake, as every demo does. The reference is seeded through its
- * own actions; the choice of a person is not read yet, so the ladder takes the default language.
+ * own actions; the choice of a person is not read yet, so the ladder takes what the tab's browser
+ * asks for (HIL-2309), and the default language when it asks for nothing available.
  */
 final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -167,12 +169,76 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         $this->seedLanguage('es', 'Español', false);
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, TabLanguageHandshakeWithoutI18nTestHilos::class);
 
-        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST);
-        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON);
+        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, 'es');
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'es-MX,es;q=0.9');
         $frames = $this->carryFrames();
 
         $this->assertToldNull($frames, [self::TAB_GUEST, self::TAB_PERSON]);
         self::assertSame([], $this->languageWrites($frames));
+        foreach ([self::TAB_GUEST, self::TAB_PERSON] as $acceptKey) {
+            self::assertNull(Hilos::$rt->tabLanguageConnections[$acceptKey]->browserLanguages);
+        }
+    }
+
+    /**
+     * The tab that connected is told the first available language its browser names by weight, and
+     * its row keeps the request beside the language, in the one write that settles both.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testATabIsToldTheLanguageItsBrowserAsksForAndTheRowKeepsTheRequest(): void
+    {
+        $this->seedLanguage('es', 'Español', false);
+        [$russian, $russianLocale] = $this->seedLanguage('ru', 'Русский', false);
+
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'ru-UA,ru;q=0.9,en;q=0.5');
+        $frames = $this->carryFrames();
+
+        $handshakes = $this->handshakeFrames($frames);
+        self::assertCount(1, $handshakes);
+        $tabLanguage = self::tabLanguageOf($handshakes[0]);
+        self::assertSame($russian->id, $tabLanguage[TabLanguage::languageId]);
+        self::assertSame($russianLocale->id, $tabLanguage[TabLanguage::localeId]);
+        $row = Hilos::$rt->tabLanguageConnections[self::TAB_PERSON];
+        self::assertSame('ru-UA,ru,en', $row->browserLanguages);
+        self::assertSame($russian->id, $row->languageId);
+        self::assertSame($russianLocale->id, $row->localeId);
+        $writes = $this->languageWrites($frames);
+        self::assertCount(1, $writes);
+        self::assertSame('ru-UA,ru,en', $writes[0]->row[StateSessionConnection::browserLanguages]);
+    }
+
+    /**
+     * The handshake of a second tab reaches every tab of the session, and a restatement names them
+     * all without any header: each tab keeps the language of its own browser and its own row, and
+     * only the tab that connected is written.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testEachTabOfASessionKeepsItsOwnBrowserLanguageOnFramesThatReachThemAll(): void
+    {
+        $this->seedLanguage('es', 'Español', false);
+        [$russian] = $this->seedLanguage('ru', 'Русский', false);
+        [$german] = $this->seedLanguage('de', 'Deutsch', false);
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'ru-UA,ru;q=0.9,en;q=0.5');
+        $this->carryFrames();
+        $expected = [
+            self::TAB_PERSON => [$russian->id, 'ru-UA,ru,en'],
+            self::TAB_PERSON_SECOND => [$german->id, 'de'],
+        ];
+
+        $this->handshake(self::TAB_PERSON_SECOND, self::TOKEN_PERSON, 'de');
+        $second = $this->carryFrames();
+
+        $this->assertTabsKeepTheirBrowserLanguage($second, $expected);
+        $writes = $this->languageWrites($second);
+        self::assertCount(1, $writes, 'Only the tab that connected is written');
+        self::assertSame(self::TAB_PERSON_SECOND, $writes[0]->stateId);
+
+        $restated = $this->restate(self::TOKEN_PERSON, [self::TAB_PERSON, self::TAB_PERSON_SECOND]);
+
+        $this->assertTabsKeepTheirBrowserLanguage($restated, $expected);
+        self::assertSame([], $this->languageWrites($restated));
     }
 
     /** @throws HilosException When a handshake or a delivery hop fails */
@@ -333,6 +399,51 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
     }
 
     /**
+     * @param list<SignalDTO> $frames Observed queue
+     * @param array<string, array{int, string}> $tabs Language id each tab is told and the request its row keeps
+     */
+    private function assertTabsKeepTheirBrowserLanguage(array $frames, array $tabs): void
+    {
+        $told = [];
+        foreach ($this->handshakeFrames($frames) as $frame) {
+            $told[(string)$frame->targetAcceptKey] = self::tabLanguageOf($frame)[TabLanguage::languageId];
+        }
+        ksort($told);
+        $expected = array_map(static fn (array $tab): int => $tab[0], $tabs);
+        ksort($expected);
+        self::assertSame($expected, $told);
+        foreach ($tabs as $acceptKey => [$languageId, $browserLanguages]) {
+            self::assertSame($languageId, Hilos::$rt->tabLanguageConnections[$acceptKey]->languageId);
+            self::assertSame($browserLanguages, Hilos::$rt->tabLanguageConnections[$acceptKey]->browserLanguages);
+        }
+    }
+
+    /**
+     * Hands the host a restatement of the session, as the library sends one: every named tab, no header.
+     *
+     * @param string $token Session cookie token
+     * @param list<string> $acceptKeys Tabs the frame names
+     * @return list<SignalDTO> All frames observed while it is carried
+     * @throws HilosException When the session cannot be read or a delivery hop fails
+     */
+    private function restate(string $token, array $acceptKeys): array
+    {
+        $session = Hilos::$db->sessions->findByToken($token);
+        self::assertNotNull($session);
+        $frame = new SessionStateSignalData(
+            sessionToken: $token,
+            sessionId: $session->id,
+            userId: $session->userId,
+            acceptKeys: $acceptKeys,
+        );
+        ExecutionContext::run(new ExecutionFrame(agentId: $this->host->getId()), fn () => $this->host->onSignalAgent(
+            new AgentSignalData($frame), 'test', HilosSignalConstants::HILOS_SESSION_STATE,
+        ));
+
+        return $this->carryFrames();
+    }
+
+    /**
      * @template T
      * @param Closure(): T $during Work whose journal is wanted
      * @return array{T, string} What the work returned, and every line it logged in any file
@@ -385,13 +496,22 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
     /**
      * @param string $acceptKey Tab arriving or reconnecting
      * @param string $token Browser cookie token
+     * @param ?string $acceptLanguage What the browser sent in Accept-Language, or null when it sent no header
      */
-    private function handshake(string $acceptKey, string $token): void
+    private function handshake(string $acceptKey, string $token, ?string $acceptLanguage = null): void
     {
-        ExecutionContext::run(new ExecutionFrame(agentId: $this->sessions->getId()), fn () => $this->sessions->onSignalHandshake(
-            new WebSocketHandshakeSignalDTO(headers: [], acceptKey: $acceptKey, cookies: [], clientIp: null, sessionToken: $token),
-            'test', 'handshake',
-        ));
+        $headers = $acceptLanguage === null ? [] : [strtolower(HttpConstants::HEADER_ACCEPT_LANGUAGE) => $acceptLanguage];
+        $handshake = WebSocketHandshakeSignalDTO::fromArray(new WebSocketHandshakeSignalDTO(
+            headers: $headers,
+            acceptKey: $acceptKey,
+            cookies: [],
+            clientIp: null,
+            sessionToken: $token,
+        )->toArray());
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $this->sessions->getId()),
+            fn () => $this->sessions->onSignalHandshake($handshake, 'test', 'handshake'),
+        );
     }
 
     /** @return list<SignalDTO> All frames observed, including the real intermediate hops */
@@ -443,7 +563,7 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
 
     /**
      * @param list<SignalDTO> $frames Observed queue
-     * @return list<RtSyncUpdatedSignalData> Updates of a connection row that carry its language or region
+     * @return list<RtSyncUpdatedSignalData> Updates of a connection row that carry its language, region or browser request
      */
     private function languageWrites(array $frames): array
     {
@@ -458,6 +578,7 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
             }
             if (array_key_exists(StateSessionConnection::languageId, $signal->data->row)
                 || array_key_exists(StateSessionConnection::localeId, $signal->data->row)
+                || array_key_exists(StateSessionConnection::browserLanguages, $signal->data->row)
             ) {
                 $writes[] = $signal->data;
             }

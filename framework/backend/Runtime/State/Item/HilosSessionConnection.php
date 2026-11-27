@@ -28,6 +28,11 @@ use Hilos\HilosException;
  * localeId, written through HilosSessionConnectionsActions::setTabLanguage() where the handshake
  * response is stamped. A new row starts with both null; they stay null without the I18N feature,
  * and localeId stays null when the region ladder ends below every stored locale.
+ *
+ * Beside them it keeps what the tab's browser asked for (HIL-2309): browserLanguages, the tags of its
+ * Accept-Language in their stored form, written by the same call when the tab connects. A frame that
+ * reaches the tab later carries no header for it, so its ladders are decided again from this list. It
+ * stays null when the browser named nothing usable and without the I18N feature.
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
@@ -35,6 +40,7 @@ abstract class HilosSessionConnection extends HilosConnection
     public const string sessionId = 'sessionId';
     public const string languageId = 'languageId';
     public const string localeId = 'localeId';
+    public const string browserLanguages = 'browserLanguages';
 
     protected const array BASE_FIELD_TYPES = parent::BASE_FIELD_TYPES + self::SESSION_FIELD_TYPES;
     protected const array BASE_FIELD_DEFAULTS = parent::BASE_FIELD_DEFAULTS + self::SESSION_FIELD_DEFAULTS;
@@ -44,12 +50,14 @@ abstract class HilosSessionConnection extends HilosConnection
         self::sessionId => '?int',
         self::languageId => '?int',
         self::localeId => '?int',
+        self::browserLanguages => '?text',
     ];
     private const array SESSION_FIELD_DEFAULTS = [
         self::sessionToken => null,
         self::sessionId => null,
         self::languageId => null,
         self::localeId => null,
+        self::browserLanguages => null,
     ];
 
     /** Session token, or null when this connection belongs to none. */
@@ -81,6 +89,14 @@ abstract class HilosSessionConnection extends HilosConnection
         get => $this->rowValues()[self::localeId] ?? null;
         set {
             $this->setRowValue(self::localeId, $value);
+        }
+    }
+
+    /** Stored tags the tab's browser asked for, by weight, or null when it named nothing usable or without the I18N feature. */
+    private(set) ?string $browserLanguages {
+        get => ($this->rowValues()[self::browserLanguages] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::browserLanguages, $value === null ? null : RtRowValues::fromNative($value));
         }
     }
 
