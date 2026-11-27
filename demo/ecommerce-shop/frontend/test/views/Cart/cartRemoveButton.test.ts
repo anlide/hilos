@@ -13,8 +13,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { currentUserId, scopes } from '../../../src/bootstrap/session.js'
 import { formatMoney } from '../../../src/money/money.js'
 import { PAGE_CART, PAGE_MAIN } from '../../../src/pages/keys.js'
+import type { CartLine } from '../../../src/types/Cart.js'
 import Cart from '../../../src/views/Cart/Cart.js'
-import type { CartLine } from '../../../src/views/Cart/types/Cart.js'
 
 const wire = vi.hoisted(() => {
   const listeners = new Map<string, (reply: unknown) => void>()

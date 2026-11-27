@@ -27,7 +27,6 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\PageSignalRouter;
-use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -1986,7 +1985,7 @@ class SignalDispatcher
                 if ($data instanceof WebSocketPageSubscribeSignalDTO) {
                     $page = $data->page ?? $parked->signal->signalName->getName();
                     $identityRouted = $data->deliveryId !== null
-                        && Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+                        && Hilos::$sr?->pageAgentIndexRoute($page)?->source?->followsConnectionIdentity() === true;
                     $pending = $identityRouted ? PageHandoffIdentity::current($data->acceptKey) === null
                         : (Hilos::$browser?->connectionIdentity($data->acceptKey)->pending ?? false);
                 }

@@ -6,8 +6,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { PAGE_CART } from '../../../src/pages/keys.js'
+import { type CartSnapshot } from '../../../src/types/Cart.js'
 import Cart from '../../../src/views/Cart/Cart.js'
-import { type CartSnapshot } from '../../../src/views/Cart/types/Cart.js'
 
 const tab = vi.hoisted(() => ({
   scopes: undefined as unknown as ScopeManager,

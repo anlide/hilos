@@ -8,26 +8,27 @@ import {
   type ScopeManager,
 } from '@hilos/core/base'
 
-import { PAGE_CART } from '../../pages/keys.js'
-import { cartSnapshotSchema, type CartSnapshot } from './types/Cart.js'
+import { cartSnapshotSchema, type CartSnapshot } from '../types/Cart.js'
 
 /**
- * Follow fresh Cart answers for this tab. Bind before boot so the first answer
- * and subsequent identity changes are observed even while the view is unmounted.
+ * Follow fresh cart snapshots from one page in this tab. Bind before boot so
+ * the first answer and identity changes are observed while the view is unmounted.
  *
  * @param scopes The application's page scope manager.
  * @param currentUserId The signed-in person, or null for a guest.
  * @param connection The tab's connection and session lifecycle events.
+ * @param pageKey The page that supplies the cart snapshot.
  */
 export function createCartPageSignal(
   scopes: ScopeManager,
   currentUserId: ReadonlySignal<number | null>,
   connection: Pick<HilosConnection, 'on' | 'state'>,
+  pageKey: string,
 ): ReadonlySignal<CartSnapshot | null> {
   const activeCartData = computedSignal(() => {
     const scope = scopes.page()
 
-    return scope?.key === PAGE_CART
+    return scope?.key === pageKey
       ? scope.data.entrySignal('cart').get()
       : undefined
   })

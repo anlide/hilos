@@ -23,4 +23,16 @@ enum PageAgentIndexSource: string
 
     /** A public page follows the session user, with an unindexed owner for guests. */
     case SESSION_USER_OR_GUEST = 'session_user_or_guest';
+
+    /**
+     * Whether the page belongs to the person behind the connection.
+     *
+     * Signing in or out hands the live subscription to the new owner.
+     *
+     * @return bool Whether the subscription follows the connection's identity
+     */
+    public function followsConnectionIdentity(): bool
+    {
+        return $this === self::SESSION_USER || $this === self::SESSION_USER_OR_GUEST;
+    }
 }

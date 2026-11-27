@@ -195,6 +195,7 @@ use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\CartPage;
 use Demo\EcommerceShop\Pages\CategoryPage;
+use Demo\EcommerceShop\Pages\CheckoutPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
@@ -981,6 +982,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             CategoryPage::PAGE => CategoryPage::class,
             ProductPage::PAGE => ProductPage::class,
             CartPage::PAGE => CartPage::class,
+            CheckoutPage::PAGE => CheckoutPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
@@ -1182,12 +1184,18 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     }
 
     /**
-     * Product uses the slug, Cart uses the connection's owner, and Daemon uses the named node.
+     * Product uses the slug, Cart and Checkout use the connection's owner, and Daemon uses the named node.
      */
     public function testIndexedPagesUseTheAddressDeclaredByTheirRoute(): void
     {
         $routes = Hilos::getPageAgentIndexRoutes();
-        $this->assertSame([ProductPage::PAGE, CartPage::PAGE, DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        $this->assertSame([
+            ProductPage::PAGE,
+            CartPage::PAGE,
+            CheckoutPage::PAGE,
+            DaemonEnvPage::PAGE,
+            DaemonEnvOrphansPage::PAGE,
+        ], array_keys($routes));
         $this->assertSame(AgentType::PRODUCT, Hilos::getPageRoutes()[ProductPage::PAGE]);
         $this->assertSame(PageAccessLevel::PUBLIC, ProductPage::ACCESS_LEVEL);
         $this->assertSame('param', $routes[ProductPage::PAGE]->source->value);
@@ -1238,6 +1246,15 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame('session_user_or_guest', $routes[CartPage::PAGE]->source->value);
         self::assertNull($routes[CartPage::PAGE]->param);
         self::assertSame(AgentType::GUEST_CARTS_LIBRARY, $routes[CartPage::PAGE]->fallbackAgentType);
+
+        self::assertSame('checkout', CheckoutPage::PAGE);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, CheckoutPage::ACCESS_LEVEL);
+        self::assertSame(PageReach::ROUTE, CheckoutPage::REACH);
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getPageRoutes()[CheckoutPage::PAGE]);
+        self::assertSame('session_user', $routes[CheckoutPage::PAGE]->source->value);
+        self::assertNull($routes[CheckoutPage::PAGE]->param);
+        self::assertSame(AgentType::GUEST_CARTS_LIBRARY, $routes[CheckoutPage::PAGE]->fallbackAgentType);
+        self::assertSame([], CheckoutPage::ACTIONS);
 
         foreach ([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE] as $page) {
             $this->assertSame('node_param', $routes[$page]->source->value);

@@ -7,7 +7,7 @@ import { PAGE_CART } from '../../../../frontend/src/pages/keys.js'
 import {
   cartSnapshotSchema,
   type CartSnapshot,
-} from '../../../../frontend/src/views/Cart/types/Cart.js'
+} from '../../../../frontend/src/types/Cart.js'
 import {
   FIELD_PAGE,
   FIELD_TYPE,

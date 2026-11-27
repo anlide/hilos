@@ -968,7 +968,7 @@ class SignalRouter
      */
     public function subscribeToPage(string $page, WebSocketPageSubscribeSignalDTO $data): void
     {
-        $deliveryId = $this->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST ? $data->deliveryId : null;
+        $deliveryId = $this->pageAgentIndexRoute($page)?->source?->followsConnectionIdentity() === true ? $data->deliveryId : null;
         $this->subscriptions->subscribeToPage($data->acceptKey, $page, $data->params, $deliveryId);
         $this->indexNodePage($data->acceptKey);
     }

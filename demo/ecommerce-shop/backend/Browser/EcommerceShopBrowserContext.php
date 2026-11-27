@@ -436,7 +436,7 @@ final class EcommerceShopBrowserContext extends BrowserContext
      */
     protected function observesOwnPageChange(string $page, string $acceptKey, SourceChange $change): bool
     {
-        if ($page !== PageConstants::CART || !$change->isDb() || !in_array($change->sourceKey, [
+        if (!in_array($page, [PageConstants::CART, PageConstants::CHECKOUT], true) || !$change->isDb() || !in_array($change->sourceKey, [
             EcommerceShopDbContext::sessionProductCarts,
             EcommerceShopDbContext::userProductCarts,
             EcommerceShopDbContext::products,
@@ -455,6 +455,10 @@ final class EcommerceShopBrowserContext extends BrowserContext
         }
 
         $userId = $connection->userId;
+        if ($page === PageConstants::CHECKOUT && $userId === null) {
+            return false;
+        }
+
         $sessionId = $connection->sessionId;
         if (!CartPage::cartOwnerMatches($userId, $sessionId, $subscription->agentType, $subscription->agentIndex)) {
             return false;

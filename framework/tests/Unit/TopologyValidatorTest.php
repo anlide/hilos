@@ -888,6 +888,26 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testAuthenticatedSessionUserWithEmptyOwnerTypeReportsOneError(): void
+    {
+        $pageClass = TopologyPerInstanceSessionUserWithoutOwnerPage::class;
+        $hilosClass = TopologyPerInstanceSessionUserWithoutOwnerHilos::class;
+
+        try {
+            $hilosClass::validateTopology();
+        } catch (InvalidTopologyException $exception) {
+            $this->assertSame(
+                InvalidTopologyException::forErrors($hilosClass, [
+                    'PAGES[' . $pageClass::PAGE . "] class {$pageClass} must declare a non-empty SUBSCRIPTION_AGENT_TYPE",
+                ])->getMessage(),
+                $exception->getMessage(),
+            );
+            return;
+        }
+
+        $this->fail('Expected topology validation to fail');
+    }
+
     public function testPerInstanceFallbackAgentTypeMissingFromAgentsFails(): void
     {
         $this->expectException(InvalidTopologyException::class);
@@ -941,8 +961,35 @@ final class TopologyValidatorTest extends TestCase
         yield 'node fallback' => [TopologyPublicIdentityPage::class, $invalid, 'unindexed non-NODE fallback agent'];
     }
 
+    /** @return iterable<string, array{class-string<AbstractPage>, array, string}> Invalid authenticated identity routes */
+    public static function invalidSessionUserRoutes(): iterable
+    {
+        $agents = TopologyPerInstanceSessionUserHilos::AGENTS;
+        $page = TopologyPerInstanceSessionUserPage::class;
+        $owner = $page::SUBSCRIPTION_AGENT_TYPE;
+        $fallback = TopologyValidAgent::AGENT_TYPE;
+        yield 'session user on a public page' => [
+            TopologyPerInstancePublicSessionUserPage::class, $agents, 'requires ACCESS_LEVEL other than public',
+        ];
+        yield 'session user with node owner' => [
+            TopologyNodeAddressedSessionUserPage::class, TopologyNodeAddressedSessionUserHilos::AGENTS, 'use source node_param',
+        ];
+        yield 'session user with unregistered fallback' => [$page, [$owner => $agents[$owner]], 'missing from AGENTS'];
+
+        $invalid = $agents;
+        $invalid[$owner][AgentRegistryKey::INDEXED] = false;
+        yield 'session user with unindexed owner' => [$page, $invalid, 'requires a registered indexed non-NODE SUBSCRIPTION_AGENT_TYPE'];
+        $invalid = $agents;
+        $invalid[$fallback][AgentRegistryKey::INDEXED] = true;
+        yield 'session user with indexed fallback' => [$page, $invalid, 'requires an unindexed non-NODE fallback agent'];
+        $invalid = $agents;
+        $invalid[$fallback][AgentRegistryKey::SCOPE] = AgentScope::NODE;
+        yield 'session user with node fallback' => [$page, $invalid, 'requires an unindexed non-NODE fallback agent'];
+    }
+
     #[DataProvider('invalidPublicIdentityRoutes')]
-    public function testPublicIdentityRouteRefusesAnInvalidDeclaration(string $pageClass, array $agents, string $expected): void
+    #[DataProvider('invalidSessionUserRoutes')]
+    public function testIdentityRouteRefusesAnInvalidDeclaration(string $pageClass, array $agents, string $expected): void
     {
         $errors = [];
         new ReflectionMethod(TopologyValidator::class, 'validatePageAgentIndexRoutes')->invokeArgs(
@@ -6906,11 +6953,11 @@ final class TopologyPerInstancePublicSessionUserPage extends AbstractPage
 {
     public const string PAGE = 'per_instance_public_session_user_page';
 
-    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyPageNodeAgent::AGENT_TYPE;
 
     public const array SUBSCRIPTION_AGENT_INDEX = [
         PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER,
-        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'valid_agent',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
     ];
 }
 
@@ -6918,14 +6965,25 @@ final class TopologyPerInstanceSessionUserPage extends AbstractPage
 {
     public const string PAGE = 'per_instance_session_user_page';
 
-    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+    public const string SUBSCRIPTION_AGENT_TYPE = TopologyPageNodeAgent::AGENT_TYPE;
 
     public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
 
     public const array SUBSCRIPTION_AGENT_INDEX = [
         PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER,
-        PageAgentIndexKey::FALLBACK_AGENT_TYPE => 'valid_agent',
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => TopologyValidAgent::AGENT_TYPE,
     ];
+}
+
+final class TopologyPerInstanceSessionUserWithoutOwnerPage extends AbstractPage
+{
+    public const string PAGE = TopologyPerInstanceSessionUserPage::PAGE;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = '';
+
+    public const PageAccessLevel ACCESS_LEVEL = TopologyPerInstanceSessionUserPage::ACCESS_LEVEL;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = TopologyPerInstanceSessionUserPage::SUBSCRIPTION_AGENT_INDEX;
 }
 
 final class TopologyPerInstancePageHilos extends HilosFacade
@@ -6958,12 +7016,7 @@ final class TopologyPerInstanceSessionUserHilos extends HilosFacade
         TopologyPerInstanceSessionUserPage::PAGE => TopologyPerInstanceSessionUserPage::class,
     ];
 
-    public const array AGENTS = [
-        TopologyValidAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => TopologyValidAgent::class,
-            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
-        ],
-    ];
+    public const array AGENTS = TopologyPublicIdentityHilos::AGENTS;
 
     /**
      * Creates a no-op DB context for tests.
@@ -6974,6 +7027,15 @@ final class TopologyPerInstanceSessionUserHilos extends HilosFacade
     {
         return new TopologyTestDbContext();
     }
+}
+
+final class TopologyPerInstanceSessionUserWithoutOwnerHilos extends TopologyNodeAddressedPageHilos
+{
+    public const array PAGES = [
+        TopologyPerInstanceSessionUserWithoutOwnerPage::PAGE => TopologyPerInstanceSessionUserWithoutOwnerPage::class,
+    ];
+
+    public const array AGENTS = TopologyPerInstanceSessionUserHilos::AGENTS;
 }
 
 final class TopologyPerInstanceMissingParamHilos extends HilosFacade
@@ -7030,12 +7092,7 @@ final class TopologyPerInstancePublicSessionUserHilos extends HilosFacade
         TopologyPerInstancePublicSessionUserPage::PAGE => TopologyPerInstancePublicSessionUserPage::class,
     ];
 
-    public const array AGENTS = [
-        TopologyValidAgent::AGENT_TYPE => [
-            AgentRegistryKey::WORKER => TopologyValidAgent::class,
-            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
-        ],
-    ];
+    public const array AGENTS = TopologyPerInstanceSessionUserHilos::AGENTS;
 
     /**
      * Creates a no-op DB context for tests.

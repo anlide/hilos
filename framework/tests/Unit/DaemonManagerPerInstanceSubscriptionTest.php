@@ -1507,12 +1507,15 @@ final class PerInstanceIdentityTestPageFactory extends AbstractPageFactory
 
     protected function createPage(string $pageName): AbstractPage
     {
-        return new PerInstancePublicIdentityPage($this->agent, $this->onRelease);
+        return match ($pageName) {
+            PerInstanceAuthenticatedIdentityPage::PAGE => new PerInstanceAuthenticatedIdentityPage($this->agent, $this->onRelease),
+            default => new PerInstancePublicIdentityPage($this->agent, $this->onRelease),
+        };
     }
 
     public function hasPage(string $pageName): bool
     {
-        return $pageName === PerInstancePublicIdentityPage::PAGE;
+        return $pageName === PerInstancePublicIdentityPage::PAGE || $pageName === PerInstanceAuthenticatedIdentityPage::PAGE;
     }
 }
 

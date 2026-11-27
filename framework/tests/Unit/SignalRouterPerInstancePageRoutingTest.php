@@ -20,6 +20,8 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\PageReassessmentSource;
+use Hilos\Core\Daemon\PageSubscriptionContext;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Config\PageAgentIndexKey;
 use Hilos\Core\Page\Config\PageAgentIndexSource;
@@ -231,28 +233,36 @@ final class SignalRouterPerInstancePageRoutingTest extends TestCase
 
     public function testAReDecisionRecomputesTheAddressAfterTheGuestSignsIn(): void
     {
+        $previousRt = HilosFacade::$rt;
         $manager = $this->manager();
-        $browser = HilosFacade::$browser;
-        $browser->identity = ConnectionIdentity::resolved(null);
-        $manager->subscribe(self::ALICE, PerInstanceProfilePage::PAGE, []);
+        HilosFacade::$rt = new RosterRtContext();
+        HilosFacade::$rt->configure();
+        HilosFacade::$browser = new PerInstanceRosterIdentityBrowser();
+        HilosFacade::$rt->connectionsSource()->add(RosterConnection::create(self::ALICE, null));
+        try {
+            $router = HilosFacade::$sr;
+            $manager->subscribe(self::ALICE, PerInstanceProfilePage::PAGE, []);
+            $this->assertEquals(
+                [new AgentDestination(PerInstanceFallbackAgent::AGENT_TYPE, null)],
+                $router->getDestinations($this->viewport(self::ALICE, PerInstanceProfilePage::PAGE)),
+            );
 
-        $this->assertEquals(
-            [new AgentDestination(PerInstanceFallbackAgent::AGENT_TYPE, null)],
-            HilosFacade::$sr->getDestinations($this->viewport(self::ALICE, PerInstanceProfilePage::PAGE)),
-        );
+            HilosFacade::$rt->connectionsSource()->get(self::ALICE)->applyDiff([RosterConnection::userId => 7]);
+            $context = new PageSubscriptionContext($router, self::ALICE, $router->pageSubscription(self::ALICE));
+            $manager->applySubscriptionUpdate(new SignalDTO(
+                new PageReassessmentSource(SignalSource::RT, $context, identityChanged: true),
+                new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS),
+                new SignalName(PerInstanceProfilePage::PAGE),
+                new WebSocketPageSubscribeSignalDTO(self::ALICE, PerInstanceProfilePage::PAGE, []),
+            ));
 
-        $browser->identity = ConnectionIdentity::resolved(7);
-        $manager->applySubscriptionUpdate(new SignalDTO(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::PAGE_ACCESS_REASSESS),
-            new SignalName(PerInstanceProfilePage::PAGE),
-            new WebSocketPageSubscribeSignalDTO(self::ALICE, PerInstanceProfilePage::PAGE, []),
-        ));
-
-        $this->assertEquals(
-            [new AgentDestination(PerInstanceProfilePage::SUBSCRIPTION_AGENT_TYPE, '7')],
-            HilosFacade::$sr->getDestinations($this->viewport(self::ALICE, PerInstanceProfilePage::PAGE)),
-        );
+            $this->assertEquals(
+                [new AgentDestination(PerInstanceProfilePage::SUBSCRIPTION_AGENT_TYPE, '7')],
+                $router->getDestinations($this->viewport(self::ALICE, PerInstanceProfilePage::PAGE)),
+            );
+        } finally {
+            HilosFacade::$rt = $previousRt;
+        }
     }
 
     /**
@@ -426,7 +436,7 @@ final class PerInstanceProfilePage extends AbstractPage
     ];
 }
 
-final class PerInstancePublicIdentityPage extends AbstractPage
+class PerInstancePublicIdentityPage extends AbstractPage
 {
     public const string PAGE = 'per_instance_public_identity';
 
@@ -458,6 +468,18 @@ final class PerInstancePublicIdentityPage extends AbstractPage
 
         return new PagePayload(data: $data);
     }
+}
+
+final class PerInstanceAuthenticatedIdentityPage extends PerInstancePublicIdentityPage
+{
+    public const string PAGE = 'per_instance_authenticated_identity';
+    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
+    public const bool OPEN_WHILE_FROZEN = true;
+
+    public const array SUBSCRIPTION_AGENT_INDEX = [
+        PageAgentIndexKey::SOURCE => PageAgentIndexSource::SESSION_USER,
+        PageAgentIndexKey::FALLBACK_AGENT_TYPE => PerInstanceFallbackAgent::AGENT_TYPE,
+    ];
 }
 
 final class PerInstancePlainPage extends AbstractPage
@@ -558,6 +580,7 @@ final class PerInstanceTestHilos extends HilosFacade
         PerInstanceChatPage::PAGE => PerInstanceChatPage::class,
         PerInstanceProfilePage::PAGE => PerInstanceProfilePage::class,
         PerInstancePublicIdentityPage::PAGE => PerInstancePublicIdentityPage::class,
+        PerInstanceAuthenticatedIdentityPage::PAGE => PerInstanceAuthenticatedIdentityPage::class,
         PerInstancePlainPage::PAGE => PerInstancePlainPage::class,
         PerInstanceNodePage::PAGE => PerInstanceNodePage::class,
         PerInstanceLifecyclePage::PAGE => PerInstanceLifecyclePage::class,

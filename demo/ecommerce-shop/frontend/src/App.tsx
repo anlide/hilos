@@ -35,6 +35,7 @@ import {
   PAGE_ADMIN_WAREHOUSES,
   PAGE_CART,
   PAGE_CATEGORY,
+  PAGE_CHECKOUT,
   PAGE_MAIN,
   PAGE_PRODUCT,
 } from './pages/keys.js'
@@ -43,6 +44,8 @@ import Cart from './views/Cart/Cart.js'
 import CartHeaderLink from './views/Cart/CartHeaderLink.js'
 import CartSkeleton from './views/Cart/CartSkeleton.js'
 import CategorySkeleton from './views/Category/CategorySkeleton.js'
+import Checkout from './views/Checkout/Checkout.js'
+import CheckoutSkeleton from './views/Checkout/CheckoutSkeleton.js'
 import License from './views/License/License.js'
 import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.js'
 import Main from './views/Main/Main.js'
@@ -67,6 +70,7 @@ const pages: Record<string, PageView<ComponentType>> = {
     import('./views/Product/Product.js').then((m) => m.default),
   ),
   [PAGE_CART]: Cart,
+  [PAGE_CHECKOUT]: Checkout,
   // The Hilos admin section. The framework ships a real default page for every
   // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
   // the pages it implements itself; the rest render the framework default, never
@@ -323,6 +327,7 @@ const pageSkeletons: Record<string, ComponentType> = {
   [PAGE_CATEGORY]: CategorySkeleton,
   [PAGE_PRODUCT]: ProductSkeleton,
   [PAGE_CART]: CartSkeleton,
+  [PAGE_CHECKOUT]: CheckoutSkeleton,
 }
 
 export interface AppProps {

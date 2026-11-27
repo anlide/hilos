@@ -7,7 +7,13 @@
 // places, one of them untranslatable. bootHilos merges what is here with `appName` into the
 // navigator's currentTitle for the tab and the page-change announcement
 // (WCAG 2.4.2).
-import { PAGE_CART, PAGE_CATEGORY, PAGE_MAIN, PAGE_PRODUCT } from './keys.js'
+import {
+  PAGE_CART,
+  PAGE_CATEGORY,
+  PAGE_CHECKOUT,
+  PAGE_MAIN,
+  PAGE_PRODUCT,
+} from './keys.js'
 
 /** The application name composed into every document title. */
 export const appName = 'Hilos Flowers'
@@ -18,4 +24,5 @@ export const pageTitles: Record<string, string> = {
   [PAGE_CATEGORY]: 'Category',
   [PAGE_PRODUCT]: 'Product',
   [PAGE_CART]: 'Cart',
+  [PAGE_CHECKOUT]: 'Checkout',
 }

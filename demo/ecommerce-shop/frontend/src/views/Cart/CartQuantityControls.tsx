@@ -1,12 +1,12 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useTrackedAction } from '@hilos/react/base'
 
+import { type CartLine } from '../../types/Cart.js'
 import {
   sendCartStepQuantity,
   type CartOwnerKind,
   type CartQuantityStep,
 } from './cartActions.js'
-import { type CartLine } from './types/Cart.js'
 
 /**
  * Quantity controls for a saved stock line.

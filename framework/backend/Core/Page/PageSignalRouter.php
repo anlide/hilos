@@ -33,7 +33,6 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageMovedSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\ActionAccountFrozenException;
@@ -254,7 +253,7 @@ class PageSignalRouter
     public function dispatchPageAccessReassess(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
         $page = $data->page ?? $name;
-        $identityRouted = Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+        $identityRouted = Hilos::$sr?->pageAgentIndexRoute($page)?->source?->followsConnectionIdentity() === true;
         $handoff = $identityRouted && $source === SignalSource::DAEMON;
         if ($page === '' || (!$handoff && !$this->subscribedToPage($data->acceptKey, $page))) {
             // The tab navigated away, or closed, between the grant and this frame. There is

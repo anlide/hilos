@@ -21,6 +21,10 @@ React. See `docs/new-project/README.md` to start a project from it.
 - **Category page**. Open a category from its home tile to see its description
   and live product catalog. Browse as tiles or a table with the same filters,
   price order and pagination. An unknown category shows a 404 page.
+- **Checkout page** at `/checkout` for a signed-in person: the cart's lines,
+  voucher and total — the cart's own numbers — and delivery to a parcel locker,
+  live as the cart and the catalog change; "Pay" stands grayed out until payment
+  comes. A guest signs in right on the page.
 - **Admin dashboard** at `/hilos` with **Settings** (the three example keys
   and the file and upload limits), **Users** (the list and a person's card:
   rename, takeover and rights; no account merge), **Backup** (database
@@ -412,9 +416,8 @@ not part of it yet.
   choose one; "Back to cart"; and "Pay" with the amount of "Total" — "Pay
   ₴2,525" — grayed out, with a line under it saying that paying is not
   connected yet and comes with the next step of the demo.
-- **Nothing to buy**: when the cart is empty or none of its lines can be had,
-  the page shows a state of its own in its place, with "Go shopping"; it does
-  not send the buyer to the cart.
+- **Nothing to buy**: the page shows a state of its own with "Go shopping"
+  when the cart is empty, or "Back to cart" when none of its lines can be had.
 
 Every open checkout page follows the cart and the catalog by itself, without a
 reload: a change to the cart from any tab or device, and a price, an

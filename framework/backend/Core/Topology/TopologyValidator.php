@@ -2488,10 +2488,11 @@ final class TopologyValidator
             }
 
             $agentType = $pageClass::SUBSCRIPTION_AGENT_TYPE;
-            if (in_array($source, [PageAgentIndexSource::PARAM, PageAgentIndexSource::SESSION_USER], true)
+            $needsNodeParamHint = in_array($source, [PageAgentIndexSource::PARAM, PageAgentIndexSource::SESSION_USER], true)
                 && is_string($agentType)
                 && isset($agents[$agentType])
-                && AgentRegistry::scope($agents[$agentType]) === AgentScope::NODE) {
+                && AgentRegistry::scope($agents[$agentType]) === AgentScope::NODE;
+            if ($needsNodeParamHint) {
                 $errors[] = "{$path} with source " . $source->value
                     . " cannot address NODE-scoped SUBSCRIPTION_AGENT_TYPE {$agentType}; use source node_param";
             }
@@ -2514,13 +2515,17 @@ final class TopologyValidator
                     . ' requires ACCESS_LEVEL other than ' . PageAccessLevel::PUBLIC->value;
             }
 
-            if ($source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
-                $sourcePath = "{$path} with source " . $source->value;
-                if ($pageClass::ACCESS_LEVEL !== PageAccessLevel::PUBLIC) {
-                    $errors[] = "{$sourcePath} requires ACCESS_LEVEL " . PageAccessLevel::PUBLIC->value;
-                }
+            if ($source === PageAgentIndexSource::SESSION_USER_OR_GUEST && $pageClass::ACCESS_LEVEL !== PageAccessLevel::PUBLIC) {
+                $errors[] = "{$path} with source {$source->value} requires ACCESS_LEVEL " . PageAccessLevel::PUBLIC->value;
+            }
+
+            if ($source instanceof PageAgentIndexSource && $source->followsConnectionIdentity()) {
+                $sourcePath = "{$path} with source {$source->value}";
                 $owner = $agents[$agentType] ?? null;
-                if (!AgentRegistry::requiresIndex($owner) || AgentRegistry::scope($owner) === AgentScope::NODE) {
+                // validatePageRoutes() already reports an empty owner type.
+                if ($agentType !== '' && !$needsNodeParamHint
+                    && (!AgentRegistry::requiresIndex($owner) || AgentRegistry::scope($owner) === AgentScope::NODE)
+                ) {
                     $errors[] = "{$sourcePath} requires a registered indexed non-NODE SUBSCRIPTION_AGENT_TYPE";
                 }
                 $fallback = is_string($fallbackAgentType) ? ($agents[$fallbackAgentType] ?? null) : null;

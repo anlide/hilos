@@ -9,8 +9,12 @@ import {
   type ReadonlySignal,
 } from '@hilos/core/base'
 
+import {
+  cartIdentity,
+  type CartLine,
+  type CartSnapshot,
+} from '../../types/Cart.js'
 import { sendCartSetQuantity } from './cartActions.js'
-import { cartIdentity, type CartLine, type CartSnapshot } from './types/Cart.js'
 
 interface QuantityDraft {
   readonly quantity: string

@@ -12489,7 +12489,7 @@ abstract class DaemonManager extends BaseManager implements
                 }
                 Hilos::$sr->subscribeToPage($page, $signal->data);
                 $identityRouted = $signal->data->deliveryId !== null
-                    && Hilos::$sr->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+                    && Hilos::$sr->pageAgentIndexRoute($page)?->source?->followsConnectionIdentity() === true;
                 if ($identityRouted) {
                     // Release may have yielded while the master's connection row changed.
                     $identity = PageHandoffIdentity::current($signal->data->acceptKey);
@@ -12517,8 +12517,8 @@ abstract class DaemonManager extends BaseManager implements
                 }
                 break;
 
-            // A re-decision is where a live subscription may change hands: a guest who signed in
-            // is the same connection on the same page, now belonging to somebody (HIL-627).
+            // A re-decision can hand the live subscription to the owner selected by the
+            // connection's confirmed identity. The browser stays on the same page.
             case SignalTypeConstants::PAGE_ACCESS_REASSESS:
                 if (!($signal->data instanceof WebSocketPageSubscribeSignalDTO)) {
                     return;
@@ -12533,7 +12533,7 @@ abstract class DaemonManager extends BaseManager implements
                 if ($subscription?->page !== $reassessedPage) {
                     return;
                 }
-                if (Hilos::$sr->pageAgentIndexRoute($reassessedPage)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                if (Hilos::$sr->pageAgentIndexRoute($reassessedPage)?->source?->followsConnectionIdentity() === true) {
                     yield from $this->prepareIdentityPageReassessment(
                         $dispatch, $signal, new PageSubscriptionContext(Hilos::$sr, $signal->data->acceptKey, $subscription),
                     );
@@ -12648,7 +12648,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         $router = Hilos::$sr;
         $subscription = $router?->pageSubscription($acceptKey);
-        if ($subscription === null || $router->pageAgentIndexRoute($subscription->page)?->source !== PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+        if ($subscription === null || $router->pageAgentIndexRoute($subscription->page)?->source?->followsConnectionIdentity() !== true) {
             return null;
         }
 
@@ -12934,7 +12934,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($previous->deliveryId !== null) {
             $pending = $this->pendingPageIndex()->get($original->acceptKey, $previous->deliveryId);
             if ($pending?->handoff
-                || $original->router->pageAgentIndexRoute($previous->page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                || $original->router->pageAgentIndexRoute($previous->page)?->source?->followsConnectionIdentity() === true) {
                 $nodeId = $pending?->handoff ? $pending->nodeId : $previous->handoffServingNode;
                 if ($nodeId !== null && $pending !== null) {
                     $this->settlePendingPageDelivery($pending);
@@ -13202,7 +13202,7 @@ abstract class DaemonManager extends BaseManager implements
         $page = $data->page ?? $signal->signalName->getName();
         $address = $this->resolvePageAgentAddress($page, $data->acceptKey, $data->params);
         $waitsForConfirmedRow = $data->deliveryId !== null
-            && Hilos::$sr->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST
+            && Hilos::$sr->pageAgentIndexRoute($page)?->source?->followsConnectionIdentity() === true
             && PageHandoffIdentity::current($data->acceptKey) === null;
         if (!$waitsForConfirmedRow && $address?->pending !== true) {
             return false;
@@ -13213,7 +13213,7 @@ abstract class DaemonManager extends BaseManager implements
             if ($identityPage?->subscription?->page === $page) {
                 $signal = new SignalDTO(new PageReassessmentSource($signal->signalSource->getSource(), $identityPage),
                     $signal->signalType, $signal->signalName, $signal->data, $signal->meta);
-            } elseif (Hilos::$sr->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+            } elseif (Hilos::$sr->pageAgentIndexRoute($page)?->source?->followsConnectionIdentity() === true) {
                 return false;
             }
         }

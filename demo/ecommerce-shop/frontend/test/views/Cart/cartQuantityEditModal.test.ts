@@ -15,12 +15,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { actions } from '../../../src/bootstrap/connection.js'
 import { scopes } from '../../../src/bootstrap/session.js'
 import { PAGE_CART } from '../../../src/pages/keys.js'
+import { type CartLine, type CartSnapshot } from '../../../src/types/Cart.js'
 import Cart from '../../../src/views/Cart/Cart.js'
 import { CART_SET_QUANTITY } from '../../../src/views/Cart/cartActions.js'
-import {
-  type CartLine,
-  type CartSnapshot,
-} from '../../../src/views/Cart/types/Cart.js'
 
 const wire = vi.hoisted(() => {
   const listeners = new Map<

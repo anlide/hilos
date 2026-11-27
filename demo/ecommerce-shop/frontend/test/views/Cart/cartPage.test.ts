@@ -9,13 +9,10 @@ import {
 } from '@hilos/core/base'
 import { describe, expect, it } from 'vitest'
 
-import { PAGE_CART, PAGE_MAIN } from '../../../src/pages/keys.js'
+import { createCartPageSignal } from '../../../src/cart/cartPageSnapshot.js'
+import { PAGE_CART, PAGE_CHECKOUT, PAGE_MAIN } from '../../../src/pages/keys.js'
 import { router } from '../../../src/pages/routes.js'
-import { createCartPageSignal } from '../../../src/views/Cart/cartPage.js'
-import {
-  type CartLine,
-  type CartSnapshot,
-} from '../../../src/views/Cart/types/Cart.js'
+import { type CartLine, type CartSnapshot } from '../../../src/types/Cart.js'
 
 const line: CartLine = {
   lineId: 19,
@@ -50,8 +47,8 @@ const voucherCart: CartSnapshot = {
   total: '18000',
 }
 
-/** Open the Cart scope with local session and connection events. */
-function openCart(userId: number | null = null) {
+/** Open a cart snapshot page with local session and connection events. */
+function openCart(userId: number | null = null, pageKey: string = PAGE_CART) {
   const scopes = new ScopeManager()
   const person = createSignal<number | null>(userId)
   const listeners = new Map<
@@ -75,8 +72,8 @@ function openCart(userId: number | null = null) {
     listeners.get(event)?.(data as never)
   }
 
-  const snapshot = createCartPageSignal(scopes, person, connection)
-  scopes.openPage(PAGE_CART)
+  const snapshot = createCartPageSignal(scopes, person, connection, pageKey)
+  scopes.openPage(pageKey)
 
   return {
     snapshot,
@@ -373,6 +370,26 @@ describe('Cart page projection', () => {
     expect(snapshot.get()).toBeNull()
     answer(guestCart)
     expect(snapshot.get()).toEqual(guestCart)
+  })
+
+  it('projects the Checkout cart slot and ignores Cart replies', () => {
+    expect(router.match('/checkout')).toEqual({
+      page: PAGE_CHECKOUT,
+      admin: false,
+      params: {},
+    })
+
+    const accountCart = { ...voucherCart, userId: 9, guestCartKey: null }
+    const { snapshot, scopes, answer } = openCart(
+      accountCart.userId,
+      PAGE_CHECKOUT,
+    )
+    answer(accountCart)
+    expect(snapshot.get()).toEqual(accountCart)
+
+    scopes.openPage(PAGE_CART)
+    answer(accountCart)
+    expect(snapshot.get()).toBeNull()
   })
 
   it('clears on owner changes in place and ignores late replies from a previous owner', () => {

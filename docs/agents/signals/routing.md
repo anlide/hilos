@@ -377,10 +377,12 @@ final class ChatRoomPage extends AbstractPage
 ```
 
 For an indexed agent, `PARAM` — the address of the page names it, and the index
-travels as a subscription param. `SESSION_USER` — the page is "mine", and the instance
-is the person behind the connection, whom the master reads through the same identity
-seam the access guards are judged with (`BrowserContext::connectionIdentity()`). It
-reads one row of one connection and never the database.
+travels as a subscription param. `SESSION_USER` serves the person behind the
+connection and sends a guest to the unindexed fallback for an access refusal.
+`SESSION_USER_OR_GUEST` serves a public page with the same account address, and
+the unindexed fallback serves the guest. Both sources use the identity seam
+shared with the access guards (`BrowserContext::connectionIdentity()`). The
+master reads the connection's runtime row.
 
 `NODE_PARAM` names a node instead of an indexed instance. The page's
 `SUBSCRIPTION_AGENT_TYPE` must be a `NODE`-scoped agent, with a registered
@@ -431,25 +433,26 @@ Consequences worth knowing before declaring one:
   is sent to `/product/summer-meadow`, and the agent of "Summer meadow" serves it.
   The frame is described in
   [wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01).
-- **Move on sign-in.** A guest who signs in stays on the same page, and the page is
-  re-judged rather than re-subscribed: `page_access_reassess` carries a copy of the
-  subscribe, its address is recomputed, and the client gets a full page answer without
-  the frontend knowing anything happened. The project handler of the
-  `hilos_session_state` frame announces it, after binding the connection the same frame
-  carried — one queue, so the worker that re-judges applies the identity first.
-- **Waiting for an identity.** A `SESSION_USER` page whose connection identity has not
-  crossed the RT sync yet is held for up to 500ms and then routed on what is known. Only
-  such a page ever waits; every other subscription is routed the moment it arrives.
+- **Move on sign-in and sign-out.** For both session sources, the master detects
+  the identity change on the confirmed connection row and releases the
+  previous owner. The new owner receives `page_access_reassess` and can send a
+  full answer before it has a local subscription mirror. The browser stays on
+  the same page. On sign-out the unindexed fallback takes over, returning 401
+  for `SESSION_USER` or serving the guest page for `SESSION_USER_OR_GUEST`.
+- **Waiting for an identity.** For either session source, a tracked delivery
+  waits up to 500 ms at the master for a confirmed connection row. If the row
+  is still missing or unconfirmed at the deadline, the master ends the attempt
+  with a delivery refusal.
 - **Node membership.** A node-addressed page is re-resolved when its named node
   joins or leaves. The old agent is unsubscribed, the new address is bound, and
   the new agent receives a fresh copy of the subscribe. The browser's table
   windows and facets are not reset; the new worker answers the page whole.
 
-`TopologyValidator` refuses a declaration that cannot work: a `PARAM` or
-`NODE_PARAM` source without a param, a missing or unregistered
-`FALLBACK_AGENT_TYPE`, and a `SESSION_USER` source on a
-`PageAccessLevel::PUBLIC` page — a guest handed to the fallback agent would be served the
-"my" page for real.
+`TopologyValidator` requires a param for `PARAM` and `NODE_PARAM` and a
+registered `FALLBACK_AGENT_TYPE` for every indexed route. Both session sources
+require a registered, indexed non-`NODE` `SUBSCRIPTION_AGENT_TYPE` and an
+unindexed non-`NODE` fallback. `SESSION_USER` requires an access level other
+than `PUBLIC`. `SESSION_USER_OR_GUEST` requires `PUBLIC`.
 For `NODE_PARAM`, it also requires a registered `NODE`-scoped owner and a
 registered fallback with a different scope.
 `PARAM` and `SESSION_USER` cannot address a `NODE`-scoped

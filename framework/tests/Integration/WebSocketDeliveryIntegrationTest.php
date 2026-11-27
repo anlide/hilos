@@ -170,6 +170,7 @@ use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Tests\Unit\Cluster\Placement\SnapshotTestLeadership;
+use Hilos\Tests\Unit\PerInstanceAuthenticatedIdentityPage;
 use Hilos\Tests\Unit\PerInstanceIdentityTestAgent;
 use Hilos\Tests\Unit\PerInstanceIdentityTestWorker;
 use Hilos\Tests\Unit\PerInstancePublicIdentityPage;
@@ -209,6 +210,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
     private ?SignalRouter $previousRouter;
     private ?BrowserContext $previousBrowser;
     private ?TableContext $previousTables;
+    private ?RtContext $previousRuntime;
     private DeliveryFlowMaster $master;
     private DeliveryFlowServer $server;
     private DeliveryFlowWorkerServer $worker;
@@ -224,6 +226,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $this->previousRouter = Hilos::$sr;
         $this->previousBrowser = Hilos::$browser;
         $this->previousTables = Hilos::$table;
+        $this->previousRuntime = Hilos::$rt;
         Hilos::$env = new EnvAccessor();
         $this->master = new DeliveryFlowMaster();
         $this->server = new DeliveryFlowServer();
@@ -246,6 +249,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         SourceInterestRegistry::readsWhatItMounts();
         Hilos::$browser = $this->previousBrowser;
         Hilos::$table = $this->previousTables;
+        Hilos::$rt = $this->previousRuntime;
         Hilos::$env = $this->previousEnv;
         Hilos::$sr = $this->previousRouter;
     }
@@ -310,6 +314,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         [$client, $socket] = $this->connect();
         $browser = new DeliveryRestoredWindowBrowser();
         Hilos::$browser = $browser;
+        Hilos::$rt = $masterParking ? null : $this->handoffRuntime($client->acceptKey);
         $table = new DeliveryRestoredWindowTable($client->acceptKey);
         Hilos::$table = new DeliveryRestoredWindowTables($table);
         Hilos::$table->configure();
@@ -334,6 +339,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             $client->write();
             self::assertSame([], $this->read($socket));
             $browser->identity = ConnectionIdentity::resolved(null);
+            Hilos::$rt = $this->handoffRuntime($client->acceptKey);
             new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')
                 ->invoke(SignalDispatcherFixture::owner($this->master), $client->acceptKey);
             $this->master->drain();
@@ -351,15 +357,17 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         self::assertSame(['hilosLogKeys' => $descriptor], array_map(
             static fn(TableWindowDescriptorDTO $window): array => $window->toArray(), $request->data->tableWindows));
         $browser->identity = $pageParking ? ConnectionIdentity::pending() : ConnectionIdentity::resolved(null);
-        $this->handle($request);
         if ($pageParking) {
+            $this->handle($request);
             self::assertSame([], $this->takeSignals());
             self::assertNull($table->firstQuery);
             $client->now = 10_000;
             $client->write();
             self::assertSame([], $this->read($socket));
             $browser->identity = ConnectionIdentity::resolved(null);
-            $this->pages->releasePendingFrames();
+            $this->withConfirmedPageAnswer($request, $this->pages->releasePendingFrames(...));
+        } else {
+            $this->withConfirmedPageAnswer($request, fn () => $this->handle($request));
         }
         self::assertSame([], $table->facetsAtFirstQuery);
         self::assertSame($descriptor['facets'], Hilos::$sr->getTableFacets($client->acceptKey, 'hilosLogKeys'));
@@ -548,6 +556,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
     public function testMasterIdentityParkingHasNoFictitiousOwnerAndKeepsTheBrowserHold(): void
     {
         [$client, $socket] = $this->connect();
+        Hilos::$rt = null;
         $this->browser->identity = ConnectionIdentity::pending();
         $client->acceptJson('{"type":"page_subscribe","page":"identity"}');
         $this->master->drain();
@@ -563,11 +572,15 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')
             ->invoke(SignalDispatcherFixture::owner($this->master), $client->acceptKey);
         $this->master->drain();
+        self::assertSame([], $this->worker->requests);
+        self::assertSame([], $this->pending());
+        Hilos::$rt = $this->handoffRuntime($client->acceptKey);
+        $this->master->drain();
         self::assertCount(1, $this->worker->requests);
         $request = array_pop($this->worker->requests)->signal;
         self::assertTrue($client->isDeliveryPending('identity', $request->data->deliveryId));
         self::assertCount(1, $this->pending()[$client->acceptKey]);
-        $this->handle($request);
+        $this->withConfirmedPageAnswer($request, fn () => $this->handle($request));
         foreach ($this->takeSignals() as $signal) {
             $this->deliver($signal, $client);
         }
@@ -4518,16 +4531,135 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         }
     }
 
+    public function testAuthenticatedIdentityHandoffRefusesGuestsAndAnswersFromTheAccountOwner(): void
+    {
+        $previousRt = Hilos::$rt;
+        $app = new ReflectionProperty(Hilos::class, 'appClass');
+        $previousApp = Hilos::appClass();
+        $app->setValue(null, DeliveryFlowAuthenticatedHandoffHilos::class);
+        [$client, $socket] = $this->connect();
+        $acceptKey = $client->acceptKey;
+        $page = PerInstanceAuthenticatedIdentityPage::PAGE;
+        $masterRouter = Hilos::$sr;
+        try {
+            Hilos::$browser = new PerInstanceRosterIdentityBrowser();
+            Hilos::$rt = $this->handoffRuntime($acceptKey);
+            $guest = new DeliveryFlowGuestAgent();
+            $account = new PerInstanceIdentityTestAgent('7');
+            $guestWorker = new PerInstanceIdentityTestWorker(1, $guest);
+            $accountWorker = new PerInstanceIdentityTestWorker(2, $account);
+            Hilos::$sr = $masterRouter;
+
+            $client->acceptJson(json_encode(['type' => 'page_subscribe', 'page' => $page], JSON_THROW_ON_ERROR));
+            $this->master->drain();
+            self::assertCount(1, $this->worker->requests);
+            $initial = $this->worker->requests[0];
+            self::assertSame($guest->getId(), $initial->agentId);
+            $initialRequest = $initial->signal->data;
+            self::assertInstanceOf(WebSocketPageSubscribeSignalDTO::class, $initialRequest);
+            self::assertSame($acceptKey . ':1', $initialRequest->deliveryId);
+            self::assertSame($guest->getType(), $masterRouter->pageSubscription($acceptKey)?->agentType);
+            self::assertNull($masterRouter->pageSubscription($acceptKey)?->agentIndex);
+            $this->grantLocalHandoffWorker($guestWorker);
+            $this->finishAuthenticatedHandoff($client, $guestWorker, $initialRequest, SignalConstants::SUBSCRIPTION_PAGE_ERROR);
+            $client->write();
+            $error = $this->read($socket);
+            self::assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], array_column($error, 'type'));
+            self::assertSame($page, $error[0]['data']['page']);
+            self::assertSame(HttpConstants::HTTP_UNAUTHORIZED, $error[0]['data']['httpCode']);
+            self::assertSame('unauthorized', $error[0]['data']['errorCode']);
+            self::assertSame($initialRequest->deliveryId, $guestWorker->router->pageSubscription($acceptKey)?->deliveryId);
+
+            $this->applyHandoffIdentity($this->master, $acceptKey);
+            $this->master->drain();
+            self::assertCount(2, $this->worker->requests);
+            [$release, $signIn] = $this->worker->requests;
+            self::assertSame($guest->getId(), $release->agentId);
+            self::assertSame(SignalTypeConstants::PAGE_UNSUBSCRIBE, $release->signal->signalType->getType());
+            self::assertSame($initialRequest->deliveryId, $release->signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID]);
+            $guestWorker->deliver(array_shift($this->worker->requests));
+            self::assertNull($guestWorker->router->pageSubscription($acceptKey));
+            self::assertNull($accountWorker->router->pageSubscription($acceptKey));
+            self::assertSame($account->getId(), $signIn->agentId);
+            self::assertSame(SignalTypeConstants::PAGE_ACCESS_REASSESS, $signIn->signal->signalType->getType());
+            self::assertSame($acceptKey . ':2', $signIn->signal->data->deliveryId);
+            $this->grantLocalHandoffWorker($accountWorker);
+            $accountAnswer = $this->finishAuthenticatedHandoff(
+                $client, $accountWorker, $signIn->signal->data, SignalTypeConstants::PAGE_RESPONSE,
+            );
+            $client->write();
+            $response = $this->read($socket);
+            self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($response, 'type'));
+            self::assertSame($page, $response[0]['data']['page']);
+            self::assertSame(['ownerType' => $account->getType(), 'ownerIndex' => $account->getIndex()], $response[0]['data']['payload']['data']);
+            self::assertSame($signIn->signal->data->deliveryId, $accountWorker->router->pageSubscription($acceptKey)?->deliveryId);
+
+            $this->applyHandoffIdentity($this->master, $acceptKey, null);
+            $this->master->drain();
+            self::assertCount(2, $this->worker->requests);
+            [$release, $signOut] = $this->worker->requests;
+            self::assertSame($account->getId(), $release->agentId);
+            self::assertSame(SignalTypeConstants::PAGE_UNSUBSCRIBE, $release->signal->signalType->getType());
+            self::assertSame($signIn->signal->data->deliveryId, $release->signal->meta[WebSocketPageSubscribeSignalDTO::DELIVERY_ID]);
+            $accountWorker->deliver(array_shift($this->worker->requests));
+            self::assertNull($accountWorker->router->pageSubscription($acceptKey));
+            self::assertSame($guest->getId(), $signOut->agentId);
+            self::assertSame(SignalTypeConstants::PAGE_ACCESS_REASSESS, $signOut->signal->signalType->getType());
+            self::assertSame($acceptKey . ':3', $signOut->signal->data->deliveryId);
+            $this->queueServingWorkerReply($this->master, $accountAnswer);
+            $client->write();
+            self::assertSame([], $this->read($socket));
+            $this->grantLocalHandoffWorker($guestWorker);
+            $this->finishAuthenticatedHandoff($client, $guestWorker, $signOut->signal->data, SignalConstants::SUBSCRIPTION_PAGE_ERROR);
+            $client->write();
+            $error = $this->read($socket);
+            self::assertSame([SignalConstants::SUBSCRIPTION_PAGE_ERROR], array_column($error, 'type'));
+            self::assertSame($page, $error[0]['data']['page']);
+            self::assertSame(HttpConstants::HTTP_UNAUTHORIZED, $error[0]['data']['httpCode']);
+            self::assertSame('unauthorized', $error[0]['data']['errorCode']);
+            self::assertSame($signOut->signal->data->deliveryId, $guestWorker->router->pageSubscription($acceptKey)?->deliveryId);
+        } finally {
+            $app->setValue(null, $previousApp);
+            Hilos::$sr = $masterRouter;
+            Hilos::$rt = $previousRt;
+        }
+    }
+
+    private function finishAuthenticatedHandoff(
+        DeliveryFlowClient $client,
+        PerInstanceIdentityTestWorker $worker,
+        WebSocketPageSubscribeSignalDTO $request,
+        string $answerType,
+    ): SignalDTO {
+        self::assertTrue($client->isDeliveryPending($request->page, $request->deliveryId));
+        $answer = $this->nextWorkerHandoffFrame($worker, $answerType);
+        $this->queueServingWorkerReply($this->master, $answer);
+        self::assertTrue($client->isDeliveryPending($request->page, $request->deliveryId));
+        $complete = $this->nextWorkerHandoffFrame($worker, SignalConstants::DELIVERY_COMPLETE);
+        self::assertSame($request->deliveryId, $complete->data->data->deliveryId);
+        $this->queueServingWorkerReply($this->master, $complete);
+        self::assertFalse($client->isDeliveryPending($request->page, $request->deliveryId));
+        self::assertSame([], $this->pending());
+        self::assertNull($worker->router->getNextQueuedSignal());
+
+        return $answer;
+    }
+
     private function admitLocalHandoffWorker(PerInstanceIdentityTestWorker $worker): void
+    {
+        $this->grantLocalHandoffWorker($worker);
+        $this->flushLocalHandoffWorker($worker);
+    }
+
+    private function grantLocalHandoffWorker(PerInstanceIdentityTestWorker $worker): void
     {
         $worker->deliver(array_pop($this->worker->requests));
         $probe = $worker->router->getNextQueuedSignal();
-        self::assertSame(PageHandoffIdentity::PROBE, $probe?->meta[PageHandoffIdentity::META_PROOF]);
+        self::assertSame(PageHandoffIdentity::PROBE, $probe?->meta[PageHandoffIdentity::META_PROOF] ?? null);
         $this->queueServingWorkerReply($this->master, $probe);
         $proof = array_pop($this->worker->requests);
         self::assertSame(PageHandoffIdentity::GRANTED, $proof?->signal->meta[PageHandoffIdentity::META_PROOF]);
         $worker->deliver($proof);
-        $this->flushLocalHandoffWorker($worker);
     }
 
     private function flushLocalHandoffWorker(PerInstanceIdentityTestWorker $worker): void
@@ -5826,6 +5958,21 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         }
     }
 
+    /**
+     * Runs the page handler directly, using the authority the master put on the request.
+     *
+     * @param SignalDTO $request Tracked subscribe delivered by the master
+     * @param Closure(): void $answer Dispatch or release of the page handler
+     */
+    private function withConfirmedPageAnswer(SignalDTO $request, Closure $answer): void
+    {
+        self::assertInstanceOf(WebSocketPageSubscribeSignalDTO::class, $request->data);
+        $identity = PageHandoffIdentity::fromMeta($request->meta);
+        self::assertNotNull($identity);
+        self::assertEquals($identity, PageHandoffIdentity::current($request->data->acceptKey));
+        Hilos::$sr->withPageAnswerAuthority($request->data, $answer, $identity);
+    }
+
     /** @return list<SignalDTO> All output actually queued by the page handler */
     private function takeSignals(): array
     {
@@ -6078,7 +6225,8 @@ final class DeliveryFlowRouter extends SignalRouter
     {
         return match ($page) {
             'unserved' => null,
-            PerInstancePublicIdentityPage::PAGE => PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE,
+            PerInstancePublicIdentityPage::PAGE,
+            PerInstanceAuthenticatedIdentityPage::PAGE => PerInstancePublicIdentityPage::SUBSCRIPTION_AGENT_TYPE,
             default => 'owner',
         };
     }
@@ -6088,6 +6236,9 @@ final class DeliveryFlowRouter extends SignalRouter
         return match ($page) {
             'node' => new PageAgentIndexRoute(PageAgentIndexSource::NODE_PARAM, 'nodeId', 'owner'),
             'identity' => new PageAgentIndexRoute(PageAgentIndexSource::SESSION_USER, null, 'owner'),
+            PerInstanceAuthenticatedIdentityPage::PAGE => new PageAgentIndexRoute(
+                PageAgentIndexSource::SESSION_USER, null, PerInstanceFallbackAgent::AGENT_TYPE,
+            ),
             PerInstancePublicIdentityPage::PAGE => new PageAgentIndexRoute(
                 PageAgentIndexSource::SESSION_USER_OR_GUEST, null, PerInstanceFallbackAgent::AGENT_TYPE,
             ),
@@ -6097,7 +6248,7 @@ final class DeliveryFlowRouter extends SignalRouter
 
     public function getDestinations(SignalDTO $signal): array
     {
-        if ($signal->signalName->getName() === PerInstancePublicIdentityPage::PAGE) {
+        if (in_array($signal->signalName->getName(), [PerInstancePublicIdentityPage::PAGE, PerInstanceAuthenticatedIdentityPage::PAGE], true)) {
             return parent::getDestinations($signal);
         }
         if ($signal->signalType->getType() === SignalTypeConstants::ACTION && $signal->signalName->getName() === DeliveryFlowClient::PROOF_ACTION) {
@@ -6142,6 +6293,11 @@ final class DeliveryFlowAgentManagerDaemon extends AgentManagerDaemon
 abstract class DeliveryFlowHandoffHilos extends Hilos
 {
     public const array PAGES = [PerInstancePublicIdentityPage::PAGE => DeliveryFlowHandoffPage::class];
+}
+
+abstract class DeliveryFlowAuthenticatedHandoffHilos extends Hilos
+{
+    public const array PAGES = [PerInstanceAuthenticatedIdentityPage::PAGE => PerInstanceAuthenticatedIdentityPage::class];
 }
 
 abstract class DeliveryFlowRelayHilos extends DeliveryFlowHandoffHilos

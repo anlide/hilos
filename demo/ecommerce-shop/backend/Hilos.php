@@ -134,6 +134,7 @@ use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\CartPage;
 use Demo\EcommerceShop\Pages\CategoryPage;
+use Demo\EcommerceShop\Pages\CheckoutPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -336,6 +337,7 @@ final class Hilos extends HilosFacade
         CategoryPage::PAGE => CategoryPage::class,
         ProductPage::PAGE => ProductPage::class,
         CartPage::PAGE => CartPage::class,
+        CheckoutPage::PAGE => CheckoutPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionsPage::PAGE => BrowserSessionsPage::class,

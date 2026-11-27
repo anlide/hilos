@@ -1,13 +1,13 @@
 import { z } from '@hilos/core/base'
 
-import { KOPECK_AMOUNT_PATTERN } from '../../../money/money.js'
+import { KOPECK_AMOUNT_PATTERN } from '../money/money.js'
 
 const totalSchema = z.string().regex(KOPECK_AMOUNT_PATTERN)
 const voucherIdSchema = z
   .number()
   .refine((id) => Number.isSafeInteger(id) && id > 0)
 
-/** The complete `data.cart` snapshot sent by the Cart page. */
+/** The complete `data.cart` snapshot sent by Cart and Checkout. */
 export const cartSnapshotSchema = z
   .object({
     userId: z.number().int().positive().nullable(),
@@ -60,7 +60,7 @@ export type CartLine = CartSnapshot['lines'][number]
 export type CartVoucher = NonNullable<CartSnapshot['voucher']>
 
 /**
- * Address one confirmed cart within this view.
+ * Address one confirmed cart within a view.
  *
  * @param cart The snapshot carrying the current cart identity.
  */

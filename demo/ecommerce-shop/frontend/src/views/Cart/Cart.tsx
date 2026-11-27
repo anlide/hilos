@@ -20,24 +20,30 @@ import {
 
 import { connection } from '../../bootstrap/connection.js'
 import { currentUserId, scopes } from '../../bootstrap/session.js'
+import { createCartPageSignal } from '../../cart/cartPageSnapshot.js'
 import { availabilityText } from '../../catalog/productAvailability.js'
 import { formatDeduction, formatMoney } from '../../money/money.js'
+import { PAGE_CART } from '../../pages/keys.js'
+import {
+  cartIdentity,
+  type CartLine,
+  type CartSnapshot,
+  type CartVoucher,
+} from '../../types/Cart.js'
 import { CartQuantityControls } from './CartQuantityControls.js'
 import { CartQuantityEditModal } from './CartQuantityEditModal.js'
 import { CartRemoveButton } from './CartRemoveButton.js'
 import CartSkeleton from './CartSkeleton.js'
 import { CartVoucherApplyModal } from './CartVoucherApplyModal.js'
 import { sendCartRemoveVoucher, type CartOwnerKind } from './cartActions.js'
-import { createCartPageSignal } from './cartPage.js'
 import { createCartQuantityEdit } from './cartQuantityEdit.js'
-import {
-  cartIdentity,
-  type CartLine,
-  type CartSnapshot,
-  type CartVoucher,
-} from './types/Cart.js'
 
-const cartPage = createCartPageSignal(scopes, currentUserId, connection)
+const cartPage = createCartPageSignal(
+  scopes,
+  currentUserId,
+  connection,
+  PAGE_CART,
+)
 
 /** Read the current owner's accepted cart while voucher controls are available. */
 function readVoucherCart(): CartSnapshot | null {

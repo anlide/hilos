@@ -77,7 +77,6 @@ use Hilos\Core\Group\DTO\GroupJoinSignalData;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Group\GroupSubscriptionDispatcher;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
@@ -3228,7 +3227,7 @@ abstract class WorkerManager extends BaseManager implements PageResender, PageDe
                     $page = $signalData->page ?? $name;
                     $acceptKey = $signalData->acceptKey;
                     $reassess = $signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS;
-                    $identityRouted = Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST;
+                    $identityRouted = Hilos::$sr?->pageAgentIndexRoute($page)?->source?->followsConnectionIdentity() === true;
                     $expected = PageHandoffIdentity::fromMeta($data->signal->meta);
                     $proof = isset($data->signal->meta[PageHandoffIdentity::META_PROOF]);
                     $trackedHandoff = $identityRouted && $signalData->deliveryId !== null;
@@ -3364,8 +3363,7 @@ abstract class WorkerManager extends BaseManager implements PageResender, PageDe
                             $pageRouter->dispatchPageSubscribe($signalData, $source, $name);
                         }
                     };
-                    if ($signalData->deliveryId !== null
-                        && Hilos::$sr?->pageAgentIndexRoute($page)?->source === PageAgentIndexSource::SESSION_USER_OR_GUEST) {
+                    if ($trackedHandoff) {
                         Hilos::$sr->withPageAnswerAuthority($signalData, $answer, $expected);
                     } else {
                         $answer();

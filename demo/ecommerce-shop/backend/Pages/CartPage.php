@@ -12,9 +12,7 @@ use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
-use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Hilos;
-use Demo\EcommerceShop\Pages\DTO\CartPageData;
 use Demo\EcommerceShop\Pages\DTO\CartRemoveLineActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartSetQuantityActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CartStepQuantityActionDTO;
@@ -210,9 +208,9 @@ final class CartPage extends AbstractPage
             throw new PageConflictException('The cart owner is not available yet');
         }
 
+        $agent = $this->getAgent();
         $sessionToken = $connection->sessionToken;
         $cartEpoch = null;
-        $guestCartKey = null;
         if ($userId === null) {
             if ($sessionToken === null || $sessionToken === '') {
                 throw new PageConflictException('The cart owner is not available yet');
@@ -221,33 +219,20 @@ final class CartPage extends AbstractPage
             $cartEpoch = Hilos::$db->sessions->activeGuestCartEpoch($sessionId, $sessionToken)
                 ?? throw new PageConflictException('The cart owner has changed');
             $guestCartKey = hash_hmac('sha256', sprintf(self::GUEST_CART_KEY_MESSAGE, $sessionId, $cartEpoch), $sessionToken);
-            $cartLines = Hilos::$db->sessionProductCarts->storedCartLines($sessionId, $cartEpoch);
+            if (!$agent instanceof GuestCartsLibraryAgent) {
+                throw new PageConflictException('The cart owner is not available at this agent');
+            }
+            $cart = CartPageSnapshot::forGuest($agent, $sessionId, $cartEpoch, $guestCartKey);
         } else {
             if (!Hilos::$db->sessions->isStoredActiveForUser($sessionId, $userId)) {
                 throw new PageConflictException('The cart owner is not available yet');
             }
-            $cartLines = Hilos::$db->userProductCarts->storedCartLines($userId);
-        }
-
-        $ordered = [];
-        $productIds = [];
-        foreach ($cartLines as $lineId => [$productId, $quantity]) {
-            $ordered[$lineId] = [$productId, $quantity];
-            $productIds[] = $productId;
-        }
-
-        $stock = Hilos::$db->productWarehouseStocks->totalsOfProducts(...$productIds);
-        $lines = [];
-        foreach ($ordered as $lineId => [$productId, $quantity]) {
-            $product = Hilos::$db->products[$productId] ?? null;
-            if ($product === null) {
-                // A product can disappear with its cart line while the catalog change is crossing workers.
-                continue;
+            if (!$agent instanceof UserAgent) {
+                throw new PageConflictException('The cart owner is not available at this agent');
             }
-
-            $lines[] = CartPageData::line($lineId, $product, $quantity, $stock->of($productId)->unitCount);
+            $cart = CartPageSnapshot::forAccount($agent, $userId);
         }
-        $cart = new CartPageData($userId, $guestCartKey, $lines, $this->cartVoucher($sessionId, $cartEpoch));
+
         $current = $this->requireConnection($acceptKey);
         if ($current->userId !== $userId || $current->sessionId !== $sessionId || $current->sessionToken !== $sessionToken
         ) {
@@ -629,29 +614,6 @@ final class CartPage extends AbstractPage
         }
 
         return $connection;
-    }
-
-    /**
-     * Asks the confirmed cart owner for its voucher, read by the saved ID so a switched-off voucher still comes back.
-     *
-     * @param int $sessionId Current session of the connection
-     * @param ?int $cartEpoch Number of the guest cart used for the product lines
-     * @return ?Voucher Current catalog voucher, including an inactive one, or null when none is selected
-     * @throws PageConflictException When the serving agent cannot hold a cart
-     * @throws LogicException When a voucher collection is misconfigured
-     * @throws InvalidArgumentException When a loaded voucher does not match its collection
-     * @throws DatabaseException When the binding or catalog read fails
-     * @throws ItemNotFoundException When the saved voucher is missing or the binding disappears during its keyed read
-     */
-    private function cartVoucher(int $sessionId, ?int $cartEpoch): ?Voucher
-    {
-        $agent = $this->getAgent();
-
-        return match (true) {
-            $agent instanceof UserAgent => $agent->cartVoucher(),
-            $agent instanceof GuestCartsLibraryAgent && $cartEpoch !== null => $agent->cartVoucher($sessionId, $cartEpoch),
-            default => throw new PageConflictException('The cart owner is not available at this agent'),
-        };
     }
 
     /**

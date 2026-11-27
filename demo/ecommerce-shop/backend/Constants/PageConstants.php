@@ -54,4 +54,7 @@ final class PageConstants
 
     /** @var string Storefront cart for the current guest or account */
     public const string CART = 'cart';
+
+    /** @var string Checkout for the current account */
+    public const string CHECKOUT = 'checkout';
 }
