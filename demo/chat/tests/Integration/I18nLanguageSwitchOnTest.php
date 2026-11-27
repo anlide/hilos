@@ -30,6 +30,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
+use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\LanguageCardSummary;
 use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\Library\I18nLibraryAgent;
@@ -189,6 +190,27 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
             "The built-in catalog has no locale without a country for 'de'");
         $this->assertCommand(CliCommands::I18N_TEST_LOCALE_ON, 'qq', false,
             "Language 'qq' does not exist");
+
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_ON, 'es-ES', false,
+            "Country 'es' does not exist");
+        $this->assertCommand(CliCommands::I18N_TEST_COUNTRY_ON, 'es', true, ['code' => 'es', 'enabled' => true]);
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_ON, 'es-ES', true, ['code' => 'es-ES', 'enabled' => true]);
+        self::assertTrue(Hilos::$db->locales['es-ES']->enabled);
+        $definition = BuiltInI18nCatalog::locale('es-ES');
+        self::assertNotNull($definition);
+        self::assertSame($definition->dateFormat, Hilos::$db->locales['es-ES']->dateFormat);
+        self::assertSame($definition->timeFormat, Hilos::$db->locales['es-ES']->timeFormat);
+        self::assertSame($definition->numberFormat, Hilos::$db->locales['es-ES']->numberFormat);
+        self::assertSame($definition->phoneFormat, Hilos::$db->locales['es-ES']->phoneFormat);
+        self::assertSame($definition->addressFormat, Hilos::$db->locales['es-ES']->addressFormat);
+        self::assertSame($definition->measurementSystem, Hilos::$db->locales['es-ES']->measurementSystem->value);
+        self::assertSame($definition->collation, Hilos::$db->locales['es-ES']->collation);
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_ON, 'es-ES', true, ['code' => 'es-ES', 'enabled' => true]);
+        $this->assertCommand(CliCommands::I18N_TEST_COUNTRY_ON, 'de', true, ['code' => 'de', 'enabled' => true]);
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_ON, 'es-DE', false,
+            "The built-in catalog has no locale 'es-DE'");
+        $this->assertCommand(CliCommands::I18N_TEST_LOCALE_ON, 'es-es', false,
+            "Locale code 'es-es' must be a language code or a language-COUNTRY pair");
     }
 
     public function testCountrylessFixtureCleanupDeletesOnlyNonDefaultBuiltInLocales(): void
@@ -282,12 +304,21 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
     private function clearFixtures(): void
     {
         Database::sqlRun("DELETE FROM hilos_country_name WHERE language_id IN "
-            . "(SELECT id FROM hilos_language WHERE code IN ('de', 'en', 'es', 'fr'))");
+            . "(SELECT id FROM hilos_language WHERE code IN ('de', 'en', 'es', 'fr'))"
+            . " OR country_id IN (SELECT id FROM hilos_country WHERE code IN ('de', 'es'))");
         Database::sqlRun("DELETE FROM hilos_language_name WHERE language_id IN (SELECT id FROM hilos_language WHERE code IN ('de', 'en', 'es', 'fr'))"
             . " OR in_language_id IN (SELECT id FROM hilos_language WHERE code IN ('de', 'en', 'es', 'fr'))");
         Database::sqlRun("DELETE FROM hilos_locale WHERE language_id IN (SELECT id FROM hilos_language WHERE code IN ('de', 'en', 'es', 'fr'))");
+        Database::sqlRun("DELETE FROM hilos_country WHERE code IN ('de', 'es')");
         Database::sqlRun("DELETE FROM hilos_language WHERE code IN ('de', 'en', 'es', 'fr')");
-        foreach ([Hilos::$db->countryNames, Hilos::$db->languageNames, Hilos::$db->locales, Hilos::$db->languages] as $collection) {
+        $collections = [
+            Hilos::$db->countryNames,
+            Hilos::$db->languageNames,
+            Hilos::$db->locales,
+            Hilos::$db->languages,
+            Hilos::$db->countries,
+        ];
+        foreach ($collections as $collection) {
             $collection->getObjectCollection()?->reHydrate();
             $collection->clearCache();
         }

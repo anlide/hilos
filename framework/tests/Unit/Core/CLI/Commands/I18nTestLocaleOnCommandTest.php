@@ -45,12 +45,18 @@ final class I18nTestLocaleOnCommandTest extends TestCase
 
     public function testRejectsMissingAndMalformedCodes(): void
     {
-        foreach ([[], ['EN'], ['eng'], [''], ['fr', 'de']] as $arguments) {
+        foreach ([[], ['EN'], ['eng'], [''], ['fr', 'de'], ['ru-ru'], ['ru_RU'], ['ru-RUS']] as $arguments) {
             ob_start();
             $exit = new I18nTestLocaleOnCommand()->execute([], $arguments);
             $output = ob_get_clean();
             self::assertSame(ExitCode::INVALID_ARGUMENT, $exit);
             self::assertStringContainsString('Usage:', $output);
         }
+
+        ob_start();
+        $exit = new I18nTestLocaleOnCommand()->execute([], ['ru-RU']);
+        $output = ob_get_clean();
+        self::assertNotSame(ExitCode::INVALID_ARGUMENT, $exit);
+        self::assertStringNotContainsString('Usage:', $output);
     }
 }

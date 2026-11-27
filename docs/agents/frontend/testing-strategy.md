@@ -1110,6 +1110,9 @@ creation and consumes it in LIFO order; `i18nFixtures` supplies Playwright's
 test-scoped `finally` and reports failures with `AggregateError`. Declare roots
 before dependents. Use it directly for i18n; another family follows the ownership
 and teardown contract without copying the whole i18n scope.
+`exampleInstallation()` sets up the mockup installation
+(`I18N_EXAMPLE_INSTALLATION`) for a single test with reverse-order teardown,
+failing with refusal if any required address is already occupied.
 
 From `demo/*/tests/e2e/tests/`, the real fixture binding is:
 

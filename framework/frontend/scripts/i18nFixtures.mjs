@@ -1,5 +1,37 @@
 import * as commands from './i18n.mjs'
 
+export const I18N_EXAMPLE_INSTALLATION = Object.freeze({
+  languages: Object.freeze([
+    Object.freeze({ code: 'ru', enabled: true }),
+    Object.freeze({ code: 'de', enabled: true }),
+    Object.freeze({ code: 'pt', enabled: true }),
+    Object.freeze({ code: 'uk', enabled: false }),
+  ]),
+  countries: Object.freeze([
+    Object.freeze({ code: 'by', own: true, enabled: false }),
+    Object.freeze({ code: 'kz', own: true, enabled: false }),
+  ]),
+  locales: Object.freeze([
+    // ru:
+    Object.freeze({ code: 'ru', enabled: true }),
+    Object.freeze({ code: 'ru-BY', enabled: true }),
+    Object.freeze({ code: 'ru-RU', enabled: true }),
+    Object.freeze({ code: 'ru-UA', enabled: true }),
+    Object.freeze({ code: 'ru-KZ', enabled: false, manual: true }),
+    // de:
+    Object.freeze({ code: 'de', enabled: true, manual: true }),
+    Object.freeze({ code: 'de-AT', enabled: true }),
+    Object.freeze({ code: 'de-DE', enabled: true }),
+    // pt:
+    Object.freeze({ code: 'pt', enabled: true }),
+    Object.freeze({ code: 'pt-BR', enabled: true }),
+    Object.freeze({ code: 'pt-PT', enabled: true }),
+    // en:
+    Object.freeze({ code: 'en-GB', enabled: true, reserved: true }),
+    Object.freeze({ code: 'en-US', enabled: true, reserved: true }),
+  ]),
+})
+
 /** @typedef {ReturnType<typeof createI18nFixtureScope>} I18nFixtureScope */
 
 /**
@@ -62,7 +94,7 @@ export function createI18nFixtureScope() {
     return code
   }
 
-  return {
+  const scope = {
     defer,
     cleanup,
 
@@ -158,7 +190,94 @@ export function createI18nFixtureScope() {
     ownLocale(code) {
       return own(commands.clearLocale, code)
     },
+
+    /**
+     * Set up the example installation from mockups for one test and arm its teardown.
+     *
+     * Roots are created before dependents; teardown runs in reverse order.
+     * Fails with refusal if any address is already occupied.
+     *
+     * @returns {Promise<{
+     *   languages: Record<'ru'|'de'|'pt'|'uk', import('./i18n.mjs').CreatedI18nFixture>,
+     *   countries: Record<'by'|'kz', import('./i18n.mjs').CreatedI18nFixture>,
+     *   locales: typeof I18N_EXAMPLE_INSTALLATION.locales,
+     * }>}
+     */
+    async exampleInstallation() {
+      const ru = await scope.language({
+        code: 'ru',
+        nativeName: 'Русский',
+        enabled: true,
+      })
+      const de = await scope.language({
+        code: 'de',
+        nativeName: 'Deutsch',
+        enabled: true,
+      })
+      const pt = await scope.language({
+        code: 'pt',
+        nativeName: 'Português',
+        enabled: true,
+      })
+      const uk = await scope.language({
+        code: 'uk',
+        nativeName: 'Українська',
+        enabled: false,
+      })
+      const languages = { ru, de, pt, uk }
+
+      const by = await scope.country({
+        code: 'by',
+        currencySymbol: 'Br',
+        currencyCode: 'BYN',
+        enabled: false,
+      })
+      const kz = await scope.country({
+        code: 'kz',
+        currencySymbol: '₸',
+        currencyCode: 'KZT',
+        enabled: false,
+      })
+      const countries = { by, kz }
+
+      await scope.ownLocale('en-GB')
+      await scope.ownLocale('en-US')
+
+      await scope.locale({
+        languageId: languages.de.id,
+        countryId: null,
+        enabled: true,
+      })
+      for (const code of ['de-AT', 'de-DE']) {
+        await commands.switchLocaleOn(code)
+        defer(() => commands.clearLocale(code))
+      }
+      for (const code of ['ru', 'ru-BY', 'ru-RU', 'ru-UA']) {
+        await commands.switchLocaleOn(code)
+        defer(() => commands.clearLocale(code))
+      }
+      await scope.locale({
+        languageId: languages.ru.id,
+        countryId: countries.kz.id,
+        enabled: false,
+      })
+      for (const code of ['pt', 'pt-BR', 'pt-PT']) {
+        await commands.switchLocaleOn(code)
+        defer(() => commands.clearLocale(code))
+      }
+      for (const code of ['en-GB', 'en-US']) {
+        await commands.switchLocaleOn(code)
+      }
+
+      return {
+        languages,
+        countries,
+        locales: I18N_EXAMPLE_INSTALLATION.locales,
+      }
+    },
   }
+
+  return scope
 }
 
 /* eslint-disable no-empty-pattern -- Playwright parses this pattern to discover fixture dependencies; an unused name or rest pattern is refused. */

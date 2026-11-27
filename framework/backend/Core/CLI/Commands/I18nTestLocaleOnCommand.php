@@ -10,7 +10,7 @@ use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\I18n\I18nTestCommandConstants;
 
-/** Create and enable a built-in countryless locale through the live i18n library (test-only). */
+/** Create and enable a built-in locale through the live i18n library (test-only). */
 final class I18nTestLocaleOnCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
     /** @return string Command name */
@@ -22,7 +22,7 @@ final class I18nTestLocaleOnCommand extends AbstractCommandChannelTestCommand im
     /** @return string One-line description */
     public function getDescription(): string
     {
-        return 'Create and enable a built-in countryless locale (test-only)';
+        return 'Create and enable a built-in locale (test-only)';
     }
 
     /** @return string Multi-line help text */
@@ -32,27 +32,28 @@ final class I18nTestLocaleOnCommand extends AbstractCommandChannelTestCommand im
 Command: test:i18n:locale:on <code>
 
 Description:
-  Create and enable a built-in countryless locale through the live i18n library.
+  Create and enable a built-in locale through the live i18n library.
   Refuses on a production-like environment.
 
 Arguments:
-  <code>  Two lowercase Latin letters from the built-in catalog
+  <code>  A language code (es) or a language-COUNTRY pair (es-ES) from the built-in catalog
 
 Usage:
   php cli.php test:i18n:locale:on es
+  php cli.php test:i18n:locale:on es-ES
 HELP;
     }
 
     /**
      * @param array<string, mixed> $options Parsed options (unused)
-     * @param list<string> $args Positional arguments: one countryless locale code
+     * @param list<string> $args Positional arguments: one locale code
      * @return int Exit code
      * @throws CommandException When the command name is not registered as test-only
      */
     protected function run(array $options, array $args): int
     {
         $code = $args[0] ?? null;
-        if (!is_string($code) || preg_match('/^[a-z]{2}$/D', $code) !== 1 || count($args) !== 1) {
+        if (!is_string($code) || preg_match('/^[a-z]{2}(?:-[A-Z]{2})?$/D', $code) !== 1 || count($args) !== 1) {
             echo "Usage: test:i18n:locale:on <code>\n";
 
             return ExitCode::INVALID_ARGUMENT;
@@ -76,7 +77,7 @@ HELP;
         $replyCode = $result->reply->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
         $enabled = $result->reply->payload[I18nTestCommandConstants::FIELD_ENABLED] ?? null;
         if (!is_string($replyCode) || $replyCode !== $code || $enabled !== true) {
-            echo "Command failed: the reply carries no enabled countryless locale\n";
+            echo "Command failed: the reply carries no enabled locale\n";
 
             return ExitCode::ERROR;
         }

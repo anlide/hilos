@@ -396,11 +396,11 @@ final class CliCommands
     public const string I18N_TEST_LOCALE_DELETE = 'test:i18n:locale:delete';
 
     /**
-     * Create and enable a known countryless locale through the i18n library (test-only).
+     * Create and enable a known locale, countryless or as a language-COUNTRY pair, through the i18n library (test-only).
      *
      * The CLI process has no write ownership; the library answers over the command channel.
      *
-     * @var string Command: Create and enable a built-in countryless locale (test-only)
+     * @var string Command: Create and enable a built-in locale (test-only)
      */
     public const string I18N_TEST_LOCALE_ON = 'test:i18n:locale:on';
 

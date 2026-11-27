@@ -223,7 +223,7 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
   missing, switched off or switched on. A missing or switched-off countryless
   locale raises a warning; neither state blocks switching on the language.
   Browser tests set the starting state with `test:i18n:language:off <code>` and
-  `test:i18n:locale:on <code>`.
+  `test:i18n:locale:on <code>` (or enable a language-COUNTRY pair with the same command).
 - A country can be switched on without a default locale. The section's country
   card switches on a country through a confirmation window; no default locale
   is needed, and the window notes when it is missing or switched off without
@@ -754,7 +754,9 @@ binance-btc-tracker, file-gallery-manager and preferans. Shared browser checks l
 `framework/frontend/e2e/i18n.ts`; test-scoped fixtures and command wrappers live
 in `framework/frontend/scripts/i18nFixtures.mjs` and
 `framework/frontend/scripts/i18n.mjs`. Setup and cleanup call the `test:i18n:*`
-commands through these shared wrappers (HIL-1824).
+commands through these shared wrappers (HIL-1824); `exampleInstallation()` sets
+up the mockup installation (`I18N_EXAMPLE_INSTALLATION`) for a single test,
+arms reverse-order teardown, and refuses if any required address is already occupied.
 Follow [Feature Declaration](../app-topology.md) and the
 [activation recipe](admin-feature-scaffold.md).
 The six demos are `chat`, `tasks`, `polls`, `ecommerce-shop`,

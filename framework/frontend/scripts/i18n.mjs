@@ -144,9 +144,9 @@ export async function deleteLanguage(code) {
 }
 
 /**
- * Switch on a language's countryless locale through its owner.
+ * Switch on a built-in locale (countryless or language-COUNTRY pair) through its owner.
  *
- * @param {string} code Two-letter language code of the countryless locale.
+ * @param {string} code Two-letter language code or language-COUNTRY pair.
  * @returns {Promise<void>}
  */
 export async function switchLocaleOn(code) {

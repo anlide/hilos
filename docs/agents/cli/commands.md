@@ -687,7 +687,8 @@ database state), `test:verification:sweep`,
 then the personal owner removes later rows; the library checks the result before publishing),
 `test:i18n:language:on <code>`, `test:i18n:language:off <code>`,
 `test:i18n:language:delete <code>`,
-`test:i18n:locale:on <code>`, `test:i18n:country:off <code>` and `test:i18n:country:on <code>` (every row they cause is written by
+`test:i18n:locale:on <code>` (a countryless locale or a language-COUNTRY pair),
+`test:i18n:country:off <code>` and `test:i18n:country:on <code>` (every row they cause is written by
 the agent that answers them, so the CLI process itself has nothing to read or write),
 `test:connection:liveness` (the master answers it out of memory, from the browser sockets
 it holds, and the flag it may cause is written by the owner of the connections collection,

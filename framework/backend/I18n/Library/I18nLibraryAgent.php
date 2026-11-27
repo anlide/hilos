@@ -12,9 +12,10 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\View\Item\Country;
+use Hilos\Database\View\Item\CountryName;
 use Hilos\Database\View\Item\Language;
 use Hilos\Database\View\Item\LanguageName;
-use Hilos\Database\View\Item\CountryName;
 use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -926,7 +927,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
     }
 
     /**
-     * @param CommandRequestDTO $data Request carrying a countryless locale code
+     * @param CommandRequestDTO $data Request carrying a locale code (language or language-COUNTRY pair)
      * @throws HilosException When the command reply cannot be sent
      */
     private function handleLocaleOnCommand(CommandRequestDTO $data): void
@@ -934,31 +935,59 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         $code = $data->payload[I18nTestCommandConstants::FIELD_CODE] ?? null;
         if (!is_string($code)) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Locale code must be a string'));
+
             return;
         }
+        if (preg_match('/^[a-z]{2}(?:-[A-Z]{2})?$/D', $code) !== 1) {
+            $this->replyToCommand(CommandReplyDTO::error(
+                $data->correlationId,
+                "Locale code '{$code}' must be a language code or a language-COUNTRY pair",
+            ));
+
+            return;
+        }
+
+        $parts = explode('-', $code, 2);
+        $langCode = $parts[0];
+        $countryCode = isset($parts[1]) ? strtolower($parts[1]) : null;
+
         try {
-            if (!isset(Hilos::$db->languages[$code])) {
-                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Language '{$code}' does not exist"));
+            if (!isset(Hilos::$db->languages[$langCode])) {
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Language '{$langCode}' does not exist"));
+
                 return;
             }
-            $language = Hilos::$db->languages[$code];
+            $language = Hilos::$db->languages[$langCode];
+
+            $country = null;
+            if ($countryCode !== null) {
+                if (!isset(Hilos::$db->countries[$countryCode])) {
+                    $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Country '{$countryCode}' does not exist"));
+
+                    return;
+                }
+                $country = Hilos::$db->countries[$countryCode];
+            }
         } catch (WiringRefusal $refusal) {
             throw $refusal;
         } catch (Throwable $failure) {
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
             return;
         }
+
         if (BuiltInI18nCatalog::locale($code) === null) {
-            $this->replyToCommand(CommandReplyDTO::error(
-                $data->correlationId,
-                "The built-in catalog has no locale without a country for '{$code}'",
-            ));
+            $message = $countryCode === null
+                ? "The built-in catalog has no locale without a country for '{$code}'"
+                : "The built-in catalog has no locale '{$code}'";
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $message));
+
             return;
         }
 
         try {
             Database::transactionStart();
-            $this->switchOnCatalogCountrylessLocale($language);
+            $this->switchOnCatalogCountrylessLocale($language, $country);
             Database::transactionCommit();
         } catch (WiringRefusal $refusal) {
             Database::transactionRollback();
@@ -966,6 +995,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         } catch (Throwable $failure) {
             Database::transactionRollbackSilent();
             $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+
             return;
         }
 
@@ -1043,18 +1073,24 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         ]));
     }
 
-    /** @param Language $language Language whose catalog locale may be provisioned */
-    private function switchOnCatalogCountrylessLocale(Language $language): void
+    /**
+     * @param Language $language Language whose catalog locale may be provisioned
+     * @param ?Country $country Country whose catalog locale may be provisioned, or null for countryless
+     * @throws HilosException When ownership, database or collection refuses creation or activation
+     * @throws ValidationException When the pair exists or a format template is unknown
+     */
+    private function switchOnCatalogCountrylessLocale(Language $language, ?Country $country = null): void
     {
-        $localeDefinition = BuiltInI18nCatalog::locale($language->code);
+        $code = $country === null ? $language->code : $language->code . '-' . strtoupper($country->code);
+        $localeDefinition = BuiltInI18nCatalog::locale($code);
         if ($localeDefinition === null) {
             return;
         }
 
-        $locale = Hilos::$db->locales[$language->code]
+        $locale = Hilos::$db->locales[$code]
             ?? Hilos::$db->locales->actions->create(
                 $language,
-                null,
+                $country,
                 $localeDefinition->dateFormat,
                 $localeDefinition->timeFormat,
                 $localeDefinition->numberFormat,

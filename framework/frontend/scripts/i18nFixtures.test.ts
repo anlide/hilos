@@ -4,6 +4,7 @@ import * as commands from './i18n.mjs'
 import {
   createI18nFixtureScope,
   i18nFixtures,
+  I18N_EXAMPLE_INSTALLATION,
   type I18nFixtureScope,
 } from './i18nFixtures.mjs'
 
@@ -427,4 +428,205 @@ it('keeps scopes independent even when tests overlap', async () => {
   finish()
   await first
   expect(events).toEqual(['second', 'first'])
+})
+
+it('creates roots before dependents and tears down in reverse order', async () => {
+  const events: string[] = []
+  vi.spyOn(commands, 'createLanguage').mockImplementation(async (options) => {
+    events.push(`create:language:${options.code}`)
+    return { id: 10, code: options.code, enabled: options.enabled ?? false }
+  })
+  vi.spyOn(commands, 'createCountry').mockImplementation(async (options) => {
+    events.push(`create:country:${options.code}`)
+    return { id: 20, code: options.code, enabled: options.enabled ?? false }
+  })
+  vi.spyOn(commands, 'createLocale').mockImplementation(async (options) => {
+    const code = options.countryId ? 'ru-KZ' : 'de'
+    events.push(`create:locale:${code}`)
+    return { id: 30, code, enabled: options.enabled ?? false }
+  })
+  vi.spyOn(commands, 'switchLocaleOn').mockImplementation(async (code) => {
+    events.push(`switch:locale:${code}`)
+  })
+  vi.mocked(commands.clearLocale).mockImplementation(async (code) => {
+    events.push(`clear:locale:${code}`)
+    return { code }
+  })
+  vi.mocked(commands.clearCountry).mockImplementation(async (code) => {
+    events.push(`clear:country:${code}`)
+    return { code }
+  })
+  vi.mocked(commands.clearLanguage).mockImplementation(async (code) => {
+    events.push(`clear:language:${code}`)
+    return { code }
+  })
+
+  await i18nFixtures({}, async (scope) => {
+    await scope.exampleInstallation()
+  })
+
+  const creationEvents = events.filter(
+    (e) => e.startsWith('create:') || e.startsWith('switch:'),
+  )
+  expect(creationEvents).toEqual([
+    'create:language:ru',
+    'create:language:de',
+    'create:language:pt',
+    'create:language:uk',
+    'create:country:by',
+    'create:country:kz',
+    'create:locale:de',
+    'switch:locale:de-AT',
+    'switch:locale:de-DE',
+    'switch:locale:ru',
+    'switch:locale:ru-BY',
+    'switch:locale:ru-RU',
+    'switch:locale:ru-UA',
+    'create:locale:ru-KZ',
+    'switch:locale:pt',
+    'switch:locale:pt-BR',
+    'switch:locale:pt-PT',
+    'switch:locale:en-GB',
+    'switch:locale:en-US',
+  ])
+
+  const teardownEvents = events.filter((e) => e.startsWith('clear:'))
+  const finalTeardowns = teardownEvents.slice(2)
+  expect(finalTeardowns).toEqual([
+    'clear:locale:pt-PT',
+    'clear:locale:pt-BR',
+    'clear:locale:pt',
+    'clear:locale:ru-KZ',
+    'clear:locale:ru-UA',
+    'clear:locale:ru-RU',
+    'clear:locale:ru-BY',
+    'clear:locale:ru',
+    'clear:locale:de-DE',
+    'clear:locale:de-AT',
+    'clear:locale:de',
+    'clear:locale:en-US',
+    'clear:locale:en-GB',
+    'clear:country:kz',
+    'clear:country:by',
+    'clear:language:uk',
+    'clear:language:pt',
+    'clear:language:de',
+    'clear:language:ru',
+  ])
+})
+
+it('reserves en-GB and en-US before switching them on', async () => {
+  const events: string[] = []
+  vi.spyOn(commands, 'createLanguage').mockResolvedValue({
+    id: 1,
+    code: 'ru',
+    enabled: true,
+  })
+  vi.spyOn(commands, 'createCountry').mockResolvedValue({
+    id: 1,
+    code: 'by',
+    enabled: false,
+  })
+  vi.spyOn(commands, 'createLocale').mockResolvedValue({
+    id: 1,
+    code: 'de',
+    enabled: true,
+  })
+  vi.mocked(commands.clearLocale).mockImplementation(async (code) => {
+    events.push(`clear:${code}`)
+    return { code }
+  })
+  vi.spyOn(commands, 'switchLocaleOn').mockImplementation(async (code) => {
+    events.push(`switch:${code}`)
+  })
+
+  const scope = createI18nFixtureScope()
+  await scope.exampleInstallation()
+
+  const enGbClearIndex = events.indexOf('clear:en-GB')
+  const enGbSwitchIndex = events.indexOf('switch:en-GB')
+  const enUsClearIndex = events.indexOf('clear:en-US')
+  const enUsSwitchIndex = events.indexOf('switch:en-US')
+
+  expect(enGbClearIndex).toBeGreaterThanOrEqual(0)
+  expect(enGbSwitchIndex).toBeGreaterThanOrEqual(0)
+  expect(enGbClearIndex).toBeLessThan(enGbSwitchIndex)
+
+  expect(enUsClearIndex).toBeGreaterThanOrEqual(0)
+  expect(enUsSwitchIndex).toBeGreaterThanOrEqual(0)
+  expect(enUsClearIndex).toBeLessThan(enUsSwitchIndex)
+})
+
+it('cleans only successful setup and does not claim failed row when installation refuses', async () => {
+  const refusal = new Error('Occupied country kz')
+  vi.spyOn(commands, 'createLanguage').mockImplementation(async (options) => ({
+    id: 1,
+    code: options.code,
+    enabled: options.enabled ?? false,
+  }))
+  vi.spyOn(commands, 'createCountry').mockImplementation(async (options) => {
+    if (options.code === 'kz') {
+      throw refusal
+    }
+    return { id: 2, code: options.code, enabled: options.enabled ?? false }
+  })
+
+  await expect(
+    i18nFixtures({}, async (scope) => {
+      await scope.exampleInstallation()
+    }),
+  ).rejects.toBe(refusal)
+
+  expect(commands.clearCountry).toHaveBeenCalledExactlyOnceWith('by')
+  expect(commands.clearCountry).not.toHaveBeenCalledWith('kz')
+  expect(commands.clearLanguage).toHaveBeenCalledTimes(4)
+  expect(commands.clearLocale).not.toHaveBeenCalled()
+})
+
+it('returns committed rows by code with example locales', async () => {
+  const langRows: Record<
+    string,
+    { id: number; code: string; enabled: boolean }
+  > = {
+    ru: { id: 101, code: 'ru', enabled: true },
+    de: { id: 102, code: 'de', enabled: true },
+    pt: { id: 103, code: 'pt', enabled: true },
+    uk: { id: 104, code: 'uk', enabled: false },
+  }
+  const countryRows: Record<
+    string,
+    { id: number; code: string; enabled: boolean }
+  > = {
+    by: { id: 201, code: 'by', enabled: false },
+    kz: { id: 202, code: 'kz', enabled: false },
+  }
+  vi.spyOn(commands, 'createLanguage').mockImplementation(
+    async (options) => langRows[options.code],
+  )
+  vi.spyOn(commands, 'createCountry').mockImplementation(
+    async (options) => countryRows[options.code],
+  )
+  vi.spyOn(commands, 'createLocale').mockImplementation(async (options) => ({
+    id: 301,
+    code: options.countryId ? 'ru-KZ' : 'de',
+    enabled: options.enabled ?? false,
+  }))
+  vi.spyOn(commands, 'switchLocaleOn').mockResolvedValue()
+
+  const scope = createI18nFixtureScope()
+  const installation = await scope.exampleInstallation()
+
+  expect(installation).toEqual({
+    languages: {
+      ru: langRows.ru,
+      de: langRows.de,
+      pt: langRows.pt,
+      uk: langRows.uk,
+    },
+    countries: {
+      by: countryRows.by,
+      kz: countryRows.kz,
+    },
+    locales: I18N_EXAMPLE_INSTALLATION.locales,
+  })
 })
