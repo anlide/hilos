@@ -23,6 +23,7 @@ import {
   createTestUser,
   expectDocumentUnchanged,
   expectPageReady,
+  expectPageRefused,
   gotoPage,
   grantAdminToSelf,
   login,
@@ -45,7 +46,7 @@ const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 // Browser traces can include the guest's session cookie.
 test.use({ colorScheme: 'light', trace: 'off' })
 
-test('a guest sees live prices in the cart and follows the product link', async ({
+test('a guest sees live prices in the cart and follows its product and Checkout links', async ({
   browser,
   page,
   cleanup,
@@ -142,6 +143,16 @@ test('a guest sees live prices in the cart and follows the product link', async 
 
     await expectAmounts('₴2,100.50', '₴6,301.50')
     await expectDocumentUnchanged(expect, guest)
+  })
+
+  await test.step('follow Checkout to the sign-in form in place of the checkout page', async () => {
+    await guest.getByTestId('shop-cart-checkout').click()
+    await expect(guest).toHaveURL('/checkout')
+    await expectPageRefused(expect, guest)
+    await expect(guest.getByTestId('auth-surface')).toBeVisible()
+    await guest.getByTestId('nav-cart').click()
+    await expect(guest).toHaveURL('/cart')
+    await expectPageReady(expect, guest)
   })
 
   await test.step('follow the cart line to its product page', async () => {

@@ -215,7 +215,10 @@ interface CartRowFocus {
   readonly neighbors: readonly Element[]
 }
 
-type CartFocus = CartRowFocus | { readonly voucherRemove: HTMLButtonElement }
+type CartFocus =
+  | CartRowFocus
+  | { readonly voucherRemove: HTMLButtonElement }
+  | { readonly checkout: HTMLAnchorElement }
 
 interface CartContentsProps {
   readonly cart: CartSnapshot
@@ -229,6 +232,7 @@ class CartContents extends Component<CartContentsProps> {
   private readonly empty = createRef<HTMLDivElement>()
   private readonly summary = createRef<HTMLDListElement>()
   private readonly applyVoucher = createRef<HTMLButtonElement>()
+  private readonly checkoutActions = createRef<HTMLDivElement>()
 
   getSnapshotBeforeUpdate(): CartFocus | null {
     const voucherRemove =
@@ -240,6 +244,14 @@ class CartContents extends Component<CartContentsProps> {
       voucherRemove.ownerDocument.activeElement === voucherRemove
     ) {
       return { voucherRemove }
+    }
+
+    const checkout =
+      this.checkoutActions.current?.querySelector<HTMLAnchorElement>(
+        '[data-id="shop-cart-checkout"]',
+      )
+    if (checkout && checkout.ownerDocument.activeElement === checkout) {
+      return { checkout }
     }
 
     const list = this.list.current
@@ -282,6 +294,17 @@ class CartContents extends Component<CartContentsProps> {
 
       const target = this.applyVoucher.current ?? fallback
       target?.focus()
+      return
+    }
+
+    if ('checkout' in focus) {
+      const { checkout } = focus
+      if (checkout.isConnected) return
+
+      const { activeElement, body } = checkout.ownerDocument
+      if (activeElement?.isConnected && activeElement !== body) return
+
+      fallback?.focus()
       return
     }
 
@@ -359,6 +382,10 @@ class CartContents extends Component<CartContentsProps> {
                         pageSubscriptionProof={cart.pageSubscriptionProof}
                       />
                     )}
+                    <div className="d-flex justify-content-between gap-2 small mb-1">
+                      <dt className="fw-normal">Delivery</dt>
+                      <dd className="mb-0">to a parcel locker, free</dd>
+                    </div>
                     <div className="d-flex justify-content-between gap-2 fw-semibold">
                       <dt>Total</dt>
                       <dd className="mb-0" data-id="shop-cart-total">
@@ -366,7 +393,14 @@ class CartContents extends Component<CartContentsProps> {
                       </dd>
                     </div>
                   </dl>
-                  <div className="d-grid">
+                  <div ref={this.checkoutActions} className="d-grid gap-2">
+                    <HilosLink
+                      to="/checkout"
+                      className="btn btn-primary"
+                      data-id="shop-cart-checkout"
+                    >
+                      Checkout
+                    </HilosLink>
                     <button
                       ref={this.applyVoucher}
                       key={owner}

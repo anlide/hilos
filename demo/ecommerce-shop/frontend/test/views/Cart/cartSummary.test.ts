@@ -83,6 +83,7 @@ it('shows the exact discount between the items and the total', async () => {
   expect(summary()).toEqual([
     ['Items', '₴10.02'],
     ['Voucher SAVE25', '−₴2.51'],
+    ['Delivery', 'to a parcel locker, free'],
     ['Total', '₴7.51'],
   ])
   expect(
@@ -100,6 +101,7 @@ it('says a switched-off voucher is inactive with a dash, and the total is the it
   expect(summary()).toEqual([
     ['Items', '₴10.02'],
     ['Voucher SAVE25 · Inactive', '—'],
+    ['Delivery', 'to a parcel locker, free'],
     ['Total', '₴10.02'],
   ])
 })
@@ -111,6 +113,7 @@ it('drops the voucher line once the voucher is taken off', async () => {
   expect(document.querySelector('[data-id="shop-cart-voucher"]')).toBeNull()
   expect(summary()).toEqual([
     ['Items', '₴10.02'],
+    ['Delivery', 'to a parcel locker, free'],
     ['Total', '₴10.02'],
   ])
 })
@@ -127,6 +130,63 @@ it('shows the total it was sent even when nothing is left to pay', async () => {
   expect(summary()).toEqual([
     ['Items', '₴0'],
     ['Voucher SAVE25', '−₴0'],
+    ['Delivery', 'to a parcel locker, free'],
     ['Total', '₴0'],
   ])
+  const checkout = document.querySelector('[data-id="shop-cart-checkout"]')
+  expect(checkout?.getAttribute('href')).toBe('/checkout')
+  expect(checkout?.hasAttribute('disabled')).toBe(false)
+  expect(checkout?.getAttribute('aria-disabled')).toBeNull()
+})
+
+it('links Checkout to /checkout for a guest and for an account', async () => {
+  await answer(cart)
+
+  const guest = document.querySelector('[data-id="shop-cart-checkout"]')
+  expect(guest?.tagName).toBe('A')
+  expect(guest?.getAttribute('href')).toBe('/checkout')
+  expect(guest?.textContent).toBe('Checkout')
+
+  await answer({ ...cart, userId: 7, guestCartKey: null })
+
+  const account = document.querySelector('[data-id="shop-cart-checkout"]')
+  expect(account?.tagName).toBe('A')
+  expect(account?.getAttribute('href')).toBe('/checkout')
+  expect(account?.textContent).toBe('Checkout')
+})
+
+it('offers Go shopping and hides the summary when the cart is empty', async () => {
+  await answer({
+    ...cart,
+    lines: [],
+    itemsTotal: '0',
+    voucher: null,
+    total: '0',
+  })
+
+  expect(document.querySelector('dl')).toBeNull()
+  expect(document.querySelector('[data-id="shop-cart-checkout"]')).toBeNull()
+  expect(
+    document.querySelector('[data-id="shop-cart-go-shopping"]'),
+  ).not.toBeNull()
+})
+
+it('moves focus from Checkout to Go shopping when the cart becomes empty', async () => {
+  await answer(cart)
+  const checkout = document.querySelector<HTMLAnchorElement>(
+    '[data-id="shop-cart-checkout"]',
+  )
+  checkout?.focus()
+
+  await answer({
+    ...cart,
+    lines: [],
+    itemsTotal: '0',
+    voucher: null,
+    total: '0',
+  })
+
+  expect(document.activeElement).toBe(
+    document.querySelector('[data-id="shop-cart-go-shopping"]'),
+  )
 })
