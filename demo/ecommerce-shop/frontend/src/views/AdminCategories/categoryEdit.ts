@@ -2,7 +2,6 @@ import {
   createHilosRowEdit,
   hilosTableRowEditSource,
   type HilosTrackedRowEdit,
-  type ReadonlySignal,
   type TableViewportController,
 } from '@hilos/core/base'
 
@@ -25,9 +24,7 @@ export type CategoryEdit = HilosTrackedRowEdit<
   CategoryRow,
   CategoryEditFields,
   CategoryForm
-> & {
-  readonly live: ReadonlySignal<CategoryRow | undefined>
-}
+>
 
 interface CategoryEditWriteState {
   readonly locked: boolean
@@ -46,28 +43,6 @@ export function canSubmitCategoryEdit(
   state: CategoryEditWriteState & { readonly canSave: boolean },
 ): boolean {
   return state.canSave && canWriteCategoryEdit(state)
-}
-
-/**
- * Whether the live category can be deleted from this opening.
- *
- * @param state The live count, permission and work still in progress.
- */
-export function canDeleteCategoryEdit(
-  state: CategoryEditWriteState & {
-    readonly opened: boolean
-    readonly productCount: number | undefined
-    readonly saving: boolean
-    readonly deleting: boolean
-  },
-): boolean {
-  return (
-    state.opened &&
-    state.productCount === 0 &&
-    !state.saving &&
-    !state.deleting &&
-    canWriteCategoryEdit(state)
-  )
 }
 
 /** Both writes wait for a selected upload to finish publishing. */
@@ -148,7 +123,6 @@ export function createCategoryEdit(
 
   return {
     ...edit,
-    live: source.live,
     save: (run) =>
       edit.save((draft, row) => {
         const live = source.live.get()

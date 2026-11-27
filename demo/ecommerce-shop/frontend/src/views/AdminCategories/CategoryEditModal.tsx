@@ -1,12 +1,12 @@
+// One opening of the Edit category dialog: picture upload, name, and description.
+// Closing without save prompts when there are changes or an upload in progress.
+// The session's merge conflict is presented in the header and its choice
+// buttons replace Save and Cancel. A server refusal is also drawn above the
+// fields, so the dialog stays open with what was typed.
+// The parent mounts one window per opening, so an earlier refusal never carries
+// into the next one. Bootstrap classes only (styling-rules.md).
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type MouseEvent,
-} from 'react'
-import {
-  createSignal,
   focusInitial,
   registerFocusReturnFallback,
   type HilosUploadField,
@@ -24,12 +24,7 @@ import {
   useTrackedAction,
 } from '@hilos/react/base'
 
-import { sendCategoryDelete } from './adminCategoriesActions.js'
-import {
-  canDeleteCategoryEdit,
-  canSubmitCategoryEdit,
-  type CategoryEdit,
-} from './categoryEdit.js'
+import { canSubmitCategoryEdit, type CategoryEdit } from './categoryEdit.js'
 import { CategoryFormFields } from './CategoryFormFields.js'
 import { useCatalogPictureField } from './CategoryPictureField.js'
 
@@ -37,13 +32,7 @@ const TITLE = 'Edit category'
 const ID_PREFIX = 'admin-categories-edit'
 const FORM_ID = 'admin-categories-edit-form'
 const EDIT_CANCEL_ID = 'admin-categories-edit-cancel'
-const EDIT_DELETE_ID = 'admin-categories-edit-delete'
 const SAVE_ID = 'admin-categories-edit-submit'
-const DELETE_CANCEL_ID = 'admin-categories-delete-cancel'
-const CONFIRM_ID = 'admin-categories-delete-confirm'
-const EDIT_PRODUCTS_REASON_ID = 'admin-categories-edit-products-reason'
-const DELETE_PRODUCTS_REASON_ID = 'admin-categories-delete-products-reason'
-const PRODUCTS_REASON = 'This category has products and cannot be deleted'
 
 interface DialogButton {
   readonly dialog: HTMLElement
@@ -82,32 +71,6 @@ function parkClosingButton(dialog: HTMLElement | null, cancelId: string): void {
   }
 }
 
-/** Reserve the reason's space and announce it in the active dialog. */
-function CategoryProductsReason({
-  id,
-  visible,
-  announce = visible,
-}: {
-  id: string
-  visible: boolean
-  announce?: boolean
-}) {
-  return (
-    <>
-      <p
-        id={id}
-        className={`mb-0 mt-2 small text-body-secondary${visible ? '' : ' invisible'}`}
-        aria-hidden={!visible}
-      >
-        {PRODUCTS_REASON}
-      </p>
-      <span className="visually-hidden" role="status" aria-live="polite">
-        {announce ? PRODUCTS_REASON : ''}
-      </span>
-    </>
-  )
-}
-
 /**
  * One opening of Edit category, with its own picture upload field.
  *
@@ -140,7 +103,6 @@ function CategoryEditDialog({
   const saving = useSignal(edit.saving)
   const canSave = useSignal(edit.canSave)
   const saveLabel = useSignal(edit.saveLabel)
-  const live = useSignal(edit.live)
   // Render from the upload signals and read them again in each submit handler.
   useSignal(field.busy)
   useSignal(field.ready)
@@ -148,33 +110,16 @@ function CategoryEditDialog({
   const { locked } = useLookOnly()
   const publish = useTrackedAction()
   const save = useTrackedAction()
-  const deletion = useTrackedAction()
   const [pending, setPending] = useState(false)
   const [lastRun, setLastRun] = useState<'publish' | 'save'>('save')
   const selectedUpload = useRef<string | null>(null)
   const editBody = useRef<HTMLDivElement>(null)
   const focusedButton = useRef<DialogButton | null>(null)
-  const deleteCancel = useRef<HTMLButtonElement>(null)
-  // Event handlers see the phase before React renders the new button state.
-  const [confirmation] = useState(() =>
-    createSignal<'closed' | 'open' | 'deleting' | 'refused'>('closed'),
-  )
-  const phase = useSignal(confirmation)
-  const deleteOpen = phase !== 'closed'
-  const deleting = phase === 'deleting'
   const picturePending = pending || publish.busy
-  const canDelete = getDeleteTarget() !== undefined
-  const disableDelete = !canDelete
-  const disableConfirm = disableDelete && !deleting
-  const hasProducts = live !== undefined && live.productCount > 0
   const onPublish = useCallback(() => setLastRun('publish'), [])
-  const disableSave = deleteOpen || (!saving && !canSubmit(canSave))
+  const disableSave = !saving && !canSubmit(canSave)
   const savingWithConflict = saving && state.conflict
   const [saveDisabled, setSaveDisabled] = useState(disableSave)
-  const [deleteDisabled, setDeleteDisabled] = useState(disableDelete)
-
-  // The edit session is reused, but a delete reply belongs to this opening.
-  useLayoutEffect(() => () => confirmation.set('closed'), [confirmation])
 
   useLayoutEffect(() => {
     const root = editBody.current
@@ -198,11 +143,8 @@ function CategoryEditDialog({
         return
       }
       const dialog = button.closest<HTMLElement>('[role="dialog"]')
-      const deleteDialog = deleteCancel.current?.closest('[role="dialog"]')
       focusedButton.current =
-        dialog && (dialog === editDialog || dialog === deleteDialog)
-          ? { button, dialog }
-          : null
+        dialog && dialog === editDialog ? { button, dialog } : null
     }
     document.addEventListener('focusin', rememberFocus, true)
     return () => {
@@ -217,58 +159,22 @@ function CategoryEditDialog({
   // also hands off to the dialog so Tab starts from inside the available set.
   useLayoutEffect(() => {
     const dialog = editBody.current?.closest<HTMLElement>('[role="dialog"]')
-    if (dialog && !deleteOpen) {
+    if (dialog) {
       const button = buttonLosingFocus(dialog, focusedButton.current)
       const id = button?.dataset.id
       const remove = id === `${ID_PREFIX}-upload-file-remove`
       const uploadDetails = id === `${ID_PREFIX}-upload-error-details`
       if (
         (id === SAVE_ID && (disableSave || locked || savingWithConflict)) ||
-        (id === EDIT_DELETE_ID && disableDelete) ||
         (locked && !saving && (id === `${ID_PREFIX}-picture` || remove)) ||
         ((remove || uploadDetails) && !button?.isConnected)
       ) {
         focusInitial(dialog, saving ? 'dialog' : 'marked')
       }
     }
-    field.setDisabled(locked || saving || deleteOpen)
+    field.setDisabled(locked || saving)
     setSaveDisabled(disableSave)
-    setDeleteDisabled(disableDelete)
-  }, [
-    deleteOpen,
-    disableDelete,
-    disableSave,
-    field,
-    locked,
-    saving,
-    savingWithConflict,
-    uploadId,
-  ])
-
-  // A removal after dispatch is left to the tracked reply.
-  useLayoutEffect(() => {
-    if (live === undefined && confirmation.get() === 'open') {
-      confirmation.set('closed')
-    }
-  }, [confirmation, live, phase])
-
-  useLayoutEffect(() => {
-    const cancel = deleteCancel.current
-    const dialog = cancel?.closest<HTMLElement>('[role="dialog"]')
-    if (
-      cancel &&
-      dialog &&
-      (disableConfirm || locked) &&
-      buttonLosingFocus(dialog, focusedButton.current)?.dataset.id ===
-        CONFIRM_ID
-    ) {
-      if (deleting) {
-        dialog.focus({ preventScroll: true })
-      } else {
-        cancel.focus({ preventScroll: true })
-      }
-    }
-  }, [deleting, disableConfirm, locked])
+  }, [disableSave, field, locked, saving, savingWithConflict, uploadId])
 
   function readWriteState() {
     return {
@@ -287,21 +193,8 @@ function CategoryEditDialog({
     })
   }
 
-  function getDeleteTarget() {
-    const row = edit.live.get()
-    return canDeleteCategoryEdit({
-      ...readWriteState(),
-      opened: edit.opened.get(),
-      productCount: row?.productCount,
-      saving: edit.saving.get(),
-      deleting: confirmation.get() === 'deleting',
-    })
-      ? row
-      : undefined
-  }
-
   async function submit(): Promise<void> {
-    if (confirmation.get() !== 'closed' || !canSubmit()) return
+    if (!canSubmit()) return
     parkClosingButton(
       editBody.current?.closest<HTMLElement>('[role="dialog"]') ?? null,
       EDIT_CANCEL_ID,
@@ -321,220 +214,100 @@ function CategoryEditDialog({
   }
 
   function close(): void {
-    if (confirmation.get() !== 'closed' || edit.saving.get()) return
+    if (edit.saving.get()) return
     selectedUpload.current = null
     edit.close()
   }
 
-  function openDelete(event: MouseEvent<HTMLButtonElement>): void {
-    if (confirmation.get() !== 'closed' || getDeleteTarget() === undefined)
-      return
-
-    event.currentTarget.focus({ preventScroll: true })
-    confirmation.set('open')
-  }
-
-  function closeDelete(): void {
-    const current = confirmation.get()
-    if (current !== 'open' && current !== 'refused') return
-
-    deletion.clearError()
-    confirmation.set('closed')
-  }
-
-  async function submitDelete(): Promise<void> {
-    const current = confirmation.get()
-    if (current !== 'open' && current !== 'refused') return
-    const row = getDeleteTarget()
-    if (row === undefined) return
-
-    parkClosingButton(
-      deleteCancel.current?.closest<HTMLElement>('[role="dialog"]') ?? null,
-      DELETE_CANCEL_ID,
-    )
-    confirmation.set('deleting')
-    try {
-      const deleted = await deletion.run(sendCategoryDelete(row.id))
-      if (deleted && confirmation.get() === 'deleting' && edit.opened.get()) {
-        confirmation.set('closed')
-        edit.close()
-      }
-    } finally {
-      if (confirmation.get() === 'deleting') confirmation.set('refused')
-    }
-  }
-
   return (
-    <>
-      <HilosModal
-        open={opened}
-        title={TITLE}
-        initialFocus="inner"
-        onClose={close}
-        confirmOnClose={state.dirty || picturePending}
-        busy={saving || deleting}
-        header={<ConflictHeader title={TITLE} conflict={state.conflict} />}
-        actions={({ requestClose }) => (
-          <ConflictActions
-            conflict={state.conflict}
-            disableSave={disableSave}
-            onAcceptMine={edit.keepMine}
-            onAcceptTheirs={takeTheirs}
-            cancelButton={
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={saving || deleteOpen}
-                aria-describedby={
-                  hasProducts ? EDIT_PRODUCTS_REASON_ID : undefined
-                }
-                data-id={EDIT_CANCEL_ID}
-                onClick={requestClose}
-              >
-                Cancel
-              </button>
-            }
-            saveButton={({ disabled }) => (
-              <LoadingButton
-                className="btn-primary"
-                type="submit"
-                form={FORM_ID}
-                loading={saving}
-                disabled={saveDisabled || deleteOpen}
-                aria-disabled={disabled || undefined}
-                tabIndex={savingWithConflict ? -1 : undefined}
-                data-id={SAVE_ID}
-                onPointerDown={(event) => {
-                  if (savingWithConflict) event.preventDefault()
-                }}
-              >
-                {saveLabel}
-              </LoadingButton>
-            )}
-          />
-        )}
-      >
-        <HilosUploadDrop field={field} dataId="admin-categories-edit-drop">
-          <div ref={editBody} data-id="admin-categories-edit">
-            <div data-id="admin-categories-edit-error">
-              <HilosActionError
-                action={lastRun === 'publish' ? publish : save}
-                detailsTitle="Couldn't save the category"
-              />
-            </div>
-            <form
-              id={FORM_ID}
-              inert={deleteOpen}
-              onSubmit={(event) => {
-                event.preventDefault()
-                void submit()
-              }}
-            >
-              <CategoryFormFields
-                idPrefix={ID_PREFIX}
-                draft={draft}
-                onChange={edit.patchForm}
-                pictureField={{
-                  field,
-                  publish,
-                  onPublish,
-                  onSelection: (id) => {
-                    selectedUpload.current = id
-                  },
-                  onPicture: (picture, clientUploadId) => {
-                    if (selectedUpload.current === clientUploadId) {
-                      selectedUpload.current = null
-                      edit.patchForm({ picture })
-                    }
-                  },
-                  onPending: setPending,
-                }}
-              />
-              <HilosEditNotice
-                kind={state.notice?.kind ?? null}
-                text={noticeText}
-                dataId="admin-categories-edit-notice"
-              />
-            </form>
-            <div className="mt-3">
-              <LoadingButton
-                className="btn-outline-danger"
-                type="button"
-                disabled={deleteDisabled}
-                aria-disabled={!canDelete || deleteOpen || undefined}
-                aria-describedby={
-                  hasProducts ? EDIT_PRODUCTS_REASON_ID : undefined
-                }
-                data-id={EDIT_DELETE_ID}
-                onClick={openDelete}
-              >
-                Delete category
-              </LoadingButton>
-              <CategoryProductsReason
-                id={EDIT_PRODUCTS_REASON_ID}
-                visible={hasProducts}
-                announce={hasProducts && !deleteOpen}
-              />
-            </div>
-          </div>
-        </HilosUploadDrop>
-      </HilosModal>
-      <HilosModal
-        open={opened && deleteOpen}
-        title="Delete category?"
-        busy={deleting}
-        initialFocus="dialog"
-        onClose={closeDelete}
-        actions={({ requestClose }) => (
-          <>
+    <HilosModal
+      open={opened}
+      title={TITLE}
+      initialFocus="inner"
+      onClose={close}
+      confirmOnClose={state.dirty || picturePending}
+      busy={saving}
+      header={<ConflictHeader title={TITLE} conflict={state.conflict} />}
+      actions={({ requestClose }) => (
+        <ConflictActions
+          conflict={state.conflict}
+          disableSave={disableSave}
+          onAcceptMine={edit.keepMine}
+          onAcceptTheirs={takeTheirs}
+          cancelButton={
             <button
-              ref={deleteCancel}
               type="button"
               className="btn btn-secondary"
-              disabled={deleting}
-              aria-describedby={
-                hasProducts ? DELETE_PRODUCTS_REASON_ID : undefined
-              }
-              data-id={DELETE_CANCEL_ID}
+              disabled={saving}
+              data-id={EDIT_CANCEL_ID}
               onClick={requestClose}
             >
               Cancel
             </button>
+          }
+          saveButton={({ disabled }) => (
             <LoadingButton
-              className={`btn-danger${disableConfirm ? ' opacity-50' : ''}`}
-              loading={deleting}
-              aria-disabled={!canDelete || undefined}
-              tabIndex={disableConfirm ? -1 : undefined}
-              aria-describedby={
-                hasProducts ? DELETE_PRODUCTS_REASON_ID : undefined
-              }
-              data-id={CONFIRM_ID}
+              className="btn-primary"
+              type="submit"
+              form={FORM_ID}
+              loading={saving}
+              disabled={saveDisabled}
+              aria-disabled={disabled || undefined}
+              tabIndex={savingWithConflict ? -1 : undefined}
+              data-id={SAVE_ID}
               onPointerDown={(event) => {
-                if (disableConfirm) event.preventDefault()
+                if (savingWithConflict) event.preventDefault()
               }}
-              onClick={() => void submitDelete()}
             >
-              Delete category
+              {saveLabel}
             </LoadingButton>
-          </>
-        )}
-      >
-        <HilosActionError
-          action={deletion}
-          detailsTitle="Couldn't delete the category"
+          )}
         />
-        <p className="mb-0">
-          Permanently delete{' '}
-          <strong className="text-break">
-            {live?.name ?? 'this category'}
-          </strong>
-          ?
-        </p>
-        <CategoryProductsReason
-          id={DELETE_PRODUCTS_REASON_ID}
-          visible={hasProducts}
-        />
-      </HilosModal>
-    </>
+      )}
+    >
+      <HilosUploadDrop field={field} dataId="admin-categories-edit-drop">
+        <div ref={editBody} data-id="admin-categories-edit">
+          <div data-id="admin-categories-edit-error">
+            <HilosActionError
+              action={lastRun === 'publish' ? publish : save}
+              detailsTitle="Couldn't save the category"
+            />
+          </div>
+          <form
+            id={FORM_ID}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submit()
+            }}
+          >
+            <CategoryFormFields
+              idPrefix={ID_PREFIX}
+              draft={draft}
+              onChange={edit.patchForm}
+              pictureField={{
+                field,
+                publish,
+                onPublish,
+                onSelection: (id) => {
+                  selectedUpload.current = id
+                },
+                onPicture: (picture, clientUploadId) => {
+                  if (selectedUpload.current === clientUploadId) {
+                    selectedUpload.current = null
+                    edit.patchForm({ picture })
+                  }
+                },
+                onPending: setPending,
+              }}
+            />
+            <HilosEditNotice
+              kind={state.notice?.kind ?? null}
+              text={noticeText}
+              dataId="admin-categories-edit-notice"
+            />
+          </form>
+        </div>
+      </HilosUploadDrop>
+    </HilosModal>
   )
 }

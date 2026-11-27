@@ -26,8 +26,9 @@ import {
 // spec-owner: demo — proves the shop's own warehouse actions on its Warehouses page.
 
 // The live Warehouses table carries creation, edits and removal between tabs.
-// The dialogs preserve a refused draft and explain why a stocked warehouse
-// cannot be deleted. The test command cleans up the warehouse this test creates.
+// The row actions explain why a stocked warehouse cannot be deleted, and the
+// delete confirmation dialog preserves the warehouse name. The test command
+// cleans up the warehouse this test creates.
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
@@ -141,46 +142,26 @@ test('shop.warehouses-add: an admin adds, edits and deletes an empty warehouse a
     await expect(rowsOf(page)).toHaveCount(1)
   })
 
-  await test.step('a warehouse with stock cannot open delete confirmation', async () => {
+  await test.step('a warehouse with stock cannot be deleted', async () => {
     const stocked = page
       .getByTestId('admin-warehouses-table')
       .locator(ROWS)
       .filter({ hasText: 'Kyiv · Podil' })
-    await stocked.getByTestId('admin-warehouses-edit-open').click()
-    const edit = page.getByTestId('admin-warehouses-edit')
-    const remove = page.getByTestId('admin-warehouses-edit-delete')
-    const cancel = page.getByTestId('admin-warehouses-edit-cancel')
+    const remove = stocked.getByTestId('admin-warehouses-delete-open')
     const reason = 'This warehouse keeps stock and cannot be deleted'
     await expect(remove).toBeVisible()
     await expect(remove).toBeDisabled()
-    await expect(
-      edit.locator('p').and(edit.getByText(reason, { exact: true })),
-    ).toBeVisible()
     await expect(remove).toHaveAccessibleDescription(reason)
-    await expect(edit.getByTestId('admin-warehouses-edit-name')).toBeFocused()
-    await page.keyboard.press('Shift+Tab')
-    await page.keyboard.press('Shift+Tab')
-    await expect(cancel).toBeFocused()
-    await expect(cancel).toHaveAccessibleDescription(reason)
-    await expect(
-      page.getByTestId('admin-warehouses-delete-confirm'),
-    ).toBeHidden()
-    await cancel.click()
-    await expect(edit).toBeHidden()
   })
 
-  await test.step('Escape returns to the delete opener and keeps the edit draft', async () => {
-    const address = page.getByTestId('admin-warehouses-edit-address')
-    const remove = page.getByTestId('admin-warehouses-edit-delete')
-    await rowsOf(page).getByTestId('admin-warehouses-edit-open').click()
-    await typeInto(address, '4 Test Street')
-    await remove.press('Enter')
+  await test.step('Escape returns to the delete opener', async () => {
+    const remove = rowsOf(page).getByTestId('admin-warehouses-delete-open')
+    await remove.click()
     const confirmation = page.getByRole('dialog', { name: 'Delete warehouse?' })
     await expect(confirmation).toBeFocused()
     await page.keyboard.press('Escape')
     await expect(confirmation).toBeHidden()
     await expect(remove).toBeFocused()
-    await expect(address).toHaveValue('4 Test Street')
   })
 
   await test.step('the first tab deletes the empty warehouse and the second applies its marked removal', async () => {
@@ -188,19 +169,14 @@ test('shop.warehouses-add: an admin adds, edits and deletes an empty warehouse a
     const secondTable = second.getByTestId('admin-warehouses-table')
     const apply = secondTable.getByTestId('hilos-table-apply')
     const secondAddress = second.getByTestId('admin-warehouses-edit-address')
-    const secondConfirmation = second.getByRole('dialog', {
-      name: 'Delete warehouse?',
-    })
     await expect(apply).toBeHidden()
     await markDocument(page)
     await markDocument(second)
 
     await rowsOf(second).getByTestId('admin-warehouses-edit-open').click()
     await typeInto(secondAddress, '5 Test Street')
-    await second.getByTestId('admin-warehouses-edit-delete').press('Enter')
-    await expect(secondConfirmation).toBeFocused()
 
-    await page.getByTestId('admin-warehouses-edit-delete').click()
+    await rowsOf(page).getByTestId('admin-warehouses-delete-open').click()
     const confirmation = page.getByRole('dialog', { name: 'Delete warehouse?' })
     await expect(confirmation.getByText(name, { exact: true })).toBeVisible()
     await clickSubmit(
@@ -208,13 +184,11 @@ test('shop.warehouses-add: an admin adds, edits and deletes an empty warehouse a
       confirmation.getByTestId('admin-warehouses-delete-confirm'),
     )
     await expect(confirmation).toBeHidden()
-    await expect(page.getByTestId('admin-warehouses-edit')).toBeHidden()
     await expect(firstTable.getByText(name, { exact: true })).toHaveCount(0)
     await expect(firstTable.getByTestId('hilos-table-apply')).toBeHidden()
     await expectDocumentUnchanged(expect, page)
 
-    await expect(secondConfirmation).toBeHidden()
-    await expect(second.getByTestId('admin-warehouses-edit-name')).toBeFocused()
+    await expect(secondAddress).toBeFocused()
     await expect(secondAddress).toHaveValue('5 Test Street')
     const save = second.getByTestId('admin-warehouses-edit-submit')
     await expect(save).toHaveText('Deleted')

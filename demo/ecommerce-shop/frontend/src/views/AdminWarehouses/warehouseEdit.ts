@@ -7,7 +7,6 @@ import {
   createHilosRowEdit,
   hilosTableRowEditSource,
   type HilosTrackedRowEdit,
-  type ReadonlySignal,
   type TableViewportController,
 } from '@hilos/core/base'
 
@@ -20,13 +19,7 @@ import {
 } from './warehouseDraft.js'
 
 /** One Edit warehouse window over one row of the warehouses table. */
-export type WarehouseEdit = HilosTrackedRowEdit<
-  WarehouseRow,
-  WarehouseDraft
-> & {
-  /** The focused row as it stands now, including stock. */
-  readonly live: ReadonlySignal<WarehouseRow | undefined>
-}
+export type WarehouseEdit = HilosTrackedRowEdit<WarehouseRow, WarehouseDraft>
 
 // The words the conflict line names a field by, as the form labels it.
 const FIELD_LABELS: Readonly<Record<keyof WarehouseDraft, string>> = {
@@ -61,7 +54,6 @@ export function createWarehouseEdit(
 
   return {
     ...edit,
-    live: source.live,
     save: (run) =>
       edit.save((draft, row) => {
         // The session's row argument is the opening row. Concurrency uses the

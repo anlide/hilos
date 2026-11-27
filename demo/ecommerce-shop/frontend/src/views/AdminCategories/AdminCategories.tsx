@@ -1,11 +1,15 @@
 // The shop's Categories admin page: every category in catalog order with its
 // picture, description, the number of products it holds, and category reorder
 // actions. The table sits under the section head of its own dashboard group;
-// its main action opens Add category, and the pencil opens Edit category.
-// Both dialogs are mounted inside the admin page so the view mode reaches
-// their submit. Bootstrap classes only (styling-rules.md).
+// its main action opens Add category, the pencil in a row opens Edit category,
+// and the trash can opens Delete category on that row; all are mounted inside
+// the admin page so the view mode reaches their submit.
+// Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
-import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  hilosTableRowEditSource,
+} from '@hilos/core/base'
 import {
   HilosAdminPage,
   HilosViewportTable,
@@ -20,9 +24,11 @@ import {
   createCategoriesTable,
 } from './adminCategoriesPage.js'
 import { CategoryAddModal } from './CategoryAddModal.js'
+import { CategoryDeleteModal } from './CategoryDeleteModal.js'
 import { createCategoryEdit } from './categoryEdit.js'
 import { CategoryEditModal } from './CategoryEditModal.js'
-import { CategoryMoveUpButton } from './CategoryMoveUpButton.js'
+import { CategoryRowActions } from './CategoryRowActions.js'
+import { type CategoryRow } from './types/tables/CategoryRow.js'
 
 /** Whether the Add category dialog is open, and the key of its latest opening. */
 interface AddOpening {
@@ -30,7 +36,7 @@ interface AddOpening {
   readonly key: number
 }
 
-/** The live categories table and its Add and Edit category dialogs. */
+/** The categories admin page: the live table, its Add, Edit and Delete category dialogs. */
 export default function AdminCategories() {
   const [adding, setAdding] = useState<AddOpening>({ open: false, key: 0 })
   // The setter is stable, so the table is made once. Every opening takes a new
@@ -49,21 +55,45 @@ export default function AdminCategories() {
   const editing = useSignal(edit.opened)
   const [editKey, setEditKey] = useState(0)
 
+  const deleteSource = useMemo(
+    () =>
+      hilosTableRowEditSource(categories.controller, (row) => String(row.id)),
+    [categories],
+  )
+  const [deleteKey, setDeleteKey] = useState(0)
+  const [deleteInitialRow, setDeleteInitialRow] = useState<CategoryRow | null>(
+    null,
+  )
+
   // The edit listens to the live row over the same lifetime as the table.
   useEffect(() => {
     categories.start()
     edit.start()
 
     return () => {
+      deleteSource.close()
       edit.dispose()
       categories.dispose()
     }
-  }, [categories, edit])
+  }, [categories, edit, deleteSource])
 
   function openEdit(id: number): void {
     if (edit.open(String(id))) {
       setEditKey((key) => key + 1)
     }
+  }
+
+  function openDelete(row: CategoryRow): void {
+    const initial = deleteSource.open(String(row.id))
+    if (initial !== null) {
+      setDeleteInitialRow(initial)
+      setDeleteKey((key) => key + 1)
+    }
+  }
+
+  function closeDelete(): void {
+    deleteSource.close()
+    setDeleteInitialRow(null)
   }
 
   return (
@@ -94,20 +124,11 @@ export default function AdminCategories() {
           ),
           [CATEGORY_PRODUCT_COUNT_FIELD]: (row) => row.productCount,
           [HILOS_TABLE_ACTIONS_KEY]: (row) => (
-            <div className="d-inline-flex gap-2">
-              <span className="d-none d-md-inline-flex">
-                <CategoryMoveUpButton row={row} />
-              </span>
-              <button
-                type="button"
-                className="btn btn-sm btn-outline-secondary"
-                aria-label={`Edit · ${row.name}`}
-                data-id="admin-categories-edit-open"
-                onClick={() => openEdit(row.id)}
-              >
-                <i className="bi bi-pencil" aria-hidden="true" />
-              </button>
-            </div>
+            <CategoryRowActions
+              row={row}
+              onEdit={() => openEdit(row.id)}
+              onDelete={() => openDelete(row)}
+            />
           ),
         }}
       />
@@ -118,6 +139,14 @@ export default function AdminCategories() {
         />
       ) : null}
       {editing ? <CategoryEditModal key={editKey} edit={edit} /> : null}
+      {deleteInitialRow ? (
+        <CategoryDeleteModal
+          key={deleteKey}
+          source={deleteSource}
+          initialRow={deleteInitialRow}
+          onClose={closeDelete}
+        />
+      ) : null}
     </HilosAdminPage>
   )
 }

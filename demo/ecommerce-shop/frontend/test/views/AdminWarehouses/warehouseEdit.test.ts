@@ -260,35 +260,27 @@ describe('warehouse edit', () => {
     expect(edit.canSave.get()).toBe(false)
   })
 
-  it('follows the live warehouse when stock arrives and leaves during the same edit', () => {
+  it('keeps the draft while the warehouse changes elsewhere', () => {
     const edit = opened(0)
     edit.patchForm({ name: 'Kyiv · Left Bank' })
 
-    expect(edit.live.get()).toMatchObject({ id: 1, productCount: 0 })
-
     changedElsewhere('Kyiv · Obolon', OPENING_ADDRESS, 3)
 
-    expect(edit.live.get()).toMatchObject({
-      id: 1,
-      name: 'Kyiv · Obolon',
-      productCount: 3,
-    })
+    expect(edit.opened.get()).toBe(true)
+    expect(edit.form.get().name).toBe('Kyiv · Left Bank')
 
     changedElsewhere('Kyiv · Obolon', OPENING_ADDRESS, 0)
 
-    expect(edit.live.get()).toMatchObject({ id: 1, productCount: 0 })
     expect(edit.opened.get()).toBe(true)
     expect(edit.form.get().name).toBe('Kyiv · Left Bank')
   })
 
-  it('loses the live delete target while keeping the draft of a deleted warehouse', () => {
+  it('keeps the draft of a warehouse deleted elsewhere', () => {
     const edit = opened(0)
     edit.patchForm({ address: 'Kyiv, 3 Test Street' })
-    expect(edit.live.get()).toMatchObject({ id: 1, productCount: 0 })
 
     deletedElsewhere()
 
-    expect(edit.live.get()).toBeUndefined()
     expect(edit.opened.get()).toBe(true)
     expect(edit.form.get()).toEqual({
       name: OPENING_NAME,

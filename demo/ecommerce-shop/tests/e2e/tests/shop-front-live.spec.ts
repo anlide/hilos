@@ -982,19 +982,18 @@ test('shop.categories-add: an admin adds a category with a picture, a second tab
     await expectDocumentUnchanged(expect, guestHome)
 
     await dismissToasts(page)
-    await rowsOf(page, renamedName)
-      .getByTestId('admin-categories-edit-open')
-      .click()
-    const edit = page.getByTestId('admin-categories-edit')
-    await expect(edit).toBeVisible()
-    const deleteButton = page.getByTestId('admin-categories-edit-delete')
-    await expect(deleteButton).toBeEnabled()
-    await deleteButton.click()
+    const deleteOpener = rowsOf(page, renamedName).getByTestId(
+      'admin-categories-delete-open',
+    )
+    await expect(deleteOpener).toBeEnabled()
+    await deleteOpener.click()
+    const confirmation = page.getByRole('dialog', { name: 'Delete category?' })
+    await expect(confirmation).toBeVisible()
     await clickSubmit(
       expect,
-      page.getByTestId('admin-categories-delete-confirm'),
+      confirmation.getByTestId('admin-categories-delete-confirm'),
     )
-    await expect(edit).toBeHidden()
+    await expect(confirmation).toBeHidden()
 
     await expect(homeTile(renamedName)).toHaveCount(0)
     await expect(homeTile(anchorName)).toBeVisible()
