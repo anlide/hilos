@@ -33,7 +33,9 @@ This document changes no executable code, package exports, DB fields or
 migrations, runtime item fields, wire signals, DTOs, topology, product routes
 or test commands. It adds no page, table or subscription owner. Implementation
 and component tests belong to the leaves named below. The i18n factor provider
-(HIL-1424), scheduler Calendar (HIL-145), table `date_range` design, native-input
+(the locale's first weekday — HIL-2318, see
+[language-and-region.md](../architecture/language-and-region.md#the-formats-a-reader-sees)),
+scheduler Calendar (HIL-145), table `date_range` design, native-input
 guards and a bundled time-zone database are outside this contract.
 
 ## Values and parts

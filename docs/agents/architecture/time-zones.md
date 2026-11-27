@@ -894,7 +894,9 @@ commit, following [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule
 - Relative time such as "5 minutes ago" or "in N minutes" belongs to a separate
   global component that the owner will implement; it is not a formatter mode
   decided here (owner's decision, HIL-1584:26746).
-- The first day of the week and localized month names belong to HIL-1424.
+- The first day of the week comes from the reader's locale (HIL-2318); names
+  of months and weekdays on a screen are HIL-2303's; see
+  [The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees).
 - Suggestions of a country's time zones remain undecided. A locale does not
   store a time zone; see [languages and countries](languages-and-countries.md).
 - Exact storage schemas, env keys and APIs belong to their implementation

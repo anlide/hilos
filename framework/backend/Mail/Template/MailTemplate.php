@@ -12,22 +12,24 @@ use Hilos\Mail\Exception\MailTemplateParamMissingException;
  *
  * A template turns caller-supplied params into an {@see EmailContent}. Templates are
  * resolved by key through {@see MailTemplateRegistry}, so callers never instantiate
- * one directly. The `$locale` argument is the render seam for the i18n stage (HIL,
- * stage 14); today templates render the project default locale and ignore it.
+ * one directly. The `$locale` argument is the render seam for translating outgoing
+ * messages (HIL-2281); today templates render English and ignore it.
  *
- * WHICH LOCALE (HIL-834). An outgoing message is written in the READER's language, not in
- * the language of the screen that ordered it. Sources, top down: the recipient's own
- * recorded language, when the address belongs to a known account carrying one; otherwise
- * the language the ordering session speaks (subdomain hard override, then the guest's own
- * earlier choice, then the project default); otherwise the project default. Accept-Language
- * is never applied on its own - it only feeds the language switcher's recommendations. A key
- * missing in the target language falls back to the catalog default per key, so a message may
- * be partly translated but is never blank and never a refused send. The caller that orders
- * the send decides the locale and passes it in; a delivery agent never re-resolves one,
- * having neither the ordering session nor the recipient's preferences in reach. Nothing
- * remembers a per-flow language: the second letter of a flow resolves again by the same
- * rule. Today every step above the last is silent, which is why templates render the
- * project default and ignore the argument.
+ * WHICH LOCALE (HIL-834). An outgoing message is written in the READER's language. Sources,
+ * top down: the language of the account the address belongs to; otherwise the language of
+ * the tab that ordered the message - the one its ladder already picked (the language
+ * address, the guest's own choice, the browser, the country of the connection, the default
+ * language), so that the letter and the tab that ordered it speak one language; otherwise,
+ * when no tab ordered it, the default language. A key missing in the target language falls
+ * back to the catalog default per key, so a message may be partly translated but is never
+ * blank and never a refused send. The caller that orders the send decides the locale and
+ * passes it in; a delivery agent never re-resolves one, having neither the ordering tab nor
+ * the account in reach. Nothing remembers a per-flow language: the second letter of a flow
+ * resolves again by the same rule. Today no caller passes a locale and every template is
+ * written in English, so templates render English and ignore the argument.
+ *
+ * The rule and its reasons: docs/agents/architecture/language-and-region.md,
+ * "The Language Of A Letter".
  */
 interface MailTemplate
 {

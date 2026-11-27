@@ -86,9 +86,10 @@ tables, including generated `locale_slot`, has the same verdict. Under
 unchanged; under [admin view mode](admin-view-mode.md), the viewer can see
 them all.
 
-Locales have no `first_week_day` in this phase; HIL-1424 decides it. A locale
-does not store `timezone` (owner's decision, 2026-10-16). Time-zone selection
-and application belong to HIL-1528; see [time-zones.md](time-zones.md).
+Locales have no `first_week_day` in this phase; HIL-2318 adds it, see
+[The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees).
+A locale does not store `timezone` (owner's decision, 2026-10-16). Time-zone
+selection and application belong to HIL-1528; see [time-zones.md](time-zones.md).
 
 ## One Library Holds The Reference
 
@@ -265,8 +266,9 @@ request blocks closing and another submit until acknowledgement. An admin-view
 reader can open the step, with confirmation disabled. A known locale also warns
 that the next reflow can replace its formats while it stays off.
 
-What a switched-off row hides from people belongs to HIL-1424. In this epic,
-only the section reads the switch.
+What a switched-off language, locale or country hides from people is in
+[What Is Available](language-and-region.md#what-is-available). Today only the
+section reads the switch.
 
 ## The Lock On An Edited Name
 
@@ -353,7 +355,7 @@ restoration for system calls and fixture cleanup. An override uses its own
 `delete()` and never calls the catalog.
 
 Immediate restoration of a known country's base name is the owner's decision
-of 2026-10-04; restoration by a later synchronization belongs to HIL-1424.
+of 2026-10-04; restoration by a later synchronization belongs to HIL-2283.
 Do not import hleb's lock that prohibited editing. The owner's experience with
 that design rejected it: the lock here protects a person's edit from reflow.
 
@@ -446,7 +448,7 @@ holder restart, another default language refused on both ends, and edits
 delivered between masters. Their checks and pointed commands are in
 [the cluster testing guide](../testing/cluster-stands.md#the-cluster-stands--six-demos-six-shapes).
 Manual reflow and its history belong to the languages and countries section in
-HIL-1424.
+HIL-2283.
 
 ## The Default Language
 
@@ -510,7 +512,8 @@ will give those refusals their user-facing text.
 - Deleting a locale removes its seven formats and leaves its language/country
   pair in the table. The intended Phase-2 fallback for that pair is the language's
   countryless locale; without that locale, it is the default language. This
-  deletion flow does not implement the formatting resolver (HIL-1424).
+  deletion flow does not implement the region ladder, see
+  [The Region Ladder](language-and-region.md#the-region-ladder).
 - A known country is never deleted — reflow would bring it back; switch it
   off instead.
 - An own country can be deleted only while no locale or name references it
@@ -535,8 +538,10 @@ will give those refusals their user-facing text.
   on success, and only then navigates from the card to the list. Any failure
   remains in the dialog. A viewer can open it, but cannot confirm deletion.
 
-For names, see *The Lock On An Edited Name*. The checks for a language chosen
-by someone or referenced by a translation string belong to HIL-1424.
+For names, see *The Lock On An Edited Name*. A language chosen in an account
+is refused by HIL-2306, see
+[Deleting A Chosen Language](language-and-region.md#deleting-a-chosen-language);
+one referenced by a translation string — HIL-2280.
 
 ## Addresses
 
@@ -608,7 +613,7 @@ wrappers, and `hilosAdminViews()` does not supply the Angular section-root key.
 | `hilos_i18n_country_names` | `/hilos/i18n/country/{countryId}/names` |
 
 See the [page registry](../frontend/page-registry.md). The
-`/hilos/i18n/translate/**` branch goes away with HIL-1424.
+`/hilos/i18n/translate/**` branch goes away with HIL-2280.
 
 ## Internal IDs On The Wire
 
@@ -772,22 +777,23 @@ Every success message of the section names its object the same way — a languag
 by native name and code, a country by that name and code (the code alone without
 one), a name by whose and in which language, a correction and a locale by the
 locale code (HIL-1538).
-Names in the reader's language belong to HIL-1424.
+Names in the reader's language belong to HIL-2280.
 
 ## What This Page Does Not Decide
 
 These keys are pointers to later work, not implementation markers:
 
 - Whether every process reads the reference locally, as with settings — the
-  first reader outside the section, language selection in HIL-1424, decides.
+  first readers outside the section decide: the tab's language (HIL-109) and
+  the list every tab holds (HIL-111).
 - Language selection and moving open tabs when a language is switched off —
-  HIL-1424.
-- Translation — HIL-1424.
-- Synchronization with restcountries and flags — HIL-1424.
-- Manual reflow, its history, and synchronization in this section — HIL-1424.
-- `first_week_day` — HIL-1424.
+  [A Tab's Language And Region](language-and-region.md).
+- Translation — HIL-2280.
+- Synchronization with restcountries and flags — HIL-2283.
+- Manual reflow, its history, and synchronization in this section — HIL-2283.
+- `first_week_day` — HIL-2318.
 - Time-zone selection and application — HIL-1528; see [time-zones.md](time-zones.md).
-- A working preview — HIL-1424.
+- A working preview — HIL-2280.
 - Multilingual CMS content — HIL-129; SSG language editions — HIL-130.
 
 ## Anti-Patterns
@@ -823,3 +829,5 @@ These keys are pointers to later work, not implementation markers:
 - [../code-style/table-names.md](../code-style/table-names.md) — entity before purpose.
 - [../frontend/page-registry.md](../frontend/page-registry.md) — page keys and routes.
 - [../rule-authoring.md](../rule-authoring.md) — clearing a marker when its code lands.
+- [language-and-region.md](language-and-region.md) — what people see of the
+  reference: the ladders, choices, switching off.
