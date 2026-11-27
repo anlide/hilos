@@ -30,6 +30,7 @@ use Demo\OnlineTesting\Database\Pages\PageCatalog;
 use Demo\OnlineTesting\Database\Settings\OnlineTestingSettingsCatalog;
 use Demo\OnlineTesting\Environment\OnlineTestingEnvCatalog;
 use Demo\OnlineTesting\Fs\OnlineTestingFsContext;
+use Demo\OnlineTesting\Groups\Hilos\LanguagesGroup;
 use Demo\OnlineTesting\Groups\Hilos\NotificationsGroup;
 use Demo\OnlineTesting\Legal\OnlineTestingLegalCatalog;
 use Demo\OnlineTesting\Notification\OnlineTestingDeliveryChannelRegistry;
@@ -336,6 +337,7 @@ final class Hilos extends HilosFacade
 
     public const array GROUPS = [
         NotificationsGroup::GROUP => NotificationsGroup::class,
+        LanguagesGroup::GROUP => LanguagesGroup::class,
     ];
 
     public const array AGENTS = [

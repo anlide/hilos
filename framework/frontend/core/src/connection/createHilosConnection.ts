@@ -19,6 +19,7 @@ import { AUTH_CONVERGE_SIGNAL_SCHEMAS } from '../auth/authConvergeSignals.js'
 import { OAUTH_SIGNAL_SCHEMAS } from '../auth/oauthSignals.js'
 import { PASSKEY_SIGNAL_SCHEMAS } from '../auth/passkeySignals.js'
 import { browserValue } from '../browser/browserValue.js'
+import { LANGUAGES_SIGNAL_SCHEMAS } from '../language/availableLanguages.js'
 import { NOTIFICATION_SIGNAL_SCHEMAS } from '../notifications/notificationCenter.js'
 import { NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS } from '../notifications/notificationPreferences.js'
 import { LEGAL_AGREEMENTS_SIGNAL_SCHEMAS } from '../legal/legalAgreements.js'
@@ -188,6 +189,7 @@ export function createHilosConnection(
       ...LOGS_VIEWER_SIGNAL_SCHEMAS,
       ...LOGS_WORKERS_SIGNAL_SCHEMAS,
       ...NOTIFICATION_SIGNAL_SCHEMAS,
+      ...LANGUAGES_SIGNAL_SCHEMAS,
       ...NOTIFICATION_PREFERENCE_SIGNAL_SCHEMAS,
       ...SECOND_FACTOR_SIGNAL_SCHEMAS,
       ...ACCOUNT_DELETION_SIGNAL_SCHEMAS,

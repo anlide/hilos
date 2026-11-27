@@ -59,6 +59,7 @@ use Demo\Preferans\Database\PreferansDbContext;
 use Demo\Preferans\Database\Settings\PreferansSettingsCatalog;
 use Demo\Preferans\Hilos;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Demo\Preferans\Groups\Hilos\LanguagesGroup;
 use Demo\Preferans\Groups\Hilos\NotificationsGroup;
 use Demo\Preferans\Pages\Hilos\AboutPage;
 use Demo\Preferans\Pages\Hilos\DashboardPage;
@@ -959,7 +960,10 @@ final class PreferansTopologyRegistryTest extends TestCase
     {
         $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
         $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
-        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $this->assertSame([
+            NotificationsGroup::GROUP => NotificationsGroup::class,
+            LanguagesGroup::GROUP => LanguagesGroup::class,
+        ], Hilos::GROUPS);
         $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
         $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
         $this->assertSame(NotificationsLibraryAgentDaemon::class, AgentRegistry::daemonClass($library));

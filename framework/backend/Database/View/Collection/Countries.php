@@ -9,7 +9,9 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\CountriesActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
+use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Object\Collection\Countries as ObjectCountries;
 use Hilos\Database\View\Item\Country;
 use Hilos\Database\View\Item\Locale;
@@ -35,6 +37,9 @@ class Countries extends DbCollection
 {
     public const string DB_ITEM_CLASS = Country::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectCountries::class;
+
+    /** Interface strings are written in English until the interface is translated (HIL-2280). */
+    private const string INTERFACE_LANGUAGE_CODE = 'en';
 
     /**
      * @return CountryOverviewTally Counts over installed rows, classified by catalog membership
@@ -117,6 +122,24 @@ class Countries extends DbCollection
         $name = $defaultLanguageId === null ? null : Hilos::$db->countryNames->findBase($countryId, $defaultLanguageId)?->name;
 
         return $name === '' ? null : $name;
+    }
+
+    /**
+     * @return array<int, string> Nonempty interface-language base names by country primary id, empty without the language
+     * @throws DatabaseException When the lookup fails
+     * @throws LogicException When collection classes are not configured
+     * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws ItemNotFoundException When the resolved interface language row disappears
+     * @throws CollectionNotFoundException When a reference collection is missing
+     * @throws DbCollectionNotReadableException When a reference collection is unreadable
+     */
+    public function namesInInterfaceLanguage(): array
+    {
+        if (!isset(Hilos::$db->languages[self::INTERFACE_LANGUAGE_CODE])) {
+            return [];
+        }
+
+        return Hilos::$db->countryNames->baseNamesInLanguage(Hilos::$db->languages[self::INTERFACE_LANGUAGE_CODE]->id);
     }
 
     /**

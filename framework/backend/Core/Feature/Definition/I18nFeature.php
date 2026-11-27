@@ -14,6 +14,7 @@ use Hilos\Database\Entity\Item\I18nReflow;
 use Hilos\Database\Entity\Item\Language;
 use Hilos\Database\Entity\Item\LanguageName;
 use Hilos\Database\Entity\Item\Locale;
+use Hilos\Groups\AbstractHilosLanguagesGroup;
 use Hilos\Pages\AbstractHilosI18nPage;
 use Hilos\Pages\I18n\Lists\AbstractHilosI18nCountriesListPage;
 use Hilos\Pages\I18n\Lists\AbstractHilosI18nLanguagesListPage;
@@ -27,7 +28,7 @@ final class I18nFeature extends FeatureDefinition
         return HilosFeature::I18N;
     }
 
-    /** @return FeatureRequirements Three section pages, one agent and six SQL tables */
+    /** @return FeatureRequirements Three section pages, one agent, one group and six SQL tables */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
@@ -36,6 +37,7 @@ final class I18nFeature extends FeatureDefinition
                 AbstractHilosI18nLanguagesListPage::class,
                 AbstractHilosI18nCountriesListPage::class,
             ],
+            requiredGroups: [AbstractHilosLanguagesGroup::class],
             requiredAgents: [HilosAgentType::HILOS_I18N_LIBRARY],
             requiredDbTables: [
                 Language::_table,

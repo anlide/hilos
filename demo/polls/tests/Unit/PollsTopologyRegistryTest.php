@@ -139,6 +139,7 @@ use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Demo\Polls\Groups\Hilos\LanguagesGroup;
 use Demo\Polls\Groups\Hilos\NotificationsGroup;
 use Demo\Polls\Pages\Hilos\DashboardPage;
 use Demo\Polls\Pages\Hilos\Communications\CommunicationsChannelPage;
@@ -1268,10 +1269,13 @@ final class PollsTopologyRegistryTest extends TestCase
         // The two frames the worker is addressed by are not its surface but the seam the
         // sessions moved behind (HIL-710): the library says what a session became or removed,
         // and this agent updates the connection or guest rows that belong to the project.
-        // The one group is not the application's own surface either: it is the framework's
-        // notification channel, activated by the same feature that mounts the bell (HIL-721).
+        // The framework owns both groups. The notifications feature enables the bell's
+        // channel (HIL-721), and the i18n feature enables the available languages list.
         $this->assertSame(
-            [NotificationsGroup::GROUP => NotificationsGroup::class],
+            [
+                NotificationsGroup::GROUP => NotificationsGroup::class,
+                LanguagesGroup::GROUP => LanguagesGroup::class,
+            ],
             Hilos::GROUPS,
         );
         $this->assertSame([], MainPage::ACTIONS);

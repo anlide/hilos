@@ -114,6 +114,7 @@ use Demo\EcommerceShop\Core\Router\DTO\ShopAccountMergeCartWakeSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\ProductWarehousePlaceSignalData;
 use Demo\EcommerceShop\Core\Router\DTO\StockSetUnitsSignalData;
 use Demo\EcommerceShop\Groups\CartGroup;
+use Demo\EcommerceShop\Groups\Hilos\LanguagesGroup;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusPage;
@@ -2318,7 +2319,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         // moved behind (HIL-710): the library says what a session became, and this agent updates
         // the connection rows that belong to the project. The sweep frame is the guest carts
         // library's, pinned above: the guest's cart is what of the project hangs on a session row.
-        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $this->assertSame([
+            NotificationsGroup::GROUP => NotificationsGroup::class,
+            LanguagesGroup::GROUP => LanguagesGroup::class,
+        ], Hilos::GROUPS);
         $this->assertSame([HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
@@ -2957,7 +2961,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
         $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
-        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $this->assertSame([
+            NotificationsGroup::GROUP => NotificationsGroup::class,
+            LanguagesGroup::GROUP => LanguagesGroup::class,
+        ], Hilos::GROUPS);
 
         $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
         $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));

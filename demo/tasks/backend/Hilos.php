@@ -134,6 +134,7 @@ use Demo\Tasks\Pages\Hilos\I18n\Details\LanguageNamesPage;
 use Demo\Tasks\Pages\Hilos\I18n\Lists\CountriesListPage;
 use Demo\Tasks\Pages\Hilos\TermsPage;
 use Demo\Tasks\Pages\Hilos\TermsHistoryPage;
+use Demo\Tasks\Groups\Hilos\LanguagesGroup;
 use Demo\Tasks\Groups\Hilos\NotificationsGroup;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthPage;
 use Demo\Tasks\Pages\Hilos\Security\SecurityOAuthProviderPage;
@@ -417,6 +418,7 @@ final class Hilos extends HilosFacade
 
     public const array GROUPS = [
         NotificationsGroup::GROUP => NotificationsGroup::class,
+        LanguagesGroup::GROUP => LanguagesGroup::class,
     ];
 
     public const array AGENTS = [

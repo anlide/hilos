@@ -62,6 +62,7 @@
   "src/format/initials.ts",
   "src/format/moment.ts",
   "src/format/phoneNumber.ts",
+  "src/language/availableLanguages.ts",
   "src/language/tabLanguageState.ts",
   "src/layout.ts",
   "src/legal/legalAgreements.ts",

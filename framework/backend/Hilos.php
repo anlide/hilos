@@ -88,6 +88,7 @@ use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Files\Upload\AbstractUploadTarget;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\Fs\Context\FsContext;
+use Hilos\I18n\AvailableLanguagesAudience;
 use Hilos\Mail\HilosMailer;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
@@ -1348,6 +1349,7 @@ abstract class Hilos implements TruthSourceOwner
         SourceChangeBus::subscribe(new AccountErasureProgressChangeSubscriber());
         SourceChangeBus::subscribe(new AccountMergeProgressChangeSubscriber());
         SourceChangeBus::subscribe(new CommunicationsChannelSummaryAudience());
+        SourceChangeBus::subscribe(new AvailableLanguagesAudience());
 
         static::validateTopologyReferences();
     }

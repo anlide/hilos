@@ -588,6 +588,20 @@ export {
   type HilosNotificationStore,
 } from '../notifications/notificationCenter.js'
 export {
+  availableLanguageSchema,
+  availableLanguagesSchema,
+  availableLocaleSchema,
+  bindAvailableLanguagesScope,
+  createHilosAvailableLanguagesStore,
+  hilosAvailableLanguages,
+  LANGUAGES_GROUP,
+  LANGUAGES_SIGNAL_SCHEMAS,
+  SIGNAL_LANGUAGES_STATE,
+  type HilosAvailableLanguage,
+  type HilosAvailableLanguagesStore,
+  type HilosAvailableLocale,
+} from '../language/availableLanguages.js'
+export {
   createHilosNotificationPreferencesStore,
   startHilosNotificationPreferences,
   describeHilosNotificationChannels,

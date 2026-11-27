@@ -32,6 +32,7 @@ use Demo\FileGalleryManager\Database\Pages\PageCatalog;
 use Demo\FileGalleryManager\Database\Settings\FileGalleryManagerSettingsCatalog;
 use Demo\FileGalleryManager\Environment\FileGalleryManagerEnvCatalog;
 use Demo\FileGalleryManager\Fs\FileGalleryManagerFsContext;
+use Demo\FileGalleryManager\Groups\Hilos\LanguagesGroup;
 use Demo\FileGalleryManager\Groups\Hilos\NotificationsGroup;
 use Demo\FileGalleryManager\Legal\FileGalleryManagerLegalCatalog;
 use Demo\FileGalleryManager\Notification\FileGalleryManagerDeliveryChannelRegistry;
@@ -272,6 +273,7 @@ class Hilos extends HilosFacade
 
     public const array GROUPS = [
         NotificationsGroup::GROUP => NotificationsGroup::class,
+        LanguagesGroup::GROUP => LanguagesGroup::class,
     ];
 
     public const array AGENTS = [

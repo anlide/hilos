@@ -543,6 +543,9 @@ Configure-only: the framework owns the five reference tables, their library and
 the section's pages. The languages and countries browser tables are registered
 in the active I18N carriers, including Preferans (HIL-1474, HIL-1475, HIL-2020).
 The project lists the feature in `Hilos::FEATURES` and registers the library's agent pair in `Hilos::AGENTS`.
+It registers a thin subclass of `AbstractHilosLanguagesGroup` in `Hilos::GROUPS`
+with `I18nLibraryAgent` as its subscription owner and passes `i18n: true` to
+`bootHilos`.
 It registers three thin section pages in the server topology (HIL-1470).
 Run `db:framework:pull` and apply the generated project migrations for the required
 units: the five reference tables and the library's reflow record.
@@ -559,7 +562,9 @@ Languages and Countries.
 It supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code.
 It registers the `ip_country` directory with `registerIpCountryDirectory()` in its
 `FsContext::configure()` ([filesystem.md](filesystem.md#node-or-cluster), HIL-2310).
-Startup refuses a missing page, agent or `ip_country` directory; topology tests check the required migrations.
+At startup, `FeatureActivationValidator` checks the pages, agent and group
+required by `I18nFeature`. A separate startup check requires the `ip_country`
+directory registration. Topology tests check the required migrations.
 For the section's rules and activation details, read [languages-and-countries.md](languages-and-countries.md), *Switching The Section On*.
 
 ### daemon — the Daemon section

@@ -30,6 +30,16 @@ Server sends: GROUP_RESPONSE { group, payload? }
 Agent:        onSignalGroupSubscribe() called after, as a side channel
 ```
 
+On a cluster, the group owner's worker and its local master record the join.
+The master hosting the socket on another node receives no join record. Only
+membership removals fan out to peer nodes through `peer_group_leave_all`.
+If the owner's node is lost, the membership is lost with its master. A socket
+on another node stays outside the group until its client joins again. The
+next client-initiated join can follow a new socket, a handshake response, a
+change of person, or the end of protected mode. A new leader epoch triggers
+`page_resubscribe` for pages served by cluster agents with `LEADER` placement.
+Group recovery depends on the client sending its own join.
+
 The answer carries the FULL group name — the address the connection was actually let
 into, which for a group the server addresses itself is not the name the client sent.
 The refusal carries the name the client sent, because that is what it is waiting on.
@@ -49,8 +59,10 @@ entity settles who may name it (`GroupAddressSource`):
 |---|---|---|
 | `SINGLETON` | nobody, the group belongs to no entity | the declared name |
 | `SESSION_USER` | the SERVER, out of the identity behind the connection | `<name>:<userId>` |
-| `SESSION` | the SERVER, out of the session behind the connection | HIL-111 |
+| `SESSION` | the SERVER, out of the session behind the connection | not served yet — the first group that needs it names it |
 | `PARAM` | the CLIENT, and the group class judges admission | `<name>:<id>` |
+
+The `hilos_languages` `SINGLETON` group admits every connection, including guests, and answers each join with the full list of available languages.
 
 A class declares its name WITHOUT a param; the param travels after a colon on the
 wire, and resolution is exact name first, then the head up to the first colon. So a

@@ -19,6 +19,7 @@ use Hilos\Database\View\Item\LanguageName;
 use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\AvailableLanguagesAudience;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DefaultLanguage;
 use Hilos\I18n\DTO\I18nTestLanguageCreateDTO;
@@ -203,6 +204,29 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         }
 
         $this->reflowIfChanged();
+    }
+
+    /**
+     * Sends one update for catalog writes committed since the previous tick.
+     *
+     * @throws HilosException When a reference read or group delivery fails
+     * @throws NativeLogicException When a project item factory rejects a returned row
+     */
+    public function onTick(): void
+    {
+        parent::onTick();
+        AvailableLanguagesAudience::onAgentTick($this);
+    }
+
+    /**
+     * Discards pending catalog notifications on stop.
+     *
+     * @throws HilosException When inherited agent cleanup fails
+     */
+    public function onStop(): void
+    {
+        AvailableLanguagesAudience::reset();
+        parent::onStop();
     }
 
     /**

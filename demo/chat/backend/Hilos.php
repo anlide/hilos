@@ -93,6 +93,7 @@ use Demo\Chat\Environment\ChatLlmProfileCatalog;
 use Demo\Chat\Environment\ChatLlmProfileOverrideSource;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Fs\ChatFsContext;
+use Demo\Chat\Groups\Hilos\LanguagesGroup;
 use Demo\Chat\Groups\Hilos\NotificationsGroup;
 use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Auth\ChatAccountDataOwnerDirectory;
@@ -547,6 +548,7 @@ final class Hilos extends HilosFacade
     public const array GROUPS = [
         SessionGroup::GROUP => SessionGroup::class,
         NotificationsGroup::GROUP => NotificationsGroup::class,
+        LanguagesGroup::GROUP => LanguagesGroup::class,
     ];
 
     public const array AGENTS = [

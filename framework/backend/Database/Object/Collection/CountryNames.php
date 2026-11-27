@@ -66,6 +66,25 @@ class CountryNames extends Objects
     }
 
     /**
+     * @param int $languageId Writing language primary id
+     * @return array<int, string> Nonempty base names indexed by country primary id
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
+     */
+    public function baseNamesInLanguage(int $languageId): array
+    {
+        $names = [];
+        foreach ($this->loadByColumn(EntityCountryName::language_id, $languageId) as $id) {
+            $name = $this->objects[$id];
+            if ($name->localeId === null && $name->name !== '') {
+                $names[$name->countryId] = $name->name;
+            }
+        }
+        return $names;
+    }
+
+    /**
      * @param int $countryId Named country primary id
      * @return bool Whether any name row, base or override, even empty, names it
      * @throws DatabaseException When the query fails

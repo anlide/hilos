@@ -12,6 +12,10 @@ import {
   type HilosConnection,
 } from '../connection/HilosConnection.js'
 import {
+  bindAvailableLanguagesScope,
+  hilosAvailableLanguages,
+} from '../language/availableLanguages.js'
+import {
   bindNotificationsScope,
   hilosNotifications,
 } from '../notifications/notificationCenter.js'
@@ -118,6 +122,12 @@ export interface BootHilosConfig {
    */
   notifications?: boolean
   /**
+   * Activate the live list of the languages people can choose: join the
+   * languages group, whose answer carries the list. Set only where the backend
+   * declares `HilosFeature::I18N` and registers the languages group. Default off.
+   */
+  i18n?: boolean
+  /**
    * Browser binding for the navigator; defaults to the window-backed one. Tests
    * inject a fake to stay DOM-free.
    */
@@ -220,6 +230,13 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     bindNotificationsScope(
       config.connection,
       hilosNotifications,
+      sessionUserId(config.scopes, config.session),
+    )
+  }
+  if (config.i18n === true) {
+    bindAvailableLanguagesScope(
+      config.connection,
+      hilosAvailableLanguages,
       sessionUserId(config.scopes, config.session),
     )
   }

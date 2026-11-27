@@ -65,6 +65,7 @@ use Demo\BinanceBtcTracker\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\BinanceBtcTracker\Database\BinanceBtcTrackerDbContext;
 use Demo\BinanceBtcTracker\Database\Pages\PageCatalog;
 use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
+use Demo\BinanceBtcTracker\Groups\Hilos\LanguagesGroup;
 use Demo\BinanceBtcTracker\Groups\Hilos\NotificationsGroup;
 use Demo\BinanceBtcTracker\Hilos;
 use Demo\BinanceBtcTracker\Pages\Hilos\Status\StatusPage;
@@ -1621,7 +1622,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         // framework's. The channels are exactly the two this demo's specs drive.
         $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
         $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
-        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $this->assertSame([
+            NotificationsGroup::GROUP => NotificationsGroup::class,
+            LanguagesGroup::GROUP => LanguagesGroup::class,
+        ], Hilos::GROUPS);
 
         $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
         $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
@@ -1694,7 +1698,10 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
         // moved behind (HIL-710): the library says what a session became, and this agent updates
         // the connection rows that belong to the project. The sweep frame is not declared, so the
         // library does not send it.
-        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $this->assertSame([
+            NotificationsGroup::GROUP => NotificationsGroup::class,
+            LanguagesGroup::GROUP => LanguagesGroup::class,
+        ], Hilos::GROUPS);
         $this->assertSame([HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);

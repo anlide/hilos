@@ -26,6 +26,7 @@ use Demo\Preferans\Database\Pages\PageCatalog;
 use Demo\Preferans\Database\Settings\PreferansSettingsCatalog;
 use Demo\Preferans\Environment\PreferansEnvCatalog;
 use Demo\Preferans\Fs\PreferansFsContext;
+use Demo\Preferans\Groups\Hilos\LanguagesGroup;
 use Demo\Preferans\Groups\Hilos\NotificationsGroup;
 use Demo\Preferans\Legal\PreferansLegalCatalog;
 use Demo\Preferans\Notification\PreferansDeliveryChannelRegistry;
@@ -160,6 +161,7 @@ final class Hilos extends HilosFacade
 
     public const array GROUPS = [
         NotificationsGroup::GROUP => NotificationsGroup::class,
+        LanguagesGroup::GROUP => LanguagesGroup::class,
     ];
 
     public const array AGENTS = [

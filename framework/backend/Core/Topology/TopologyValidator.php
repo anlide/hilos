@@ -874,7 +874,7 @@ final class TopologyValidator
             }
 
             if ($groupClass::ADDRESS === GroupAddressSource::SESSION) {
-                $errors[] = "GROUPS[{$group}] is addressed by session, which no node serves yet (HIL-111)";
+                $errors[] = "GROUPS[{$group}] is addressed by session, which no node serves yet";
             }
         }
     }

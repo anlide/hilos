@@ -105,6 +105,7 @@ use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Demo\OnlineTesting\Groups\Hilos\LanguagesGroup;
 use Demo\OnlineTesting\Groups\Hilos\NotificationsGroup;
 use Demo\OnlineTesting\Pages\Hilos\AboutPage;
 use Demo\OnlineTesting\Pages\Hilos\DashboardPage;
@@ -1890,7 +1891,10 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     {
         $this->assertContains(HilosFeature::NOTIFICATIONS, Hilos::features());
         $this->assertContains(HilosFeature::NOTIFICATION_DELIVERY, Hilos::features());
-        $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
+        $this->assertSame([
+            NotificationsGroup::GROUP => NotificationsGroup::class,
+            LanguagesGroup::GROUP => LanguagesGroup::class,
+        ], Hilos::GROUPS);
         $library = Hilos::AGENTS[AgentType::HILOS_NOTIFICATIONS_LIBRARY];
         $this->assertSame(NotificationsLibraryAgent::class, AgentRegistry::workerClass($library));
         $this->assertSame(NotificationsLibraryAgentDaemon::class, AgentRegistry::daemonClass($library));

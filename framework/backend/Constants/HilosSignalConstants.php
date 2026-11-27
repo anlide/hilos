@@ -85,6 +85,7 @@ use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
+use Hilos\I18n\DTO\AvailableLanguagesSignalData;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportStateSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -2492,6 +2493,13 @@ final class HilosSignalConstants
 
     /** Server → client (WS_GROUP): {dataExport: {state, requestedAt, finishedAt, expiresAt, sizeBytes} | null}. */
     public const string HILOS_DATA_EXPORT_STATE = 'hilos_data_export_state';
+
+    /**
+     * Server → client (WS_GROUP). The available-language list after committed writes that can change it.
+     *
+     * Payload {languages: [...]} uses {@see AvailableLanguagesSignalData}.
+     */
+    public const string HILOS_LANGUAGES_STATE = 'hilos_languages_state';
 
     /** Client → server: order this person's copy; empty payload and acknowledgement. */
     public const string HILOS_DATA_EXPORT_ORDER = 'hilos_data_export_order';

@@ -8,12 +8,18 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Database\Actions\Collection\LanguagesActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
+use Hilos\Database\Exception\View\CollectionNotFoundException;
 use Hilos\Database\Object\Collection\Languages as ObjectLanguages;
 use Hilos\Database\View\Item\Language;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Environment\Exception\EnvInvalidValueException;
+use Hilos\Hilos;
 use Hilos\I18n\DefaultLanguage;
+use Hilos\I18n\DTO\AvailableLanguageRow;
+use Hilos\I18n\DTO\AvailableLanguagesSignalData;
+use Hilos\I18n\DTO\AvailableLocaleRow;
 use Hilos\I18n\DTO\LanguageCardSummary;
 use Hilos\I18n\DTO\LanguageOverviewTally;
 
@@ -58,6 +64,64 @@ class Languages extends DbCollection
             $defaultLanguageCode,
             $this[$defaultLanguageCode]->nativeName,
         );
+    }
+
+    /**
+     * Projects the complete catalog held by the i18n library.
+     *
+     * @return AvailableLanguagesSignalData Available languages with their available locales
+     * @throws DatabaseException When the reference cannot be read
+     * @throws InvalidArgumentException When a loaded object has the wrong type
+     * @throws LogicException When collection classes are not configured
+     * @throws CollectionNotFoundException When a reference collection is missing
+     * @throws DbCollectionNotReadableException When a reference collection is unreadable
+     * @throws ItemNotFoundException When a locale's required country is missing
+     */
+    public function available(): AvailableLanguagesSignalData
+    {
+        $enabledLanguages = [];
+        foreach ($this->getIterator() as $language) {
+            if ($language->enabled) {
+                $enabledLanguages[$language->id] = $language;
+            }
+        }
+
+        $countryNames = null;
+        $localesByLanguage = [];
+        foreach (Hilos::$db->locales as $locale) {
+            if (!$locale->enabled || !isset($enabledLanguages[$locale->languageId])) {
+                continue;
+            }
+
+            $countryCode = null;
+            $countryName = null;
+            if ($locale->countryId !== null) {
+                $country = Hilos::$db->countries[$locale->countryId];
+                if (!$country->enabled) {
+                    continue;
+                }
+                $countryCode = $country->code;
+                $countryNames ??= Hilos::$db->countries->namesInInterfaceLanguage();
+                $countryName = $countryNames[$country->id] ?? $countryCode;
+            }
+            $localesByLanguage[$locale->languageId][] = new AvailableLocaleRow($locale->id, $locale->code, $countryCode, $countryName);
+        }
+
+        $languages = [];
+        foreach ($enabledLanguages as $language) {
+            $locales = $localesByLanguage[$language->id] ?? [];
+            usort($locales, static function (AvailableLocaleRow $first, AvailableLocaleRow $second): int {
+                if ($first->countryName === null || $second->countryName === null) {
+                    return ($first->countryName !== null) <=> ($second->countryName !== null) ?: strcmp($first->code, $second->code);
+                }
+
+                return strcasecmp($first->countryName, $second->countryName) ?: strcmp($first->code, $second->code);
+            });
+            $languages[] = new AvailableLanguageRow($language->id, $language->code, $language->nativeName, $locales);
+        }
+        usort($languages, static fn (AvailableLanguageRow $first, AvailableLanguageRow $second): int => strcmp($first->code, $second->code));
+
+        return new AvailableLanguagesSignalData($languages);
     }
 
     /**

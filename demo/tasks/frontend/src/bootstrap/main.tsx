@@ -57,6 +57,7 @@ const hilosRouter = bootHilos({
   // once a user is known — which, since sign-in was activated here (HIL-623), is
   // as soon as somebody signs in.
   notifications: true,
+  i18n: true,
 })
 
 // The auth gate (HIL-165): resume a 401'd page and close the sign-in modal when

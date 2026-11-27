@@ -19,6 +19,7 @@ use Hilos\Database\Entity\Item\LanguageName;
 use Hilos\Database\Entity\Item\Locale;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
+use Hilos\Groups\AbstractHilosLanguagesGroup;
 use Hilos\Hilos as HilosFacade;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Library\I18nLibraryAgentDaemon;
@@ -31,7 +32,7 @@ use PHPUnit\Framework\TestCase;
 /** Pins the framework i18n feature definition and its activation refusals. */
 final class I18nFeatureActivationTest extends TestCase
 {
-    public function testDefinitionRequiresThreePagesOneAgentAndSixTables(): void
+    public function testDefinitionRequiresThreePagesOneAgentOneGroupAndSixTables(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::I18N);
         $requirements = $definition->requirements();
@@ -43,6 +44,7 @@ final class I18nFeatureActivationTest extends TestCase
             AbstractHilosI18nCountriesListPage::class,
         ], $requirements->requiredPages);
         self::assertSame([HilosAgentType::HILOS_I18N_LIBRARY], $requirements->requiredAgents);
+        self::assertSame([AbstractHilosLanguagesGroup::class], $requirements->requiredGroups);
         self::assertSame([
             Language::_table,
             Country::_table,
@@ -78,6 +80,14 @@ final class I18nFeatureActivationTest extends TestCase
             . HilosAgentType::HILOS_I18N_LIBRARY . ' is not registered in AGENTS');
 
         I18nFeatureMissingAgentHilos::validateFeatureActivation();
+    }
+
+    public function testMissingGroupRefusesStartup(): void
+    {
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage(AbstractHilosLanguagesGroup::class);
+
+        I18nFeatureMissingGroupHilos::validateFeatureActivation();
     }
 
     public function testRegistrationWithoutFeatureRefusesStartup(): void
@@ -137,6 +147,10 @@ class I18nFeatureCompleteHilos extends HilosFacade
         I18nFeatureRootPage::PAGE => I18nFeatureRootPage::class,
         I18nFeatureLanguagesPage::PAGE => I18nFeatureLanguagesPage::class,
         I18nFeatureCountriesPage::PAGE => I18nFeatureCountriesPage::class,
+    ];
+
+    public const array GROUPS = [
+        I18nFeatureLanguagesGroup::GROUP => I18nFeatureLanguagesGroup::class,
     ];
 
     public const array AGENTS = [
@@ -204,4 +218,14 @@ final class I18nFeatureMissingAgentHilos extends I18nFeatureCompleteHilos
 final class I18nFeatureUndeclaredHilos extends I18nFeatureCompleteHilos
 {
     protected const array FEATURES = [];
+}
+
+final class I18nFeatureMissingGroupHilos extends I18nFeatureCompleteHilos
+{
+    public const array GROUPS = [];
+}
+
+final class I18nFeatureLanguagesGroup extends AbstractHilosLanguagesGroup
+{
+    public const string SUBSCRIPTION_AGENT_TYPE = HilosAgentType::HILOS_I18N_LIBRARY;
 }

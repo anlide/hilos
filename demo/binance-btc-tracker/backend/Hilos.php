@@ -33,6 +33,7 @@ use Demo\BinanceBtcTracker\Database\Pages\PageCatalog;
 use Demo\BinanceBtcTracker\Database\Settings\BinanceBtcTrackerSettingsCatalog;
 use Demo\BinanceBtcTracker\Environment\BinanceBtcTrackerEnvCatalog;
 use Demo\BinanceBtcTracker\Fs\BinanceBtcTrackerFsContext;
+use Demo\BinanceBtcTracker\Groups\Hilos\LanguagesGroup;
 use Demo\BinanceBtcTracker\Groups\Hilos\NotificationsGroup;
 use Demo\BinanceBtcTracker\Legal\BinanceBtcTrackerLegalCatalog;
 use Demo\BinanceBtcTracker\Notification\BinanceBtcTrackerDeliveryChannelRegistry;
@@ -358,6 +359,7 @@ class Hilos extends HilosFacade
 
     public const array GROUPS = [
         NotificationsGroup::GROUP => NotificationsGroup::class,
+        LanguagesGroup::GROUP => LanguagesGroup::class,
     ];
 
     public const array AGENTS = [

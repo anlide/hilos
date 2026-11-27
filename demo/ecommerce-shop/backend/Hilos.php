@@ -54,6 +54,7 @@ use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Environment\EcommerceShopEnvCatalog;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Fs\EcommerceShopFsContext;
+use Demo\EcommerceShop\Groups\Hilos\LanguagesGroup;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
@@ -407,6 +408,7 @@ final class Hilos extends HilosFacade
 
     public const array GROUPS = [
         NotificationsGroup::GROUP => NotificationsGroup::class,
+        LanguagesGroup::GROUP => LanguagesGroup::class,
     ];
 
     public const array AGENTS = [

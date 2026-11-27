@@ -57,8 +57,10 @@ owner's decision of 2026-11-26 (not in the code yet — HIL-2311). Switching a
 country off says the product does not work there, so nothing offers that
 country's variants.
 
-The list every tab holds, the header's language menu and the language window
-show only what is available (not in the code yet — HIL-111).
+The list every tab holds includes only available languages and locales.
+The header's language menu will show only available choices
+(not in the code yet — HIL-2301). The language window will follow the same rule
+(not in the code yet — HIL-114).
 No rung of either ladder takes a language or a locale that is not available.
 
 The reflow creates known countries switched off and with no default locale,
@@ -206,12 +208,16 @@ Editions on language addresses and `hreflang` — HIL-130.
 - A language with `rtl` sets `dir` and the RTL build of Bootstrap on the shell
   and the framework's windows in all three view frameworks; a demo's own pages
   come later, separately (not in the code yet — HIL-2317).
-- Every tab, a guest's too, holds a live list of the available languages with
-  their variants, native names and country names
-  (not in the code yet — HIL-111).
-- By the owner's decision of 2026-11-26, country names in that list are in the
-  tab's interface language, and English until the interface is translated
-  (not in the code yet — HIL-111).
+- With i18n enabled, guest and signed-in tabs receive a live list of available
+  languages with their variants, native names and country names. The
+  `hilos_languages` group supplies the list, and `@hilos/core/base` exposes it
+  in the browser as `hilosAvailableLanguages`. On a cluster, the list stays
+  live while the library's node is up, subject to the
+  [group membership lifetime](../signals/subscriptions.md#group-subscription).
+- The list uses each country's base English name and falls back to its code
+  when that name is missing. By the owner's decision of 2026-11-26, country
+  names will follow the tab's interface language, including regional overrides
+  when available (not in the code yet — HIL-2280).
 - The menu's suggestions come from the browser only, never from the country:
   the whole variant when it is available, otherwise the language without a
   region (not in the code yet — HIL-2301).

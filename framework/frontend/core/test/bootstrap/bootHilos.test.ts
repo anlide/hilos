@@ -13,6 +13,8 @@ import {
 } from '../../src/connection/HilosConnection.js'
 import { UPLOAD_ACTION_INIT } from '../../src/uploads/uploadProtocol.js'
 import {
+  SIGNAL_TYPE_GROUP_SUBSCRIBE,
+  SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_MOVED,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
@@ -3949,6 +3951,52 @@ describe('bootHilos', () => {
     })
     expect(hilosImpersonation.get()).toBeNull()
   })
+
+  it.each([true, undefined])(
+    'joins the languages group after the handshake only when i18n is enabled (%s)',
+    (i18n) => {
+      const socket = scriptedSocket()
+      const { connection, actions } = createHilosConnection({
+        url: 'ws://test/ws',
+        webSocketFactory: () => socket.socket,
+      })
+      const router = bootHilos({
+        connection,
+        actions,
+        scopes: new ScopeManager(),
+        viewLayer: 'vue',
+        router: createAppPageRouter({ main: { path: '/', admin: false } }),
+        navigationEnvironment: fakeNavigation('/'),
+        ...(i18n === true ? { i18n } : {}),
+      })
+      const joins = () =>
+        socket.sent.filter(
+          (frame) => frame.type === SIGNAL_TYPE_GROUP_SUBSCRIBE,
+        )
+
+      try {
+        socket.open()
+        socket.message({ type: SIGNAL_TYPE_HANDSHAKE, data: { build: 'test' } })
+        expect(joins()).toEqual([])
+
+        socket.message({
+          type: SIGNAL_HANDSHAKE_RESPONSE,
+          data: {
+            entities: { currentUser: null },
+            data: { accessLossReason: null },
+          },
+        })
+        expect(joins()).toEqual(
+          i18n === true
+            ? [{ type: SIGNAL_TYPE_GROUP_SUBSCRIBE, group: 'hilos_languages' }]
+            : [],
+        )
+      } finally {
+        router.stop()
+        connection.close()
+      }
+    },
+  )
 
   it('binds the account standing so it follows the handshake (HIL-945)', () => {
     const connection = fakeConnection()

@@ -272,8 +272,9 @@ reader can open the step, with confirmation disabled. A known locale also warns
 that the next reflow can replace its formats while it stays off.
 
 What a switched-off language, locale or country hides from people is in
-[What Is Available](language-and-region.md#what-is-available). Today only the
-section reads the switch.
+[What Is Available](language-and-region.md#what-is-available). The live list
+every tab holds omits switched-off languages, switched-off locales, and locales
+of switched-off countries.
 
 ## The Lock On An Edited Name
 
@@ -665,10 +666,17 @@ The project:
 - migrates the six framework stubs: the five reference tables and `hilos_i18n_reflow`;
 - supplies `HILOS_DEFAULT_LANGUAGE` with an exact built-in code;
 - registers the `ip_country` directory with `registerIpCountryDirectory()` in
-  its `FsContext::configure()` — the start refuses the feature without it
-  (HIL-2310, [filesystem.md](filesystem.md#node-or-cluster)).
+  its `FsContext::configure()` (HIL-2310, [filesystem.md](filesystem.md#node-or-cluster));
+- registers a thin subclass of `AbstractHilosLanguagesGroup` in `Hilos::GROUPS`
+  with `I18nLibraryAgent` as its subscription owner and passes `i18n: true` to
+  `bootHilos`.
 
-The six demos have the feature, agent, server pages and migrations (HIL-1470).
+`I18nFeature` declares the group requirement, and `FeatureActivationValidator`
+checks it at startup.
+
+On 2026-10-07, HIL-1470 activated the feature, library agent, server pages
+and migrations in `chat`, `tasks`, `polls`, `ecommerce-shop`,
+`binance-btc-tracker` and `online-testing`.
 The names tables of a language and of a country (`hilosI18nLanguageNames`,
 `hilosI18nCountryNames`) are registered and bound to their pages in all six
 (HIL-1477), and so is the locales table of a language
@@ -753,8 +761,9 @@ seven thin OnPush wrappers over their own `hilosI18nLanguageContext` and
 scopes. These pages too stay outside `hilosAdminViews()`; the section root
 remains its default shell.
 
-Startup refuses a missing page or agent; the topology tests check that the
-six migration files are present after registration.
+Startup refuses a missing page, agent, languages group or `ip_country` directory
+registration. The topology tests check that the six migration files are present
+after registration.
 The section's e2e are organized into five family specs in binance-btc-tracker
 (Vue), file-gallery-manager (React) and preferans (Angular): language, country,
 locale, language-names and country-names. `i18n-overview.spec.ts` also lives in
@@ -767,8 +776,9 @@ up the mockup installation (`I18N_EXAMPLE_INSTALLATION`) for a single test,
 arms reverse-order teardown, and refuses if any required address is already occupied.
 Follow [Feature Declaration](../app-topology.md) and the
 [activation recipe](admin-feature-scaffold.md).
-The six demos are `chat`, `tasks`, `polls`, `ecommerce-shop`,
-`binance-btc-tracker` and `online-testing`.
+Eight demos register `hilos_languages` and pass `i18n: true` to `bootHilos`.
+They are `chat`, `binance-btc-tracker`, `ecommerce-shop`, `file-gallery-manager`,
+`tasks`, `online-testing`, `polls` and `preferans`.
 
 Once built, the section root shows only Languages and Countries. Translation
 subsections have no registered server page: the existing rule hides their cards
@@ -791,13 +801,15 @@ Names in the reader's language belong to HIL-2280.
 
 ## What This Page Does Not Decide
 
+The i18n library alone reads the reference to build the list every tab holds.
+The `hilos_languages` group delivers that list.
+
 These keys are pointers to later work, not implementation markers:
 
 - Whether every process reads the reference locally, as with settings — the
   first readers outside the section decide. The tab's language decided it for
   languages, locales and countries, which every process reads (HIL-109, see
-  [One Library Holds The Reference](#one-library-holds-the-reference)); the
-  list every tab holds is still to decide (HIL-111).
+  [One Library Holds The Reference](#one-library-holds-the-reference)).
 - Language selection and moving open tabs when a language is switched off —
   [A Tab's Language And Region](language-and-region.md).
 - Translation — HIL-2280.

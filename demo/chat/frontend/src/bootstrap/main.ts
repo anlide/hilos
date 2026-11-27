@@ -51,6 +51,7 @@ const hilosRouter = bootHilos({
   // and has real auth, so the bell in App's #user slot fills from the per-user
   // group once the handshake names the user.
   notifications: true,
+  i18n: true,
 })
 
 // The auth gate (HIL-165): resume a 401'd page and close the sign-in modal when

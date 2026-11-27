@@ -173,13 +173,11 @@ final class GroupSubscriptionDispatcher
             GroupAddressSource::SESSION_USER => $param === null
                 ? $declared . ':' . $this->requireUserId($acceptKey, $declared)
                 : throw $this->addressMismatch($declared, $group),
-            // No group declares the session address yet, and what identifies a session inside a
-            // group name is HIL-111's question rather than one to answer in passing here. A
-            // registration that declares it is refused at topology validation, so this arm is
-            // reached only where that validation was skipped - and it refuses rather than
-            // inventing a name a later leaf would have to keep.
+            // The first group to use the session address will define how the full name identifies
+            // a session. Topology validation refuses the address until then, and this arm also
+            // refuses it when that validation was skipped.
             GroupAddressSource::SESSION => throw new GroupSubscriptionException(
-                "Group '{$declared}' is addressed by session, which no node serves yet (HIL-111)",
+                "Group '{$declared}' is addressed by session, which no node serves yet",
                 HttpConstants::HTTP_NOT_FOUND,
                 GroupErrorCode::NOT_SERVED,
             ),
