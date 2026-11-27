@@ -227,6 +227,8 @@ and no dimmed buttons:
 - **With payment**: "Sold" for a unique piece;
 - **With search**: the search field in the header and the search page.
 
+The one exception is "Pay" on [the checkout page](#checkout): it is there before payment, grayed out.
+
 ### The cart
 
 The cart that is being built on the shop front above. It is a plan, not the
@@ -297,19 +299,21 @@ What a buyer sees:
   in; a unique piece already in the cart says "In cart" and leads to the
   cart; for a sold unique piece and a stock item at zero it is grayed out.
 - **The cart page**, `/cart`, open to everyone: a line per product — picture,
-  name leading to the product, price each and the line's total — then "Items"
-  and "Total". "−" and "+" change a quantity by one, without a window; the
-  number opens a "Quantity" window for an exact one; "Remove" takes a line
-  out, without a window; a unique piece shows "1 · one of a kind" instead of
-  a quantity. An empty cart says "Your cart is empty" and "Add something from
+  name leading to the product, price each and the line's total — then
+  "Items", "Delivery" — "to a parcel locker, free" — and "Total", and under
+  them "Checkout", which opens [the checkout page](#checkout), for a guest
+  too. "−" and "+" change a quantity by one, without a window; the number
+  opens a "Quantity" window for an exact one; "Remove" takes a line out,
+  without a window; a unique piece shows "1 · one of a kind" instead of a
+  quantity. An empty cart says "Your cart is empty" and "Add something from
   the shop — it stays here", with "for this browser session" for a guest, and
   offers "Go shopping".
 
 What later phases bring is not on the cart page until then — the cart does
 not pass itself off as a purchase:
 
-- **With payment**: "Checkout", the delivery line, and "Sold — someone paid
-  first" on a line whose unique piece somebody else bought.
+- **With payment**: "Sold — someone paid first" on a line whose unique piece
+  somebody else bought.
 
 ### Vouchers
 
@@ -383,6 +387,48 @@ What people see:
 Orders bring the rest: "Used" in the Vouchers table — how many paid orders
 went through with the code — and the voucher in an order, with its percent.
 Until then neither is on any page.
+
+### Checkout
+
+The checkout page that is being built on the cart and the vouchers above. It
+is a plan, not the running demo: what already works is listed under "Today"
+above. The page shows what a buyer is about to buy and for how much; paying is
+not part of it yet.
+
+- **Signed-in people only**: `/checkout` opens from "Checkout" under the
+  cart's total. A guest who opens it gets the framework's sign-in form in
+  place of the page, with no words of the page above it; once signed in, they
+  see the page with the account's cart, which their guest cart has joined (the
+  cart's above).
+- **The order**: breadcrumbs "Cart" → "Checkout" and the heading "Checkout".
+  "Your order" lists the cart's lines — the product's name, with "× N" for
+  more than one unit, and the line's total — then, when a voucher is applied,
+  the "Voucher" line with its code and the discount taken off, and "Total".
+  These are the cart's own numbers, counted and printed by
+  [the shop's money](#money); a line that can no longer be had is not counted,
+  as in the cart.
+- **Around it**: a note that this is a demo shop and no money is charged;
+  delivery to a parcel locker that the demo assigns — the buyer does not
+  choose one; "Back to cart"; and "Pay" with the amount of "Total" — "Pay
+  ₴2,525" — grayed out, with a line under it saying that paying is not
+  connected yet and comes with the next step of the demo.
+- **Nothing to buy**: when the cart is empty or none of its lines can be had,
+  the page shows a state of its own in its place, with "Go shopping"; it does
+  not send the buyer to the cart.
+
+Every open checkout page follows the cart and the catalog by itself, without a
+reload: a change to the cart from any tab or device, and a price, an
+availability or a voucher changed in shop administration, change its lines and
+its "Total"; a cart emptied in another tab turns the page into its
+nothing-to-buy state.
+
+"Pay" is the one exception to the shop front's rule of no stand-ins and no
+dimmed buttons (above): it stands on the page before payment, grayed out and
+saying why, so that payment switches it on under the same name.
+
+Payment comes next: "Pay" switched on, leading to a stand-in payment page — no
+money is involved. Orders come after it: the order with its parcel locker and
+its delivery.
 
 ## Money
 
