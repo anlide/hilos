@@ -113,6 +113,9 @@ const timeZoneValues = [
   'readBrowserTimeZone',
   'resolveTimeZone',
 ]
+/** The tab's language and region, shared by the base. */
+const tabLanguageValues = ['bindTabLanguageState', 'hilosTabLanguage']
+const tabLanguageTypes = ['HilosLocaleFormats', 'HilosTabLanguage']
 const legalOverviewTypes = ['HilosLegalOverview']
 /** The shared revision reader belongs only to the lazy Legal section. */
 const legalRevisionValues = ['createHilosLegalRevision']
@@ -1251,6 +1254,9 @@ describe('core public entries', () => {
     for (const name of timeZoneValues) {
       expect(base, name).toHaveProperty(name)
     }
+    for (const name of tabLanguageValues) {
+      expect(base, name).toHaveProperty(name)
+    }
     for (const name of [
       ...pageHeadValues,
       ...licenseDependenciesValues,
@@ -1539,6 +1545,11 @@ describe('core public entries', () => {
     const pickerExports = exportsOf('timeZone/timeZonePicker.ts')
     for (const name of [...timeZonePickerValues, ...timeZonePickerTypes]) {
       expect(baseExports.get(name), name).toBe(pickerExports.get(name))
+    }
+    const tabLanguageExports = exportsOf('language/tabLanguageState.ts')
+    for (const name of [...tabLanguageValues, ...tabLanguageTypes]) {
+      expect(baseExports.get(name), name).toBeDefined()
+      expect(baseExports.get(name), name).toBe(tabLanguageExports.get(name))
     }
     const profileHeadExports = exportsOf('profile/profileHead.ts')
     for (const name of [...profileHeadValues, ...profileHeadTypes]) {

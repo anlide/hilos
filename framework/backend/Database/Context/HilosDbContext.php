@@ -849,7 +849,7 @@ abstract class HilosDbContext extends DbContext
     /**
      * Names the framework collections read from any process at all.
      *
-     * Ten, and each for its own seam. Sessions and identities answer "whose session is this",
+     * Each is here for its own seam. Sessions and identities answer "whose session is this",
      * which {@see SessionCarrier} asks in every process a frame arrives in - outside any agent
      * and before any page subscription, so nothing else declares them. Settings is read by seams
      * everywhere and is the one eager collection of the three, so a worker holding it unaddressed
@@ -886,6 +886,11 @@ abstract class HilosDbContext extends DbContext
      * is refused rights and a block, and left out of the administrators' circle, wherever those
      * are asked. They load by the folded account and stay inert where nobody was ever merged.
      *
+     * Languages, locales and countries (HIL-109) are read where a tab's language is decided, and
+     * that is the agent holding the sockets ({@see AbstractAgent::sendHandshakeResponse()}) in
+     * any project - the reason people are here. The tables are small and load whole on first
+     * read; a project without I18N never reads them, because nothing there decides a language.
+     *
      * Deletion requests and acceptance records (HIL-945) are read by the freeze guard, which stands
      * in whatever worker serves a page or runs an action a signed-in person asks for, and composes
      * the person's standing out of them ({@see AccountStandingResolver}). The same process keeps
@@ -914,6 +919,9 @@ abstract class HilosDbContext extends DbContext
             self::accountDeletions,
             self::legalAcceptances,
             self::accountMergeFences,
+            self::languages,
+            self::locales,
+            self::countries,
         ];
     }
 

@@ -34,12 +34,15 @@ the first rung that fits wins.
 Run both ladders for every tab each time it connects — in the worker, during
 the handshake, never in the master (see
 [heavy work in the master](../antipatterns/heavy-work-in-master.md)) — and
-apply the result silently, with no banner and no reload
-(not in the code yet — HIL-109).
+apply the result silently, with no banner and no reload.
+They run where the framework stamps the handshake response,
+`AbstractAgent::sendHandshakeResponse()`, on every session-state frame: a tab
+connecting, signing in, signing out, and a state sent again.
 
-Store only a choice; a pick is stored nowhere, so a person who changes the
-browser's language or travels gets a new pick on the next connection
-(not in the code yet — HIL-109).
+Store only a choice; a pick is stored nowhere but on the tab's connection row,
+which lives as long as the socket does (see *What Every Tab Knows*), so a
+person who changes the browser's language or travels gets a new pick on the
+next connection.
 
 ## What Is Available
 
@@ -56,8 +59,7 @@ country's variants.
 
 The list every tab holds, the header's language menu and the language window
 show only what is available (not in the code yet — HIL-111).
-No rung of either ladder takes a language or a locale that is not available
-(not in the code yet — HIL-109).
+No rung of either ladder takes a language or a locale that is not available.
 
 The reflow creates known countries switched off and with no default locale,
 and it creates neither languages nor locales: a person adds those. The one
@@ -75,9 +77,9 @@ Take the first rung that fits, top down:
 1. **The language address.** A host the project declares for a language sets
    that language for everyone, a signed-in person included
    (not in the code yet — HIL-2313).
-2. **The person's own choice.** For a guest, the choice made in this browser;
-   for a signed-in person, the language of the account
-   (not in the code yet — HIL-109).
+2. **The person's own choice.** For a guest, the choice made in this browser
+   (not in the code yet — HIL-2299); for a signed-in person, the language of
+   the account (not in the code yet — HIL-2298).
 3. **The browser.** The first available language of `Accept-Language`, taken by
    weight (not in the code yet — HIL-2309).
 4. **The country of the connection.** The language of the locale that country
@@ -89,24 +91,31 @@ Take the first rung that fits, top down:
    always ends.
 
 A chosen language that is not available sends the tab straight to rung 5, past
-the browser and the country; the choice is not erased and waits
-(not in the code yet — HIL-109).
+the browser and the country; the choice is not erased and waits.
 
 ## The Region Ladder
 
 Run it for the language the first ladder decided. Take the first rung that
 fits, top down:
 
-1. The person's chosen variant of this language, when it is available
-   (not in the code yet — HIL-109).
+1. The person's chosen variant of this language, when it is available. The
+   choice reaches the ladder later, as on rung 2 of the language ladder:
+   a guest's (not in the code yet — HIL-2299), an account's
+   (not in the code yet — HIL-2298).
 2. The variant of this language for the country of the connection
    (not in the code yet — HIL-2311).
 3. The first available variant of this language that the browser names
    (not in the code yet — HIL-2309).
-4. The countryless locale of this language, when it is available
-   (not in the code yet — HIL-109).
-5. The countryless locale of the default language
-   (not in the code yet — HIL-109).
+4. The countryless locale of this language, when it is available.
+5. The countryless locale of the default language, when it is switched on.
+
+When no rung fits, the tab has no stored locale, and its formats are those of
+the built-in catalog's locale for the default language: its countryless
+locale, otherwise its first locale in the catalog — `de-DE` for `de`
+(owner's decision, 2026-11-26). Of the 50 built-in languages eight have a
+countryless locale in the catalog (`en`, `zh`, `es`, `hi`, `ar`, `ru`, `pt`,
+`fr`); with `de` as the default language a tab with no chosen variant ends
+here until an administrator adds and switches on a countryless `de` locale.
 
 The country stands ahead of the browser. A browser names the region of its own
 build — a Russian Chrome asks for `ru-RU` anywhere — while the country says
@@ -177,10 +186,21 @@ Editions on language addresses and `hreflang` — HIL-130.
 - On connecting, a tab learns its active language and region, the seven
   formats of that region
   ([`LocaleFormats`](../../../framework/backend/I18n/DTO/LocaleFormats.php))
-  and the language's `rtl` flag (not in the code yet — HIL-109).
-- The server remembers the language and the region of every tab
-  (not in the code yet — HIL-109).
-- The document carries `lang` (not in the code yet — HIL-109).
+  and the language's `rtl` flag. Every handshake response carries them as
+  `handshake_response.data.tabLanguage` — `languageId`, `languageCode`, `rtl`,
+  `localeId`, `localeCode` and `formats`, the region's two keys null when no
+  stored locale fits. The node itself is null in a project without the I18N
+  feature, and while the default language has no row yet; the next frame
+  brings it. In the browser the core reads the node off every response of the
+  current socket and publishes it as `hilosTabLanguage` from `@hilos/core`; a
+  response without the node or with a malformed one keeps the last answer.
+- The server remembers the language and the region of every tab: the tab's
+  connection row carries `languageId` and `localeId`
+  ([`HilosSessionConnection`](../../../framework/backend/Runtime/State/Item/HilosSessionConnection.php)),
+  written before the response leaves and only when they change.
+- The document carries `lang`: the code of the active language, never of its
+  region. A null node leaves it as the page was served, and a response naming
+  another language rewrites it at once, with no reload.
 - A tab also learns the first day of the week of its region
   (not in the code yet — HIL-2318).
 - A language with `rtl` sets `dir` and the RTL build of Bootstrap on the shell
@@ -229,8 +249,8 @@ zone on every call.
 - **A chosen variant.** The language stays, and the region ladder picks the
   region again (not in the code yet — HIL-2315).
 - **A country.** Its variants stop being available. A chosen variant of that
-  country is treated as a switched-off variant
-  (not in the code yet — HIL-109). When that reaches the open tabs — HIL-2315.
+  country is treated as a switched-off variant. When that reaches the open
+  tabs — HIL-2315.
 - **The default language** cannot be switched off, so a tab always has a
   language to move to.
 
@@ -308,10 +328,6 @@ These keys are pointers to later work, not implementation markers:
 
 - What carries a guest's choice in the browser — HIL-2299.
 - Where the menu takes the browser's suggestions from — HIL-2301.
-- Whose formats the last rung of the region ladder gives when the default
-  language has no countryless locale in the reference — HIL-109. Of the 50
-  built-in languages eight have one (`en`, `zh`, `es`, `hi`, `ar`, `ru`, `pt`,
-  `fr`); `de` has none.
 - Names of months and weekdays on a screen; the reference's date formats are
   numeric only — HIL-2303.
 - When switching a country off reaches the open tabs — HIL-2315.

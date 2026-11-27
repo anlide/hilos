@@ -123,6 +123,11 @@ only writer of its collection, is the same case; see
 [entity libraries](entity-libraries.md). This ownership decision was made at
 the epic's split with the owner on 2026-10-04.
 
+Like settings, languages, locales and countries are read in every process —
+`HilosDbContext::processWideReadCollections()` names them — because a tab's
+language is decided by the agent that holds its socket, not by this library
+(HIL-109); see [A Tab's Language And Region](language-and-region.md).
+
 ## Known And Own Rows
 
 A row is known when its code is in the built-in catalog and own when it is not.
@@ -789,8 +794,10 @@ Names in the reader's language belong to HIL-2280.
 These keys are pointers to later work, not implementation markers:
 
 - Whether every process reads the reference locally, as with settings — the
-  first readers outside the section decide: the tab's language (HIL-109) and
-  the list every tab holds (HIL-111).
+  first readers outside the section decide. The tab's language decided it for
+  languages, locales and countries, which every process reads (HIL-109, see
+  [One Library Holds The Reference](#one-library-holds-the-reference)); the
+  list every tab holds is still to decide (HIL-111).
 - Language selection and moving open tabs when a language is switched off —
   [A Tab's Language And Region](language-and-region.md).
 - Translation — HIL-2280.

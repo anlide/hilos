@@ -151,8 +151,88 @@ final class HilosConnectionStateTest extends TestCase
             HilosConnection::connectedAt => 1710000000123,
             HilosSessionConnection::sessionToken => 'tok-a',
             HilosSessionConnection::sessionId => 17,
+            HilosSessionConnection::languageId => 3,
+            HilosSessionConnection::localeId => 11,
             SessionConnectionFixture::label => 'old',
         ]);
+    }
+
+    /**
+     * The language and the region are nullable session-stage fields: a full row that does not carry
+     * them reads them as null, as it reads the session token and id, and nothing is minted in their place.
+     */
+    public function testASessionRowWithoutTheTabLanguageReadsItAsNull(): void
+    {
+        $hydrated = SessionConnectionFixture::fromRow([
+            HilosConnection::acceptKey => 'ak-13',
+            HilosConnection::userId => 5,
+            HilosConnection::connectedAt => 1710000000123,
+            HilosConnection::probablyOffline => false,
+            HilosSessionConnection::sessionToken => 'tok-a',
+            HilosSessionConnection::sessionId => 17,
+            SessionConnectionFixture::label => 'old',
+        ]);
+
+        $this->assertNull($hydrated->languageId);
+        $this->assertNull($hydrated->localeId);
+        $this->assertSame('tok-a', $hydrated->sessionToken);
+    }
+
+    /** @return array<string, array{string, mixed}> Language and region fields holding a value that is not an id */
+    public static function nonIntegerTabLanguages(): array
+    {
+        return [
+            'language as text' => [HilosSessionConnection::languageId, '3'],
+            'language as a flag' => [HilosSessionConnection::languageId, true],
+            'region as text' => [HilosSessionConnection::localeId, '11'],
+            'region as a fraction' => [HilosSessionConnection::localeId, 1.5],
+        ];
+    }
+
+    /**
+     * @param string $field Language or region field
+     * @param mixed $value Value that is not an integer id
+     */
+    #[DataProvider('nonIntegerTabLanguages')]
+    public function testFromRowRefusesATabLanguageThatIsNotAnId(string $field, mixed $value): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        SessionConnectionFixture::fromRow([
+            HilosConnection::acceptKey => 'ak-14',
+            HilosConnection::userId => 5,
+            HilosConnection::connectedAt => 1710000000123,
+            HilosConnection::probablyOffline => false,
+            HilosSessionConnection::sessionToken => 'tok-a',
+            HilosSessionConnection::sessionId => 17,
+            HilosSessionConnection::languageId => 3,
+            HilosSessionConnection::localeId => 11,
+            SessionConnectionFixture::label => 'old',
+            $field => $value,
+        ]);
+    }
+
+    /**
+     * A diff carries what changed: the language and the region move when it carries them, back to
+     * null too, and a diff about any other field leaves them where they were.
+     */
+    public function testApplyDiffMovesTheTabLanguageOnlyWhenItCarriesIt(): void
+    {
+        $connection = SessionConnectionFixture::create('ak-15', 5, 'tok-a', 17);
+        $this->assertNull($connection->languageId);
+        $this->assertNull($connection->localeId);
+
+        $connection->applyDiff([HilosSessionConnection::languageId => 3, HilosSessionConnection::localeId => 11]);
+        $this->assertSame(3, $connection->languageId);
+        $this->assertSame(11, $connection->localeId);
+
+        $connection->applyDiff([HilosSessionConnection::sessionToken => 'tok-b', SessionConnectionFixture::label => 'moved']);
+        $this->assertSame(3, $connection->languageId);
+        $this->assertSame(11, $connection->localeId);
+
+        $connection->applyDiff([HilosSessionConnection::localeId => null]);
+        $this->assertSame(3, $connection->languageId);
+        $this->assertNull($connection->localeId);
     }
 
     /**
@@ -227,6 +307,8 @@ final class HilosConnectionStateTest extends TestCase
     {
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::sessionToken));
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::sessionId));
+        $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::languageId));
+        $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::localeId));
         $this->assertFalse(method_exists(PresenceConnectionFixtures::class, 'findAllBySessionToken'));
     }
 
@@ -245,6 +327,8 @@ final class HilosConnectionStateTest extends TestCase
                 HilosConnection::probablyOffline => false,
                 HilosSessionConnection::sessionToken => 'tok-a',
                 HilosSessionConnection::sessionId => 17,
+                HilosSessionConnection::languageId => null,
+                HilosSessionConnection::localeId => null,
                 SessionConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),

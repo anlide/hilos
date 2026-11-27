@@ -47,6 +47,7 @@ import { bindLegalReconsent } from '../legal/legalReconsent.js'
 import { bindAdminAccess } from '../session/adminAccess.js'
 import { bindImpersonation } from '../session/impersonation.js'
 import { bindSignOut } from '../session/signOut.js'
+import { bindTabLanguageState } from '../language/tabLanguageState.js'
 import { bindThemeState } from '../theme/themeState.js'
 import { bindTimeZoneState } from '../timeZone/timeZoneState.js'
 import {
@@ -143,6 +144,10 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // Theme belongs to the common browser shell. It reads cached values and
   // applies the mode before the socket opens, then follows session frames.
   bindThemeState(config.connection, config.scopes, config.actions)
+  // The tab's language belongs to the same shell, with no option: every session
+  // response names it, and a project without I18N is told null, which leaves the
+  // document's lang as the page was served.
+  bindTabLanguageState(config.connection)
   // No option to switch on: a project that carries sessions carries their toasts
   // (HIL-768), and a project without them is never sent a frame. One behavior
   // rather than a flag nobody would ever want off.

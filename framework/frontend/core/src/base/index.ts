@@ -404,6 +404,12 @@ export {
   hilosTimeZone,
 } from '../timeZone/timeZoneState.js'
 export {
+  bindTabLanguageState,
+  hilosTabLanguage,
+  type HilosLocaleFormats,
+  type HilosTabLanguage,
+} from '../language/tabLanguageState.js'
+export {
   PageSubscription,
   type PageSubscriptionConnection,
 } from '../subscription/PageSubscription.js'

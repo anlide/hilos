@@ -23,17 +23,34 @@ use Hilos\HilosException;
  * Login rotation keeps the socket identity and repoints its token through
  * HilosSessionConnectionsActions::repointSessionToken(). A different session gets
  * a new connection row. Project hooks always run after both framework stages.
+ *
+ * The stage also carries the language and the region the tab shows (HIL-109): languageId and
+ * localeId, written through HilosSessionConnectionsActions::setTabLanguage() where the handshake
+ * response is stamped. A new row starts with both null; they stay null without the I18N feature,
+ * and localeId stays null when the region ladder ends below every stored locale.
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
     public const string sessionToken = 'sessionToken';
     public const string sessionId = 'sessionId';
+    public const string languageId = 'languageId';
+    public const string localeId = 'localeId';
 
     protected const array BASE_FIELD_TYPES = parent::BASE_FIELD_TYPES + self::SESSION_FIELD_TYPES;
     protected const array BASE_FIELD_DEFAULTS = parent::BASE_FIELD_DEFAULTS + self::SESSION_FIELD_DEFAULTS;
 
-    private const array SESSION_FIELD_TYPES = [self::sessionToken => '?text', self::sessionId => '?int'];
-    private const array SESSION_FIELD_DEFAULTS = [self::sessionToken => null, self::sessionId => null];
+    private const array SESSION_FIELD_TYPES = [
+        self::sessionToken => '?text',
+        self::sessionId => '?int',
+        self::languageId => '?int',
+        self::localeId => '?int',
+    ];
+    private const array SESSION_FIELD_DEFAULTS = [
+        self::sessionToken => null,
+        self::sessionId => null,
+        self::languageId => null,
+        self::localeId => null,
+    ];
 
     /** Session token, or null when this connection belongs to none. */
     private(set) ?string $sessionToken {
@@ -48,6 +65,22 @@ abstract class HilosSessionConnection extends HilosConnection
         get => $this->rowValues()[self::sessionId] ?? null;
         set {
             $this->setRowValue(self::sessionId, $value);
+        }
+    }
+
+    /** Primary id of the language the tab shows, or null without the I18N feature or before one is decided. */
+    private(set) ?int $languageId {
+        get => $this->rowValues()[self::languageId] ?? null;
+        set {
+            $this->setRowValue(self::languageId, $value);
+        }
+    }
+
+    /** Primary id of the locale the tab shows, or null when no stored locale fits or no language is decided. */
+    private(set) ?int $localeId {
+        get => $this->rowValues()[self::localeId] ?? null;
+        set {
+            $this->setRowValue(self::localeId, $value);
         }
     }
 

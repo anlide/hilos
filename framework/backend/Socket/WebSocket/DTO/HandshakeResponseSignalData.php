@@ -17,6 +17,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\I18n\DTO\TabLanguage;
 use Hilos\Theme\DTO\ThemeSettingsSignalData;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
@@ -137,6 +138,15 @@ use Hilos\Users\AccountStandingResolver;
  * {@see ThemeSettingsSignalData}). The framework stamps it on the anonymous and authenticated
  * response alike; later changes reach every connection on
  * {@see HilosSignalConstants::HILOS_THEME_SETTINGS}. Null means the stamp has not run.
+ *
+ * `tabLanguage` is the language and the region the receiving tab shows (HIL-109): the language's
+ * id, code and direction, the locale's id and code, and the seven display formats of that region,
+ * in the shape {@see TabLanguage::toArray()} writes. Like the ack it is per connection, and the key
+ * is written on every response, null included. Null means the project lacks the I18N feature, or
+ * its default language has no row yet - a tab that came before the library's start; the next frame
+ * brings the language. The framework decides it where it stamps the response
+ * ({@see AbstractAgent::sendHandshakeResponse()}), on every session-state frame, and the
+ * connection row remembers the same pair of ids.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -177,6 +187,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public const string adminViewMode = 'adminViewMode';
     public const string impersonationPolicy = 'impersonationPolicy';
     public const string themeSettings = 'themeSettings';
+    public const string tabLanguage = 'tabLanguage';
 
     /**
      * Creates handshake response signal data.
@@ -222,6 +233,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *     or null before the framework stamp
      * @param ?array{switchingEnabled: bool, defaultTheme: string} $themeSettings Theme settings of the installation,
      *     or null before the framework stamp
+     * @param ?array<string, mixed> $tabLanguage Language and region of the tab as {@see TabLanguage::toArray()} writes them,
+     *     or null without the I18N feature, before the default language has a row, or before the framework stamp
      * @param ?string $selfPhoto Variant URL of the person's published photo, or null for initials
      * @param ?string $selfThemePick Stored theme choice, or null when there is no personal position
      * @param bool $selfThemePickInitialized Whether an account choice was ever saved, including a reset
@@ -247,6 +260,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         public readonly ?bool $adminViewMode = null,
         public readonly ?array $impersonationPolicy = null,
         public readonly ?array $themeSettings = null,
+        public readonly ?array $tabLanguage = null,
         public readonly ?string $selfThemePick = null,
         public readonly bool $selfThemePickInitialized = false,
         public readonly ?string $selfTimeZone = null,
@@ -291,6 +305,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
             themeSettings: $this->themeSettings,
+            tabLanguage: $this->tabLanguage,
         );
     }
 
@@ -330,6 +345,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
             themeSettings: $this->themeSettings,
+            tabLanguage: $this->tabLanguage,
         );
     }
 
@@ -369,6 +385,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
             themeSettings: $this->themeSettings,
+            tabLanguage: $this->tabLanguage,
         );
     }
 
@@ -411,6 +428,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
             themeSettings: $this->themeSettings,
+            tabLanguage: $this->tabLanguage,
         );
     }
 
@@ -449,6 +467,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
             themeSettings: $this->themeSettings,
+            tabLanguage: $this->tabLanguage,
         );
     }
 
@@ -487,6 +506,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $impersonationPolicy,
             themeSettings: $this->themeSettings,
+            tabLanguage: $this->tabLanguage,
         );
     }
 
@@ -519,6 +539,46 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
             themeSettings: $themeSettings,
+            tabLanguage: $this->tabLanguage,
+        );
+    }
+
+    /**
+     * Returns the same response carrying the language and the region of the addressed tab (HIL-109).
+     *
+     * Per connection, like the ack: the framework decides it for each tab where it stamps the
+     * response, so one broadcast of an identity carries each socket its own. Null is written as
+     * it is - the project lacks the I18N feature, or its default language has no row yet.
+     *
+     * @param ?array<string, mixed> $tabLanguage Language and region as {@see TabLanguage::toArray()} writes them, or null
+     * @return self The same response carrying that language and region
+     * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
+     */
+    public function withTabLanguage(?array $tabLanguage): self
+    {
+        return new self(
+            accessLossReason: $this->accessLossReason,
+            selfThemePick: $this->selfThemePick,
+            selfThemePickInitialized: $this->selfThemePickInitialized,
+            selfTimeZone: $this->selfTimeZone,
+            selfId: $this->selfId,
+            selfName: $this->selfName,
+            selfAdmin: $this->selfAdmin,
+            selfPhoto: $this->selfPhoto,
+            impersonatorId: $this->impersonatorId,
+            impersonatorName: $this->impersonatorName,
+            pendingAck: $this->pendingAck,
+            serverTimeMs: $this->serverTimeMs,
+            pendingAuthStep: $this->pendingAuthStep,
+            codeDelivery: $this->codeDelivery,
+            authMethods: $this->authMethods,
+            passkeyAllowsUnproven: $this->passkeyAllowsUnproven,
+            accountBlocked: $this->accountBlocked,
+            accountStanding: $this->accountStanding,
+            adminViewMode: $this->adminViewMode,
+            impersonationPolicy: $this->impersonationPolicy,
+            themeSettings: $this->themeSettings,
+            tabLanguage: $tabLanguage,
         );
     }
 
@@ -572,6 +632,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $this->adminViewMode,
             impersonationPolicy: $this->impersonationPolicy,
             themeSettings: $this->themeSettings,
+            tabLanguage: $this->tabLanguage,
         );
     }
 
@@ -615,6 +676,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 self::adminViewMode => $this->adminViewMode,
                 self::impersonationPolicy => $this->impersonationPolicy,
                 self::themeSettings => $this->themeSettings,
+                self::tabLanguage => $this->tabLanguage,
             ],
         ];
     }
@@ -665,6 +727,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         if ($themeSettings !== null) {
             $themeSettings = ThemeSettingsSignalData::fromArray($themeSettings)->toArray();
         }
+        $tabLanguage = self::optionalArray($section, self::tabLanguage);
+        if ($tabLanguage !== null) {
+            $tabLanguage = TabLanguage::fromArray($tabLanguage)->toArray();
+        }
         $accessLossReason = self::requireNullableString($section, self::accessLossReason);
         if ($currentUser === null) {
             return new static(
@@ -680,6 +746,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 adminViewMode: $adminViewMode,
                 impersonationPolicy: $impersonationPolicy,
                 themeSettings: $themeSettings,
+                tabLanguage: $tabLanguage,
             );
         }
 
@@ -705,6 +772,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             adminViewMode: $adminViewMode,
             impersonationPolicy: $impersonationPolicy,
             themeSettings: $themeSettings,
+            tabLanguage: $tabLanguage,
         );
     }
 

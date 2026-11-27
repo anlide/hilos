@@ -8,6 +8,9 @@ use Hilos\Auth\Session\SessionAck;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\I18n\DTO\LocaleFormats;
+use Hilos\I18n\DTO\TabLanguage;
+use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -149,6 +152,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'blocked' => false, 'frozen' => false, 'equal' => false,
             ],
             themeSettings: ['switchingEnabled' => true, 'defaultTheme' => 'dark'],
+            tabLanguage: self::tabLanguage(),
             accessLossReason: $reason,
         );
         $copies = [
@@ -158,6 +162,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
             $frame->withAdminViewMode(true),
             $frame->withImpersonationPolicy($frame->impersonationPolicy),
             $frame->withThemeSettings($frame->themeSettings),
+            $frame->withTabLanguage($frame->tabLanguage),
             $frame->withSessionContext(self::SERVER_TIME_MS, self::PENDING_AUTH_STEP, self::CODE_DELIVERY, self::AUTH_METHODS, true),
             $frame->withAccessLossReason($reason),
         ];
@@ -338,6 +343,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
                     'themeSettings' => null,
+                    'tabLanguage' => null,
                 ],
             ],
             $data->toArray(),
@@ -475,6 +481,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
                     'themeSettings' => null,
+                    'tabLanguage' => null,
                 ],
             ],
             $data->toArray(),
@@ -530,6 +537,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                     'adminViewMode' => null,
                     'impersonationPolicy' => null,
                     'themeSettings' => null,
+                    'tabLanguage' => null,
                 ],
             ],
             $data->toArray(),
@@ -573,6 +581,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'adminViewMode' => null,
                 'impersonationPolicy' => null,
                 'themeSettings' => null,
+                'tabLanguage' => null,
             ],
             $data->toArray()['data'],
         );
@@ -647,6 +656,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
                 'adminViewMode' => null,
                 'impersonationPolicy' => null,
                 'themeSettings' => null,
+                'tabLanguage' => null,
             ],
             $data->toArray()['data'],
         );
@@ -990,6 +1000,82 @@ final class HandshakeResponseSignalDataTest extends TestCase
         HandshakeResponseSignalData::fromArray($payload);
     }
 
+    /**
+     * The key is written on every response, an unstamped one and a null stamp included: the
+     * browser reads null as "no language to apply", where a missing key would read as unchanged.
+     */
+    public function testTabLanguageKeyIsWrittenOnEveryResponseNullIncluded(): void
+    {
+        $responses = [
+            new HandshakeResponseSignalData(),
+            new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria'),
+            new HandshakeResponseSignalData()->withTabLanguage(null),
+            new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria')->withTabLanguage(null),
+        ];
+
+        foreach ($responses as $response) {
+            $this->assertArrayHasKey('tabLanguage', $response->toArray()['data']);
+            $this->assertNull($response->toArray()['data']['tabLanguage']);
+            $this->assertNull(HandshakeResponseSignalData::fromArray($response->toArray())->tabLanguage);
+        }
+    }
+
+    public function testTabLanguageTravelsInGuestAndSignedInHandshakesAndReadsBack(): void
+    {
+        $guest = new HandshakeResponseSignalData()->withTabLanguage(self::tabLanguage());
+        $signedIn = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria')->withTabLanguage(self::tabLanguage(null));
+
+        $this->assertSame(self::tabLanguage(), $guest->toArray()['data']['tabLanguage']);
+        $this->assertSame(self::tabLanguage(), HandshakeResponseSignalData::fromArray($guest->toArray())->tabLanguage);
+        $this->assertSame(self::tabLanguage(null), $signedIn->toArray()['data']['tabLanguage']);
+        $this->assertSame(self::tabLanguage(null), HandshakeResponseSignalData::fromArray($signedIn->toArray())->tabLanguage);
+        $this->assertNull($signedIn->withTabLanguage(null)->tabLanguage);
+    }
+
+    public function testTabLanguageSurvivesEveryOtherStamp(): void
+    {
+        $data = new HandshakeResponseSignalData(selfId: 41, selfName: 'Maria')
+            ->withTabLanguage(self::tabLanguage())
+            ->withSessionContext(self::SERVER_TIME_MS, null, self::CODE_DELIVERY, self::AUTH_METHODS, self::PASSKEY_ALLOWS_UNPROVEN)
+            ->withPendingAck(null)
+            ->withAccountBlocked(null)
+            ->withAccountStanding(self::STANDING)
+            ->withAdminViewMode(true)
+            ->withImpersonationPolicy([
+                'viewOnly' => false,
+                'carryAdmin' => true,
+                'allowed' => true,
+                'accountAccess' => false,
+                'blocked' => true,
+                'frozen' => true,
+                'equal' => true,
+            ])
+            ->withThemeSettings(['switchingEnabled' => false, 'defaultTheme' => 'light']);
+
+        $this->assertSame(self::tabLanguage(), $data->tabLanguage);
+        $this->assertSame(self::tabLanguage(), HandshakeResponseSignalData::fromArray($data->toArray())->tabLanguage);
+    }
+
+    /** @return iterable<string, array{string}> Members a tab language node cannot travel without */
+    public static function requiredTabLanguageMembers(): iterable
+    {
+        foreach ([TabLanguage::languageId, TabLanguage::languageCode, TabLanguage::rtl, TabLanguage::formats] as $member) {
+            yield $member => [$member];
+        }
+    }
+
+    /** @param string $member Member the node arrives without */
+    #[DataProvider('requiredTabLanguageMembers')]
+    public function testRoundtripRejectsATabLanguageNodeWithoutARequiredMember(string $member): void
+    {
+        $payload = new HandshakeResponseSignalData()->withTabLanguage(self::tabLanguage())->toArray();
+        unset($payload['data']['tabLanguage'][$member]);
+
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
+
     /** @return iterable<string, array{?string}> Stored time zones and an explicit reset */
     public static function personalTimeZones(): iterable
     {
@@ -1192,5 +1278,21 @@ final class HandshakeResponseSignalDataTest extends TestCase
         $this->expectException(InvalidFormatException::class);
 
         HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    /**
+     * @param ?int $localeId Stored locale of the node, or null for the formats of the catalog
+     * @return array<string, mixed> Tab language node as the framework writes it
+     */
+    private static function tabLanguage(?int $localeId = 11): array
+    {
+        return new TabLanguage(
+            3,
+            'es',
+            false,
+            $localeId,
+            $localeId === null ? null : 'es-ES',
+            new LocaleFormats('DD/MM/YYYY', 'HH:mm', '1.234,56', '+XX XXX XXX XXX', 'Street House, City', MeasurementSystem::METRIC, 'es'),
+        )->toArray();
     }
 }

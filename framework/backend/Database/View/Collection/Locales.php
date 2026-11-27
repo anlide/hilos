@@ -13,6 +13,7 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Collection\Locales as ObjectLocales;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Item\Locale;
+use Hilos\HilosException;
 
 /**
  * Locales support code strings and primary-id integers as offsets.
@@ -62,6 +63,22 @@ class Locales extends DbCollection
     public function countrylessEnabled(int $languageId): ?bool
     {
         return $this->objectCollection->countrylessEnabled($languageId);
+    }
+
+    /**
+     * Whether the locale is offered to people: it is switched on, so is its language, and so is
+     * its country when it has one. A switched-off country counts as an unknown one, so none of
+     * its variants is offered.
+     *
+     * @param Locale $locale Stored locale
+     * @return bool Whether the locale, its language and its country, if any, are all switched on
+     * @throws HilosException When the locale's language or country cannot be read
+     */
+    public function isAvailable(Locale $locale): bool
+    {
+        return $locale->enabled
+            && $locale->language->enabled
+            && ($locale->countryId === null || $locale->country?->enabled === true);
     }
 
     /**

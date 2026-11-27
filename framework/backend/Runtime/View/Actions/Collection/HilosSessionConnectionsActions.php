@@ -23,15 +23,16 @@ use Hilos\Runtime\Exception\RtWriteBackpressureException;
 /**
  * Write API for the connections runtime collection — the session stage (HIL-509).
  *
- * Two writes differ from {@see HilosConnectionsActions}: the row a socket opens with also
- * names the session it belongs to by token and row id, and a row can be moved onto a renamed
- * session (HIL-582).
- * A third used to mark the row with the ack its surface owed the person (HIL-422). That mark
+ * Three writes differ from {@see HilosConnectionsActions}: the row a socket opens with also
+ * names the session it belongs to by token and row id, a row can be moved onto a renamed
+ * session (HIL-582), and a row remembers the language and the region its tab was last told
+ * (HIL-109).
+ * Another used to mark the row with the ack its surface owed the person (HIL-422). That mark
  * moved to the session row in HIL-875, because what it announces is about the account and a
  * socket is the wrong lifetime for it: the socket dies under a person who has not read it,
  * and it survives a person who has stopped being one. There is still no session-stage item
- * actions class beside this one, because both writes are addressed by accept key rather than
- * held per row.
+ * actions class beside this one, because every one of these writes is addressed by accept key
+ * rather than held per row.
  *
  * @template TItem of HilosSessionConnection
  * @template TCollection of HilosSessionConnections
@@ -113,6 +114,46 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
         $this->applyDiffToState($state, [
             StateHilosSessionConnection::sessionToken => $newToken,
             StateHilosSessionConnection::sessionId => $sessionId,
+        ]);
+    }
+
+    /**
+     * Writes the language and the region one tab was told on its handshake response (HIL-109).
+     *
+     * Called where the framework stamps that response, for every tab on every session-state
+     * frame. Only a change is written: a frame that restates the language the row already
+     * holds - a re-sent state, a sign-in that leaves the language where it was - leaves the row
+     * alone, because a row written is a row synced to every reader of it.
+     *
+     * A connection this collection does not hold is a silent no-op, as for
+     * {@see repointSessionToken()}: the socket died before its response was stamped.
+     *
+     * @param string $acceptKey Accept key of the tab's connection
+     * @param ?int $languageId Primary id of the language the tab shows, or null when none is decided
+     * @param ?int $localeId Primary id of the locale the tab shows, or null when no stored locale fits
+     *
+     * @throws RtActionsCollectionNameNullException When the collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever the project's read of its own connection fields raises
+     */
+    public function setTabLanguage(string $acceptKey, ?int $languageId, ?int $localeId): void
+    {
+        $this->ensureCanWrite();
+
+        $state = $this->getStateCollection()->get($acceptKey);
+        if ($state === null) {
+            return;
+        }
+        if ($state->languageId === $languageId && $state->localeId === $localeId) {
+            return;
+        }
+
+        $this->applyDiffToState($state, [
+            StateHilosSessionConnection::languageId => $languageId,
+            StateHilosSessionConnection::localeId => $localeId,
         ]);
     }
 }

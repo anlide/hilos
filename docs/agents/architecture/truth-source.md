@@ -733,7 +733,9 @@ most of them. The process-wide list is where a layer says so:
 `DbContext::declareProcessWideReads()` registers an interest for each under a
 feature consumer. The framework's own entries are in `HilosDbContext` —
 settings, identities, sessions, notifications, OAuth providers, the verifier
-circle and the people with their merges — and a project adds to the list by
+circle, the people with their merges, and languages, locales and countries,
+which the agent holding a tab's socket reads to decide its language — and a
+project adds to the list by
 overriding the method and calling the parent. The people are here because the
 `ADMIN` gate, the block guards and the handshake's identity ask who a person is
 wherever they stand, a worker serving a page with no subscription of its own
