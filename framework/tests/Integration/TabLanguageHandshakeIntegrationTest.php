@@ -41,8 +41,11 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\View\Item\Language;
 use Hilos\Database\View\Item\Locale;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\Country\IpCountryFile;
 use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\DTO\TabLanguage;
 use Hilos\I18n\MeasurementSystem;
@@ -76,6 +79,10 @@ use ReflectionProperty;
  * through the framework's stamped handshake, as every demo does. The reference is seeded through its
  * own actions; the choice of a person is not read yet, so the ladder takes what the tab's browser
  * asks for (HIL-2309), and the default language when it asks for nothing available.
+ *
+ * The country of a connection (HIL-2311) is looked up by the library in MaxMind's
+ * GeoIP2-Country-Test.mmdb from framework/tests/Fixtures/Mmdb, copied into a temporary ip_country
+ * directory before the library's first handshake; its source data place 2001:218:: in Japan.
  */
 final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -87,6 +94,8 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
     private const string TAB_GUEST = 'tab-language-guest';
     private const string TAB_PERSON = 'tab-language-person';
     private const string TAB_PERSON_SECOND = 'tab-language-person-second';
+    private const string ADDRESS_JP = '2001:218::1';
+    private const string ADDRESS_GB = '81.2.69.160';
     private const string LOG_LINE = 'The tab language could not be decided';
     private const string WRITE_LOG_LINE = 'The tab language could not be written on its connection row';
 
@@ -96,6 +105,10 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
     private ?RtContext $previousRuntime = null;
     private string $previousAppClass;
     private string|false $previousDefaultLanguage;
+    private ?FsContext $previousFs = null;
+
+    /** Temporary ip_country directory of the case. */
+    private string $ipCountryDirectory;
 
     /** @return iterable<string, array{string, string, bool}> Default languages written either way */
     public static function defaultLanguages(): iterable
@@ -169,14 +182,15 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         $this->seedLanguage('es', 'Español', false);
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, TabLanguageHandshakeWithoutI18nTestHilos::class);
 
-        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, 'es');
-        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'es-MX,es;q=0.9');
+        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, 'es', self::ADDRESS_JP);
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'es-MX,es;q=0.9', self::ADDRESS_GB);
         $frames = $this->carryFrames();
 
         $this->assertToldNull($frames, [self::TAB_GUEST, self::TAB_PERSON]);
         self::assertSame([], $this->languageWrites($frames));
         foreach ([self::TAB_GUEST, self::TAB_PERSON] as $acceptKey) {
             self::assertNull(Hilos::$rt->tabLanguageConnections[$acceptKey]->browserLanguages);
+            self::assertNull(Hilos::$rt->tabLanguageConnections[$acceptKey]->connectionCountry);
         }
     }
 
@@ -238,6 +252,126 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         $restated = $this->restate(self::TOKEN_PERSON, [self::TAB_PERSON, self::TAB_PERSON_SECOND]);
 
         $this->assertTabsKeepTheirBrowserLanguage($restated, $expected);
+        self::assertSame([], $this->languageWrites($restated));
+    }
+
+    /**
+     * The tab that connected from an address the file places in Japan, whose browser asks for nothing
+     * available, is told the language and the region of Japan's default locale, and its row keeps the
+     * country beside them, in the one write that settles all of them.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testATabIsToldTheLanguageOfItsCountryAndTheRowKeepsTheCountry(): void
+    {
+        $this->seedLanguage('es', 'Español', false);
+        [$japanese] = $this->seedLanguage('ja', '日本語', false);
+        $japan = $this->seedCountry('jp', $japanese);
+
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'fr-FR,fr;q=0.9', self::ADDRESS_JP);
+        $frames = $this->carryFrames();
+
+        $handshakes = $this->handshakeFrames($frames);
+        self::assertCount(1, $handshakes);
+        $tabLanguage = self::tabLanguageOf($handshakes[0]);
+        self::assertSame($japanese->id, $tabLanguage[TabLanguage::languageId]);
+        self::assertSame($japan->id, $tabLanguage[TabLanguage::localeId]);
+        self::assertSame('ja-JP', $tabLanguage[TabLanguage::localeCode]);
+        $row = Hilos::$rt->tabLanguageConnections[self::TAB_PERSON];
+        self::assertSame('JP', $row->connectionCountry);
+        self::assertSame($japanese->id, $row->languageId);
+        self::assertSame($japan->id, $row->localeId);
+        $writes = $this->languageWrites($frames);
+        self::assertCount(1, $writes);
+        self::assertSame('JP', $writes[0]->row[StateSessionConnection::connectionCountry]);
+        self::assertSame('fr-FR,fr', $writes[0]->row[StateSessionConnection::browserLanguages]);
+    }
+
+    /**
+     * The row keeps the code the file answered even when the reference has no such country: the
+     * ladders skip both of its rungs and the tab is told the default language.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testACountryOutsideTheReferenceIsKeptAndTheTabIsToldTheDefaultLanguage(): void
+    {
+        [$spanish, $spanishLocale] = $this->seedLanguage('es', 'Español', false);
+
+        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, null, self::ADDRESS_GB);
+        $handshakes = $this->handshakeFrames($this->carryFrames());
+
+        self::assertCount(1, $handshakes);
+        self::assertSame($spanish->id, self::tabLanguageOf($handshakes[0])[TabLanguage::languageId]);
+        $row = Hilos::$rt->tabLanguageConnections[self::TAB_GUEST];
+        self::assertSame('GB', $row->connectionCountry);
+        self::assertSame($spanishLocale->id, $row->localeId);
+    }
+
+    /**
+     * The handshake of a second tab, which connected without an address, reaches every tab of the
+     * session, and a restatement names them all without a country: each tab keeps the country of its
+     * own connection and the language decided from it, and only the tab that connected is written.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testEachTabOfASessionKeepsItsOwnCountryOnFramesThatReachThemAll(): void
+    {
+        [$spanish] = $this->seedLanguage('es', 'Español', false);
+        [$japanese] = $this->seedLanguage('ja', '日本語', false);
+        $this->seedCountry('jp', $japanese);
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, null, self::ADDRESS_JP);
+        $this->carryFrames();
+        $expected = [
+            self::TAB_PERSON => [$japanese->id, 'JP'],
+            self::TAB_PERSON_SECOND => [$spanish->id, null],
+        ];
+
+        $this->handshake(self::TAB_PERSON_SECOND, self::TOKEN_PERSON);
+        $second = $this->carryFrames();
+
+        $this->assertTabsKeepTheirCountry($second, $expected);
+        $writes = $this->languageWrites($second);
+        self::assertCount(1, $writes, 'Only the tab that connected is written');
+        self::assertSame(self::TAB_PERSON_SECOND, $writes[0]->stateId);
+        self::assertArrayNotHasKey(StateSessionConnection::connectionCountry, $writes[0]->row, 'A new row starts without a country');
+
+        $restated = $this->restate(self::TOKEN_PERSON, [self::TAB_PERSON, self::TAB_PERSON_SECOND]);
+
+        $this->assertTabsKeepTheirCountry($restated, $expected);
+        self::assertSame([], $this->languageWrites($restated));
+    }
+
+    /**
+     * The handshake of a second tab, which connected from another country, reaches every tab of the
+     * session carrying that country: the first tab keeps the country of its own connection and the
+     * language decided from it, and only the tab that connected is written.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testATabConnectingFromAnotherCountryLeavesTheFirstTabItsOwn(): void
+    {
+        [$spanish] = $this->seedLanguage('es', 'Español', false);
+        [$japanese] = $this->seedLanguage('ja', '日本語', false);
+        $this->seedCountry('jp', $japanese);
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, null, self::ADDRESS_JP);
+        $this->carryFrames();
+        $expected = [
+            self::TAB_PERSON => [$japanese->id, 'JP'],
+            self::TAB_PERSON_SECOND => [$spanish->id, 'GB'],
+        ];
+
+        $this->handshake(self::TAB_PERSON_SECOND, self::TOKEN_PERSON, null, self::ADDRESS_GB);
+        $second = $this->carryFrames();
+
+        $this->assertTabsKeepTheirCountry($second, $expected);
+        $writes = $this->languageWrites($second);
+        self::assertCount(1, $writes, 'Only the tab that connected is written');
+        self::assertSame(self::TAB_PERSON_SECOND, $writes[0]->stateId);
+        self::assertSame('GB', $writes[0]->row[StateSessionConnection::connectionCountry]);
+
+        $restated = $this->restate(self::TOKEN_PERSON, [self::TAB_PERSON, self::TAB_PERSON_SECOND]);
+
+        $this->assertTabsKeepTheirCountry($restated, $expected);
         self::assertSame([], $this->languageWrites($restated));
     }
 
@@ -316,6 +450,15 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=es');
         $this->previousAppClass = Hilos::appClass();
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, TabLanguageHandshakeTestHilos::class);
+        $this->previousFs = Hilos::$fs;
+        $this->ipCountryDirectory = sys_get_temp_dir() . '/hilos-tab-language-ip-country-' . bin2hex(random_bytes(8));
+        mkdir($this->ipCountryDirectory);
+        copy(
+            dirname(__DIR__) . '/Fixtures/Mmdb/GeoIP2-Country-Test.mmdb',
+            $this->ipCountryDirectory . '/' . IpCountryFile::FILE_NAME,
+        );
+        Hilos::$fs = new TabLanguageHandshakeTestFsContext($this->ipCountryDirectory);
+        Hilos::$fs->configure();
 
         Database::sqlRun('INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, ?)', [self::PERSON, 'Tab language person']);
         Hilos::$db->sessions->actions->createAnonymous(self::TOKEN_GUEST);
@@ -353,6 +496,11 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         Hilos::$sr = $this->previousRouter;
         Hilos::$rt = $this->previousRuntime;
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $this->previousAppClass);
+        Hilos::$fs = $this->previousFs;
+        foreach ((array)glob($this->ipCountryDirectory . '/*') as $file) {
+            unlink((string)$file);
+        }
+        rmdir($this->ipCountryDirectory);
         if ($this->previousDefaultLanguage === false) {
             putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
         } else {
@@ -415,6 +563,26 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         foreach ($tabs as $acceptKey => [$languageId, $browserLanguages]) {
             self::assertSame($languageId, Hilos::$rt->tabLanguageConnections[$acceptKey]->languageId);
             self::assertSame($browserLanguages, Hilos::$rt->tabLanguageConnections[$acceptKey]->browserLanguages);
+        }
+    }
+
+    /**
+     * @param list<SignalDTO> $frames Observed queue
+     * @param array<string, array{int, ?string}> $tabs Language id each tab is told and the country its row keeps
+     */
+    private function assertTabsKeepTheirCountry(array $frames, array $tabs): void
+    {
+        $told = [];
+        foreach ($this->handshakeFrames($frames) as $frame) {
+            $told[(string)$frame->targetAcceptKey] = self::tabLanguageOf($frame)[TabLanguage::languageId];
+        }
+        ksort($told);
+        $expected = array_map(static fn (array $tab): int => $tab[0], $tabs);
+        ksort($expected);
+        self::assertSame($expected, $told);
+        foreach ($tabs as $acceptKey => [$languageId, $country]) {
+            self::assertSame($languageId, Hilos::$rt->tabLanguageConnections[$acceptKey]->languageId);
+            self::assertSame($country, Hilos::$rt->tabLanguageConnections[$acceptKey]->connectionCountry);
         }
     }
 
@@ -494,18 +662,41 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
     }
 
     /**
+     * @param string $code Country code
+     * @param Language $language Language of the country's default locale
+     * @return Locale The switched-on default locale of the switched-on country
+     * @throws HilosException When an action refuses
+     */
+    private function seedCountry(string $code, Language $language): Locale
+    {
+        return ExecutionContext::run(new ExecutionFrame(agentId: self::REFERENCE_OWNER), static function () use ($code, $language): Locale {
+            $country = Hilos::$db->countries->actions->create($code, '¥', 'JPY');
+            $locale = Hilos::$db->locales->actions->create(
+                $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            );
+            $locale->actions->switchOn();
+            $country->actions->update('¥', 'JPY', $locale->id);
+            $country->actions->switchOn();
+
+            return $locale;
+        });
+    }
+
+    /**
      * @param string $acceptKey Tab arriving or reconnecting
      * @param string $token Browser cookie token
      * @param ?string $acceptLanguage What the browser sent in Accept-Language, or null when it sent no header
+     * @param ?string $clientIp Address the transport saw the connection come from, or null when it saw none
      */
-    private function handshake(string $acceptKey, string $token, ?string $acceptLanguage = null): void
+    private function handshake(string $acceptKey, string $token, ?string $acceptLanguage = null, ?string $clientIp = null): void
     {
         $headers = $acceptLanguage === null ? [] : [strtolower(HttpConstants::HEADER_ACCEPT_LANGUAGE) => $acceptLanguage];
         $handshake = WebSocketHandshakeSignalDTO::fromArray(new WebSocketHandshakeSignalDTO(
             headers: $headers,
             acceptKey: $acceptKey,
             cookies: [],
-            clientIp: null,
+            clientIp: $clientIp,
             sessionToken: $token,
         )->toArray());
         ExecutionContext::run(
@@ -563,7 +754,7 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
 
     /**
      * @param list<SignalDTO> $frames Observed queue
-     * @return list<RtSyncUpdatedSignalData> Updates of a connection row that carry its language, region or browser request
+     * @return list<RtSyncUpdatedSignalData> Updates of a connection row that carry its language, region, browser request or country
      */
     private function languageWrites(array $frames): array
     {
@@ -579,6 +770,7 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
             if (array_key_exists(StateSessionConnection::languageId, $signal->data->row)
                 || array_key_exists(StateSessionConnection::localeId, $signal->data->row)
                 || array_key_exists(StateSessionConnection::browserLanguages, $signal->data->row)
+                || array_key_exists(StateSessionConnection::connectionCountry, $signal->data->row)
             ) {
                 $writes[] = $signal->data;
             }
@@ -766,4 +958,21 @@ final class TabLanguageHandshakeTestConnectionsActions extends HilosSessionConne
 /** Connection changes and removal use the inherited guarded item actions. */
 final class TabLanguageHandshakeTestConnectionActions extends HilosConnectionActions
 {
+}
+
+/** A context registering the case's temporary ip_country directory as the cluster's. */
+final class TabLanguageHandshakeTestFsContext extends FsContext
+{
+    /**
+     * @param string $directory The ip_country directory of the case
+     */
+    public function __construct(private readonly string $directory)
+    {
+    }
+
+    /** Registers the ip_country directory of the case. */
+    public function configure(): void
+    {
+        $this->registerDirectory(FsContext::IP_COUNTRY, $this->directory, DirectoryScope::CLUSTER);
+    }
 }

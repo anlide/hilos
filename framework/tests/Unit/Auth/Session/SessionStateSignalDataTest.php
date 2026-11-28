@@ -385,6 +385,91 @@ final class SessionStateSignalDataTest extends TestCase
         );
     }
 
+    /** @return array<string, array{?string}> A country the lookup names and an unknown one */
+    public static function connectionCountries(): array
+    {
+        return [
+            'known' => ['UA'],
+            'unknown' => [null],
+        ];
+    }
+
+    /**
+     * The handshake frame passes the library's stamping door, so the country of the connection must
+     * survive each copy made there and the trip to the project agent; a frame that leaves it out reads null.
+     *
+     * @param ?string $country Country of the socket that connected
+     */
+    #[DataProvider('connectionCountries')]
+    public function testConnectionCountrySurvivesEveryCopyAndRoundtrip(?string $country): void
+    {
+        foreach ([[], ['socket-a']] as $keys) {
+            $frame = new SessionStateSignalData(
+                sessionToken: 'token',
+                sessionId: 17,
+                userId: null,
+                acceptKeys: $keys,
+                pendingAck: 'auth_registered',
+                rotationTicket: 'ticket',
+                accountBlocked: ['identifier' => 'ada@example.test', 'dataExport' => null],
+                acceptLanguage: 'ru-UA,ru;q=0.9',
+                connectionCountry: $country,
+            );
+            $copies = [
+                $frame->withAccountBlocked(null),
+                $frame->withAccountStanding(null),
+                $frame->withAccessLossReason(null),
+            ];
+            foreach ($copies as $copy) {
+                self::assertSame($country, $copy->connectionCountry);
+                self::assertSame($country, $copy->toArray()[SessionStateSignalData::connectionCountry]);
+                self::assertEquals($copy, SessionStateSignalData::fromArray($copy->toArray()));
+            }
+            $payload = $frame->toArray();
+            unset($payload[SessionStateSignalData::connectionCountry]);
+            self::assertNull(SessionStateSignalData::fromArray($payload)->connectionCountry);
+        }
+    }
+
+    public function testFrameWithAConnectionCountryAndMultipleSocketsIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: null,
+            acceptKeys: ['socket-a', 'socket-b'],
+            connectionCountry: 'UA',
+        );
+    }
+
+    /** @return array<string, array{string}> Values that are not an upper-case two-letter code */
+    public static function malformedConnectionCountries(): array
+    {
+        return [
+            'lower case' => ['ua'],
+            'three letters' => ['UKR'],
+            'empty' => [''],
+            'trailing newline' => ["UA\n"],
+        ];
+    }
+
+    /** @param string $country Value the lookup never answers */
+    #[DataProvider('malformedConnectionCountries')]
+    public function testAConnectionCountryThatIsNotTwoUppercaseLettersIsRefused(string $country): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: null,
+            acceptKeys: ['socket-a'],
+            connectionCountry: $country,
+        );
+    }
+
     public function testFrameWithAnAnswerAndOneSocketRoundtrips(): void
     {
         $frame = new SessionStateSignalData(

@@ -119,19 +119,21 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
 
     /**
      * Writes the language and the region one tab was told on its handshake response (HIL-109),
-     * together with what its browser asked for (HIL-2309).
+     * together with what its ladders were decided from: what its browser asked for (HIL-2309) and
+     * the country of its connection (HIL-2311), remembered beside the result.
      *
      * Called where the framework stamps that response, for every tab on every session-state
      * frame. Only a change is written, and only the fields that changed, in one write: a frame
-     * that restates the request and the language the row already holds - a re-sent state, a
-     * sign-in that leaves the language where it was - leaves the row alone, because a row
-     * written is a row synced to every reader of it.
+     * that restates the request, the country and the language the row already holds - a re-sent
+     * state, a sign-in that leaves the language where it was - leaves the row alone, because a
+     * row written is a row synced to every reader of it.
      *
      * A connection this collection does not hold is a silent no-op, as for
      * {@see repointSessionToken()}: the socket died before its response was stamped.
      *
      * @param string $acceptKey Accept key of the tab's connection
      * @param ?string $browserLanguages Stored tags the tab's browser asked for, by weight, or null when it named nothing usable
+     * @param ?string $connectionCountry Country of the tab's connection, ISO 3166-1 alpha-2, or null when it is unknown
      * @param ?int $languageId Primary id of the language the tab shows, or null when none is decided
      * @param ?int $localeId Primary id of the locale the tab shows, or null when no stored locale fits
      *
@@ -142,8 +144,13 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      * @throws HilosException Whatever the project's read of its own connection fields raises
      */
-    public function setTabLanguage(string $acceptKey, ?string $browserLanguages, ?int $languageId, ?int $localeId): void
-    {
+    public function setTabLanguage(
+        string $acceptKey,
+        ?string $browserLanguages,
+        ?string $connectionCountry,
+        ?int $languageId,
+        ?int $localeId,
+    ): void {
         $this->ensureCanWrite();
 
         $state = $this->getStateCollection()->get($acceptKey);
@@ -154,6 +161,9 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
         $diff = [];
         if ($state->browserLanguages !== $browserLanguages) {
             $diff[StateHilosSessionConnection::browserLanguages] = $browserLanguages;
+        }
+        if ($state->connectionCountry !== $connectionCountry) {
+            $diff[StateHilosSessionConnection::connectionCountry] = $connectionCountry;
         }
         if ($state->languageId !== $languageId) {
             $diff[StateHilosSessionConnection::languageId] = $languageId;

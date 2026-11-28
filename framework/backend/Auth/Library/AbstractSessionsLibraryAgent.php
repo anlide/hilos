@@ -229,6 +229,7 @@ use Hilos\Database\View\Item\Session;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\Country\IpCountryFile;
 use Hilos\Legal\Exception\LegalException;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Pages\Users\AbstractHilosUserPage;
@@ -803,6 +804,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /** The trust restriction sweep, built on first use; its passes live as long as this holder (HIL-1901). */
     private ?SecondFactorTrustRestrictionSweep $trustRestrictionSweep = null;
+
+    /**
+     * The IP-to-country lookup, built on the first handshake; its file lives as long as this holder (HIL-2311).
+     * Not in Hilos::$rt: the bytes are an unchanging file's, a resource of this process, not shared data.
+     */
+    private ?IpCountryFile $ipCountryFile = null;
 
     /** Whether a full sweep batch with removals asks the next tick to continue immediately */
     private bool $sessionSweepBacklog = false;
@@ -1562,6 +1569,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * project decides the tab's language and region from it, and a missing or malformed header is
      * never a reason to refuse the handshake.
      *
+     * The country of the connection is looked up here (HIL-2311), by the address the transport handed
+     * the handshake, and leaves as a code on the frame, for the connected socket alone
+     * ({@see SessionStateSignalData::$connectionCountry}): the address stays with the library. The
+     * lookup's file is read once in this process, and a new one after a restart
+     * ({@see IpCountryFile::countryOf()}); an unknown country is null and never refuses the handshake.
+     *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
@@ -1613,6 +1626,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             pendingAuthStep: $pendingAuthStep,
             rotationTicket: $resolved->rotationTicket,
             acceptLanguage: HttpHeaderHelper::get($data->headers, HttpConstants::HEADER_ACCEPT_LANGUAGE),
+            connectionCountry: ($this->ipCountryFile ??= new IpCountryFile())->countryOf($data->clientIp),
         ));
         $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($session->token);
         $this->publishSessionToasts($sessionTokenHash);

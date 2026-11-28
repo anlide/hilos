@@ -84,7 +84,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $es = self::switchedOnLanguage('es', 'Español', false);
         $esLocale = self::switchedOnLocale($es, null);
 
-        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null));
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), null);
 
         self::assertTab($tab, $es, $esLocale);
     }
@@ -97,7 +97,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $ar = self::switchedOnLanguage('ar', 'العربية', true);
         $arLocale = self::switchedOnLocale($ar, null);
 
-        $tab = TabLanguageLadder::resolve($ar->id, null, BrowserLanguages::fromAcceptLanguage(null));
+        $tab = TabLanguageLadder::resolve($ar->id, null, BrowserLanguages::fromAcceptLanguage(null), null);
 
         self::assertTab($tab, $ar, $arLocale);
         self::assertTrue($tab?->rtl);
@@ -111,8 +111,8 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $fr = Hilos::$db->languages->actions->create('fr', 'Français', false);
         self::switchedOnLocale($fr, null);
 
-        self::assertTab(TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage(null)), $es, $esLocale);
-        self::assertTab(TabLanguageLadder::resolve($fr->id + 1000, null, BrowserLanguages::fromAcceptLanguage(null)), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage(null), null), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id + 1000, null, BrowserLanguages::fromAcceptLanguage(null), null), $es, $esLocale);
         self::assertFalse(Hilos::$db->languages[$fr->id]->enabled, 'The choice is passed over, not touched');
     }
 
@@ -125,7 +125,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         self::switchedOnLocale($fr, null);
         $variant = self::switchedOnLocale($fr, self::switchedOnCountry('fr'));
 
-        $tab = TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null));
+        $tab = TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null), null);
 
         self::assertTab($tab, $fr, $variant);
         self::assertSame('fr-FR', $tab?->localeCode);
@@ -140,7 +140,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $frLocale = self::switchedOnLocale($fr, null);
         $variant = self::createLocale($fr, self::switchedOnCountry('fr'));
 
-        self::assertTab(TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null)), $fr, $frLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null), null), $fr, $frLocale);
         self::assertFalse(Hilos::$db->locales[$variant->id]->enabled, 'The choice is passed over, not touched');
     }
 
@@ -155,7 +155,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $variant = self::switchedOnLocale($fr, $country);
 
         self::assertFalse(Hilos::$db->locales->isAvailable($variant));
-        self::assertTab(TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null)), $fr, $frLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null), null), $fr, $frLocale);
     }
 
     /**
@@ -172,7 +172,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
 
         self::assertFalse(Hilos::$db->locales->isAvailable($variant));
         self::assertFalse(Hilos::$db->locales->isAvailable($esLocale));
-        self::assertTab(TabLanguageLadder::resolve(null, $variant->id, BrowserLanguages::fromAcceptLanguage(null)), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve(null, $variant->id, BrowserLanguages::fromAcceptLanguage(null), null), $es, $esLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -183,7 +183,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $fr = Hilos::$db->languages->actions->create('fr', 'Français', false);
         $variant = self::switchedOnLocale($fr, self::switchedOnCountry('fr'));
 
-        self::assertTab(TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null)), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null), null), $es, $esLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -195,7 +195,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $variant = self::switchedOnLocale($fr, self::switchedOnCountry('fr'));
 
         self::assertTrue(Hilos::$db->locales->isAvailable($variant));
-        self::assertTab(TabLanguageLadder::resolve($es->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null)), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve($es->id, $variant->id, BrowserLanguages::fromAcceptLanguage(null), null), $es, $esLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -206,7 +206,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $fr = self::switchedOnLanguage('fr', 'Français', false);
         self::createLocale($fr, null);
 
-        self::assertTab(TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage(null)), $fr, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage(null), null), $fr, $esLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -216,14 +216,14 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $de = self::switchedOnLanguage('de', 'Deutsch', false);
         $fr = self::switchedOnLanguage('fr', 'Français', false);
 
-        $tab = TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage(null));
+        $tab = TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage(null), null);
 
         self::assertNotNull($tab);
         self::assertSame($fr->id, $tab->languageId);
         self::assertNull($tab->localeId);
         self::assertNull($tab->localeCode);
         self::assertSame(LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('de-DE'))->toArray(), $tab->formats->toArray());
-        self::assertSame($de->id, TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null))?->languageId);
+        self::assertSame($de->id, TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), null)?->languageId);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -232,7 +232,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $es = self::switchedOnLanguage('es', 'Español', false);
         self::createLocale($es, null);
 
-        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null));
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), null);
 
         self::assertNotNull($tab);
         self::assertSame($es->id, $tab->languageId);
@@ -244,12 +244,12 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
     /** @throws HilosException When a database or action fails unexpectedly */
     public function testMissingDefaultLanguageRowGivesNoLanguage(): void
     {
-        self::assertNull(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null)));
+        self::assertNull(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), null));
 
         $fr = self::switchedOnLanguage('fr', 'Français', false);
         $frLocale = self::switchedOnLocale($fr, null);
 
-        self::assertNull(TabLanguageLadder::resolve($fr->id, $frLocale->id, BrowserLanguages::fromAcceptLanguage(null)));
+        self::assertNull(TabLanguageLadder::resolve($fr->id, $frLocale->id, BrowserLanguages::fromAcceptLanguage(null), null));
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -262,7 +262,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $fr = self::switchedOnLanguage('fr', 'Français', false);
         $frLocale = self::switchedOnLocale($fr, null);
 
-        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('de;q=0.5, fr;q=0.9'));
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('de;q=0.5, fr;q=0.9'), null);
 
         self::assertTab($tab, $fr, $frLocale);
     }
@@ -276,7 +276,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $en = self::switchedOnLanguage('en', 'English', false);
         $enLocale = self::switchedOnLocale($en, null);
 
-        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('uk, en')), $en, $enLocale);
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('uk, en'), null), $en, $enLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -287,7 +287,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $fr = Hilos::$db->languages->actions->create('fr', 'Français', false);
         self::switchedOnLocale($fr, null);
 
-        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr, uk')), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr, uk'), null), $es, $esLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -300,7 +300,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $ar = self::switchedOnLanguage('ar', 'العربية', true);
         $arLocale = self::switchedOnLocale($ar, null);
 
-        self::assertTab(TabLanguageLadder::resolve($ar->id, null, BrowserLanguages::fromAcceptLanguage('fr')), $ar, $arLocale);
+        self::assertTab(TabLanguageLadder::resolve($ar->id, null, BrowserLanguages::fromAcceptLanguage('fr'), null), $ar, $arLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -312,7 +312,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $de = self::switchedOnLanguage('de', 'Deutsch', false);
         self::switchedOnLocale($de, null);
 
-        self::assertTab(TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage('de')), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage('de'), null), $es, $esLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -324,7 +324,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         self::switchedOnLocale($fr, null);
         $variant = self::switchedOnLocale($fr, self::switchedOnCountry('fr'));
 
-        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr-FR'));
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr-FR'), null);
 
         self::assertTab($tab, $fr, $variant);
         self::assertSame('fr-FR', $tab?->localeCode);
@@ -342,7 +342,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
 
         self::assertFalse(Hilos::$db->locales->isAvailable($ofSwitchedOffCountry));
         self::assertFalse(Hilos::$db->locales->isAvailable($switchedOff));
-        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr-BE, fr-FR')), $fr, $frLocale);
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr-BE, fr-FR'), null), $fr, $frLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -354,7 +354,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $variant = self::switchedOnLocale($fr, self::switchedOnCountry('fr'));
 
         self::assertTrue(Hilos::$db->locales->isAvailable($variant));
-        self::assertTab(TabLanguageLadder::resolve($es->id, null, BrowserLanguages::fromAcceptLanguage('fr-FR')), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve($es->id, null, BrowserLanguages::fromAcceptLanguage('fr-FR'), null), $es, $esLocale);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -366,7 +366,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         self::switchedOnLocale($ru, null);
         $variant = self::switchedOnLocale($ru, self::switchedOnCountry('ua'));
 
-        $tab = TabLanguageLadder::resolve($ru->id, null, BrowserLanguages::fromAcceptLanguage('ru-UA'));
+        $tab = TabLanguageLadder::resolve($ru->id, null, BrowserLanguages::fromAcceptLanguage('ru-UA'), null);
 
         self::assertTab($tab, $ru, $variant);
         self::assertSame('ru-UA', $tab?->localeCode);
@@ -381,7 +381,7 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $variant = self::switchedOnLocale($en, self::switchedOnCountry('gb'));
         $fr = Hilos::$db->languages->actions->create('fr', 'Français', false);
 
-        $tab = TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage('fr-FR, en-GB'));
+        $tab = TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage('fr-FR, en-GB'), null);
 
         self::assertTab($tab, $en, $variant);
         self::assertSame('en-GB', $tab?->localeCode);
@@ -397,7 +397,188 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $chosen = self::switchedOnLocale($fr, self::switchedOnCountry('fr'));
         self::switchedOnLocale($fr, self::switchedOnCountry('be'));
 
-        self::assertTab(TabLanguageLadder::resolve($fr->id, $chosen->id, BrowserLanguages::fromAcceptLanguage('fr-BE')), $fr, $chosen);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, $chosen->id, BrowserLanguages::fromAcceptLanguage('fr-BE'), null), $fr, $chosen);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testCountryDefaultLocaleGivesLanguageAndRegion(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        self::switchedOnLocale($es, null);
+        $de = self::switchedOnLanguage('de', 'Deutsch', false);
+        self::switchedOnLocale($de, null);
+        $deAt = self::switchedOnCountryWithDefaultLocale('at', $de, true);
+
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), 'AT');
+
+        self::assertTab($tab, $de, $deAt);
+        self::assertSame('de-AT', $tab?->localeCode);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testCountryDefaultLocaleOfSwitchedOffLanguageTakesDefaultLanguage(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        $esLocale = self::switchedOnLocale($es, null);
+        $uk = Hilos::$db->languages->actions->create('uk', 'Українська', false);
+        self::switchedOnCountryWithDefaultLocale('ua', $uk, true);
+
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('ja'), 'UA'), $es, $esLocale);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testCountryWithoutDefaultLocaleTakesDefaultLanguage(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        $esLocale = self::switchedOnLocale($es, null);
+        $de = self::switchedOnLanguage('de', 'Deutsch', false);
+        $deAt = self::switchedOnLocale($de, self::switchedOnCountry('at'));
+
+        self::assertTrue(Hilos::$db->locales->isAvailable($deAt));
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), 'AT'), $es, $esLocale);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testSwitchedOffCountrySkipsBothRungs(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        $esLocale = self::switchedOnLocale($es, null);
+        $de = self::switchedOnLanguage('de', 'Deutsch', false);
+        $at = Hilos::$db->countries->actions->create('at', '€', 'EUR');
+        $at->actions->update('€', 'EUR', self::switchedOnLocale($de, $at)->id);
+        self::switchedOnLocale($es, $at);
+
+        self::assertFalse($at->enabled);
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('ja'), 'AT'), $es, $esLocale);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testUnknownCountrySkipsBothRungs(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        $esLocale = self::switchedOnLocale($es, null);
+        $de = self::switchedOnLanguage('de', 'Deutsch', false);
+        self::switchedOnCountryWithDefaultLocale('at', $de, true);
+
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), 'ZZ'), $es, $esLocale);
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), null), $es, $esLocale);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testSwitchedOffCountryDefaultLocaleStillGivesLanguageButNotRegion(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        self::switchedOnLocale($es, null);
+        $de = self::switchedOnLanguage('de', 'Deutsch', false);
+        $deLocale = self::switchedOnLocale($de, null);
+        $deAt = self::switchedOnCountryWithDefaultLocale('at', $de, false);
+
+        self::assertFalse($deAt->enabled);
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('ja'), 'AT'), $de, $deLocale);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testBrowserLanguageBeatsCountryLanguage(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        self::switchedOnLocale($es, null);
+        $fr = self::switchedOnLanguage('fr', 'Français', false);
+        $frLocale = self::switchedOnLocale($fr, null);
+        $de = self::switchedOnLanguage('de', 'Deutsch', false);
+        self::switchedOnCountryWithDefaultLocale('at', $de, true);
+
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr'), 'AT'), $fr, $frLocale);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testChoiceTakesNoLanguageFromCountry(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        $esLocale = self::switchedOnLocale($es, null);
+        $ar = self::switchedOnLanguage('ar', 'العربية', true);
+        $arLocale = self::switchedOnLocale($ar, null);
+        $fr = Hilos::$db->languages->actions->create('fr', 'Français', false);
+        $de = self::switchedOnLanguage('de', 'Deutsch', false);
+        self::switchedOnCountryWithDefaultLocale('at', $de, true);
+
+        self::assertTab(TabLanguageLadder::resolve($ar->id, null, BrowserLanguages::fromAcceptLanguage(null), 'AT'), $ar, $arLocale);
+        self::assertTab(TabLanguageLadder::resolve($fr->id, null, BrowserLanguages::fromAcceptLanguage(null), 'AT'), $es, $esLocale);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testCountryVariantBeatsBrowserVariantOfChosenLanguage(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        self::switchedOnLocale($es, null);
+        $ru = self::switchedOnLanguage('ru', 'Русский', false);
+        self::switchedOnLocale($ru, null);
+        self::switchedOnLocale($ru, self::switchedOnCountry('ru'));
+        $ruUa = self::switchedOnLocale($ru, self::switchedOnCountry('ua'));
+
+        $tab = TabLanguageLadder::resolve($ru->id, null, BrowserLanguages::fromAcceptLanguage('ru-RU'), 'UA');
+
+        self::assertTab($tab, $ru, $ruUa);
+        self::assertSame('ru-UA', $tab?->localeCode);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testChosenVariantBeatsCountryVariant(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        self::switchedOnLocale($es, null);
+        $ru = self::switchedOnLanguage('ru', 'Русский', false);
+        self::switchedOnLocale($ru, null);
+        $ruRu = self::switchedOnLocale($ru, self::switchedOnCountry('ru'));
+        self::switchedOnLocale($ru, self::switchedOnCountry('ua'));
+
+        self::assertTab(TabLanguageLadder::resolve($ru->id, $ruRu->id, BrowserLanguages::fromAcceptLanguage(null), 'UA'), $ru, $ruRu);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testBrowserLanguageTakesCountryVariantOfIt(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        self::switchedOnLocale($es, null);
+        $fr = self::switchedOnLanguage('fr', 'Français', false);
+        self::switchedOnLocale($fr, null);
+        $frBe = self::switchedOnLocale($fr, self::switchedOnCountry('be'));
+
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('fr'), 'BE');
+
+        self::assertTab($tab, $fr, $frBe);
+        self::assertSame('fr-BE', $tab?->localeCode);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testMissingOrSwitchedOffCountryVariantGivesWayToBrowserVariant(): void
+    {
+        $es = self::switchedOnLanguage('es', 'Español', false);
+        self::switchedOnLocale($es, null);
+        $en = self::switchedOnLanguage('en', 'English', false);
+        self::switchedOnLocale($en, null);
+        $enGb = self::switchedOnLocale($en, self::switchedOnCountry('gb'));
+        $de = self::switchedOnCountry('de');
+
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('en-GB'), 'DE'), $en, $enGb);
+
+        $enDe = self::createLocale($en, $de);
+
+        self::assertFalse(Hilos::$db->locales->isAvailable($enDe));
+        self::assertTab(TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage('en-GB'), 'DE'), $en, $enGb);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testDefaultLanguageTakesCountryVariantOfIt(): void
+    {
+        putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=en');
+        $en = self::switchedOnLanguage('en', 'English', false);
+        self::switchedOnLocale($en, null);
+        $enGb = self::switchedOnLocale($en, self::switchedOnCountry('gb'));
+
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), 'GB');
+
+        self::assertTab($tab, $en, $enGb);
+        self::assertSame('en-GB', $tab?->localeCode);
     }
 
     /**
@@ -442,6 +623,23 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         $country->actions->switchOn();
 
         return $country;
+    }
+
+    /**
+     * @param string $code Country code
+     * @param Language $language Language of the country's default locale
+     * @param bool $localeSwitchedOn Whether that default locale is switched on
+     * @return Locale The default locale of the country, which is switched on with it set
+     * @throws HilosException When an action refuses
+     */
+    private static function switchedOnCountryWithDefaultLocale(string $code, Language $language, bool $localeSwitchedOn): Locale
+    {
+        $country = Hilos::$db->countries->actions->create($code, '€', 'EUR');
+        $locale = $localeSwitchedOn ? self::switchedOnLocale($language, $country) : self::createLocale($language, $country);
+        $country->actions->update('€', 'EUR', $locale->id);
+        $country->actions->switchOn();
+
+        return $locale;
     }
 
     /**

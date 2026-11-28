@@ -33,6 +33,10 @@ use Hilos\HilosException;
  * Accept-Language in their stored form, written by the same call when the tab connects. A frame that
  * reaches the tab later carries no header for it, so its ladders are decided again from this list. It
  * stays null when the browser named nothing usable and without the I18N feature.
+ *
+ * It keeps the country of the tab's connection too (HIL-2311): connectionCountry, the ISO 3166-1 alpha-2
+ * code the handshake frame brought, written by the same call when the tab connects and read by every
+ * later frame's ladders. It stays null when the country is unknown and without the I18N feature.
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
@@ -41,6 +45,7 @@ abstract class HilosSessionConnection extends HilosConnection
     public const string languageId = 'languageId';
     public const string localeId = 'localeId';
     public const string browserLanguages = 'browserLanguages';
+    public const string connectionCountry = 'connectionCountry';
 
     protected const array BASE_FIELD_TYPES = parent::BASE_FIELD_TYPES + self::SESSION_FIELD_TYPES;
     protected const array BASE_FIELD_DEFAULTS = parent::BASE_FIELD_DEFAULTS + self::SESSION_FIELD_DEFAULTS;
@@ -51,6 +56,7 @@ abstract class HilosSessionConnection extends HilosConnection
         self::languageId => '?int',
         self::localeId => '?int',
         self::browserLanguages => '?text',
+        self::connectionCountry => '?text',
     ];
     private const array SESSION_FIELD_DEFAULTS = [
         self::sessionToken => null,
@@ -58,6 +64,7 @@ abstract class HilosSessionConnection extends HilosConnection
         self::languageId => null,
         self::localeId => null,
         self::browserLanguages => null,
+        self::connectionCountry => null,
     ];
 
     /** Session token, or null when this connection belongs to none. */
@@ -97,6 +104,14 @@ abstract class HilosSessionConnection extends HilosConnection
         get => ($this->rowValues()[self::browserLanguages] ?? null)?->toNative();
         set {
             $this->setRowValue(self::browserLanguages, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
+
+    /** Country of the tab's connection, ISO 3166-1 alpha-2 ('UA'), or null when it is unknown or without the I18N feature. */
+    private(set) ?string $connectionCountry {
+        get => ($this->rowValues()[self::connectionCountry] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::connectionCountry, $value === null ? null : RtRowValues::fromNative($value));
         }
     }
 

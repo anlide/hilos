@@ -154,14 +154,15 @@ final class HilosConnectionStateTest extends TestCase
             HilosSessionConnection::languageId => 3,
             HilosSessionConnection::localeId => 11,
             HilosSessionConnection::browserLanguages => 'ru-UA,ru,en',
+            HilosSessionConnection::connectionCountry => 'UA',
             SessionConnectionFixture::label => 'old',
         ]);
     }
 
     /**
-     * The language, the region and the browser's request are nullable session-stage fields: a full row
-     * that does not carry them reads them as null, as it reads the session token and id, and nothing is
-     * minted in their place.
+     * The language, the region, the browser's request and the connection's country are nullable
+     * session-stage fields: a full row that does not carry them reads them as null, as it reads the
+     * session token and id, and nothing is minted in their place.
      */
     public function testASessionRowWithoutTheTabLanguageReadsItAsNull(): void
     {
@@ -178,6 +179,7 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertNull($hydrated->languageId);
         $this->assertNull($hydrated->localeId);
         $this->assertNull($hydrated->browserLanguages);
+        $this->assertNull($hydrated->connectionCountry);
         $this->assertSame('tok-a', $hydrated->sessionToken);
     }
 
@@ -211,6 +213,7 @@ final class HilosConnectionStateTest extends TestCase
             HilosSessionConnection::languageId => 3,
             HilosSessionConnection::localeId => 11,
             HilosSessionConnection::browserLanguages => 'ru-UA,ru,en',
+            HilosSessionConnection::connectionCountry => 'UA',
             SessionConnectionFixture::label => 'old',
             $field => $value,
         ]);
@@ -244,6 +247,40 @@ final class HilosConnectionStateTest extends TestCase
             HilosSessionConnection::languageId => 3,
             HilosSessionConnection::localeId => 11,
             HilosSessionConnection::browserLanguages => $value,
+            HilosSessionConnection::connectionCountry => 'UA',
+            SessionConnectionFixture::label => 'old',
+        ]);
+    }
+
+    /** @return array<string, array{mixed}> Connection countries that are not the text of a code */
+    public static function nonTextConnectionCountries(): array
+    {
+        return [
+            'a number' => [380],
+            'a flag' => [true],
+            'a list' => [['UA']],
+        ];
+    }
+
+    /**
+     * @param mixed $value Value that is not the text of a country code
+     */
+    #[DataProvider('nonTextConnectionCountries')]
+    public function testFromRowRefusesAConnectionCountryThatIsNotText(mixed $value): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        SessionConnectionFixture::fromRow([
+            HilosConnection::acceptKey => 'ak-17',
+            HilosConnection::userId => 5,
+            HilosConnection::connectedAt => 1710000000123,
+            HilosConnection::probablyOffline => false,
+            HilosSessionConnection::sessionToken => 'tok-a',
+            HilosSessionConnection::sessionId => 17,
+            HilosSessionConnection::languageId => 3,
+            HilosSessionConnection::localeId => 11,
+            HilosSessionConnection::browserLanguages => 'ru-UA,ru,en',
+            HilosSessionConnection::connectionCountry => $value,
             SessionConnectionFixture::label => 'old',
         ]);
     }
@@ -275,6 +312,15 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertSame(3, $connection->languageId);
         $connection->applyDiff([HilosSessionConnection::languageId => 4]);
         $this->assertSame('de,en', $connection->browserLanguages);
+
+        $connection->applyDiff([HilosSessionConnection::connectionCountry => 'JP']);
+        $this->assertSame('JP', $connection->connectionCountry);
+        $this->assertSame('de,en', $connection->browserLanguages);
+        $connection->applyDiff([HilosSessionConnection::browserLanguages => 'ja']);
+        $this->assertSame('JP', $connection->connectionCountry);
+        $connection->applyDiff([HilosSessionConnection::connectionCountry => null]);
+        $this->assertNull($connection->connectionCountry);
+        $this->assertSame('ja', $connection->browserLanguages);
     }
 
     /**
@@ -352,6 +398,7 @@ final class HilosConnectionStateTest extends TestCase
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::languageId));
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::localeId));
         $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::browserLanguages));
+        $this->assertFalse(property_exists(PresenceConnectionFixture::class, HilosSessionConnection::connectionCountry));
         $this->assertFalse(method_exists(PresenceConnectionFixtures::class, 'findAllBySessionToken'));
     }
 
@@ -373,6 +420,7 @@ final class HilosConnectionStateTest extends TestCase
                 HilosSessionConnection::languageId => null,
                 HilosSessionConnection::localeId => null,
                 HilosSessionConnection::browserLanguages => null,
+                HilosSessionConnection::connectionCountry => null,
                 SessionConnectionFixture::label => 'seeded',
             ],
             $connection->toArray(),

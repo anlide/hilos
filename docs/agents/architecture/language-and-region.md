@@ -53,9 +53,8 @@ next connection.
   switched on.
 
 For both ladders a switched-off country is an unknown country; this is the
-owner's decision of 2026-11-26 (not in the code yet — HIL-2311). Switching a
-country off says the product does not work there, so nothing offers that
-country's variants.
+owner's decision of 2026-11-26. Switching a country off says the product does
+not work there, so nothing offers that country's variants.
 
 The list every tab holds includes only available languages and locales.
 The header's language menu will show only available choices
@@ -86,7 +85,7 @@ Take the first rung that fits, top down:
    weight.
 4. **The country of the connection.** The language of the locale that country
    holds as its default, `hilos_country.default_locale_id`, when that language
-   is available (not in the code yet — HIL-2311).
+   is available.
 5. **The default language**, which
    [`DefaultLanguage`](../../../framework/backend/I18n/DefaultLanguage.php)
    reads from `HILOS_DEFAULT_LANGUAGE`. Nobody can switch it off, so the ladder
@@ -115,8 +114,7 @@ fits, top down:
    choice reaches the ladder later, as on rung 2 of the language ladder:
    a guest's (not in the code yet — HIL-2299), an account's
    (not in the code yet — HIL-2298).
-2. The variant of this language for the country of the connection
-   (not in the code yet — HIL-2311).
+2. The variant of this language for the country of the connection.
 3. The first available variant of this language that the browser names.
 4. The countryless locale of this language, when it is available.
 5. The countryless locale of the default language, when it is switched on.
@@ -300,11 +298,19 @@ answers under `HILOS_TRUSTED_PROXIES`. That part is in the code.
   unknown.
 - By the owner's decision of 2026-11-26, a new file is seen after the daemon
   restarts and is not picked up on the fly.
-- A rung takes the country as given and does not know where it came from
-  (not in the code yet — HIL-2311).
+- A rung takes the country as given and does not know where it came from.
 - An unknown country silently skips the rung, behind a VPN the country is the
-  exit's, and the country never feeds a suggestion
-  (not in the code yet — HIL-2311).
+  exit's, and the country never feeds a suggestion.
+
+The sessions library looks the country up at the handshake — `countryOf()` of
+the address the transport handed it, `WebSocketHandshakeSignalDTO::$clientIp` —
+and sends it as a code in the state frame,
+`SessionStateSignalData::$connectionCountry`, for the one socket that
+connected; the address never leaves the library. The tab's connection row
+remembers the country as `connectionCountry`, and every later frame takes it
+from there, so a move or a VPN reaches an open tab when that tab reconnects.
+The default locale of the country gives its language even when that locale is
+itself switched off.
 
 How the file is kept fresh is not decided.
 

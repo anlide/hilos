@@ -55,6 +55,11 @@ use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
  * connection - the handshake is addressed to it - while the language a tab shows is decided by the
  * project. It is sent raw: the project reads it. The header belongs to one socket, so a frame carrying
  * it names one socket, like a frame with a ticket; every frame but the handshake carries none.
+ *
+ * {@see self::$connectionCountry} travels here (HIL-2311) as a code, not as an address: only the
+ * library sees the address of a connection - the handshake is addressed to it - and it keeps that
+ * address under the privacy rules, while the language a tab shows is decided by the project. The
+ * country belongs to one socket, so a frame carrying it names one socket.
  */
 final class SessionStateSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -63,6 +68,10 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
     public const string accountStanding = 'accountStanding';
     public const string accessLossReason = 'accessLossReason';
     public const string acceptLanguage = 'acceptLanguage';
+    public const string connectionCountry = 'connectionCountry';
+
+    /** A connection's country: ISO 3166-1 alpha-2 in upper case, as the IP-to-country lookup answers it (HIL-2311). */
+    private const string CONNECTION_COUNTRY_PATTERN = '/^[A-Z]{2}$/D';
 
     /**
      * @param string $sessionToken Session cookie token the named sockets belong to now
@@ -90,8 +99,11 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?string $accessLossReason Live reason access was lost, or null when this frame reports no loss
      * @param ?string $acceptLanguage Accept-Language header of the socket that connected, as its browser sent it;
      *     only on the handshake frame, null on every other
-     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
-     *     sockets, or the access-loss reason is invalid for the identity
+     * @param ?string $connectionCountry Country of the socket that connected, ISO 3166-1 alpha-2 in upper case ('UA');
+     *     only on the handshake frame, null on every other and when the country is unknown
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header or a
+     *     connection country names multiple sockets, the connection country is not two uppercase letters, or the
+     *     access-loss reason is invalid for the identity
      */
     public function __construct(
         public readonly string $sessionToken,
@@ -108,6 +120,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
         public readonly ?array $accountStanding = null,
         public readonly ?string $accessLossReason = null,
         public readonly ?string $acceptLanguage = null,
+        public readonly ?string $connectionCountry = null,
     ) {
         if ($accessLossReason !== null) {
             if (!in_array($accessLossReason, SessionAccessLossReason::ALL, true)) {
@@ -118,13 +131,24 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             }
         }
 
+        if ($connectionCountry !== null && preg_match(self::CONNECTION_COUNTRY_PATTERN, $connectionCountry) !== 1) {
+            throw new InvalidArgumentException('A connection country is two uppercase letters');
+        }
+
         if (
             count($acceptKeys) > 1
-            && ($rotationTicket !== null || $requestId !== null || $action !== null || $outcome !== null || $acceptLanguage !== null)
+            && (
+                $rotationTicket !== null
+                || $requestId !== null
+                || $action !== null
+                || $outcome !== null
+                || $acceptLanguage !== null
+                || $connectionCountry !== null
+            )
         ) {
             throw new InvalidArgumentException(
-                'A session state frame that answers an action, hands over a rotation ticket or carries the browser\'s Accept-Language'
-                . ' names one socket at most, this one names '
+                'A session state frame that answers an action, hands over a rotation ticket, carries the browser\'s Accept-Language'
+                . ' or the country of its connection names one socket at most, this one names '
                 . count($acceptKeys)
             );
         }
@@ -152,6 +176,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             accountBlocked: $this->accountBlocked,
             accountStanding: $this->accountStanding,
             acceptLanguage: $this->acceptLanguage,
+            connectionCountry: $this->connectionCountry,
         );
     }
 
@@ -161,8 +186,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param ?array{identifier: ?string, dataExport: ?array<string, mixed>} $accountBlocked
      *     Blocked account the session lost, or null when it holds no card
      * @return self The same frame carrying that card
-     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
-     *     sockets, or the access-loss reason is invalid for the identity
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header or a
+     *     connection country names multiple sockets, or the access-loss reason is invalid for the identity
      */
     public function withAccountBlocked(?array $accountBlocked): self
     {
@@ -181,6 +206,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             accountBlocked: $accountBlocked,
             accountStanding: $this->accountStanding,
             acceptLanguage: $this->acceptLanguage,
+            connectionCountry: $this->connectionCountry,
         );
     }
 
@@ -193,8 +219,8 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding
      *     Standing of the person the session acts as, or null when it is anonymous
      * @return self The same frame carrying that standing
-     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
-     *     sockets, or the access-loss reason is invalid for the identity
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header or a
+     *     connection country names multiple sockets, or the access-loss reason is invalid for the identity
      */
     public function withAccountStanding(?array $accountStanding): self
     {
@@ -213,6 +239,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             accountBlocked: $this->accountBlocked,
             accountStanding: $accountStanding,
             acceptLanguage: $this->acceptLanguage,
+            connectionCountry: $this->connectionCountry,
         );
     }
 
@@ -238,6 +265,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             self::accountStanding => $this->accountStanding,
             self::accessLossReason => $this->accessLossReason,
             self::acceptLanguage => $this->acceptLanguage,
+            self::connectionCountry => $this->connectionCountry,
         ];
     }
 
@@ -251,8 +279,9 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
      * @throws InvalidFormatException When the payload names no session, omits accessLossReason, or a present field is not of its declared type
-     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header names multiple
-     *     sockets, or the access-loss reason is invalid for the identity
+     * @throws InvalidArgumentException When a frame that answers, hands over a ticket or carries a browser header or a
+     *     connection country names multiple sockets, the connection country is not two uppercase letters, or the
+     *     access-loss reason is invalid for the identity
      */
     public static function fromArray(array $data): static
     {
@@ -283,6 +312,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             accountStanding: HandshakeResponseSignalData::readAccountStanding($data),
             accessLossReason: self::requireNullableString($data, self::accessLossReason),
             acceptLanguage: self::optionalString($data, self::acceptLanguage),
+            connectionCountry: self::optionalString($data, self::connectionCountry),
         );
     }
 
