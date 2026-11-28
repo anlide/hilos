@@ -25,6 +25,7 @@ use Hilos\HilosException;
  * @property-read ?int $localeId Locale the tab shows, or null when no stored locale fits or no language is decided
  * @property-read ?string $browserLanguages Stored tags the tab's browser asked for, by weight, or null when it named nothing usable
  * @property-read ?string $connectionCountry Country of the tab's connection, ISO 3166-1 alpha-2, or null when it is unknown
+ * @property-read ?string $addressLanguage Code of the language whose declared host the tab's page is on, or null on the main address
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
@@ -32,7 +33,7 @@ abstract class HilosSessionConnection extends HilosConnection
      * Adds the session-stage fields to the base ones of {@see HilosConnection::__get()}.
      *
      * @param string $name Property name (sessionToken, sessionId, languageId, localeId, browserLanguages, connectionCountry,
-     *     or a presence-stage one)
+     *     addressLanguage, or a presence-stage one)
      * @return mixed Property value or item actions
      * @throws RtItemActionsClassException When the item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
@@ -47,6 +48,7 @@ abstract class HilosSessionConnection extends HilosConnection
             StateHilosSessionConnection::localeId => $this->_state->localeId,
             StateHilosSessionConnection::browserLanguages => $this->_state->browserLanguages,
             StateHilosSessionConnection::connectionCountry => $this->_state->connectionCountry,
+            StateHilosSessionConnection::addressLanguage => $this->_state->addressLanguage,
             default => parent::__get($name),
         };
     }

@@ -77,6 +77,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\BrowserLanguages;
 use Hilos\I18n\DTO\TabLanguage;
+use Hilos\I18n\LanguageAddresses;
 use Hilos\I18n\TabLanguageLadder;
 use Hilos\WiringRefusal;
 use LogicException as NativeLogicException;
@@ -622,9 +623,10 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * The language and the region are decided here for each tab on every session-state frame -
      * connecting, signing in, signing out, a re-sent state - and written on the tab's connection
      * row before the response leaves ({@see settleTabLanguage()}). They are decided with what the
-     * tab's browser asked for (HIL-2309) and with the country of its connection (HIL-2311), which the
-     * row remembers from the moment the tab connected. Neither deciding them nor a write of them the
-     * row cannot take now fails the response: a tab that cannot be told its language is told null.
+     * tab's browser asked for (HIL-2309), with the country of its connection (HIL-2311) and with the
+     * language of the address of its page (HIL-2313), which the row remembers from the moment the tab
+     * connected. Neither deciding them nor a write of them the row cannot take now fails the response:
+     * a tab that cannot be told its language is told null.
      *
      * It lives here, and every send path goes through it, so that no project can ship a
      * response without the stamp. That guarantee used to come from a final method on the
@@ -2085,12 +2087,12 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * Decides the language and the region one tab shows and writes them on its connection row (HIL-109).
      *
      * The choice of the person is not read yet - the account's and the guest's join later (HIL-2298,
-     * HIL-2299) - so the ladder decides from the reference, the tab's browser and its country alone. A
+     * HIL-2299) - so the ladder decides from the reference, the tab's address, browser and country alone. A
      * project without the I18N feature has no language to decide and writes nothing. The row is written
      * before the response leaves, and the master holds the response behind that write
      * ({@see WorkerManager::readsBehindRtWrites()}), so a reader of the row learns the language no later
-     * than the browser does; a frame that restates the request, the country and the language the row
-     * holds leaves the row alone.
+     * than the browser does; a frame that restates the request, the country, the address and the
+     * language the row holds leaves the row alone.
      *
      * What the browser asks for (HIL-2309) comes with the handshake frame, raw, for the one socket that
      * connected: that socket's ladder reads the header, and the list it names is written on its row
@@ -2104,6 +2106,13 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * same write, and every other socket and every frame without a country read the one their own row
      * remembers. A tab with no row decides with the frame's country, or with none.
      *
+     * The address of the page (HIL-2313) travels the same way too: the handshake frame carries the raw
+     * Origin of the one socket that connected, that socket's ladder takes the language declared for its
+     * host ({@see LanguageAddresses::languageOfOrigin()}) and its row keeps that language in the same
+     * write, and every other socket and every frame without an Origin read the one their own row
+     * remembers. The row keeps the declared language, not the outcome: the ladder checks on every frame
+     * whether it is available. A tab with no row decides with the frame's address, or with none.
+     *
      * The handshake never fails over the language. Whatever Hilos exception the ladder raises is logged
      * under this agent and the tab is told null - the answer it also gets while the default language has
      * no row, which is a tab that came before the i18n library's start; a refused read of the reference
@@ -2111,12 +2120,13 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
      * source's ordinary RT FIFO has no room for is logged too, and the row keeps what it held; the tab is
      * then told null rather than the decided language, which its browser would otherwise learn before a
      * reader of the row. Either way the next frame decides again. A read of the tab's row that fails is
-     * handled as a failed ladder, and the row, whose request and country are then unknown, is not
+     * handled as a failed ladder, and the row, whose request, country and address are then unknown, is not
      * written. A write this agent has no right to is the project's wiring error, not a language one, and
      * travels.
      *
      * @param string $acceptKey Accept key of the tab's connection
-     * @param SessionStateSignalData $state Session state frame the response answers; its header and its country belong to its initiator
+     * @param SessionStateSignalData $state Session state frame the response answers; its headers and its country belong to its
+     *     initiator
      * @return ?TabLanguage The tab's language and region; null without the I18N feature, while the default
      *     language has no row, when the ladder or the read of the tab's row failed, or when the row could not take the write
      * @throws RtActionsCollectionNameNullException When the connections collection name is unavailable
@@ -2133,16 +2143,20 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
 
         $connections = Hilos::$rt?->sessionConnectionsRegistry();
         $country = null;
+        $address = null;
         $browser = null;
         try {
             $country = $state->connectionCountry !== null && $acceptKey === $state->initiatorAcceptKey()
                 ? $state->connectionCountry
                 : ($connections[$acceptKey] ?? null)?->connectionCountry;
-            // Read after the country: a browser list in hand means every read of the row succeeded.
+            $address = $state->pageOrigin !== null && $acceptKey === $state->initiatorAcceptKey()
+                ? LanguageAddresses::languageOfOrigin($state->pageOrigin)
+                : ($connections[$acceptKey] ?? null)?->addressLanguage;
+            // Read last: a browser list in hand means every read of the row and of the declaration succeeded.
             $browser = $state->acceptLanguage !== null && $acceptKey === $state->initiatorAcceptKey()
                 ? BrowserLanguages::fromAcceptLanguage($state->acceptLanguage)
                 : BrowserLanguages::fromStored(($connections[$acceptKey] ?? null)?->browserLanguages);
-            $tabLanguage = TabLanguageLadder::resolve(null, null, $browser, $country);
+            $tabLanguage = TabLanguageLadder::resolve(null, null, $browser, $country, $address);
         } catch (WiringRefusal) {
             $this->logAgentError('The tab language could not be decided: a read of the language reference or of the tab\'s row was refused');
             $tabLanguage = null;
@@ -2156,7 +2170,14 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface, Acti
             return $tabLanguage;
         }
         try {
-            $actions->setTabLanguage($acceptKey, $browser->toStored(), $country, $tabLanguage?->languageId, $tabLanguage?->localeId);
+            $actions->setTabLanguage(
+                $acceptKey,
+                $browser->toStored(),
+                $country,
+                $address,
+                $tabLanguage?->languageId,
+                $tabLanguage?->localeId,
+            );
         } catch (RtWriteBackpressureException $refusal) {
             $this->logAgentError('The tab language could not be written on its connection row: ' . $refusal->getMessage());
 

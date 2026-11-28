@@ -312,6 +312,9 @@ enum EnvConstants
     /** @var string Path of the cluster's IP-to-country directory (HIL-2310); empty uses the project's default under data/ */
     case HILOS_IP_COUNTRY_DIR;
 
+    /** @var string Language addresses of an installation with i18n: comma-separated code=host pairs; empty declares none (HIL-2313) */
+    case HILOS_LANGUAGE_HOSTS;
+
     /**
      * IANA time zone of the project clock.
      *

@@ -83,6 +83,9 @@ use ReflectionProperty;
  * The country of a connection (HIL-2311) is looked up by the library in MaxMind's
  * GeoIP2-Country-Test.mmdb from framework/tests/Fixtures/Mmdb, copied into a temporary ip_country
  * directory before the library's first handshake; its source data place 2001:218:: in Japan.
+ *
+ * The address of a page (HIL-2313) is the Origin the browser sends with the handshake; the case declares
+ * one language address, de=de.example.org, in HILOS_LANGUAGE_HOSTS, and gives the earlier value back after.
  */
 final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -96,6 +99,10 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
     private const string TAB_PERSON_SECOND = 'tab-language-person-second';
     private const string ADDRESS_JP = '2001:218::1';
     private const string ADDRESS_GB = '81.2.69.160';
+    private const string LANGUAGE_HOSTS = 'de=de.example.org';
+    private const string ORIGIN_DE = 'https://de.example.org';
+    private const string ORIGIN_MAIN = 'https://example.org';
+    private const string HOST_DE = 'de.example.org';
     private const string LOG_LINE = 'The tab language could not be decided';
     private const string WRITE_LOG_LINE = 'The tab language could not be written on its connection row';
 
@@ -105,6 +112,7 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
     private ?RtContext $previousRuntime = null;
     private string $previousAppClass;
     private string|false $previousDefaultLanguage;
+    private string|false $previousLanguageHosts;
     private ?FsContext $previousFs = null;
 
     /** Temporary ip_country directory of the case. */
@@ -182,8 +190,8 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         $this->seedLanguage('es', 'Español', false);
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, TabLanguageHandshakeWithoutI18nTestHilos::class);
 
-        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, 'es', self::ADDRESS_JP);
-        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'es-MX,es;q=0.9', self::ADDRESS_GB);
+        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, 'es', self::ADDRESS_JP, self::ORIGIN_DE);
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'es-MX,es;q=0.9', self::ADDRESS_GB, self::ORIGIN_DE);
         $frames = $this->carryFrames();
 
         $this->assertToldNull($frames, [self::TAB_GUEST, self::TAB_PERSON]);
@@ -191,6 +199,7 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         foreach ([self::TAB_GUEST, self::TAB_PERSON] as $acceptKey) {
             self::assertNull(Hilos::$rt->tabLanguageConnections[$acceptKey]->browserLanguages);
             self::assertNull(Hilos::$rt->tabLanguageConnections[$acceptKey]->connectionCountry);
+            self::assertNull(Hilos::$rt->tabLanguageConnections[$acceptKey]->addressLanguage);
         }
     }
 
@@ -375,6 +384,113 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         self::assertSame([], $this->languageWrites($restated));
     }
 
+    /**
+     * The tab whose page is on the address declared for German is told German although its browser asks
+     * for Russian, and its row keeps the language of the address beside the result, in the one write.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testATabOnALanguageAddressIsToldThatLanguageAndTheRowKeepsIt(): void
+    {
+        $this->seedLanguage('es', 'Español', false);
+        $this->seedLanguage('ru', 'Русский', false);
+        [$german, $germanLocale] = $this->seedLanguage('de', 'Deutsch', false);
+
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'ru-UA,ru;q=0.9', origin: self::ORIGIN_DE);
+        $frames = $this->carryFrames();
+
+        $handshakes = $this->handshakeFrames($frames);
+        self::assertCount(1, $handshakes);
+        $tabLanguage = self::tabLanguageOf($handshakes[0]);
+        self::assertSame($german->id, $tabLanguage[TabLanguage::languageId]);
+        self::assertSame($germanLocale->id, $tabLanguage[TabLanguage::localeId]);
+        $row = Hilos::$rt->tabLanguageConnections[self::TAB_PERSON];
+        self::assertSame('de', $row->addressLanguage);
+        self::assertSame('ru-UA,ru', $row->browserLanguages);
+        self::assertSame($german->id, $row->languageId);
+        $writes = $this->languageWrites($frames);
+        self::assertCount(1, $writes);
+        self::assertSame('de', $writes[0]->row[StateSessionConnection::addressLanguage]);
+    }
+
+    /**
+     * The row keeps the language declared for the address, not the outcome: German is not in the
+     * reference, so the address rung is skipped and the ladder goes on to the browser.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testAnAddressLanguageOutsideTheReferenceIsKeptAndTheLadderGoesOn(): void
+    {
+        $this->seedLanguage('es', 'Español', false);
+        [$russian] = $this->seedLanguage('ru', 'Русский', false);
+
+        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, 'ru', origin: self::ORIGIN_DE);
+        $frames = $this->carryFrames();
+
+        $handshakes = $this->handshakeFrames($frames);
+        self::assertCount(1, $handshakes);
+        self::assertSame($russian->id, self::tabLanguageOf($handshakes[0])[TabLanguage::languageId]);
+        self::assertSame('de', Hilos::$rt->tabLanguageConnections[self::TAB_GUEST]->addressLanguage);
+        self::assertSame($russian->id, Hilos::$rt->tabLanguageConnections[self::TAB_GUEST]->languageId);
+    }
+
+    /**
+     * The address of the page is the Origin, not the Host: a socket on the German host opened by a page
+     * on the main address is not on a language address, and its ladder runs from the browser.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testTheHostOfTheSocketIsNotALanguageAddress(): void
+    {
+        $this->seedLanguage('es', 'Español', false);
+        [$russian] = $this->seedLanguage('ru', 'Русский', false);
+        $this->seedLanguage('de', 'Deutsch', false);
+
+        $this->handshake(self::TAB_GUEST, self::TOKEN_GUEST, 'ru', origin: self::ORIGIN_MAIN, host: self::HOST_DE);
+        $frames = $this->carryFrames();
+
+        $handshakes = $this->handshakeFrames($frames);
+        self::assertCount(1, $handshakes);
+        self::assertSame($russian->id, self::tabLanguageOf($handshakes[0])[TabLanguage::languageId]);
+        self::assertNull(Hilos::$rt->tabLanguageConnections[self::TAB_GUEST]->addressLanguage);
+        self::assertSame($russian->id, Hilos::$rt->tabLanguageConnections[self::TAB_GUEST]->languageId);
+    }
+
+    /**
+     * The handshake of a second tab, whose page is on the main address, reaches every tab of the
+     * session carrying that Origin, and a restatement names them all without one: the first tab keeps
+     * the language of its own address and the second runs its own ladder; only the tab that connected
+     * is written, and the restatement writes nothing.
+     *
+     * @throws HilosException When the reference, a handshake or a delivery hop fails
+     */
+    public function testEachTabOfASessionKeepsItsOwnAddressLanguageOnFramesThatReachThemAll(): void
+    {
+        $this->seedLanguage('es', 'Español', false);
+        [$russian] = $this->seedLanguage('ru', 'Русский', false);
+        [$german] = $this->seedLanguage('de', 'Deutsch', false);
+        $this->handshake(self::TAB_PERSON, self::TOKEN_PERSON, 'ru', origin: self::ORIGIN_DE);
+        $this->carryFrames();
+        $expected = [
+            self::TAB_PERSON => [$german->id, 'de'],
+            self::TAB_PERSON_SECOND => [$russian->id, null],
+        ];
+
+        $this->handshake(self::TAB_PERSON_SECOND, self::TOKEN_PERSON, 'ru', origin: self::ORIGIN_MAIN);
+        $second = $this->carryFrames();
+
+        $this->assertTabsKeepTheirAddressLanguage($second, $expected);
+        $writes = $this->languageWrites($second);
+        self::assertCount(1, $writes, 'Only the tab that connected is written');
+        self::assertSame(self::TAB_PERSON_SECOND, $writes[0]->stateId);
+        self::assertArrayNotHasKey(StateSessionConnection::addressLanguage, $writes[0]->row, 'A new row starts on the main address');
+
+        $restated = $this->restate(self::TOKEN_PERSON, [self::TAB_PERSON, self::TAB_PERSON_SECOND]);
+
+        $this->assertTabsKeepTheirAddressLanguage($restated, $expected);
+        self::assertSame([], $this->languageWrites($restated));
+    }
+
     /** @throws HilosException When a handshake or a delivery hop fails */
     public function testATabBeforeTheDefaultLanguageHasARowIsToldNull(): void
     {
@@ -448,6 +564,8 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         Schema::initialize();
         $this->previousDefaultLanguage = getenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
         putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=es');
+        $this->previousLanguageHosts = getenv(EnvConstants::HILOS_LANGUAGE_HOSTS->name);
+        putenv(EnvConstants::HILOS_LANGUAGE_HOSTS->name . '=' . self::LANGUAGE_HOSTS);
         $this->previousAppClass = Hilos::appClass();
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, TabLanguageHandshakeTestHilos::class);
         $this->previousFs = Hilos::$fs;
@@ -505,6 +623,11 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
             putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name);
         } else {
             putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=' . $this->previousDefaultLanguage);
+        }
+        if ($this->previousLanguageHosts === false) {
+            putenv(EnvConstants::HILOS_LANGUAGE_HOSTS->name);
+        } else {
+            putenv(EnvConstants::HILOS_LANGUAGE_HOSTS->name . '=' . $this->previousLanguageHosts);
         }
         self::runStubs(down: true);
         Schema::reset();
@@ -583,6 +706,26 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         foreach ($tabs as $acceptKey => [$languageId, $country]) {
             self::assertSame($languageId, Hilos::$rt->tabLanguageConnections[$acceptKey]->languageId);
             self::assertSame($country, Hilos::$rt->tabLanguageConnections[$acceptKey]->connectionCountry);
+        }
+    }
+
+    /**
+     * @param list<SignalDTO> $frames Observed queue
+     * @param array<string, array{int, ?string}> $tabs Language id each tab is told and the address language its row keeps
+     */
+    private function assertTabsKeepTheirAddressLanguage(array $frames, array $tabs): void
+    {
+        $told = [];
+        foreach ($this->handshakeFrames($frames) as $frame) {
+            $told[(string)$frame->targetAcceptKey] = self::tabLanguageOf($frame)[TabLanguage::languageId];
+        }
+        ksort($told);
+        $expected = array_map(static fn (array $tab): int => $tab[0], $tabs);
+        ksort($expected);
+        self::assertSame($expected, $told);
+        foreach ($tabs as $acceptKey => [$languageId, $addressLanguage]) {
+            self::assertSame($languageId, Hilos::$rt->tabLanguageConnections[$acceptKey]->languageId);
+            self::assertSame($addressLanguage, Hilos::$rt->tabLanguageConnections[$acceptKey]->addressLanguage);
         }
     }
 
@@ -688,10 +831,22 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
      * @param string $token Browser cookie token
      * @param ?string $acceptLanguage What the browser sent in Accept-Language, or null when it sent no header
      * @param ?string $clientIp Address the transport saw the connection come from, or null when it saw none
+     * @param ?string $origin What the browser sent in Origin - the address of the page - or null when it sent no header
+     * @param ?string $host What the browser sent in Host - the address of the socket - or null when it sent no header
      */
-    private function handshake(string $acceptKey, string $token, ?string $acceptLanguage = null, ?string $clientIp = null): void
-    {
-        $headers = $acceptLanguage === null ? [] : [strtolower(HttpConstants::HEADER_ACCEPT_LANGUAGE) => $acceptLanguage];
+    private function handshake(
+        string $acceptKey,
+        string $token,
+        ?string $acceptLanguage = null,
+        ?string $clientIp = null,
+        ?string $origin = null,
+        ?string $host = null,
+    ): void {
+        $headers = array_filter([
+            strtolower(HttpConstants::HEADER_ACCEPT_LANGUAGE) => $acceptLanguage,
+            strtolower(HttpConstants::HEADER_ORIGIN) => $origin,
+            strtolower(HttpConstants::HEADER_HOST) => $host,
+        ], static fn (?string $value): bool => $value !== null);
         $handshake = WebSocketHandshakeSignalDTO::fromArray(new WebSocketHandshakeSignalDTO(
             headers: $headers,
             acceptKey: $acceptKey,
@@ -754,7 +909,8 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
 
     /**
      * @param list<SignalDTO> $frames Observed queue
-     * @return list<RtSyncUpdatedSignalData> Updates of a connection row that carry its language, region, browser request or country
+     * @return list<RtSyncUpdatedSignalData> Updates of a connection row that carry its language, region, browser request,
+     *     country or address language
      */
     private function languageWrites(array $frames): array
     {
@@ -771,6 +927,7 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
                 || array_key_exists(StateSessionConnection::localeId, $signal->data->row)
                 || array_key_exists(StateSessionConnection::browserLanguages, $signal->data->row)
                 || array_key_exists(StateSessionConnection::connectionCountry, $signal->data->row)
+                || array_key_exists(StateSessionConnection::addressLanguage, $signal->data->row)
             ) {
                 $writes[] = $signal->data;
             }

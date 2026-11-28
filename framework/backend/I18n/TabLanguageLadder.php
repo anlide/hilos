@@ -25,11 +25,20 @@ use Hilos\I18n\DTO\TabLanguage;
  * Decides the language and the region a tab shows: the language ladder first, then the region
  * ladder for the language it decided. On each ladder the first rung that fits wins.
  *
- * The language ladder: the person's choice when that language is switched on; without a choice,
- * the first language the browser asks for that is switched on ({@see BrowserLanguages}); then the
+ * The language ladder: the language of the address the page was opened on when that language is
+ * switched on; then the person's choice when that language is switched on; without a choice, the
+ * first language the browser asks for that is switched on ({@see BrowserLanguages}); then the
  * language of the default locale of the connection's country when that language is switched on;
  * otherwise the default language. A choice that does not fit sends the tab straight to the default
  * language, past the browser and the country, and is left as it is.
+ *
+ * The rung of the language address stands first: when it fits, the choice, the browser and the
+ * country are not looked at for the language, and the choice is left as it is. The language comes
+ * as a code out of the project's declaration ({@see LanguageAddresses}), and the rung does not know
+ * where it came from. A language of the address that is switched off or absent from the
+ * installation skips the rung silently, and the ladder goes on as on the main address - the jump
+ * straight to the default language belongs to the person's choice alone. The region ladder does
+ * not change for the address.
  *
  * The region ladder, for the decided language: the person's chosen locale when it belongs to
  * that language and is available ({@see Locales::isAvailable()}); the variant of that language for
@@ -46,8 +55,8 @@ use Hilos\I18n\DTO\TabLanguage;
  * default locale of a country gives its language even when that locale itself is switched off;
  * the region then comes from the rungs below.
  *
- * The rung of the language address joins later (HIL-2313), above the choice. A rung writes nothing
- * and remembers nothing: the ladder reads the reference and its four inputs only.
+ * A rung writes nothing and remembers nothing: the ladder reads the reference and its five inputs
+ * only.
  */
 final class TabLanguageLadder
 {
@@ -57,6 +66,8 @@ final class TabLanguageLadder
      * @param BrowserLanguages $browser Languages the tab's browser asks for; an empty request skips the browser's rungs
      * @param ?string $connectionCountry ISO 3166-1 alpha-2 code of the connection's country, in either case; null when the
      *     country is unknown, which skips the country's rungs
+     * @param ?string $addressLanguage Exact code of the language of the page's address; null on the main address, which
+     *     skips the address's rung
      * @return ?TabLanguage The tab's language and region; null while the default language has no row yet, whatever the choice
      * @throws EnvException When the default language key is absent from the environment catalog
      * @throws EnvInvalidValueException When the default language code is absent or unknown
@@ -71,13 +82,14 @@ final class TabLanguageLadder
         ?int $chosenLocaleId,
         BrowserLanguages $browser,
         ?string $connectionCountry,
+        ?string $addressLanguage,
     ): ?TabLanguage {
         $defaultCode = DefaultLanguage::code();
         if (!isset(Hilos::$db->languages[$defaultCode])) {
             return null;
         }
         $country = self::country($connectionCountry);
-        $language = self::language($chosenLanguageId, $browser, $country, $defaultCode);
+        $language = self::language($addressLanguage, $chosenLanguageId, $browser, $country, $defaultCode);
         $locale = self::locale($language, $chosenLocaleId, $browser, $country, $defaultCode);
 
         return new TabLanguage(
@@ -114,21 +126,34 @@ final class TabLanguageLadder
     }
 
     /**
+     * @param ?string $addressLanguage Code of the language of the page's address, or null
      * @param ?int $chosenLanguageId Primary id of the chosen language, or null
      * @param BrowserLanguages $browser Languages the browser asks for
      * @param ?Country $country The connection's switched-on country, or null
      * @param string $defaultCode Code of the default language
-     * @return Language The chosen language when it exists and is switched on, the default one when it does not;
-     *     without a choice the first switched-on language the browser asks for, then the language of the country's
-     *     default locale when that language is switched on, else the default one
+     * @return Language The address's language when it exists and is switched on; otherwise the chosen language when
+     *     it exists and is switched on, the default one when it does not; without a choice the first switched-on
+     *     language the browser asks for, then the language of the country's default locale when that language is
+     *     switched on, else the default one
      * @throws ItemNotFoundException When the default language has no row, or a row vanishes between its lookup and its read
      * @throws DatabaseException When reading languages fails
      * @throws InvalidArgumentException When a loaded object has the wrong type
      * @throws LogicException When collection classes are not configured
      * @throws HilosException When the country's default locale or its language cannot be read
      */
-    private static function language(?int $chosenLanguageId, BrowserLanguages $browser, ?Country $country, string $defaultCode): Language
-    {
+    private static function language(
+        ?string $addressLanguage,
+        ?int $chosenLanguageId,
+        BrowserLanguages $browser,
+        ?Country $country,
+        string $defaultCode,
+    ): Language {
+        if ($addressLanguage !== null
+            && isset(Hilos::$db->languages[$addressLanguage])
+            && Hilos::$db->languages[$addressLanguage]->enabled
+        ) {
+            return Hilos::$db->languages[$addressLanguage];
+        }
         if ($chosenLanguageId !== null) {
             return isset(Hilos::$db->languages[$chosenLanguageId]) && Hilos::$db->languages[$chosenLanguageId]->enabled
                 ? Hilos::$db->languages[$chosenLanguageId]

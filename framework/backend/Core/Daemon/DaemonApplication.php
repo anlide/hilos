@@ -21,6 +21,7 @@ use Hilos\Database\Schema\SetOwnershipGuard;
 use Hilos\Environment\Exception\MissingRequiredEnvironmentException;
 use Hilos\Hilos;
 use Hilos\I18n\DefaultLanguage;
+use Hilos\I18n\LanguageAddresses;
 use Hilos\Log\LogRootOwnershipGuard;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\SessionStageStartupGuard;
@@ -93,6 +94,7 @@ final class DaemonApplication
             NodeName::fromEnv();
 
             DefaultLanguage::assertConfiguredFor($hilosClass);
+            LanguageAddresses::assertConfiguredFor($hilosClass);
 
             // A refusal that the log directory belongs to another daemon cannot be written into
             // that daemon's journal. Logger without a file writes to stdout/stderr — a terminal, or

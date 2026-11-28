@@ -37,6 +37,12 @@ use Hilos\HilosException;
  * It keeps the country of the tab's connection too (HIL-2311): connectionCountry, the ISO 3166-1 alpha-2
  * code the handshake frame brought, written by the same call when the tab connects and read by every
  * later frame's ladders. It stays null when the country is unknown and without the I18N feature.
+ *
+ * And it keeps the language of the address of the tab's page (HIL-2313): addressLanguage, the code of the
+ * language whose declared host matched the host of the page's Origin, written by the same call when the tab
+ * connects and read by every later frame's ladders. It is the declared language, not the outcome: whether
+ * that language is available is decided by the ladder on every frame. It stays null on the main address,
+ * without an Origin and without the I18N feature.
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
@@ -46,6 +52,7 @@ abstract class HilosSessionConnection extends HilosConnection
     public const string localeId = 'localeId';
     public const string browserLanguages = 'browserLanguages';
     public const string connectionCountry = 'connectionCountry';
+    public const string addressLanguage = 'addressLanguage';
 
     protected const array BASE_FIELD_TYPES = parent::BASE_FIELD_TYPES + self::SESSION_FIELD_TYPES;
     protected const array BASE_FIELD_DEFAULTS = parent::BASE_FIELD_DEFAULTS + self::SESSION_FIELD_DEFAULTS;
@@ -57,6 +64,7 @@ abstract class HilosSessionConnection extends HilosConnection
         self::localeId => '?int',
         self::browserLanguages => '?text',
         self::connectionCountry => '?text',
+        self::addressLanguage => '?text',
     ];
     private const array SESSION_FIELD_DEFAULTS = [
         self::sessionToken => null,
@@ -65,6 +73,7 @@ abstract class HilosSessionConnection extends HilosConnection
         self::localeId => null,
         self::browserLanguages => null,
         self::connectionCountry => null,
+        self::addressLanguage => null,
     ];
 
     /** Session token, or null when this connection belongs to none. */
@@ -112,6 +121,14 @@ abstract class HilosSessionConnection extends HilosConnection
         get => ($this->rowValues()[self::connectionCountry] ?? null)?->toNative();
         set {
             $this->setRowValue(self::connectionCountry, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
+
+    /** Code of the language whose declared host the tab's page is on ('de'), or null on the main address or without the I18N feature. */
+    private(set) ?string $addressLanguage {
+        get => ($this->rowValues()[self::addressLanguage] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::addressLanguage, $value === null ? null : RtRowValues::fromNative($value));
         }
     }
 

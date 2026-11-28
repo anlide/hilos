@@ -470,6 +470,67 @@ final class SessionStateSignalDataTest extends TestCase
         );
     }
 
+    /** @return array<string, array{?string}> An Origin the browser sent, a malformed one and none */
+    public static function pageOrigins(): array
+    {
+        return [
+            'language address' => ['https://de.example.org'],
+            'malformed' => ['not an origin'],
+            'none' => [null],
+        ];
+    }
+
+    /**
+     * The handshake frame passes the library's stamping door, so the address of the page must survive
+     * each copy made there, raw, and the trip to the project agent; a frame that leaves it out reads null.
+     *
+     * @param ?string $origin Origin header of the socket that connected
+     */
+    #[DataProvider('pageOrigins')]
+    public function testPageOriginSurvivesEveryCopyAndRoundtrip(?string $origin): void
+    {
+        foreach ([[], ['socket-a']] as $keys) {
+            $frame = new SessionStateSignalData(
+                sessionToken: 'token',
+                sessionId: 17,
+                userId: null,
+                acceptKeys: $keys,
+                pendingAck: 'auth_registered',
+                rotationTicket: 'ticket',
+                accountBlocked: ['identifier' => 'ada@example.test', 'dataExport' => null],
+                acceptLanguage: 'ru-UA,ru;q=0.9',
+                connectionCountry: 'UA',
+                pageOrigin: $origin,
+            );
+            $copies = [
+                $frame->withAccountBlocked(null),
+                $frame->withAccountStanding(null),
+                $frame->withAccessLossReason(null),
+            ];
+            foreach ($copies as $copy) {
+                self::assertSame($origin, $copy->pageOrigin);
+                self::assertSame($origin, $copy->toArray()[SessionStateSignalData::pageOrigin]);
+                self::assertEquals($copy, SessionStateSignalData::fromArray($copy->toArray()));
+            }
+            $payload = $frame->toArray();
+            unset($payload[SessionStateSignalData::pageOrigin]);
+            self::assertNull(SessionStateSignalData::fromArray($payload)->pageOrigin);
+        }
+    }
+
+    public function testFrameWithAPageOriginAndMultipleSocketsIsRefused(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SessionStateSignalData(
+            sessionToken: 'token',
+            sessionId: 17,
+            userId: null,
+            acceptKeys: ['socket-a', 'socket-b'],
+            pageOrigin: 'https://de.example.org',
+        );
+    }
+
     public function testFrameWithAnAnswerAndOneSocketRoundtrips(): void
     {
         $frame = new SessionStateSignalData(

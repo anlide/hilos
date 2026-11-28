@@ -119,12 +119,13 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
 
     /**
      * Writes the language and the region one tab was told on its handshake response (HIL-109),
-     * together with what its ladders were decided from: what its browser asked for (HIL-2309) and
-     * the country of its connection (HIL-2311), remembered beside the result.
+     * together with what its ladders were decided from: what its browser asked for (HIL-2309), the
+     * country of its connection (HIL-2311) and the language of the address of its page (HIL-2313),
+     * remembered beside the result.
      *
      * Called where the framework stamps that response, for every tab on every session-state
      * frame. Only a change is written, and only the fields that changed, in one write: a frame
-     * that restates the request, the country and the language the row already holds - a re-sent
+     * that restates the request, the country, the address and the language the row already holds - a re-sent
      * state, a sign-in that leaves the language where it was - leaves the row alone, because a
      * row written is a row synced to every reader of it.
      *
@@ -134,6 +135,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @param string $acceptKey Accept key of the tab's connection
      * @param ?string $browserLanguages Stored tags the tab's browser asked for, by weight, or null when it named nothing usable
      * @param ?string $connectionCountry Country of the tab's connection, ISO 3166-1 alpha-2, or null when it is unknown
+     * @param ?string $addressLanguage Code of the language whose declared host the tab's page is on, or null on the main address
      * @param ?int $languageId Primary id of the language the tab shows, or null when none is decided
      * @param ?int $localeId Primary id of the locale the tab shows, or null when no stored locale fits
      *
@@ -148,6 +150,7 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
         string $acceptKey,
         ?string $browserLanguages,
         ?string $connectionCountry,
+        ?string $addressLanguage,
         ?int $languageId,
         ?int $localeId,
     ): void {
@@ -164,6 +167,9 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
         }
         if ($state->connectionCountry !== $connectionCountry) {
             $diff[StateHilosSessionConnection::connectionCountry] = $connectionCountry;
+        }
+        if ($state->addressLanguage !== $addressLanguage) {
+            $diff[StateHilosSessionConnection::addressLanguage] = $addressLanguage;
         }
         if ($state->languageId !== $languageId) {
             $diff[StateHilosSessionConnection::languageId] = $languageId;

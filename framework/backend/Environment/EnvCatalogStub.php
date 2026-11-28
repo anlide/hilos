@@ -254,6 +254,8 @@ final class EnvCatalogStub implements CatalogProviderInterface
             EnvConstants::HILOS_DEFAULT_LANGUAGE->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             // Per node: every node mounts the shared volume at a path of its own (names, never paths).
             EnvConstants::HILOS_IP_COUNTRY_DIR->name => self::entry(EnvCatalogConstants::TYPE_STRING, '', perNode: true),
+            // One value per cluster: a host names the same language whichever node answers it.
+            EnvConstants::HILOS_LANGUAGE_HOSTS->name => self::entry(EnvCatalogConstants::TYPE_STRING, ''),
             // Absent falls through to UTC. An explicit empty string stays empty: startup refuses it.
             EnvConstants::HILOS_PROJECT_TIME_ZONE->name => self::entry(
                 EnvCatalogConstants::TYPE_STRING,

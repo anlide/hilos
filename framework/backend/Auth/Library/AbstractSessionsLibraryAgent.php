@@ -1575,6 +1575,11 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * lookup's file is read once in this process, and a new one after a restart
      * ({@see IpCountryFile::countryOf()}); an unknown country is null and never refuses the handshake.
      *
+     * The address of the page leaves raw too (HIL-2313): the browser names it in the Origin header, and
+     * the frame carries that header for the connected socket alone ({@see SessionStateSignalData::$pageOrigin}).
+     * The library reads no language out of it - the project's agent reads the language of the address -
+     * and a missing or malformed header never refuses the handshake.
+     *
      * @param WebSocketHandshakeSignalDTO $data Accept key and the daemon-resolved session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
@@ -1627,6 +1632,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             rotationTicket: $resolved->rotationTicket,
             acceptLanguage: HttpHeaderHelper::get($data->headers, HttpConstants::HEADER_ACCEPT_LANGUAGE),
             connectionCountry: ($this->ipCountryFile ??= new IpCountryFile())->countryOf($data->clientIp),
+            pageOrigin: HttpHeaderHelper::get($data->headers, HttpConstants::HEADER_ORIGIN),
         ));
         $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($session->token);
         $this->publishSessionToasts($sessionTokenHash);

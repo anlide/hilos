@@ -159,6 +159,9 @@ final class HttpConstants
     /** @var string HTTP header Accept-Language */
     public const string HEADER_ACCEPT_LANGUAGE = 'Accept-Language';
 
+    /** @var string HTTP header Origin */
+    public const string HEADER_ORIGIN = 'Origin';
+
     /** @var string HTTP header Vary */
     public const string HEADER_VARY = 'Vary';
 

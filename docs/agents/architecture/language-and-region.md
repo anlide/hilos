@@ -77,7 +77,7 @@ Take the first rung that fits, top down:
 
 1. **The language address.** A host the project declares for a language sets
    that language for everyone, a signed-in person included
-   (not in the code yet — HIL-2313).
+   ([On A Language Address](#on-a-language-address)).
 2. **The person's own choice.** For a guest, the choice made in this browser
    (not in the code yet — HIL-2299); for a signed-in person, the language of
    the account (not in the code yet — HIL-2298).
@@ -180,7 +180,24 @@ Accounts made before this epic are owed no backfill and no conversion
 
 On a host the project names in its environment for a language, the language
 is that one for everyone, a signed-in person included, and the region ladder
-runs as usual (not in the code yet — HIL-2313).
+runs as usual.
+
+The project declares its addresses in `HILOS_LANGUAGE_HOSTS` as
+comma-separated `code=host` pairs — a bare host, with no scheme, port or path,
+and one host per language; every node of a cluster sets the same value, and an
+I18N project refuses to start on a malformed one
+([`LanguageAddresses`](../../../framework/backend/I18n/LanguageAddresses.php)).
+The address of a page is the `Origin` of its handshake, not the `Host`: `Host`
+names the socket, and a preview or a `VITE_WS_URL` keeps the socket on a host of
+its own. Hosts are compared by name, without scheme, port or case. The sessions
+library sends the `Origin` raw in the state frame,
+`SessionStateSignalData::$pageOrigin`, for the one socket that connected;
+`LanguageAddresses::languageOfOrigin()` on the project's side reads the
+language out of it, and a malformed header names no address. The tab's
+connection row remembers that language as `addressLanguage` — the declared
+language, not the outcome — and every later frame takes it from there. A
+language of the address that is not available skips the rung, and the ladder
+goes on.
 
 Choosing another language there moves the browser to the address of the chosen
 language, or to the main address when that language has none; nothing is
