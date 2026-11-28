@@ -57,10 +57,12 @@ use Hilos\Database\View\Item\Language;
 use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\LanguageCardSummary;
+use Hilos\I18n\Weekday;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Reference rows and their action doors against the live framework schema. */
@@ -734,8 +736,12 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
         $otherCountry = Hilos::$db->countries->actions->create('us', '$', 'USD');
         try {
             Hilos::$db->locales->actions->create(
-                $language, $otherCountry, '', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                $language,
+                $otherCountry,
+                new LocaleFormats(
+                    '', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             $this->fail('Expected an empty format to be refused');
         } catch (ValidationException $error) {
@@ -745,8 +751,10 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
 
         $locale->actions->switchOn();
         try {
-            $locale->actions->update('unknown', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und');
+            $locale->actions->update(new LocaleFormats(
+                'unknown', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und', Weekday::MONDAY,
+            ));
             $this->fail('Expected a switched-on locale to refuse an edit');
         } catch (I18nRowFrozenException) {
             $this->assertSame('YYYY-MM-DD', $locale->dateFormat);
@@ -756,14 +764,19 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
 
         $locale->actions->switchOff();
         try {
-            $locale->actions->update('', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX', 'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und');
+            $locale->actions->update(new LocaleFormats(
+                '', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und', Weekday::MONDAY,
+            ));
             $this->fail('Expected an empty updated format to be refused');
         } catch (ValidationException $error) {
             $this->assertSame("Date format '' is not recognized: expected one of the known templates.", $error->getMessage());
             $this->assertSame('YYYY-MM-DD', $locale->dateFormat);
         }
-        $locale->actions->update('DD/MM/YYYY', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und');
+        $locale->actions->update(new LocaleFormats(
+            'DD/MM/YYYY', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+            'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und', Weekday::MONDAY,
+        ));
         $locale->actions->switchOn();
         $this->assertSame('DD/MM/YYYY', $locale->dateFormat);
         $this->assertSame(MeasurementSystem::IMPERIAL, $locale->measurementSystem);
@@ -1828,8 +1841,12 @@ final class I18nReferenceIntegrationTest extends FrameworkIntegrationTestCase
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

@@ -1,9 +1,9 @@
 // HilosI18nLocaleWindow — the one window of a locale of the language, opened from
 // its pair's row in the locales table: add where the pair has no locale, edit a
 // switched-off locale, view a switched-on one — the mode fixed at opening. The
-// seven formats are chosen from closed lists the first page answer carries,
-// never typed: an add starts from the built-in catalog's formats when it knows
-// the pair, or from "Choose…" with Save unavailable until all seven are chosen.
+// formats are chosen from closed lists the first page answer carries, never
+// typed: an add starts from the built-in catalog's formats when it knows the
+// pair, or from "Choose…" with Save unavailable until all of them are chosen.
 // The sessions are the core's (createHilosI18nLocaleAdd, createHilosI18nLocaleEdit
 // with its baseline/draft/incoming merge, the switch dispatches and the switch-off
 // verdict); this view mirrors them, owns their tracked actions, and draws the
@@ -72,7 +72,7 @@ import {
   createHilosTrackedAction,
 } from '@hilos/angular/base'
 
-/** The seven formats of a locale, in the order the form lists them. */
+/** The formats of a locale, in the order the form lists them. */
 const FIELDS = [
   'date',
   'time',
@@ -81,9 +81,10 @@ const FIELDS = [
   'address',
   'measurement',
   'collation',
+  'firstWeekday',
 ] as const
 
-/** One of the seven formats. */
+/** One of the formats. */
 type LocaleField = (typeof FIELDS)[number]
 
 /** The pair the page opened the window over, and the mode it opened in. */
@@ -103,6 +104,7 @@ const NOTHING_CHOSEN: HilosI18nLocaleAddForm = {
   address: '',
   measurement: '',
   collation: '',
+  firstWeekday: '',
 }
 
 /** The footer row of one step, as the modal draws its own. */
@@ -672,6 +674,7 @@ export class HilosI18nLocaleWindow {
     address: '',
     measurement: 'metric',
     collation: '',
+    firstWeekday: 1,
   })
   protected readonly editState = signal(
     hilosRowEditIdle<HilosI18nLocaleFormats>(this.editForm()),
@@ -1052,11 +1055,15 @@ export class HilosI18nLocaleWindow {
     }
   }
 
-  protected choiceLabel(field: LocaleField, value: string): string {
-    return field === 'measurement' &&
-      (value === 'metric' || value === 'imperial')
-      ? this.copy.measurement[value]
-      : value
+  protected choiceLabel(
+    field: LocaleField,
+    value: HilosI18nLocaleFormats[LocaleField],
+  ): string {
+    return field === 'firstWeekday' && typeof value === 'number'
+      ? this.copy.weekdays[value]
+      : field === 'measurement' && (value === 'metric' || value === 'imperial')
+        ? this.copy.measurement[value]
+        : String(value)
   }
 
   protected changeField(field: LocaleField, event: Event): void {
@@ -1064,11 +1071,7 @@ export class HilosI18nLocaleWindow {
     if (!(target instanceof HTMLSelectElement)) return
     const { editor, creator } = this.session()
     if (this.mode() === 'add') creator.setField(field, target.value)
-    if (this.mode() === 'edit') {
-      editor.patchForm({
-        [field]: target.value,
-      } as Partial<HilosI18nLocaleFormats>)
-    }
+    if (this.mode() === 'edit') editor.setField(field, target.value)
   }
 
   // Save and Enter go through one door: nothing leaves for a viewer, while an

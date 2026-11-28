@@ -59,6 +59,7 @@ const formats = {
   address: 'Street, House, City, Index',
   measurement: 'metric',
   collation: 'und',
+  firstWeekday: 1,
 }
 const templates = {
   date: ['DD.MM.YYYY', 'YYYY-MM-DD'],
@@ -68,6 +69,7 @@ const templates = {
   address: ['Street, House, City, Index'],
   measurement: ['metric', 'imperial'],
   collation: ['und'],
+  firstWeekday: [1, 2, 3, 4, 5, 6, 0],
 }
 
 /** The address of the locales page of Russian, a signal so a test can move it to another language. */

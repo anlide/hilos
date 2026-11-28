@@ -8,6 +8,7 @@
 //
 // Framework-agnostic: the views render from what this module resolves.
 import { z } from 'zod'
+import { type DateTimePickerWeekday } from '../../primitives/dateTimePickerFactors.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { subscribeSignal, type ReadonlySignal } from '../../state/signal.js'
 import { type TableRow } from '../../state/TableRowsStore.js'
@@ -44,7 +45,10 @@ export const HilosI18nLocaleRowKey = {
   catalogFormats: 'catalogFormats',
 } as const
 
-/** Seven display formats of one locale or one built-in catalog entry. */
+/**
+ * Eight display values of one locale or one built-in catalog entry: seven formats
+ * and the first day of the week, Sunday as 0 through Saturday as 6.
+ */
 export const hilosI18nLocaleFormatsSchema = z.strictObject({
   date: z.string(),
   time: z.string(),
@@ -53,6 +57,9 @@ export const hilosI18nLocaleFormatsSchema = z.strictObject({
   address: z.string(),
   measurement: z.enum(['metric', 'imperial']),
   collation: z.string(),
+  firstWeekday: z.literal([
+    0, 1, 2, 3, 4, 5, 6,
+  ]) satisfies z.ZodType<DateTimePickerWeekday>,
 })
 
 export type HilosI18nLocaleFormats = z.infer<

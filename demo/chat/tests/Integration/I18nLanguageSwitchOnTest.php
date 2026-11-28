@@ -32,9 +32,11 @@ use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\LanguageCardSummary;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOnActionDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -150,8 +152,12 @@ final class I18nLanguageSwitchOnTest extends IntegrationTestCase
 
         $this->underAgent($this->agent, static function (): void {
             Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['fr'], null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                Hilos::$db->languages['fr'],
+                null,
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
         });
         $locale = Hilos::$db->locales['fr'];

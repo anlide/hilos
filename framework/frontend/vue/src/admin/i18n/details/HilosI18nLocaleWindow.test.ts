@@ -33,6 +33,7 @@ const formats = {
   address: 'Street, House, City, Index',
   measurement: 'metric' as const,
   collation: 'und',
+  firstWeekday: 1 as const,
 }
 const templates: HilosI18nLocaleTemplates = {
   date: ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD.MM.YYYY', 'MM/DD/YYYY'],
@@ -42,6 +43,7 @@ const templates: HilosI18nLocaleTemplates = {
   address: ['Street, House, City, Index'],
   measurement: ['metric', 'imperial'],
   collation: ['und'],
+  firstWeekday: [1, 2, 3, 4, 5, 6, 0],
 }
 const card: HilosI18nLanguageCard = {
   languageId: 11,
@@ -212,7 +214,7 @@ describe('HilosI18nLocaleWindow switch-off', () => {
       'Switch off locale · English in United Kingdom',
     )
     expect(el('i18n-locale-switch-off-body')?.textContent).toContain(
-      'Switching a locale off unlocks its seven formats for editing. Its formats and names stay in place.',
+      'Switching a locale off unlocks its formats for editing. Its formats and names stay in place.',
     )
     expect(el('i18n-locale-switch-off-note')?.textContent).toContain(
       'While it is off, the next framework reflow can replace these formats with the built-in ones.',
@@ -1134,9 +1136,7 @@ describe('HilosI18nLocaleWindow', () => {
     harness(own, 'add')
     await nextTick()
     expect((el('i18n-locale-submit') as HTMLButtonElement).disabled).toBe(true)
-    expect(el('i18n-locale-plate')?.textContent).toContain(
-      'choose all seven formats',
-    )
+    expect(el('i18n-locale-plate')?.textContent).toContain('choose all formats')
   })
 
   it('keeps the Add title, merges a new locale and saves a resolved draft by live id', async () => {
@@ -1349,5 +1349,83 @@ describe('HilosI18nLocaleWindow', () => {
       'MM/DD/YYYY',
     )
     expect(el('conflict-badge')).toBeNull()
+  })
+
+  it('lists the days from Monday to Sunday by name and sends the chosen day as a number', async () => {
+    const h = harness(own, 'add')
+    await nextTick()
+    const day = el('i18n-locale-field-firstWeekday') as HTMLSelectElement
+    expect(day.labels[0]?.textContent?.trim()).toBe('First day of week')
+    expect(
+      [...day.options].map((option) => option.textContent?.trim()),
+    ).toEqual([
+      'Choose…',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ])
+    for (const field of [
+      'date',
+      'time',
+      'number',
+      'phone',
+      'address',
+      'measurement',
+      'collation',
+    ] as const) {
+      const select = el(`i18n-locale-field-${field}`) as HTMLSelectElement
+      select.value = formats[field]
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    await nextTick()
+    expect((el('i18n-locale-submit') as HTMLButtonElement).disabled).toBe(true)
+    day.value = '0'
+    day.dispatchEvent(new Event('change', { bubbles: true }))
+    await nextTick()
+    expect(day.selectedOptions[0]?.textContent?.trim()).toBe('Sunday')
+    expect((el('i18n-locale-submit') as HTMLButtonElement).disabled).toBe(false)
+    el('i18n-locale-submit')?.click()
+    expect(h.dispatched[0]).toMatchObject({
+      name: HILOS_I18N_LOCALE_ADD_ACTION,
+      payload: {
+        languageId: 11,
+        countryId: 142,
+        formats: { ...formats, firstWeekday: 0 },
+      },
+    })
+  })
+
+  it('edits the day like any format and names a day changed elsewhere', async () => {
+    const h = harness(editable, 'edit')
+    await nextTick()
+    const day = el('i18n-locale-field-firstWeekday') as HTMLSelectElement
+    expect(day.selectedOptions[0]?.textContent?.trim()).toBe('Monday')
+    day.value = '6'
+    day.dispatchEvent(new Event('change', { bubbles: true }))
+    h.focused.set({ ...editable, formats: { ...formats, firstWeekday: 0 } })
+    await nextTick()
+    expect(el('i18n-locale-notice')?.textContent).toContain(
+      'First day of week changed elsewhere to "Sunday"; your choice stays selected.',
+    )
+    expect(day.selectedOptions[0]?.textContent?.trim()).toBe('Saturday')
+    el('conflict-accept-mine')?.click()
+    await nextTick()
+    el('i18n-locale-submit')?.click()
+    expect(h.dispatched[0]).toMatchObject({
+      name: HILOS_I18N_LOCALE_UPDATE_ACTION,
+      payload: { localeId: 11101, formats: { ...formats, firstWeekday: 6 } },
+    })
+  })
+
+  it('shows the day of a switched-on locale in a closed list', async () => {
+    harness({ ...visible, formats: { ...formats, firstWeekday: 0 } }, 'view')
+    await nextTick()
+    const day = el('i18n-locale-field-firstWeekday') as HTMLSelectElement
+    expect(day.disabled).toBe(true)
+    expect(day.selectedOptions[0]?.textContent?.trim()).toBe('Sunday')
   })
 })

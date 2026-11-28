@@ -20,8 +20,10 @@ use Hilos\Database\View\Item\Language;
 use Hilos\Database\View\Item\Locale;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameUpdateActionDTO;
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
@@ -167,8 +169,13 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
             $ownLanguage = Hilos::$db->languages->actions->create('xx', 'Own', false);
 
             self::createLocale($spanish, null);
-            $british = self::createLocale($english, Hilos::$db->countries['gb']);
+            $british = self::createLocale($english, Hilos::$db->countries['gb'], Weekday::SATURDAY);
             $british->actions->switchOn();
+            $german = Hilos::$db->languages->actions->create('de', 'German', false);
+            Hilos::$db->locales->actions->create($german, Hilos::$db->countries['de'], LocaleFormats::fromArray(array_replace(
+                LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('de-DE'))->toArray(),
+                [LocaleFormats::firstWeekday => Weekday::SUNDAY->value],
+            )));
 
             $germany = Hilos::$db->countries['de'];
             Hilos::$db->countryNames->findBase($germany->id, $english->id)->actions->edit('Deutschland');
@@ -202,9 +209,15 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
         self::assertSame($catalogSpanish->addressFormat, Hilos::$db->locales['es']->addressFormat);
         self::assertSame($catalogSpanish->measurementSystem, Hilos::$db->locales['es']->measurementSystem->value);
         self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']->dateFormat);
+        self::assertSame(Weekday::SATURDAY, Hilos::$db->locales['en-GB']->firstWeekday);
+        self::assertSame(
+            LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('de-DE'))->toArray(),
+            LocaleFormats::ofLocale(Hilos::$db->locales['de-DE'])->toArray(),
+        );
+        self::assertSame(Weekday::MONDAY, Hilos::$db->locales['de-DE']->firstWeekday);
         self::assertArrayNotHasKey('en-US', Hilos::$db->locales);
         self::assertArrayNotHasKey('ar', Hilos::$db->locales);
-        self::assertSame(3, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_locale`'));
+        self::assertSame(4, $this->rows('SELECT COUNT(*) AS `count` FROM `hilos_locale`'));
 
         self::assertArrayHasKey('en', Hilos::$db->languages);
         $english = Hilos::$db->languages['en'];
@@ -347,13 +360,18 @@ final class I18nCatalogReflowTest extends IntegrationTestCase
     /**
      * @param Language $language Locale's language
      * @param ?Country $country Its country, or null for a countryless locale
+     * @param Weekday $firstWeekday Its first weekday
      * @return Locale New switched-off locale with formats no catalog locale has
      */
-    private static function createLocale(Language $language, ?Country $country): Locale
+    private static function createLocale(Language $language, ?Country $country, Weekday $firstWeekday = Weekday::MONDAY): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und', $firstWeekday,
+            ),
         );
     }
 

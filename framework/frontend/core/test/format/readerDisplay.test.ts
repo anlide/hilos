@@ -37,6 +37,7 @@ describe('hilosReaderDisplay', () => {
       address: 'House, Street, State, Index',
       measurement: 'metric',
       collation: 'und',
+      firstWeekday: 1,
     })
     expect(Object.isFrozen(HILOS_DEFAULT_READER_FORMATS)).toBe(true)
   })

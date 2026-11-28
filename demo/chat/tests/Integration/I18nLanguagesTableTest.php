@@ -42,8 +42,10 @@ use Hilos\Database\Object\Item\Language as ObjectLanguage;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInLanguages;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\I18n\HilosI18nLanguagesTable;
@@ -404,8 +406,12 @@ final class I18nLanguagesTableTest extends IntegrationTestCase
     {
         $this->openTwoLists();
         $locale = $this->underAgent($this->agent, static fn () => Hilos::$db->locales->actions->create(
-            Hilos::$db->languages['qx'], null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            Hilos::$db->languages['qx'],
+            null,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         ));
         $this->assertLiveVerdicts(SourceChange::dbCreated(HilosDbContext::locales, (string) $locale->id, []), [
             'qx' => [false, 'locales', self::LOCALES_REFUSAL],

@@ -33,6 +33,7 @@ class Locale extends Entity
     public const string address_format = 'address_format';
     public const string measurement_system = 'measurement_system';
     public const string collation = 'collation';
+    public const string first_weekday = 'first_weekday';
     public const string enabled = 'enabled';
 
     public const string _table = 'hilos_locale';
@@ -49,6 +50,7 @@ class Locale extends Entity
         self::address_format,
         self::measurement_system,
         self::collation,
+        self::first_weekday,
         self::enabled,
     ];
     public const array _types = [
@@ -63,6 +65,7 @@ class Locale extends Entity
         self::address_format => PhpType::STRING->value,
         self::measurement_system => PhpType::STRING->value,
         self::collation => PhpType::STRING->value,
+        self::first_weekday => PhpType::INTEGER->value,
         self::enabled => PhpType::BOOLEAN->value,
     ];
     public const array _foreign = [
@@ -91,6 +94,7 @@ class Locale extends Entity
         self::address_format,
         self::measurement_system,
         self::collation,
+        self::first_weekday,
         self::enabled,
     ];
 
@@ -105,5 +109,6 @@ class Locale extends Entity
     public string $address_format;
     public string $measurement_system;
     public string $collation;
+    public int $first_weekday;
     public bool $enabled = false;
 }

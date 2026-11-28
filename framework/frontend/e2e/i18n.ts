@@ -123,7 +123,7 @@ export function i18nCountryUpdates(
   })
 }
 
-/** The seven choices carried by every locale window, including an empty Add. */
+/** The eight choices carried by every locale window, including an empty Add. */
 export const I18N_LOCALE_FIELDS = [
   'date',
   'time',
@@ -132,29 +132,42 @@ export const I18N_LOCALE_FIELDS = [
   'address',
   'measurement',
   'collation',
+  'firstWeekday',
 ] as const
+
+/**
+ * One choice per locale field as the action carries it: the first weekday is
+ * its number (0 = Sunday), every other format its string. The window's select
+ * holds the day as the string of that number.
+ */
+type I18nLocaleChoices = Readonly<
+  Record<
+    Exclude<(typeof I18N_LOCALE_FIELDS)[number], 'firstWeekday'>,
+    string
+  > & { firstWeekday: number }
+>
 
 /** Read all saved or draft choices through the real window controls. */
 export async function expectI18nLocaleFormats(
   expect: Expect,
   page: Page,
-  formats: Readonly<Record<(typeof I18N_LOCALE_FIELDS)[number], string>>,
+  formats: I18nLocaleChoices,
 ): Promise<void> {
   for (const field of I18N_LOCALE_FIELDS)
     await expect(page.getByTestId(`i18n-locale-field-${field}`)).toHaveValue(
-      formats[field],
+      String(formats[field]),
     )
 }
 
 /** Select every format through its native binding, including the sole collation. */
 export async function selectI18nLocaleFormats(
   page: Page,
-  formats: Readonly<Record<(typeof I18N_LOCALE_FIELDS)[number], string>>,
+  formats: I18nLocaleChoices,
 ): Promise<void> {
   for (const field of I18N_LOCALE_FIELDS)
     await page
       .getByTestId(`i18n-locale-field-${field}`)
-      .selectOption(formats[field])
+      .selectOption(String(formats[field]))
 }
 
 /** Read exact language Overview counters, including zero and countryless state. */

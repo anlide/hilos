@@ -17,7 +17,7 @@ final class I18nCatalogFingerprint
      *
      * @param array<string, array{native_name: string, rtl: bool}> $languages Language rows by code
      * @param array<string, array{currency_symbol: string, currency_code: string}> $countries Country rows by code
-     * @param array<string, array<string, string>> $locales Locale format rows by canonical code
+     * @param array<string, array<string, string|int>> $locales Locale format rows by canonical code
      * @param array<string, string> $defaultLocales Suggested locale codes by source country
      * @param array<string, array<string, string>> $countryNames Names by country and language code
      * @return string Lowercase, unprefixed 64-character SHA-256 digest

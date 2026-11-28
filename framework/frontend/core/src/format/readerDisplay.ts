@@ -32,6 +32,7 @@ export const HILOS_DEFAULT_READER_FORMATS: HilosLocaleFormats = Object.freeze({
   address: 'House, Street, State, Index',
   measurement: 'metric',
   collation: 'und',
+  firstWeekday: 1,
 })
 
 /**

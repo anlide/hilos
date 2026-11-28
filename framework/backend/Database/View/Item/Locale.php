@@ -14,6 +14,7 @@ use Hilos\HilosException;
 use Hilos\Hilos;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 
 /**
  * Read-facing locale row.
@@ -31,6 +32,7 @@ use Hilos\I18n\MeasurementSystem;
  * @property-read string $addressFormat
  * @property-read MeasurementSystem $measurementSystem
  * @property-read string $collation
+ * @property-read Weekday $firstWeekday
  * @property-read bool $enabled
  * @property-read Language $language
  * @property-read ?Country $country
@@ -69,6 +71,7 @@ class Locale extends DbItem
             ObjectLocale::addressFormat => $this->_object->addressFormat,
             ObjectLocale::measurementSystem => MeasurementSystem::from($this->_object->measurementSystem),
             ObjectLocale::collation => $this->_object->collation,
+            ObjectLocale::firstWeekday => Weekday::from($this->_object->firstWeekday),
             ObjectLocale::enabled => $this->_object->enabled,
             self::language => Hilos::$db->languages[$this->_object->languageId],
             self::country => Hilos::$db->countries[$this->_object->countryId] ?? null,

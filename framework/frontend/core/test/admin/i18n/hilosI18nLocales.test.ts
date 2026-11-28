@@ -32,6 +32,7 @@ const formats = {
   address: 'Street, House, City, Index',
   measurement: 'metric',
   collation: 'und',
+  firstWeekday: 1,
 }
 
 /** A context whose connection records every window asked for, and where. */
@@ -190,6 +191,49 @@ describe('resolveHilosI18nLocaleRow', () => {
         formats,
         catalogFormats: null,
         ...(isCountryDefault === undefined ? {} : { isCountryDefault }),
+      }
+      expect(() =>
+        resolveHilosI18nLocaleRow(localeRow('12:108', slot)),
+      ).toThrow()
+    },
+  )
+
+  it('reads the first weekday of the stored and the built-in formats', () => {
+    const row = resolveHilosI18nLocaleRow(
+      localeRow('en-US', {
+        languageId: 11,
+        countryId: 142,
+        localeId: 11142,
+        rowKey: '11:142',
+        countryCode: 'us',
+        countryName: null,
+        localeCode: 'en-US',
+        enabled: false,
+        isCountryDefault: false,
+        formats: { ...formats, firstWeekday: 0 },
+        catalogFormats: { ...formats, firstWeekday: 6 },
+      }),
+    )
+
+    expect(row.formats?.firstWeekday).toBe(0)
+    expect(row.catalogFormats?.firstWeekday).toBe(6)
+  })
+
+  it.each([[7], [-1], [1.5], ['0'], [undefined]])(
+    'refuses formats whose first weekday is not a day from Sunday to Saturday: %j',
+    (firstWeekday) => {
+      const slot = {
+        languageId: 12,
+        countryId: 108,
+        localeId: 12108,
+        rowKey: '12:108',
+        countryCode: 'ua',
+        countryName: 'Украина',
+        localeCode: 'ru-UA',
+        enabled: false,
+        isCountryDefault: false,
+        formats: { ...formats, firstWeekday },
+        catalogFormats: null,
       }
       expect(() =>
         resolveHilosI18nLocaleRow(localeRow('12:108', slot)),

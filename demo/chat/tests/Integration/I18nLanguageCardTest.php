@@ -33,8 +33,10 @@ use Hilos\Database\View\Item\Language;
 use Hilos\Database\View\Item\Locale;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
 use Hilos\I18n\DTO\LanguageCardSummary;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -117,13 +119,10 @@ final class I18nLanguageCardTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 $own,
                 null,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             $withLocale = Hilos::$db->languages->cardSummary($own->id);
             self::assertSame(1, $withLocale->localeCount);
@@ -193,13 +192,10 @@ final class I18nLanguageCardTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 Hilos::$db->languages['qx'],
                 null,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             Hilos::$db->languageNames->actions->createManual(
                 Hilos::$db->languages['qx'],
@@ -500,8 +496,12 @@ final class I18nLanguageCardTest extends IntegrationTestCase
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

@@ -349,6 +349,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
                 LocaleFormats::address => WireField::column(HilosDbContext::locales, ObjectLocale::addressFormat),
                 LocaleFormats::measurement => WireField::column(HilosDbContext::locales, ObjectLocale::measurementSystem),
                 LocaleFormats::collation => WireField::column(HilosDbContext::locales, ObjectLocale::collation),
+                LocaleFormats::firstWeekday => WireField::column(HilosDbContext::locales, ObjectLocale::firstWeekday),
             ]),
             HilosI18nLanguageLocalesTableRow::catalogFormats => WireField::each([
                 LocaleFormats::date => WireField::notPersonal(),
@@ -358,6 +359,7 @@ final class HilosI18nLanguageLocalesTable extends TableDefinition implements Win
                 LocaleFormats::address => WireField::notPersonal(),
                 LocaleFormats::measurement => WireField::notPersonal(),
                 LocaleFormats::collation => WireField::notPersonal(),
+                LocaleFormats::firstWeekday => WireField::notPersonal(),
             ]),
         ];
     }

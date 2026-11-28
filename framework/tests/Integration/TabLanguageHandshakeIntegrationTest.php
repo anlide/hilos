@@ -49,6 +49,7 @@ use Hilos\I18n\Country\IpCountryFile;
 use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\DTO\TabLanguage;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\Ordinary\RtOrdinaryQueue;
 use Hilos\Runtime\Row\RtRowArena;
@@ -156,8 +157,9 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
             self::assertSame($rtl, $tabLanguage[TabLanguage::rtl]);
             self::assertSame([
                 LocaleFormats::date, LocaleFormats::time, LocaleFormats::number, LocaleFormats::phone,
-                LocaleFormats::address, LocaleFormats::measurement, LocaleFormats::collation,
+                LocaleFormats::address, LocaleFormats::measurement, LocaleFormats::collation, LocaleFormats::firstWeekday,
             ], array_keys($tabLanguage[TabLanguage::formats]));
+            self::assertSame(Weekday::MONDAY->value, $tabLanguage[TabLanguage::formats][LocaleFormats::firstWeekday]);
         }
         foreach ([self::TAB_GUEST, self::TAB_PERSON] as $acceptKey) {
             self::assertSame($language->id, Hilos::$rt->tabLanguageConnections[$acceptKey]->languageId);
@@ -795,8 +797,12 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
             $language = Hilos::$db->languages->actions->create($code, $nativeName, $rtl);
             $language->actions->switchOn();
             $locale = Hilos::$db->locales->actions->create(
-                $language, null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                $language,
+                null,
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             $locale->actions->switchOn();
 
@@ -815,8 +821,12 @@ final class TabLanguageHandshakeIntegrationTest extends HilosSessionIntegrationT
         return ExecutionContext::run(new ExecutionFrame(agentId: self::REFERENCE_OWNER), static function () use ($code, $language): Locale {
             $country = Hilos::$db->countries->actions->create($code, '¥', 'JPY');
             $locale = Hilos::$db->locales->actions->create(
-                $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                $language,
+                $country,
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             $locale->actions->switchOn();
             $country->actions->update('¥', 'JPY', $locale->id);

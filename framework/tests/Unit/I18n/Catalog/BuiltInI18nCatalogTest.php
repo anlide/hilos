@@ -13,6 +13,7 @@ use Hilos\I18n\Catalog\LanguageDefinition;
 use Hilos\I18n\Catalog\LocaleDefinition;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use PHPUnit\Framework\TestCase;
 
 /** Pins the content and typed read boundary of the framework's built-in catalog. */
@@ -21,7 +22,7 @@ final class BuiltInI18nCatalogTest extends TestCase
     public function testTheShippedCatalogHasItsPinnedContentDigest(): void
     {
         self::assertSame(
-            '326cd5831e69e3d724b81e17d03d54ece3ac3de8a82b097160cbb04e96bbcdca',
+            '003cd5050bcec9d486ccf59b3ff5f0b7c327022e99c1f6f218bfad6bde809679',
             BuiltInI18nCatalog::fingerprint(),
         );
     }
@@ -57,14 +58,14 @@ final class BuiltInI18nCatalogTest extends TestCase
         }
     }
 
-    public function testLocalesCarryCanonicalCodesAndSevenFormats(): void
+    public function testLocalesCarryCanonicalCodesFormatsAndFirstWeekday(): void
     {
         $locales = iterator_to_array(BuiltInI18nCatalog::locales());
         self::assertCount(128, $locales);
         self::assertEquals(
             new LocaleDefinition(
                 'en-US', 'en', 'us', 'MM/DD/YYYY', 'hh:mm:ss a', '1,000.00',
-                '+X (XXX) XXX-XXXX', 'House, Street, State, Index', 'imperial', 'und',
+                '+X (XXX) XXX-XXXX', 'House, Street, State, Index', 'imperial', 'und', 0,
             ),
             BuiltInI18nCatalog::locale('en-US'),
         );
@@ -90,9 +91,33 @@ final class BuiltInI18nCatalogTest extends TestCase
                 self::assertNotSame('', $format);
             }
             self::assertSame('und', $locale->collation);
+            self::assertNotNull(Weekday::tryFrom($locale->firstWeekday), $locale->code);
+            if ($locale->countryCode === null) {
+                self::assertSame(Weekday::MONDAY->value, $locale->firstWeekday, $locale->code);
+            }
             $countryless += (int)($locale->countryCode === null);
         }
         self::assertSame(8, $countryless);
+    }
+
+    public function testFirstWeekdaysAreTheCountriesOfCldr(): void
+    {
+        foreach ([
+            'en-US' => Weekday::SUNDAY,
+            'en-GB' => Weekday::MONDAY,
+            'ar-EG' => Weekday::SATURDAY,
+            'he-IL' => Weekday::SUNDAY,
+            'en' => Weekday::MONDAY,
+            'zh' => Weekday::MONDAY,
+            'es' => Weekday::MONDAY,
+            'hi' => Weekday::MONDAY,
+            'ar' => Weekday::MONDAY,
+            'ru' => Weekday::MONDAY,
+            'pt' => Weekday::MONDAY,
+            'fr' => Weekday::MONDAY,
+        ] as $code => $weekday) {
+            self::assertSame($weekday->value, BuiltInI18nCatalog::locale($code)?->firstWeekday, $code);
+        }
     }
 
     public function testDefaultLocalesPreserveSourceHintsEvenWhenRowsAreAbsent(): void

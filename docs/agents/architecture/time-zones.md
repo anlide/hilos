@@ -925,7 +925,7 @@ commit, following [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule
 - Relative time such as "5 minutes ago" or "in N minutes" belongs to a separate
   global component that the owner will implement; it is not a formatter mode
   decided here (owner's decision, HIL-1584:26746).
-- The first day of the week comes from the reader's locale (HIL-2318); names
+- The first day of the week comes from the reader's locale; names
   of months and weekdays on a screen are English words of the core until the
   interface is translated (HIL-2280); see
   [The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees).

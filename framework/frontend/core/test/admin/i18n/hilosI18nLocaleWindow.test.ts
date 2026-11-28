@@ -41,6 +41,7 @@ const formats = {
   address: 'Street, House, City, Index',
   measurement: 'metric' as const,
   collation: 'und',
+  firstWeekday: 1 as const,
 }
 const templates = {
   date: ['DD/MM/YYYY', 'YYYY-MM-DD'],
@@ -50,6 +51,7 @@ const templates = {
   address: ['Street, House, City, Index'],
   measurement: ['metric', 'imperial'],
   collation: ['und'],
+  firstWeekday: [1, 2, 3, 4, 5, 6, 0],
 }
 
 function row(
@@ -295,7 +297,7 @@ describe('locale window core', () => {
     )
   })
 
-  it('edits the seven formats and blocks save when switched on or removed', async () => {
+  it('edits the formats and blocks save when switched on or removed', async () => {
     const original = row('en-GB', formats, formats)
     const { controller, focused, context, sent } = setup([original])
     const edit = createHilosI18nLocaleEdit(controller, context)
@@ -366,7 +368,7 @@ describe('locale window core', () => {
     expect(add.open('11:142')).toBe(true)
     expect(add.canAdd.get()).toBe(false)
     for (const [field, value] of Object.entries(formats)) {
-      add.setField(field as keyof typeof formats, value)
+      add.setField(field as keyof typeof formats, String(value))
     }
     expect(add.canAdd.get()).toBe(true)
     focused.set({ ...own, localeId: 11142, localeCode: 'en-AD', formats })
@@ -454,13 +456,22 @@ describe('locale window core', () => {
     add.dispose()
   })
 
-  it('starts unknown pairs with seven empty fields and merges independent and matching choices', () => {
+  it('starts unknown pairs with every field empty and merges independent and matching choices', () => {
     const missing = row('en-AD', null, null)
     const { controller, focused, context } = setup([missing])
     const add = createHilosI18nLocaleAdd(controller, context)
     add.start()
     add.open(missing.rowKey)
-    expect(Object.values(add.form.get())).toEqual(['', '', '', '', '', '', ''])
+    expect(Object.values(add.form.get())).toEqual([
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+    ])
     expect(add.gone.get()).toBe(false)
     add.setField('date', 'YYYY-MM-DD')
     focused.set(row('en-AD', { ...formats, date: 'YYYY-MM-DD' }, null))
@@ -703,5 +714,95 @@ describe('locale window core', () => {
     expect(edit.state.get().conflict).toBe(false)
     expect(edit.form.get().date).toBe('MM/DD/YYYY')
     edit.dispose()
+  })
+
+  it.each([[[7]], [['1']], [undefined]])(
+    'reads no closed lists while the list of days is malformed: %j',
+    (firstWeekday) => {
+      const { context } = setup([])
+      context.scopes
+        .page()!
+        .data.set(LOCALE_TEMPLATES_DATA, { ...templates, firstWeekday })
+      expect(createHilosI18nLocaleTemplates(context).get()).toBeNull()
+    },
+  )
+
+  it('names a day changed elsewhere by its name, and sends the chosen day as a number', async () => {
+    const original = row('en-GB', formats, formats)
+    const { controller, focused, context, sent } = setup([original])
+    const edit = createHilosI18nLocaleEdit(controller, context)
+    edit.start()
+    edit.open('11:101')
+    edit.setField('firstWeekday', '6')
+    expect(edit.form.get().firstWeekday).toBe(6)
+    focused.set({ ...original, formats: { ...formats, firstWeekday: 0 } })
+    expect(edit.state.get().conflict).toBe(true)
+    expect(edit.noticeText.get()).toBe(
+      'First day of week changed elsewhere to "Sunday"; your choice stays selected.',
+    )
+    expect(edit.form.get().firstWeekday).toBe(6)
+    edit.keepMine()
+    await edit.save(async () => true)
+    expect(sent).toEqual([
+      [
+        HILOS_I18N_LOCALE_UPDATE_ACTION,
+        {
+          localeId: 11101,
+          languageId: 11,
+          countryId: 101,
+          formats: { ...formats, firstWeekday: 6 },
+        },
+      ],
+    ])
+    edit.dispose()
+  })
+
+  it('takes the day from the catalog, and keeps Add unavailable for an own pair until the day is chosen', async () => {
+    const known = row('en-GB', null, { ...formats, firstWeekday: 0 })
+    const own = row('en-AD', null, null)
+    const { controller, focused, context, sent } = setup([known, own])
+    const add = createHilosI18nLocaleAdd(controller, context)
+    add.start()
+    add.open(known.rowKey)
+    expect(add.form.get().firstWeekday).toBe(0)
+    await add.add(async () => true)
+    add.open(own.rowKey)
+    expect(add.form.get().firstWeekday).toBe('')
+    for (const field of [
+      'date',
+      'time',
+      'number',
+      'phone',
+      'address',
+      'measurement',
+      'collation',
+    ] as const) {
+      add.setField(field, formats[field])
+    }
+    expect(add.addAvailable.get()).toBe(false)
+    add.setField('firstWeekday', '0')
+    expect(add.form.get().firstWeekday).toBe(0)
+    expect(add.addAvailable.get()).toBe(true)
+    await add.add(async () => true)
+    expect(sent).toEqual([
+      [
+        HILOS_I18N_LOCALE_ADD_ACTION,
+        {
+          languageId: 11,
+          countryId: 101,
+          formats: { ...formats, firstWeekday: 0 },
+        },
+      ],
+      [
+        HILOS_I18N_LOCALE_ADD_ACTION,
+        {
+          languageId: 11,
+          countryId: 142,
+          formats: { ...formats, firstWeekday: 0 },
+        },
+      ],
+    ])
+    focused.set(undefined)
+    add.dispose()
   })
 })

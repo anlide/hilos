@@ -27,6 +27,7 @@ import {
   PAGE_SIGNAL_SCHEMAS,
 } from '../../../src/subscription/bindPageScope.js'
 import { bindTimeZoneState } from '../../../src/timeZone/timeZoneState.js'
+import { bindTabLanguageState } from '../../../src/language/tabLanguageState.js'
 import { Socket } from '../../status/fixtures.js'
 import { harness, overview } from './fixtures.js'
 import { normalizeTableRow } from '../../../src/state/normalizer.js'
@@ -1203,6 +1204,82 @@ describe('Works window picker', () => {
     } finally {
       h.dispose()
       applyServerTime(Date.now())
+    }
+  })
+
+  it('starts the calendar on the tab first weekday captured on each opening, and on Monday with no tab language', () => {
+    vi.setSystemTime(Date.UTC(2031, 0, 1, 14, 50))
+    const h = setup()
+    const releaseLanguage = bindTabLanguageState(h.context.connection)
+    const tellFirstWeekday = (firstWeekday: number | null) =>
+      h.emit('projectSignal', {
+        type: 'handshake_response',
+        data: {
+          entities: { currentUser: { id: 1, timeZone: 'UTC' } },
+          data: {
+            tabLanguage:
+              firstWeekday === null
+                ? null
+                : {
+                    languageId: 1,
+                    languageCode: 'en',
+                    rtl: false,
+                    localeId: 3,
+                    localeCode: 'en-US',
+                    formats: {
+                      date: 'MM/DD/YYYY',
+                      time: 'hh:mm:ss A',
+                      number: '1,000.00',
+                      phone: '+X (XXX) XXX-XXXX',
+                      address: 'House Street, City, Region Index',
+                      measurement: 'imperial',
+                      collation: 'und',
+                      firstWeekday,
+                    },
+                  },
+          },
+        },
+      })
+    const firstColumn = (form: Pick<HilosStatusWorkCreate, 'windowPicker'>) => {
+      const calendar = form.windowPicker.get()!.calendar
+      calendar.open()
+      const grid = calendar.state.get().grid!
+      return {
+        weekday: grid.weekdays[0]!.full,
+        days: grid.weeks.map((week) => week[0]?.date ?? null),
+      }
+    }
+    try {
+      h.window()
+      h.create.open()
+      expect(firstColumn(h.create)).toEqual({
+        weekday: 'Monday',
+        days: [null, '2031-01-06', '2031-01-13', '2031-01-20', '2031-01-27'],
+      })
+      h.create.close()
+
+      tellFirstWeekday(0)
+      h.create.open()
+      expect(firstColumn(h.create)).toEqual({
+        weekday: 'Sunday',
+        days: [null, '2031-01-05', '2031-01-12', '2031-01-19', '2031-01-26'],
+      })
+      h.edit.open('7')
+      expect(firstColumn(h.edit).weekday).toBe('Sunday')
+
+      tellFirstWeekday(1)
+      expect(firstColumn(h.create).weekday).toBe('Sunday')
+      expect(firstColumn(h.edit).weekday).toBe('Sunday')
+      h.edit.open('7')
+      expect(firstColumn(h.edit).weekday).toBe('Monday')
+
+      tellFirstWeekday(null)
+      h.create.close()
+      h.create.open()
+      expect(firstColumn(h.create).weekday).toBe('Monday')
+    } finally {
+      releaseLanguage()
+      h.dispose()
     }
   })
 

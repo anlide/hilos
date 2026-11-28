@@ -45,7 +45,6 @@ use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\LocaleTemplates;
-use Hilos\I18n\MeasurementSystem;
 use Hilos\HilosException;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameUpdateActionDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameAddActionDTO;
@@ -639,9 +638,9 @@ final class I18nCountryNameDeleteTest extends IntegrationTestCase
                 Hilos::$db->countries['us'], Hilos::$db->languages['en'], null, 'Manual US',
             );
             $locale = Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['en'], Hilos::$db->countries['gb'],
-                LocaleTemplates::DATE[0], LocaleTemplates::TIME[0], LocaleTemplates::NUMBER[0],
-                LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0], MeasurementSystem::METRIC, LocaleTemplates::COLLATION[0],
+                Hilos::$db->languages['en'],
+                Hilos::$db->countries['gb'],
+                LocaleTemplates::firsts(),
             );
             Hilos::$db->countryNames->actions->createManual(
                 Hilos::$db->countries['us'], Hilos::$db->languages['en'], $locale, 'British US',

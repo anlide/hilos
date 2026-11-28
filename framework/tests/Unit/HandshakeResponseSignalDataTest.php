@@ -11,6 +11,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\DTO\TabLanguage;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -1292,7 +1293,9 @@ final class HandshakeResponseSignalDataTest extends TestCase
             false,
             $localeId,
             $localeId === null ? null : 'es-ES',
-            new LocaleFormats('DD/MM/YYYY', 'HH:mm', '1.234,56', '+XX XXX XXX XXX', 'Street House, City', MeasurementSystem::METRIC, 'es'),
+            new LocaleFormats(
+                'DD/MM/YYYY', 'HH:mm', '1.234,56', '+XX XXX XXX XXX', 'Street House, City', MeasurementSystem::METRIC, 'es', Weekday::MONDAY,
+            ),
         )->toArray();
     }
 }

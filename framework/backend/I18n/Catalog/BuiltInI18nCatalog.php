@@ -20,9 +20,12 @@ final class BuiltInI18nCatalog
     private const string KEY_ADDRESS_FORMAT = 'address_format';
     private const string KEY_MEASUREMENT_SYSTEM = 'measurement_system';
     private const string KEY_COLLATION = 'collation';
+    private const string KEY_FIRST_WEEKDAY = 'first_weekday';
 
     // Language, locale, country, default-locale and name values are ported from hleb.
     // Currency codes are the current tender currencies in Unicode CLDR 48.2.
+    // A locale's first weekday is the weekData firstDay of its country in Unicode CLDR 48.2
+    // (0 = Sunday … 6 = Saturday); a countryless locale takes the world value "001", Monday.
     private const array LANGUAGES = [
         'en' => [
             self::KEY_NATIVE_NAME => 'English',
@@ -442,6 +445,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'en-US' => [
             self::KEY_DATE_FORMAT => 'MM/DD/YYYY',
@@ -451,6 +455,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'imperial',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'en-GB' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -460,6 +465,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'en-CA' => [
             self::KEY_DATE_FORMAT => 'MM/DD/YYYY',
@@ -469,6 +475,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'en-AU' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -478,6 +485,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'en-NZ' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -487,6 +495,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'en-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -496,6 +505,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'en-SG' => [
             self::KEY_DATE_FORMAT => 'MM/DD/YYYY',
@@ -505,6 +515,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'en-IE' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -514,6 +525,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'en-ZA' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -523,6 +535,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'en-NG' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -532,6 +545,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'en-PH' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -541,6 +555,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'en-MY' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -550,6 +565,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'en-HK' => [
             self::KEY_DATE_FORMAT => 'YYYY/MM/DD',
@@ -559,6 +575,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'en-IL' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -568,6 +585,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'zh' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -577,6 +595,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Prefecture, City, Region, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'zh-CN' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -586,6 +605,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Prefecture, City, Region, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'zh-HK' => [
             self::KEY_DATE_FORMAT => 'YYYY/MM/DD',
@@ -595,6 +615,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Prefecture, City, Region, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'zh-TW' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -604,6 +625,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Prefecture, City, Region, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'zh-SG' => [
             self::KEY_DATE_FORMAT => 'YYYY/MM/DD',
@@ -613,6 +635,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'es' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -622,6 +645,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'es-ES' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -631,6 +655,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'es-MX' => [
             self::KEY_DATE_FORMAT => 'DD-MM-YYYY',
@@ -640,6 +665,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'es-AR' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -649,6 +675,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'es-CO' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -658,6 +685,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'es-CL' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -667,6 +695,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'es-PE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -676,6 +705,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'es-VE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -685,6 +715,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'hi' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -694,6 +725,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'hi-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -703,6 +735,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'hi-NP' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -712,6 +745,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'hi-FJ' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -721,6 +755,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ar' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -730,6 +765,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ar-SA' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -739,6 +775,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ar-AE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -748,6 +785,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ar-EG' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -757,6 +795,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'ar-MA' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -766,6 +805,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ar-DZ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -775,6 +815,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'ar-IQ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -784,6 +825,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'ar-LB' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -793,6 +835,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ar-JO' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -802,6 +845,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'ar-KW' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -811,6 +855,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'bn-BD' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -820,6 +865,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'bn-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -829,6 +875,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ru' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -838,6 +885,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ru-RU' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -847,6 +895,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ru-UA' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -856,6 +905,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ru-BY' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -865,6 +915,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ru-KZ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -874,6 +925,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ru-KG' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -883,6 +935,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ru-MD' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -892,6 +945,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'pt' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -901,6 +955,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'pt-PT' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -910,6 +965,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'pt-BR' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -919,6 +975,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'pt-AO' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -928,6 +985,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'pt-MZ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -937,6 +995,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'pt-CV' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -946,6 +1005,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'id-ID' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -955,6 +1015,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'fr' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -964,6 +1025,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fr-FR' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -973,6 +1035,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fr-CA' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -982,6 +1045,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'fr-BE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -991,6 +1055,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fr-CH' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1000,6 +1065,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fr-LU' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1009,6 +1075,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fr-MA' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1018,6 +1085,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fr-DZ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1027,6 +1095,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'fr-SN' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1036,6 +1105,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fr-CI' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1045,6 +1115,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'de-DE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1054,6 +1125,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'de-AT' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1063,6 +1135,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'de-CH' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1072,6 +1145,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'de-LI' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1081,6 +1155,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ja-JP' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -1090,6 +1165,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Prefecture, City, Region, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ko-KR' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -1099,6 +1175,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Prefecture, City, Region, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'tr-TR' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1108,6 +1185,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'it-IT' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1117,6 +1195,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'it-CH' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1126,6 +1205,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'nl-NL' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1135,6 +1215,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'nl-BE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1144,6 +1225,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'nl-SR' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1153,6 +1235,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'pl-PL' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1162,6 +1245,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'uk-UA' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1171,6 +1255,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'House, Street, Region, City, State, Index',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'th-TH' => [
             self::KEY_DATE_FORMAT => 'YYYY/MM/DD',
@@ -1180,6 +1265,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'vi-VN' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -1189,6 +1275,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fa-IR' => [
             self::KEY_DATE_FORMAT => 'YYYY-MM-DD',
@@ -1198,6 +1285,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'fa-AF' => [
             self::KEY_DATE_FORMAT => 'YYYY-MM-DD',
@@ -1207,6 +1295,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 6,
         ],
         'fa-TJ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1216,6 +1305,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'he-IL' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1225,6 +1315,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ro-RO' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1234,6 +1325,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ro-MD' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1243,6 +1335,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'hu-HU' => [
             self::KEY_DATE_FORMAT => 'YYYY.MM.DD',
@@ -1252,6 +1345,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'el-GR' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1261,6 +1355,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'el-CY' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1270,6 +1365,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sv-SE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1279,6 +1375,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sv-FI' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1288,6 +1385,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'da-DK' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1297,6 +1395,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'fi-FI' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1306,6 +1405,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'cs-CZ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1315,6 +1415,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sk-SK' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1324,6 +1425,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'bg-BG' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1333,6 +1435,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'hr-HR' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1342,6 +1445,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sr-RS' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1351,6 +1455,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sr-ME' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1360,6 +1465,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sr-BA' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1369,6 +1475,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'lv-LV' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1378,6 +1485,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'lt-LT' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1387,6 +1495,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'et-EE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1396,6 +1505,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sl-SI' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1405,6 +1515,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'no-NO' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1414,6 +1525,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ur-PK' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1423,6 +1535,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ur-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1432,6 +1545,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ta-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1441,6 +1555,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ta-LK' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1450,6 +1565,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'ta-SG' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1459,6 +1575,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'mr-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1468,6 +1585,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'kn-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1477,6 +1595,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'ml-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1486,6 +1605,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'te-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1495,6 +1615,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'pa-IN' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1504,6 +1625,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'pa-PK' => [
             self::KEY_DATE_FORMAT => 'DD/MM/YYYY',
@@ -1513,6 +1635,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'my-MM' => [
             self::KEY_DATE_FORMAT => 'YYYY/MM/DD',
@@ -1522,6 +1645,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'am-ET' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1531,6 +1655,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Index, Province, City, Region, Street, House',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'sw-KE' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1540,6 +1665,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
         'sw-TZ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1549,6 +1675,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'sw-UG' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1558,6 +1685,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'yo-NG' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1567,6 +1695,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'yo-BJ' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1576,6 +1705,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 1,
         ],
         'zu-ZA' => [
             self::KEY_DATE_FORMAT => 'DD.MM.YYYY',
@@ -1585,6 +1715,7 @@ final class BuiltInI18nCatalog
             self::KEY_ADDRESS_FORMAT => 'Street, House, Index, City',
             self::KEY_MEASUREMENT_SYSTEM => 'metric',
             self::KEY_COLLATION => 'und',
+            self::KEY_FIRST_WEEKDAY => 0,
         ],
     ];
 
@@ -4385,6 +4516,7 @@ final class BuiltInI18nCatalog
             addressFormat: $row[self::KEY_ADDRESS_FORMAT],
             measurementSystem: $row[self::KEY_MEASUREMENT_SYSTEM],
             collation: $row[self::KEY_COLLATION],
+            firstWeekday: $row[self::KEY_FIRST_WEEKDAY],
         );
     }
 
@@ -4442,6 +4574,7 @@ final class BuiltInI18nCatalog
                 addressFormat: $row[self::KEY_ADDRESS_FORMAT],
                 measurementSystem: $row[self::KEY_MEASUREMENT_SYSTEM],
                 collation: $row[self::KEY_COLLATION],
+                firstWeekday: $row[self::KEY_FIRST_WEEKDAY],
             );
         }
     }

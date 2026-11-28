@@ -73,11 +73,7 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                     ?? throw new TableActionException('Unknown language: ' . $dto->languageId);
                 $country = $dto->countryId === null ? null : (Hilos::$db->countries[$dto->countryId]
                     ?? throw new TableActionException('Unknown country: ' . $dto->countryId));
-                $formats = $dto->formats;
-                $locale = Hilos::$db->locales->actions->create(
-                    $language, $country, $formats->date, $formats->time, $formats->number,
-                    $formats->phone, $formats->address, $formats->measurement, $formats->collation,
-                );
+                $locale = Hilos::$db->locales->actions->create($language, $country, $dto->formats);
                 $this->setActionSuccessMessage("Locale {$locale->code} added.");
 
                 return null;
@@ -91,11 +87,7 @@ abstract class AbstractHilosI18nLanguageLocalesPage extends AbstractHilosI18nLan
                 if ($locale->languageId !== $dto->languageId || $locale->countryId !== $dto->countryId) {
                     throw new TableActionException('The locale no longer belongs to this language and country.');
                 }
-                $formats = $dto->formats;
-                $locale->actions->update(
-                    $formats->date, $formats->time, $formats->number, $formats->phone,
-                    $formats->address, $formats->measurement, $formats->collation,
-                );
+                $locale->actions->update($dto->formats);
                 $this->setActionSuccessMessage("Locale {$locale->code} saved.");
 
                 return null;

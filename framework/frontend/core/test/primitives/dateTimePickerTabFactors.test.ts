@@ -29,6 +29,7 @@ describe('hilosTabPickerFactors', () => {
         dateOrder,
         dateSeparator,
         hourCycle: 'h23',
+        firstWeekday: 1,
       })
     },
   )
@@ -41,22 +42,43 @@ describe('hilosTabPickerFactors', () => {
     expect(hilosTabPickerFactors().hourCycle).toBe(hourCycle)
   })
 
+  it.each([0, 1, 6] as const)(
+    'reads the first weekday %i of the region',
+    (firstWeekday) => {
+      reader.region({ firstWeekday })
+      expect(hilosTabPickerFactors().firstWeekday).toBe(firstWeekday)
+    },
+  )
+
+  it('keeps the first weekday of a region whose date template it cannot read', () => {
+    reader.region({ date: 'D.M.YY', firstWeekday: 0 })
+    expect(hilosTabPickerFactors().firstWeekday).toBe(0)
+  })
+
   it('reads the built-in formats before the tab knows a region', () => {
     expect(hilosTabPickerFactors()).toEqual({
       dateOrder: ['day', 'month', 'year'],
       dateSeparator: '.',
       hourCycle: 'h23',
+      firstWeekday: 1,
     })
   })
 
+  it('reads the built-in formats again when the tab loses its region', () => {
+    reader.region({ firstWeekday: 0 })
+    reader.region(null)
+    expect(hilosTabPickerFactors().firstWeekday).toBe(1)
+  })
+
   it('reads the region at the moment it is asked, not later', () => {
-    reader.region({ date: 'MM/DD/YYYY', time: 'hh:mm:ss a' })
+    reader.region({ date: 'MM/DD/YYYY', time: 'hh:mm:ss a', firstWeekday: 0 })
     const taken = hilosTabPickerFactors()
     reader.region({ date: 'YYYY-MM-DD' })
     expect(taken).toEqual({
       dateOrder: ['month', 'day', 'year'],
       dateSeparator: '/',
       hourCycle: 'h12',
+      firstWeekday: 0,
     })
     expect(hilosTabPickerFactors().dateOrder).toEqual(['year', 'month', 'day'])
   })

@@ -9,6 +9,7 @@ use Hilos\Database\Entity\Item\Locale;
 use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -20,8 +21,9 @@ final class LocaleTemplatesTest extends TestCase
         $templates = LocaleTemplates::toArray();
         self::assertSame([
             LocaleFormats::date, LocaleFormats::time, LocaleFormats::number, LocaleFormats::phone,
-            LocaleFormats::address, LocaleFormats::measurement, LocaleFormats::collation,
+            LocaleFormats::address, LocaleFormats::measurement, LocaleFormats::collation, LocaleFormats::firstWeekday,
         ], array_keys($templates));
+        self::assertSame([1, 2, 3, 4, 5, 6, 0], $templates[LocaleFormats::firstWeekday]);
         self::assertSame(array_map(
             static fn(MeasurementSystem $system): string => $system->value,
             MeasurementSystem::cases(),
@@ -44,40 +46,63 @@ final class LocaleTemplatesTest extends TestCase
     public function testAllKnownTemplatesPassTheWriteDoor(): void
     {
         foreach (LocaleTemplates::DATE as $date) {
-            LocaleTemplates::refuseUnknown(
-                $date, LocaleTemplates::TIME[0], LocaleTemplates::NUMBER[0],
-                LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0], LocaleTemplates::COLLATION[0],
-            );
+            LocaleTemplates::refuseUnknown(self::formatsWith(LocaleFormats::date, $date));
         }
         $this->addToAssertionCount(count(LocaleTemplates::DATE));
     }
 
-    /** @return iterable<string, array{int, string, string}> Unknown values and expected labels */
+    public function testFirstsAreTheFirstTemplateOfEachListMetricAndMonday(): void
+    {
+        $firsts = LocaleTemplates::firsts();
+
+        self::assertSame([
+            LocaleFormats::date => LocaleTemplates::DATE[0],
+            LocaleFormats::time => LocaleTemplates::TIME[0],
+            LocaleFormats::number => LocaleTemplates::NUMBER[0],
+            LocaleFormats::phone => LocaleTemplates::PHONE[0],
+            LocaleFormats::address => LocaleTemplates::ADDRESS[0],
+            LocaleFormats::measurement => MeasurementSystem::METRIC->value,
+            LocaleFormats::collation => LocaleTemplates::COLLATION[0],
+            LocaleFormats::firstWeekday => Weekday::MONDAY->value,
+        ], $firsts->toArray());
+        LocaleTemplates::refuseUnknown($firsts);
+    }
+
+    /** @return iterable<string, array{string, string, string}> Field, unknown value and expected label */
     public static function unknownTemplates(): iterable
     {
-        yield 'date' => [0, '', 'Date format'];
-        yield 'time' => [1, '12h', 'Time format'];
-        yield 'number' => [2, '1.234', 'Number format'];
-        yield 'phone' => [3, '123', 'Phone format'];
-        yield 'address' => [4, 'street', 'Address format'];
-        yield 'sorting' => [5, 'unicode', 'Sorting'];
+        yield 'date' => [LocaleFormats::date, '', 'Date format'];
+        yield 'time' => [LocaleFormats::time, '12h', 'Time format'];
+        yield 'number' => [LocaleFormats::number, '1.234', 'Number format'];
+        yield 'phone' => [LocaleFormats::phone, '123', 'Phone format'];
+        yield 'address' => [LocaleFormats::address, 'street', 'Address format'];
+        yield 'sorting' => [LocaleFormats::collation, 'unicode', 'Sorting'];
     }
 
     /**
-     * @param int $index Index of the invalid format
+     * @param string $field Wire key of the invalid format
      * @param string $value Invalid format
      * @param string $label Expected field label
      */
     #[DataProvider('unknownTemplates')]
-    public function testUnknownTemplateNamesFieldAndValue(int $index, string $value, string $label): void
+    public function testUnknownTemplateNamesFieldAndValue(string $field, string $value, string $label): void
     {
-        $values = [
-            LocaleTemplates::DATE[0], LocaleTemplates::TIME[0], LocaleTemplates::NUMBER[0],
-            LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0], LocaleTemplates::COLLATION[0],
-        ];
-        $values[$index] = $value;
+        $formats = self::formatsWith($field, $value);
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessage("{$label} '{$value}' is not recognized: expected one of the known templates.");
-        LocaleTemplates::refuseUnknown(...$values);
+        LocaleTemplates::refuseUnknown($formats);
+    }
+
+    /**
+     * @param string $field Wire key of the one format to replace
+     * @param string $value Its value
+     * @return LocaleFormats The first templates with that one format replaced
+     */
+    private static function formatsWith(string $field, string $value): LocaleFormats
+    {
+        $data = LocaleTemplates::firsts()->toArray();
+        $data[$field] = $value;
+
+        return LocaleFormats::fromArray($data);
     }
 }

@@ -1,5 +1,5 @@
 // The Angular locale window over the core sessions and the real locales table:
-// add, edit and view fixed at opening; seven closed selects filled from the
+// add, edit and view fixed at opening; the closed selects filled from the
 // catalog or left on "Choose…" with Add unavailable until all are chosen, and the
 // pair without a country sent as null; an edit's merge with Keep mine / Take
 // theirs, a locale gone or switched on elsewhere; the switch-on and switch-off
@@ -124,10 +124,11 @@ const FIELDS = [
   'address',
   'measurement',
   'collation',
+  'firstWeekday',
 ] as const
 
 describe('HilosI18nLocaleWindow — add', () => {
-  it('asks for all seven closed choices of an unknown pair before Add, then sends them', async () => {
+  it('asks for every closed choice of an unknown pair before Add, then sends them', async () => {
     const h = setup()
     h.open('19:146', 'add')
     expect(h.focuses.at(-1)).toBe('19:146')
@@ -149,13 +150,33 @@ describe('HilosI18nLocaleWindow — add', () => {
       'The built-in catalog does not know this pair',
     )
     expect(h.button('i18n-locale-submit').disabled).toBe(true)
+    expect(
+      [...h.select('firstWeekday').options].map((item) =>
+        item.textContent?.trim(),
+      ),
+    ).toEqual([
+      'Choose…',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ])
+    expect(h.select('firstWeekday').labels[0]?.textContent).toBe(
+      'First day of week',
+    )
     for (const field of FIELDS.slice(0, -1)) {
-      h.choose(field, localeTemplates[field][1]!)
+      h.choose(field, String(localeTemplates[field][1]))
     }
     expect(h.button('i18n-locale-submit').disabled).toBe(true)
     h.submit()
     expect(h.calls).toHaveLength(0)
-    h.choose('collation', 'en')
+    h.choose('firstWeekday', '0')
+    expect(
+      h.select('firstWeekday').selectedOptions[0]?.textContent?.trim(),
+    ).toBe('Sunday')
     h.click('i18n-locale-submit')
     h.click('i18n-locale-submit')
     expect(h.calls).toHaveLength(1)
@@ -172,6 +193,7 @@ describe('HilosI18nLocaleWindow — add', () => {
           address: 'city, street',
           measurement: 'imperial',
           collation: 'en',
+          firstWeekday: 0,
         },
       },
     })
@@ -436,6 +458,36 @@ describe('HilosI18nLocaleWindow — edit and switch on', () => {
     })
   })
 
+  it('edits the day like any format and names a day changed elsewhere', () => {
+    const h = setup()
+    h.open('19:108', 'edit')
+    expect(
+      h.select('firstWeekday').selectedOptions[0]?.textContent?.trim(),
+    ).toBe('Monday')
+    h.choose('firstWeekday', '6')
+    h.act(() =>
+      h.delta({
+        ...ukraineLocale,
+        formats: { ...catalogFormats, firstWeekday: 0 },
+      }),
+    )
+    expect(h.el('i18n-locale-notice')?.textContent).toContain(
+      'First day of week changed elsewhere to "Sunday"; your choice stays selected.',
+    )
+    expect(
+      h.select('firstWeekday').selectedOptions[0]?.textContent?.trim(),
+    ).toBe('Saturday')
+    h.click('conflict-accept-mine')
+    h.submit()
+    expect(h.calls[0]).toMatchObject({
+      action: 'hilos_i18n_locale_update',
+      payload: {
+        localeId: 19108,
+        formats: { ...catalogFormats, firstWeekday: 6 },
+      },
+    })
+  })
+
   it('keeps the draft of a locale deleted or switched on elsewhere and sends nothing from it', () => {
     const h = setup()
     h.open('19:108', 'edit')
@@ -468,6 +520,9 @@ describe('HilosI18nLocaleWindow — view and switch off', () => {
     const h = setup({ card: { ...languageCard, enabled: false } })
     h.open('19:null', 'view')
     for (const field of FIELDS) expect(h.select(field).disabled).toBe(true)
+    expect(
+      h.select('firstWeekday').selectedOptions[0]?.textContent?.trim(),
+    ).toBe('Monday')
     expect(h.el('i18n-locale-plate')?.textContent).toContain(
       'This locale is switched on, so there is nothing to edit.',
     )

@@ -2,6 +2,7 @@
 -- Copy this SQL to a project migration after hilos_language and hilos_country.
 -- The composite country key permits only a locale of that country as its default;
 -- a null default_locale_id is not checked by the key.
+-- first_weekday is the first day of the week: 0 = Sunday … 6 = Saturday.
 
 CREATE TABLE `hilos_locale` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -15,6 +16,7 @@ CREATE TABLE `hilos_locale` (
     `address_format` VARCHAR(64) NOT NULL,
     `measurement_system` ENUM('metric', 'imperial') NOT NULL,
     `collation` VARCHAR(32) NOT NULL,
+    `first_weekday` TINYINT UNSIGNED NOT NULL,
     `enabled` TINYINT(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_locale_code` (`code`),

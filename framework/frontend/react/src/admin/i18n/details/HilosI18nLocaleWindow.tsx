@@ -10,7 +10,6 @@ import {
   hilosI18nLocaleWindowMode,
   type HilosI18nLanguageCard,
   type HilosI18nLanguageContext,
-  type HilosI18nLocaleFormats,
   type HilosI18nLocaleRow,
   type HilosI18nLocaleTemplates,
   type HilosI18nLocaleWindowMode,
@@ -46,6 +45,7 @@ const FIELDS = [
   'address',
   'measurement',
   'collation',
+  'firstWeekday',
 ] as const
 const copy = HILOS_I18N_LOCALE_COPY
 const FOOTER =
@@ -781,9 +781,7 @@ function LocaleWindow({
                           if (mode === 'add')
                             creator.setField(field, event.target.value)
                           if (mode === 'edit')
-                            editor.patchForm({
-                              [field]: event.target.value,
-                            } as Partial<HilosI18nLocaleFormats>)
+                            editor.setField(field, event.target.value)
                         }}
                       >
                         {form[field] === '' && (
@@ -793,10 +791,13 @@ function LocaleWindow({
                         )}
                         {(templates?.[field] ?? []).map((value) => (
                           <option key={value} value={value}>
-                            {field === 'measurement' &&
-                            (value === 'metric' || value === 'imperial')
-                              ? copy.measurement[value]
-                              : value}
+                            {field === 'firstWeekday' &&
+                            typeof value === 'number'
+                              ? copy.weekdays[value]
+                              : field === 'measurement' &&
+                                  (value === 'metric' || value === 'imperial')
+                                ? copy.measurement[value]
+                                : value}
                           </option>
                         ))}
                       </select>

@@ -16,6 +16,8 @@ use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
+use Hilos\I18n\DTO\LocaleFormats;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageDeleteActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nLanguageRowDeleteActionDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -663,8 +665,12 @@ final class I18nLanguageDeleteTest extends IntegrationTestCase
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

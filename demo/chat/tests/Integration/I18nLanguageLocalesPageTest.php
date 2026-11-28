@@ -29,9 +29,11 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\Database\Entity\Item\Locale as EntityLocale;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -144,13 +146,10 @@ final class I18nLanguageLocalesPageTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 Hilos::$db->languages['qx'],
                 null,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
         });
         $language = Hilos::$db->languages['qx'];

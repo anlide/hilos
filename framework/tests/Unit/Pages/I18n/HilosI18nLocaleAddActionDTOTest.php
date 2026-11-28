@@ -12,7 +12,7 @@ use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleAddActionDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
-/** The locale add request has two strict address parts and seven required formats. */
+/** The locale add request has two strict address parts and the required display values. */
 final class HilosI18nLocaleAddActionDTOTest extends TestCase
 {
     private const array FORMATS = [
@@ -23,6 +23,7 @@ final class HilosI18nLocaleAddActionDTOTest extends TestCase
         LocaleFormats::address => 'Street, House, City, Index',
         LocaleFormats::measurement => 'metric',
         LocaleFormats::collation => 'und',
+        LocaleFormats::firstWeekday => 6,
     ];
 
     private const array PAYLOAD = [
@@ -65,6 +66,14 @@ final class HilosI18nLocaleAddActionDTOTest extends TestCase
         $missingFormats = self::PAYLOAD;
         unset($missingFormats[HilosI18nLocaleAddActionDTO::formats]);
         yield 'missing formats' => [$missingFormats];
+        $missingWeekday = self::PAYLOAD;
+        unset($missingWeekday[HilosI18nLocaleAddActionDTO::formats][LocaleFormats::firstWeekday]);
+        yield 'missing first weekday' => [$missingWeekday];
+        foreach (['1', 1.0, null, -1, 7, 9] as $invalidWeekday) {
+            $payload = self::PAYLOAD;
+            $payload[HilosI18nLocaleAddActionDTO::formats][LocaleFormats::firstWeekday] = $invalidWeekday;
+            yield 'first weekday ' . var_export($invalidWeekday, true) => [$payload];
+        }
     }
 
     /** @param array<string, mixed> $payload Invalid request */

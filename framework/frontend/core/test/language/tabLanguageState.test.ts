@@ -27,6 +27,7 @@ const GERMAN: HilosTabLanguage = {
     address: 'Street, House, Index, City',
     measurement: 'metric',
     collation: 'und',
+    firstWeekday: 1,
   },
 }
 
@@ -44,6 +45,7 @@ const ENGLISH_US: HilosTabLanguage = {
     address: 'House Street, City, Region Index',
     measurement: 'imperial',
     collation: 'und',
+    firstWeekday: 0,
   },
 }
 
@@ -204,6 +206,25 @@ describe('a handshake response with a language', () => {
     ])
   })
 
+  it('carries the first weekday of the region, and a change of the day alone wakes the readers', () => {
+    const connection = start()
+    connection.emit(SIGNAL_HANDSHAKE_RESPONSE, response(ENGLISH_US))
+    expect(hilosTabLanguage.get()?.formats.firstWeekday).toBe(0)
+    const seen = changes(hilosTabLanguage)
+
+    connection.emit(
+      SIGNAL_HANDSHAKE_RESPONSE,
+      response({
+        ...ENGLISH_US,
+        formats: { ...ENGLISH_US.formats, firstWeekday: 1 },
+      }),
+    )
+
+    expect(seen).toEqual([
+      { ...ENGLISH_US, formats: { ...ENGLISH_US.formats, firstWeekday: 1 } },
+    ])
+  })
+
   it('drops keys the contract does not name', () => {
     const connection = start()
 
@@ -276,6 +297,27 @@ describe('a response that cannot replace the answer', () => {
       response({
         ...GERMAN,
         formats: { ...GERMAN.formats, measurement: 'nautical' },
+      }),
+    ],
+    [
+      'a missing first weekday',
+      response({
+        ...GERMAN,
+        formats: { ...GERMAN.formats, firstWeekday: undefined },
+      }),
+    ],
+    [
+      'a first weekday past Saturday',
+      response({
+        ...GERMAN,
+        formats: { ...GERMAN.formats, firstWeekday: 7 },
+      }),
+    ],
+    [
+      'a first weekday as text',
+      response({
+        ...GERMAN,
+        formats: { ...GERMAN.formats, firstWeekday: '1' },
       }),
     ],
   ])('keeps the last answer and lang on %s', (_name, payload) => {

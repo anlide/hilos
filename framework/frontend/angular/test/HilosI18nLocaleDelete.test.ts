@@ -92,7 +92,7 @@ describe('HilosI18nLocaleDelete', () => {
   it('sends the countryless pair with a null country, never an empty one', () => {
     const h = setup(countryless)
     expect(h.el('i18n-locale-delete-window')?.textContent).toContain(
-      'This removes the seven base formats of uk.',
+      'This removes the base formats of uk.',
     )
     h.click('i18n-locale-delete-confirm')
     expect(h.calls[0]?.payload).toEqual({

@@ -9,8 +9,9 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\View\Item\Locale;
 use Hilos\I18n\Catalog\LocaleDefinition;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 
-/** Seven display formats shared by locale actions and table rows. */
+/** Eight display values shared by locale actions and table rows: the display formats and the first weekday. */
 final class LocaleFormats extends BaseDTO
 {
     public const string date = 'date';
@@ -20,6 +21,7 @@ final class LocaleFormats extends BaseDTO
     public const string address = 'address';
     public const string measurement = 'measurement';
     public const string collation = 'collation';
+    public const string firstWeekday = 'firstWeekday';
 
     /**
      * @param string $date Date template
@@ -29,6 +31,7 @@ final class LocaleFormats extends BaseDTO
      * @param string $address Address template
      * @param MeasurementSystem $measurement Unit system
      * @param string $collation Sorting template
+     * @param Weekday $firstWeekday First day of the week
      */
     public function __construct(
         public readonly string $date,
@@ -38,17 +41,19 @@ final class LocaleFormats extends BaseDTO
         public readonly string $address,
         public readonly MeasurementSystem $measurement,
         public readonly string $collation,
+        public readonly Weekday $firstWeekday,
     ) {
     }
 
     /**
      * @param array<string, mixed> $data Wire format values
      * @return static Parsed format values
-     * @throws InvalidFormatException When a field is absent, has the wrong type, or names an unknown unit system
+     * @throws InvalidFormatException When a field is absent, has the wrong type, or names an unknown unit system or weekday
      */
     public static function fromArray(array $data): static
     {
         $measurement = self::requireString($data, self::measurement);
+        $firstWeekday = self::requireInt($data, self::firstWeekday);
 
         return new static(
             self::requireString($data, self::date),
@@ -59,10 +64,12 @@ final class LocaleFormats extends BaseDTO
             MeasurementSystem::tryFrom($measurement)
                 ?? throw new InvalidFormatException('Unknown measurement system: ' . $measurement),
             self::requireString($data, self::collation),
+            Weekday::tryFrom($firstWeekday)
+                ?? throw new InvalidFormatException('Unknown first weekday: ' . $firstWeekday),
         );
     }
 
-    /** @return array<string, string> Wire format values */
+    /** @return array<string, string|int> Wire format values */
     public function toArray(): array
     {
         return [
@@ -73,12 +80,13 @@ final class LocaleFormats extends BaseDTO
             self::address => $this->address,
             self::measurement => $this->measurement->value,
             self::collation => $this->collation,
+            self::firstWeekday => $this->firstWeekday->value,
         ];
     }
 
     /**
      * @param Locale $locale Stored locale
-     * @return static Its seven display formats
+     * @return static Its display values
      */
     public static function ofLocale(Locale $locale): static
     {
@@ -90,12 +98,13 @@ final class LocaleFormats extends BaseDTO
             $locale->addressFormat,
             $locale->measurementSystem,
             $locale->collation,
+            $locale->firstWeekday,
         );
     }
 
     /**
      * @param LocaleDefinition $definition Built-in locale
-     * @return static Its seven display formats
+     * @return static Its display values
      */
     public static function ofCatalog(LocaleDefinition $definition): static
     {
@@ -107,6 +116,7 @@ final class LocaleFormats extends BaseDTO
             $definition->addressFormat,
             MeasurementSystem::from($definition->measurementSystem),
             $definition->collation,
+            Weekday::from($definition->firstWeekday),
         );
     }
 }

@@ -314,7 +314,7 @@ function serverToday(adapter: DateTimeZoneAdapter, zone: string): CalendarDate {
 
 /**
  * Create the window picker of one opening in the zone and the region's date
- * order, separator and hour cycle captured on open.
+ * order, separator, hour cycle and first weekday captured on open.
  *
  * @param zone The zone captured when the form opened.
  * @param value The saved window, or null for a new one.

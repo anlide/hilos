@@ -11,6 +11,7 @@ use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -26,6 +27,7 @@ use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Exception\DefaultLocaleProtectedException;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\Library\I18nLibraryAgent;
+use Hilos\I18n\Weekday;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleDeleteActionDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -192,11 +194,25 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         });
         self::assertFalse(Hilos::$db->locales['en-GB']->enabled);
         self::assertSame($formats->toArray(), LocaleFormats::ofLocale(Hilos::$db->locales['en-GB'])->toArray());
+        self::assertSame(Weekday::MONDAY, Hilos::$db->locales['en-GB']->firstWeekday);
 
         $updated = new LocaleFormats(
             'YYYY-MM-DD', $formats->time, $formats->number, $formats->phone,
-            $formats->address, $formats->measurement, $formats->collation,
+            $formats->address, $formats->measurement, $formats->collation, Weekday::SATURDAY,
         );
+        $request = new HilosI18nLocaleUpdateActionDTO(
+            Hilos::$db->languages['en']->id,
+            Hilos::$db->countries['gb']->id,
+            Hilos::$db->locales['en-GB']->id,
+            $updated,
+        )->toArray();
+        $request[HilosI18nLocaleUpdateActionDTO::formats][LocaleFormats::firstWeekday] = 9;
+        try {
+            HilosI18nLocaleUpdateActionDTO::fromArray($request);
+            self::fail('A first weekday past Saturday should be refused');
+        } catch (InvalidFormatException $error) {
+            self::assertSame('Unknown first weekday: 9', $error->getMessage());
+        }
         $this->underAgent($this->agent, static function () use ($page, $updated): void {
             self::assertNull($page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
                 new HilosI18nLocaleUpdateActionDTO(
@@ -209,6 +225,8 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
                 new HilosI18nLocaleAddActionDTO(Hilos::$db->languages['en']->id, null, $updated)));
         });
         self::assertSame('YYYY-MM-DD', Hilos::$db->locales['en-GB']->dateFormat);
+        self::assertSame(Weekday::SATURDAY, Hilos::$db->locales['en-GB']->firstWeekday);
+        self::assertSame(Weekday::SATURDAY, Hilos::$db->locales['en']->firstWeekday);
         self::assertFalse(Hilos::$db->locales['en']->enabled);
     }
 
@@ -353,7 +371,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
             self::assertSame($before, (int) Database::sql("SHOW SESSION STATUS LIKE 'Com_update'")->firstRow()['Value']);
             $updated = new LocaleFormats(
                 'YYYY-MM-DD', $formats->time, $formats->number, $formats->phone,
-                $formats->address, $formats->measurement, $formats->collation,
+                $formats->address, $formats->measurement, $formats->collation, $formats->firstWeekday,
             );
             $this->underAgent($this->agent, static function () use ($page, $updated): void {
                 $page->onAction('locale-ak', HilosSignalConstants::HILOS_I18N_LOCALE_UPDATE,
@@ -507,7 +525,7 @@ final class I18nLocaleWindowTest extends IntegrationTestCase
         $formats = LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en'));
         $unknown = new LocaleFormats(
             'bad date', $formats->time, $formats->number, $formats->phone,
-            $formats->address, $formats->measurement, $formats->collation,
+            $formats->address, $formats->measurement, $formats->collation, $formats->firstWeekday,
         );
         $page = new LanguageLocalesPage($this->agent);
         try {

@@ -14,8 +14,8 @@ use Hilos\Database\View\Item\Locale;
 use Hilos\HilosException;
 use Hilos\I18n\DefaultLanguage;
 use Hilos\I18n\Exception\DefaultLocaleProtectedException;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Exception\I18nRowFrozenException;
-use Hilos\I18n\MeasurementSystem;
 use Hilos\I18n\LocaleTemplates;
 
 /**
@@ -25,27 +25,14 @@ use Hilos\I18n\LocaleTemplates;
 class LocaleActions extends DbActions
 {
     /**
-     * @param string $dateFormat Date template
-     * @param string $timeFormat Time template
-     * @param string $numberFormat Number template
-     * @param string $phoneFormat Phone template
-     * @param string $addressFormat Address template
-     * @param MeasurementSystem $measurementSystem Unit system
-     * @param string $collation Sorting template
+     * @param LocaleFormats $formats New display formats and first weekday
      * @throws ItemNotFoundForUpdateException When the row has no persisted id
      * @throws I18nRowFrozenException When the locale is switched on
      * @throws ValidationException When a format is not a known template
      * @throws HilosException When ownership or persistence refuses the write
      */
-    public function update(
-        string $dateFormat,
-        string $timeFormat,
-        string $numberFormat,
-        string $phoneFormat,
-        string $addressFormat,
-        MeasurementSystem $measurementSystem,
-        string $collation,
-    ): void {
+    public function update(LocaleFormats $formats): void
+    {
         $this->ensureCanWrite();
         if ($this->object->id === null) {
             throw new ItemNotFoundForUpdateException('Locale not found for update (id is null)');
@@ -55,15 +42,16 @@ class LocaleActions extends DbActions
                 "Locale '{$this->object->code}' is switched on: switch it off, edit it, switch it on",
             );
         }
-        LocaleTemplates::refuseUnknown($dateFormat, $timeFormat, $numberFormat, $phoneFormat, $addressFormat, $collation);
+        LocaleTemplates::refuseUnknown($formats);
 
-        $this->object->dateFormat = $dateFormat;
-        $this->object->timeFormat = $timeFormat;
-        $this->object->numberFormat = $numberFormat;
-        $this->object->phoneFormat = $phoneFormat;
-        $this->object->addressFormat = $addressFormat;
-        $this->object->measurementSystem = $measurementSystem->value;
-        $this->object->collation = $collation;
+        $this->object->dateFormat = $formats->date;
+        $this->object->timeFormat = $formats->time;
+        $this->object->numberFormat = $formats->number;
+        $this->object->phoneFormat = $formats->phone;
+        $this->object->addressFormat = $formats->address;
+        $this->object->measurementSystem = $formats->measurement->value;
+        $this->object->collation = $formats->collation;
+        $this->object->firstWeekday = $formats->firstWeekday->value;
         $this->object->sync();
     }
 

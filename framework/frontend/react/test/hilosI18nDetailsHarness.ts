@@ -51,6 +51,7 @@ export const formats = {
   address: 'Street, House, City, Index',
   measurement: 'metric' as const,
   collation: 'und',
+  firstWeekday: 1 as const,
 }
 export const templates: HilosI18nLocaleTemplates = {
   date: ['DD/MM/YYYY', 'YYYY-MM-DD', 'DD.MM.YYYY', 'MM/DD/YYYY'],
@@ -60,6 +61,7 @@ export const templates: HilosI18nLocaleTemplates = {
   address: ['Street, House, City, Index'],
   measurement: ['metric', 'imperial'],
   collation: ['und'],
+  firstWeekday: [1, 2, 3, 4, 5, 6, 0],
 }
 export const localeRow: HilosI18nLocaleRow = {
   languageId: 19,

@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["locale"],"parts":[{"changeId":"20261127160131784220_HIL-2318_locale_first_weekday","unit":"locale","upSha256":"15f6966a27493af0ff431a1e23761c816490d145a59a0ac710fd24c4137bdc27","downSha256":"2b59a8c619b032950a2a4d9295e6a13deecdc08aaf65b1e2b32729f49ee9159e"}],"upSha256":"15f6966a27493af0ff431a1e23761c816490d145a59a0ac710fd24c4137bdc27","downSha256":"2b59a8c619b032950a2a4d9295e6a13deecdc08aaf65b1e2b32729f49ee9159e"}
+ALTER TABLE `hilos_locale` DROP COLUMN `first_weekday`;

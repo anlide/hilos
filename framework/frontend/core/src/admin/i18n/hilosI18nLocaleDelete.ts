@@ -24,8 +24,8 @@ export const HILOS_I18N_LOCALE_DELETE_COPY = {
       : `Delete locale · ${nativeName} in ${countryLabel}`,
   body: (languageCode: string, countryCode: string | null) =>
     countryCode === null
-      ? `This removes the seven base formats of ${languageCode}. The language will have no formats of its own without a country and will fall back to the default language.`
-      : `This removes the seven formats of this pair. Text in this language and country will use the language's countryless locale — ${languageCode}.`,
+      ? `This removes the base formats of ${languageCode}. The language will have no formats of its own without a country and will fall back to the default language.`
+      : `This removes the formats of this pair. Text in this language and country will use the language's countryless locale — ${languageCode}.`,
   note: 'Switch the locale off before deleting it. If a country uses it as its default, choose another locale for that country first. Remove any language or country name overrides for this locale first; deletion never removes them.',
   cancel: 'Cancel',
   confirm: 'Delete',

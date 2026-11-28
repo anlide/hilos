@@ -28,7 +28,6 @@ use Hilos\I18n\DTO\I18nTestLocaleCreateDTO;
 use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\LocaleTemplates;
-use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Logger;
@@ -278,19 +277,14 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             foreach (self::COUNTRY_NAMES_CORRECTIONS as $countryCode => $correction) {
                 $localeCountry = Hilos::$db->countries[$countryCode]
                     ?? throw new ValidationException('Missing fixture country: ' . $countryCode);
-                $locale = Hilos::$db->locales->actions->create(
-                    $language, $localeCountry, LocaleTemplates::DATE[0], LocaleTemplates::TIME[0],
-                    LocaleTemplates::NUMBER[0], LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0],
-                    MeasurementSystem::METRIC, LocaleTemplates::COLLATION[0],
-                );
+                $locale = Hilos::$db->locales->actions->create($language, $localeCountry, LocaleTemplates::firsts());
                 Hilos::$db->countryNames->actions->createManual($country, $language, $locale, $correction);
             }
             Hilos::$db->locales->actions->create(
                 $language,
                 Hilos::$db->countries[self::COUNTRY_NAMES_ADD_LOCALE_COUNTRY]
                     ?? throw new ValidationException('Missing fixture country: ' . self::COUNTRY_NAMES_ADD_LOCALE_COUNTRY),
-                LocaleTemplates::DATE[0], LocaleTemplates::TIME[0], LocaleTemplates::NUMBER[0],
-                LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0], MeasurementSystem::METRIC, LocaleTemplates::COLLATION[0],
+                LocaleTemplates::firsts(),
             );
             Database::transactionCommit();
         } catch (Throwable $failure) {
@@ -420,18 +414,14 @@ final class I18nLibraryAgent extends AbstractHilosAgent
             foreach (self::LANGUAGE_NAMES_CORRECTIONS as $countryCode => $correction) {
                 $country = Hilos::$db->countries[$countryCode]
                     ?? throw new ValidationException('Missing fixture country: ' . $countryCode);
-                $locale = Hilos::$db->locales->actions->create(
-                    $inLanguage, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
-                );
+                $locale = Hilos::$db->locales->actions->create($inLanguage, $country, LocaleTemplates::firsts());
                 Hilos::$db->languageNames->actions->createManual($language, $inLanguage, $locale, $correction);
             }
             Hilos::$db->locales->actions->create(
                 $language,
                 Hilos::$db->countries[self::LANGUAGE_NAMES_REVERSE_COUNTRY_CODE]
                     ?? throw new ValidationException('Missing fixture country: ' . self::LANGUAGE_NAMES_REVERSE_COUNTRY_CODE),
-                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                LocaleTemplates::firsts(),
             );
             Database::transactionCommit();
         } catch (Throwable $failure) {
@@ -596,27 +586,10 @@ final class I18nLibraryAgent extends AbstractHilosAgent
                     $code .= '-' . strtoupper(Hilos::$db->countries[$dto->countryId]->code);
                 }
                 $definition = BuiltInI18nCatalog::locale($code);
-                $formats = $definition === null
-                    ? new LocaleFormats(
-                        LocaleTemplates::DATE[0],
-                        LocaleTemplates::TIME[0],
-                        LocaleTemplates::NUMBER[0],
-                        LocaleTemplates::PHONE[0],
-                        LocaleTemplates::ADDRESS[0],
-                        MeasurementSystem::METRIC,
-                        LocaleTemplates::COLLATION[0],
-                    )
-                    : LocaleFormats::ofCatalog($definition);
                 $locale = Hilos::$db->locales->actions->create(
                     Hilos::$db->languages[$dto->languageId],
                     Hilos::$db->countries[$dto->countryId] ?? null,
-                    $formats->date,
-                    $formats->time,
-                    $formats->number,
-                    $formats->phone,
-                    $formats->address,
-                    $formats->measurement,
-                    $formats->collation,
+                    $definition === null ? LocaleTemplates::firsts() : LocaleFormats::ofCatalog($definition),
                 );
                 if ($dto->enabled) {
                     $locale->actions->switchOn();
@@ -1112,17 +1085,7 @@ final class I18nLibraryAgent extends AbstractHilosAgent
         }
 
         $locale = Hilos::$db->locales[$code]
-            ?? Hilos::$db->locales->actions->create(
-                $language,
-                $country,
-                $localeDefinition->dateFormat,
-                $localeDefinition->timeFormat,
-                $localeDefinition->numberFormat,
-                $localeDefinition->phoneFormat,
-                $localeDefinition->addressFormat,
-                MeasurementSystem::from($localeDefinition->measurementSystem),
-                $localeDefinition->collation,
-            );
+            ?? Hilos::$db->locales->actions->create($language, $country, LocaleFormats::ofCatalog($localeDefinition));
         $locale->actions->switchOn();
     }
 

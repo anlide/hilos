@@ -11,9 +11,11 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\HilosException;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 
 /** The library provisions one current default and item actions guard every write door. */
 final class I18nDefaultLanguageTest extends IntegrationTestCase
@@ -79,13 +81,10 @@ final class I18nDefaultLanguageTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 $language,
                 null,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1 000,00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1 000,00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
         });
 

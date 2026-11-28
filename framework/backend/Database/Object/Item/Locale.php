@@ -23,6 +23,7 @@ use Hilos\Database\Object\Collection\Locales as ObjectLocales;
  * @property string $addressFormat
  * @property string $measurementSystem
  * @property string $collation
+ * @property int $firstWeekday
  * @property bool $enabled
  */
 class Locale extends Object_
@@ -40,6 +41,7 @@ class Locale extends Object_
     public const string addressFormat = 'addressFormat';
     public const string measurementSystem = 'measurementSystem';
     public const string collation = 'collation';
+    public const string firstWeekday = 'firstWeekday';
     public const string enabled = 'enabled';
 
     /**
@@ -76,6 +78,7 @@ class Locale extends Object_
             self::addressFormat => $this->entity->address_format,
             self::measurementSystem => $this->entity->measurement_system,
             self::collation => $this->entity->collation,
+            self::firstWeekday => $this->entity->first_weekday,
             self::enabled => $this->entity->enabled,
             default => parent::__get($property),
         };
@@ -99,6 +102,7 @@ class Locale extends Object_
             self::addressFormat => $this->entity->address_format = (string)$value,
             self::measurementSystem => $this->entity->measurement_system = (string)$value,
             self::collation => $this->entity->collation = (string)$value,
+            self::firstWeekday => $this->entity->first_weekday = (int)$value,
             self::enabled => $this->entity->enabled = (bool)$value,
             default => parent::__set($property, $value),
         };
@@ -119,6 +123,7 @@ class Locale extends Object_
             self::addressFormat => $this->entity->address_format,
             self::measurementSystem => $this->entity->measurement_system,
             self::collation => $this->entity->collation,
+            self::firstWeekday => $this->entity->first_weekday,
             self::enabled => $this->entity->enabled,
         ];
     }

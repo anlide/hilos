@@ -44,6 +44,7 @@ const BRITISH_FORMATS = {
   address: 'Street, House, Index, City',
   measurement: 'metric',
   collation: 'und',
+  firstWeekday: 1,
 } as const
 const EDITED_FORMATS = {
   date: 'YYYY-MM-DD',
@@ -53,6 +54,7 @@ const EDITED_FORMATS = {
   address: 'Street, House, City, Index',
   measurement: 'imperial',
   collation: 'und',
+  firstWeekday: 0,
 } as const
 const EMPTY_COUNTS = {
   names: 0,
@@ -63,7 +65,7 @@ const EMPTY_COUNTS = {
 
 test('locale.life', async ({ page, context, i18n }) => {
   const languageIds: Record<string, string> = {}
-  // Two UI-add branches, seven formats, switching and four live pages share one administrator.
+  // Two UI-add branches, every locale format, switching and four live pages share one administrator.
   test.slow()
   languageIds['qx'] = String(
     (await i18n.language({ code: 'qx', nativeName: 'Scope QX', enabled: true }))
@@ -139,7 +141,7 @@ test('locale.life', async ({ page, context, i18n }) => {
     )
   })
 
-  await test.step('Add a known pair with all seven catalog formats and persist all seven edited choices', async () => {
+  await test.step('Add a known pair with all its catalog formats and persist every edited choice', async () => {
     const row = i18nLocaleRow(page, 'en-GB')
     await clickSubmit(expect, row.getByTestId('i18n-locales-add-en-GB'))
     await expect(page.getByTestId('i18n-locale-title')).toHaveText(ADD_TITLE)

@@ -46,6 +46,7 @@ export const localeTemplatesSchema = z.strictObject({
   address: z.array(z.string()),
   measurement: z.array(z.enum(['metric', 'imperial'])),
   collation: z.array(z.string()),
+  firstWeekday: z.array(hilosI18nLocaleFormatsSchema.shape.firstWeekday),
 })
 
 export type HilosI18nLocaleTemplates = z.infer<typeof localeTemplatesSchema>
@@ -83,7 +84,7 @@ export const HILOS_I18N_LOCALE_COPY = {
     open: 'Switch on',
     title: (nativeName: string, country: string | null) =>
       `Switch on locale · ${localeTitleSuffix(nativeName, country)}`,
-    body: 'Switching a locale on freezes its seven formats for everyone: to edit them again, switch it off first.',
+    body: 'Switching a locale on freezes its formats for everyone: to edit them again, switch it off first.',
     catalogNote:
       'Once it is on, a framework update leaves these formats alone.',
     unsaved:
@@ -96,7 +97,7 @@ export const HILOS_I18N_LOCALE_COPY = {
     open: 'Switch off',
     title: (nativeName: string, country: string | null) =>
       `Switch off locale · ${localeTitleSuffix(nativeName, country)}`,
-    body: 'Switching a locale off unlocks its seven formats for editing. Its formats and names stay in place.',
+    body: 'Switching a locale off unlocks its formats for editing. Its formats and names stay in place.',
     catalogNote:
       'While it is off, the next framework reflow can replace these formats with the built-in ones.',
     defaultReason:
@@ -121,14 +122,25 @@ export const HILOS_I18N_LOCALE_COPY = {
     address: 'Address',
     measurement: 'Units',
     collation: 'Sorting',
+    firstWeekday: 'First day of week',
   },
   measurement: { metric: 'Metric', imperial: 'Imperial' },
+  /** The days of the week by their value: Sunday is 0, through Saturday as 6. */
+  weekdays: [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ],
   choose: 'Choose…',
   plate: {
     addKnown:
       'Filled from the built-in catalog. The locale is added switched off.',
     addOwn:
-      'The built-in catalog does not know this pair: choose all seven formats. The locale is added switched off.',
+      'The built-in catalog does not know this pair: choose all formats. The locale is added switched off.',
     editKnown:
       "This locale is switched off — edit freely. While it stays off, a framework update brings back the built-in catalog's formats.",
     editOwn: 'This locale is switched off — edit freely.',
@@ -148,6 +160,43 @@ export const HILOS_I18N_LOCALE_COPY = {
     deleted: 'Deleted elsewhere — your text stays to copy.',
   },
 } as const
+
+/** One display value of a locale; a creation form also holds '' for a choice not made. */
+type LocaleChoice = HilosI18nLocaleFormats[keyof HilosI18nLocaleFormats] | ''
+
+/**
+ * Read the text a native select hands over as the value a form holds: the first
+ * weekday by its number, every other format as the chosen text, '' as itself.
+ *
+ * @param field The format the select chooses.
+ * @param value The select's value.
+ */
+function localeChoice(
+  field: keyof HilosI18nLocaleFormats,
+  value: string,
+): LocaleChoice {
+  return field === 'firstWeekday' && value !== ''
+    ? hilosI18nLocaleFormatsSchema.shape.firstWeekday.parse(Number(value))
+    : (value as LocaleChoice)
+}
+
+/**
+ * The notice about one field another tab changed, naming a day by its name and
+ * any other format as it is stored.
+ *
+ * @param field The changed format.
+ * @param incoming The value the other tab gave it.
+ */
+function localeConflictLine(
+  field: keyof HilosI18nLocaleFormats,
+  incoming: LocaleChoice,
+): string {
+  const value =
+    field === 'firstWeekday' && typeof incoming === 'number'
+      ? HILOS_I18N_LOCALE_COPY.weekdays[incoming]
+      : incoming
+  return `${HILOS_I18N_LOCALE_COPY.labels[field]} changed elsewhere to "${value}"; your choice stays selected.`
+}
 
 /** The tracked switch-on operation for a captured locale and parent pair. */
 export function createHilosI18nLocaleSwitchOn(
@@ -246,11 +295,20 @@ export function hilosI18nLocaleCountryLabel(
     : (row.countryName ?? row.countryCode.toUpperCase())
 }
 
-/** A live row-edit session over the seven stored formats of one switched-off locale. */
+/** The edit session of a locale, choosing each format from its select's text. */
+export interface HilosI18nLocaleEdit extends HilosTrackedRowEdit<
+  HilosI18nLocaleRow,
+  HilosI18nLocaleFormats
+> {
+  /** Choose one format from the text its native select hands over. */
+  setField(field: keyof HilosI18nLocaleFormats, value: string): void
+}
+
+/** A live row-edit session over the stored formats of one switched-off locale. */
 export function createHilosI18nLocaleEdit(
   controller: TableViewportController<HilosI18nLocaleRow>,
   context: HilosI18nLanguageContext,
-): HilosTrackedRowEdit<HilosI18nLocaleRow, HilosI18nLocaleFormats> {
+): HilosI18nLocaleEdit {
   const tableSource = hilosTableRowEditSource(controller, (row) => row.rowKey)
   const heldLocaleId = createSignal<number | null>(null)
   const source = {
@@ -282,15 +340,15 @@ export function createHilosI18nLocaleEdit(
         address: '',
         measurement: 'metric',
         collation: '',
+        firstWeekday: 1,
       },
       fields: (row) => row.formats!,
       valid: () => source.live.get()?.enabled === false,
       notice: {
         conflict: (state) =>
           (state.notice?.fields ?? [])
-            .map(
-              (field) =>
-                `${HILOS_I18N_LOCALE_COPY.labels[field]} changed elsewhere to "${state.fields[field].incoming}"; your choice stays selected.`,
+            .map((field) =>
+              localeConflictLine(field, state.fields[field].incoming),
             )
             .join(' '),
       },
@@ -299,6 +357,10 @@ export function createHilosI18nLocaleEdit(
 
   return {
     ...edit,
+    setField: (field, value) =>
+      edit.patchForm({
+        [field]: localeChoice(field, value),
+      } as Partial<HilosI18nLocaleFormats>),
     save: (run) =>
       edit.save((draft, row) =>
         run(
@@ -313,11 +375,10 @@ export function createHilosI18nLocaleEdit(
   }
 }
 
-/** The creation form holds strings until all seven choices are made. */
-export type HilosI18nLocaleAddForm = Record<
-  keyof HilosI18nLocaleFormats,
-  string
->
+/** The creation form holds '' for every choice not made yet, and the value once it is. */
+export type HilosI18nLocaleAddForm = {
+  [Field in keyof HilosI18nLocaleFormats]: HilosI18nLocaleFormats[Field] | ''
+}
 
 /** A known-place creation session that becomes an edit when the pair gains a locale. */
 export interface HilosI18nLocaleAdd {
@@ -351,7 +412,7 @@ export interface HilosI18nLocaleAdd {
   dispose(): void
 }
 
-/** Creation merges the seven shown choices while retaining the first locale's identity. */
+/** Creation merges the shown choices while retaining the first locale's identity. */
 export function createHilosI18nLocaleAdd(
   controller: TableViewportController<HilosI18nLocaleRow>,
   context: HilosI18nLanguageContext,
@@ -364,6 +425,7 @@ export function createHilosI18nLocaleAdd(
     address: '',
     measurement: '',
     collation: '',
+    firstWeekday: '',
   }
   const tableSource = hilosTableRowEditSource(controller, (row) => row.rowKey)
   const shown = createSignal<HilosI18nLocaleAddForm>(empty)
@@ -403,9 +465,8 @@ export function createHilosI18nLocaleAdd(
       notice: {
         conflict: (state) =>
           (state.notice?.fields ?? [])
-            .map(
-              (field) =>
-                `${HILOS_I18N_LOCALE_COPY.labels[field]} changed elsewhere to "${state.fields[field].incoming}"; your choice stays selected.`,
+            .map((field) =>
+              localeConflictLine(field, state.fields[field].incoming),
             )
             .join(' '),
       },
@@ -454,7 +515,8 @@ export function createHilosI18nLocaleAdd(
     addAvailable: edit.saveAvailable,
     canAdd: edit.canSave,
     open: (rowKey) => edit.open(rowKey),
-    setField: (field, value) => edit.patchForm({ [field]: value }),
+    setField: (field, value) =>
+      edit.patchForm({ [field]: localeChoice(field, value) }),
     add: (run) =>
       edit.save((draft) => {
         const live = source.live.get()

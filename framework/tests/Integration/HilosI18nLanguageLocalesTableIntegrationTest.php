@@ -34,6 +34,7 @@ use Hilos\HilosException;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
 use Hilos\I18n\DTO\LocaleFormats;
+use Hilos\I18n\Weekday;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageLocalesTableRow;
 
@@ -220,6 +221,8 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
             LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en-US'))->toArray(),
             $english['1:1'][HilosI18nLanguageLocalesTableRow::catalogFormats],
         );
+        $this->assertSame(0, $english['1:1'][HilosI18nLanguageLocalesTableRow::catalogFormats][LocaleFormats::firstWeekday]);
+        $this->assertSame(1, $english['1:2'][HilosI18nLanguageLocalesTableRow::formats][LocaleFormats::firstWeekday]);
         $this->assertSame('us', $english['1:1'][HilosI18nLanguageLocalesTableRow::countryCode]);
 
         $german = $this->rows(2);
@@ -360,11 +363,12 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
         $this->assertSame([['update', '1:1', 'en-US', false]], $this->mutations(1));
 
         $this->changes->taken = [];
-        $american->actions->update(
+        $american->actions->update(new LocaleFormats(
             'DD.MM.YYYY', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
-        );
+            'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::FRIDAY,
+        ));
         $this->assertSame('DD.MM.YYYY', $this->rows(1)['1:1'][HilosI18nLanguageLocalesTableRow::formats][LocaleFormats::date]);
+        $this->assertSame(5, $this->rows(1)['1:1'][HilosI18nLanguageLocalesTableRow::formats][LocaleFormats::firstWeekday]);
         $this->assertSame([['update', '1:1', 'en-US', false]], $this->mutations(1));
 
         $this->changes->taken = [];
@@ -565,8 +569,12 @@ final class HilosI18nLanguageLocalesTableIntegrationTest extends FrameworkIntegr
     private static function locale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

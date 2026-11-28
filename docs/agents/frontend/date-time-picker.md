@@ -26,17 +26,23 @@ The existing [calendar engine](../../../framework/frontend/core/src/timeZone/cal
 supplies Gregorian coordinates, explicit `Intl` field reading and IANA offset
 intervals. The [maintenance form](../../../framework/frontend/core/src/admin/status/hilosStatusWorkActions.ts)
 keeps its window in one picker per opening, `windowPicker`, and its form holds
-text alone. The Vue, React and Angular maintenance dialogs all mount that
-picker as their Window field.
+text alone. On opening, that picker takes the factors of the tab's region
+from `hilosTabPickerFactors()`, as it takes the zone. The Vue, React and Angular
+maintenance dialogs all mount that picker as their Window field.
 
 This document changes no executable code, package exports, DB fields or
 migrations, runtime item fields, wire signals, DTOs, topology, product routes
 or test commands. It adds no page, table or subscription owner. Implementation
-and component tests belong to the leaves named below. The i18n factor provider
-(the locale's first weekday — HIL-2318, see
+and component tests belong to the leaves named below. Scheduler Calendar
+(HIL-145), table `date_range` design, native-input guards and a bundled
+time-zone database are outside this contract.
+
+The i18n factor provider is `hilosTabPickerFactors()` from `@hilos/core/base`:
+it gives the date order, the date separator, the hour cycle and `firstWeekday`
+of the tab's region (see
 [language-and-region.md](../architecture/language-and-region.md#the-formats-a-reader-sees)),
-scheduler Calendar (HIL-145), table `date_range` design, native-input
-guards and a bundled time-zone database are outside this contract.
+and every other factor keeps its default. A tab that knows no region yet reads
+the built-in formats, whose week starts on Monday.
 
 ## Values and parts
 
@@ -390,12 +396,12 @@ of factors, which supplies explicit factors and labels without changing picker
 semantics. The one provider today is the tab's region: `hilosTabPickerFactors()`
 from `@hilos/core/base` gives `dateOrder` and `dateSeparator` from the region's
 date template and `hourCycle` from its time template — `'h12'` when the template
-carries the `hh` token, otherwise `'h23'` — and a date template that is not
-three distinct tokens keeps the default order and separator. The Works window of
-the Status section reads them when its picker opens, so in the built-in English
-locale without a country its parts run day, month, year with `.` between them
-on a 24-hour clock, and an open picker keeps them. The first day of the week
-stays the default until the locale supplies it (HIL-2318); see
+carries the `hh` token, otherwise `'h23'` — and `firstWeekday` from the
+region's first day of the week; a date template that is not three distinct
+tokens keeps the default order and separator. The Works window of the Status
+section reads them when its picker opens, so in the built-in English locale
+without a country its parts run day, month, year with `.` between them on a
+24-hour clock and its weeks start on Monday, and an open picker keeps them; see
 [The Formats A Reader Sees](../architecture/language-and-region.md#the-formats-a-reader-sees).
 
 Reason templates substitute the five known slots `{time}`, `{date}`, `{zone}`,

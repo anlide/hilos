@@ -26,9 +26,11 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Exception\I18nRowFrozenException;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryUpdateActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowUpdateActionDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -96,9 +98,12 @@ final class I18nCountryEditTest extends IntegrationTestCase
                 $code = 'en-' . strtoupper($country);
                 if (!isset(Hilos::$db->locales[$code])) {
                     Hilos::$db->locales->actions->create(
-                        Hilos::$db->languages['en'], Hilos::$db->countries[$country],
-                        'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                        'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                        Hilos::$db->languages['en'],
+                        Hilos::$db->countries[$country],
+                        new LocaleFormats(
+                            'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                            'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                        ),
                     );
                     $this->createdLocales[] = $code;
                 }
@@ -205,8 +210,12 @@ final class I18nCountryEditTest extends IntegrationTestCase
             $this->createdCountries[] = 'qx';
             $country = Hilos::$db->countries->actions->create('qx', '¤', 'XXX');
             $create = static fn () => Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['en'], $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                Hilos::$db->languages['en'],
+                $country,
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             $old = $create();
             $oldId = $old->id;

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\I18n\DTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\DTO\TabLanguage;
+use Hilos\I18n\Weekday;
 use PHPUnit\Framework\TestCase;
 
 /** The tab's language keeps its wire shape, the formats nested, and refuses a broken payload. */
@@ -20,6 +21,7 @@ final class TabLanguageTest extends TestCase
         LocaleFormats::address => 'Index, City, Street, House',
         LocaleFormats::measurement => 'metric',
         LocaleFormats::collation => 'und',
+        LocaleFormats::firstWeekday => 1,
     ];
 
     private const array LANGUAGE = [
@@ -33,7 +35,10 @@ final class TabLanguageTest extends TestCase
 
     public function testRoundTrip(): void
     {
-        self::assertSame(self::LANGUAGE, TabLanguage::fromArray(self::LANGUAGE)->toArray());
+        $language = TabLanguage::fromArray(self::LANGUAGE);
+
+        self::assertSame(Weekday::MONDAY, $language->formats->firstWeekday);
+        self::assertSame(self::LANGUAGE, $language->toArray());
     }
 
     public function testRoundTripWithoutStoredLocale(): void
@@ -69,6 +74,15 @@ final class TabLanguageTest extends TestCase
         $data = self::LANGUAGE;
         $data[TabLanguage::formats][LocaleFormats::measurement] = 'unknown';
         $this->expectException(InvalidFormatException::class);
+        TabLanguage::fromArray($data);
+    }
+
+    public function testRejectsUnknownFirstWeekday(): void
+    {
+        $data = self::LANGUAGE;
+        $data[TabLanguage::formats][LocaleFormats::firstWeekday] = 7;
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('Unknown first weekday: 7');
         TabLanguage::fromArray($data);
     }
 }

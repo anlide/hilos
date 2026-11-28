@@ -50,7 +50,6 @@ use Hilos\Database\View\Item\CountryName;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\LocaleTemplates;
-use Hilos\I18n\MeasurementSystem;
 use Hilos\HilosException;
 use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryNameOverrideDeleteActionDTO;
@@ -261,9 +260,9 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
         $this->underAgent($this->agent, static function (): void {
             Hilos::$db->countryNames->findBase(Hilos::$db->countries['us']->id, Hilos::$db->languages['en']->id)?->actions->delete();
             Hilos::$db->locales['en-GB'] ?? Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['en'], Hilos::$db->countries['gb'], LocaleTemplates::DATE[0], LocaleTemplates::TIME[0],
-                LocaleTemplates::NUMBER[0], LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0],
-                MeasurementSystem::METRIC, LocaleTemplates::COLLATION[0],
+                Hilos::$db->languages['en'],
+                Hilos::$db->countries['gb'],
+                LocaleTemplates::firsts(),
             );
         });
         try {
@@ -383,9 +382,9 @@ final class I18nCountryNameWriteTest extends IntegrationTestCase
             $formats = LocaleFormats::ofLocale(Hilos::$db->locales['qk-GB']);
             Hilos::$db->locales['qk-GB']->actions->delete();
             Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['qk'], Hilos::$db->countries['gb'],
-                $formats->date, $formats->time, $formats->number, $formats->phone,
-                $formats->address, $formats->measurement, $formats->collation,
+                Hilos::$db->languages['qk'],
+                Hilos::$db->countries['gb'],
+                $formats,
             );
         });
         self::assertNotSame($oldLocaleId, Hilos::$db->locales['qk-GB']->id);

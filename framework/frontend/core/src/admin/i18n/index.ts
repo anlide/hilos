@@ -234,6 +234,7 @@ export {
   type HilosI18nLocaleWindowMode,
   type HilosI18nLocaleAddForm,
   type HilosI18nLocaleAdd,
+  type HilosI18nLocaleEdit,
 } from './hilosI18nLocaleWindow.js'
 export {
   COUNTRY_CARD_DATA,

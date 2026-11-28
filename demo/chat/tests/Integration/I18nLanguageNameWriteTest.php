@@ -276,9 +276,9 @@ final class I18nLanguageNameWriteTest extends IntegrationTestCase
             $formats = LocaleFormats::ofLocale(Hilos::$db->locales['qv-GB']);
             Hilos::$db->locales['qv-GB']->actions->delete();
             Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['qv'], Hilos::$db->countries['gb'],
-                $formats->date, $formats->time, $formats->number, $formats->phone,
-                $formats->address, $formats->measurement, $formats->collation,
+                Hilos::$db->languages['qv'],
+                Hilos::$db->countries['gb'],
+                $formats,
             );
         });
         self::assertNotSame($oldLocaleId, Hilos::$db->locales['qv-GB']->id);

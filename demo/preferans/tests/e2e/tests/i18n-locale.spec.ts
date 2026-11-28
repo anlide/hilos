@@ -45,6 +45,7 @@ const BRITISH_FORMATS = {
   address: 'Street, House, Index, City',
   measurement: 'metric',
   collation: 'und',
+  firstWeekday: 1,
 } as const
 const EDITED_FORMATS = {
   date: 'YYYY-MM-DD',
@@ -54,6 +55,7 @@ const EDITED_FORMATS = {
   address: 'Street, House, City, Index',
   measurement: 'imperial',
   collation: 'und',
+  firstWeekday: 0,
 } as const
 test('locale.life', async ({ page, context, i18n }) => {
   const languageIds: Record<string, string> = {}
@@ -147,7 +149,7 @@ test('locale.life', async ({ page, context, i18n }) => {
     })
   })
 
-  await test.step('Add and edit the known English–United Kingdom pair across all seven exact formats', async () => {
+  await test.step('Add and edit the known English–United Kingdom pair across every exact format', async () => {
     const row = i18nLocaleRow(page, 'en-GB')
     await clickSubmit(expect, row.getByTestId('i18n-locales-add-en-GB'))
     await expect(page.getByTestId('i18n-locale-title')).toHaveText(ADD_TITLE)

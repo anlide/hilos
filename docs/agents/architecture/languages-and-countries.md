@@ -58,9 +58,11 @@ decisions, 2026-09-11–12). There is no single name for a language: names are
 written in other languages. A subdomain label can diverge from a code, while
 an edition is addressed by code. Language ordering decides nothing.
 
-The seven locale formats are chosen from the closed lists in `LocaleTemplates`
+A locale's formats are chosen from the closed lists in `LocaleTemplates`
 (ported from hleb). The create and update write doors refuse any other template,
-including writes made by reflow.
+including writes made by reflow. Its first weekday is one of the seven days of
+`Weekday`: an action naming another value is not read and is refused with
+`Unknown first weekday: <value>`.
 
 Environment values and language-edition URLs use language codes at their
 external boundary. Catalog lookups use codes as definition keys. The five i18n
@@ -86,8 +88,14 @@ tables, including generated `locale_slot`, has the same verdict. Under
 unchanged; under [admin view mode](admin-view-mode.md), the viewer can see
 them all.
 
-Locales have no `first_week_day` in this phase; HIL-2318 adds it, see
-[The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees).
+A locale stores its first weekday in `first_weekday`: 0 = Sunday … 6 = Saturday,
+the values of `Weekday`, carried as `firstWeekday` in `LocaleFormats` beside the
+formats wherever the formats travel. A known locale takes the day of the catalog
+(see [The Built-In Catalog](#the-built-in-catalog)); a locale the catalog does not
+know starts on Monday. The day is edited in the locale window by the same freeze
+as the formats: a switched-on locale is not edited, and reflow rewrites the day of
+a switched-off known locale together with its formats. What a reader gets from it
+is in [The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees).
 A locale does not store `timezone` (owner's decision, 2026-10-16). Time-zone
 selection and application belong to HIL-1528; see [time-zones.md](time-zones.md).
 
@@ -151,8 +159,9 @@ construction.
   languages list (the 50 catalog entries), with no request; the server picks
   the success text by the same catalog. A repeated code is refused by
   `LanguagesActions::create()`, so every door refuses it.
-- A known locale pair arrives with all seven formats from the catalog;
-  the add window prefills them and allows each to be changed before saving.
+- A known locale pair arrives with all its formats and its first weekday from
+  the catalog; the add window prefills them and allows each to be changed
+  before saving.
 - Every known country arrives through reflow, and known countries cannot be
   deleted, so adding a known country is unreachable: `CountriesActions::create()`
   refuses its code with "Country '<code>' already exists."; all creation doors
@@ -246,8 +255,8 @@ one line; no extra column protects that gap (owner's decision, 2026-09-12).
   takes `languageId`, required nullable `countryId` and `localeId`, keeps formats
   and names, and closes the window on success with `Locale <code> switched off.`.
   The table removes Enabled and replaces the eye with the edit control in
-  every open tab without a reload; reopening the edit window unlocks the seven
-  formats. Switching off an ordinary disabled locale succeeds without a write.
+  every open tab without a reload; reopening the edit window unlocks the
+  formats and the first weekday. Switching off an ordinary disabled locale succeeds without a write.
 - Switching off the countryless locale of a switched-on language warns;
   while it is off, formats fall back to the default language. For the default
   language, the step explains the protection and disables confirmation. The
@@ -377,15 +386,18 @@ The catalog is about 171 KB, below the 1 MiB heavy-file guard in
 |---|---|
 | Languages | 50: code, own name, `rtl`. |
 | Countries | 51: currency symbol and code. |
-| Locales | 128, including 8 countryless locales, with seven formats. |
+| Locales | 128, including 8 countryless locales, with their formats and first weekday. |
 | Country defaults | 87 default locales for countries. |
 | Country names | 2,550 (51 × 50). |
 
 The catalog supplies no language names. Its fingerprint changes with every
 catalog edit. The fingerprint hashes all five recursively sorted maps as JSON,
 then SHA-256; `I18nCatalogFingerprint` fixes that representation for reflow.
-The currency-code map uses current tender currencies from Unicode CLDR 48.2;
-the symbols and the other four groups come from the local hleb catalog.
+The currency-code map uses current tender currencies from Unicode CLDR 48.2.
+A locale's first weekday is the CLDR 48.2 `weekData` `firstDay` of its country
+(`supplementalData.xml`); a countryless locale takes the world value `001`,
+Monday. The symbols, the locale formats and the other three groups come from the
+local hleb catalog.
 The 87 country defaults preserve source hints even when a country is outside
 the 51 built-in countries or the suggested locale has no built-in row: 38
 country keys are outside that set and 21 locale references are absent. A
@@ -515,8 +527,8 @@ will give those refusals their user-facing text.
   that order. The ADMIN page action `hilos_i18n_locale_delete` takes only
   `languageId`, required nullable `countryId` and `localeId`, calls that item action,
   and acknowledges success with `Locale <code> deleted.`
-- Deleting a locale removes its seven formats and leaves its language/country
-  pair in the table. The intended Phase-2 fallback for that pair is the language's
+- Deleting a locale removes its formats and first weekday and leaves its
+  language/country pair in the table. The intended Phase-2 fallback for that pair is the language's
   countryless locale; without that locale, it is the default language. This
   deletion flow does not implement the region ladder, see
   [The Region Ladder](language-and-region.md#the-region-ladder).
@@ -815,7 +827,6 @@ These keys are pointers to later work, not implementation markers:
 - Translation — HIL-2280.
 - Synchronization with restcountries and flags — HIL-2283.
 - Manual reflow, its history, and synchronization in this section — HIL-2283.
-- `first_week_day` — HIL-2318.
 - Time-zone selection and application — HIL-1528; see [time-zones.md](time-zones.md).
 - A working preview — HIL-2280.
 - Multilingual CMS content — HIL-129; SSG language editions — HIL-130.

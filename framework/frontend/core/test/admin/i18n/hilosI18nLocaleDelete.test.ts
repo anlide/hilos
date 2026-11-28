@@ -46,9 +46,9 @@ describe('locale deletion', () => {
     expect(copy.title('Русский', null)).toBe(
       'Delete locale · Русский without a country',
     )
-    expect(copy.body('ru', 'ua')).toContain('seven formats of this pair')
+    expect(copy.body('ru', 'ua')).toContain('removes the formats of this pair')
     expect(copy.body('ru', 'ua')).toContain('countryless locale — ru')
-    expect(copy.body('ru', null)).toContain('seven base formats of ru')
+    expect(copy.body('ru', null)).toContain('removes the base formats of ru')
     expect(copy.body('ru', null)).toContain('fall back to the default language')
     expect(copy.note).toContain('Switch the locale off')
     expect(copy.note).toContain('choose another locale for that country first')

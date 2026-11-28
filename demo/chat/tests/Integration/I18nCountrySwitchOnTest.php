@@ -28,9 +28,11 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Country as EntityCountry;
 use Hilos\I18n\Browser\CountryCardBrowserData;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountrySwitchOnActionDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -123,13 +125,10 @@ final class I18nCountrySwitchOnTest extends IntegrationTestCase
             $locale = Hilos::$db->locales->actions->create(
                 $english,
                 Hilos::$db->countries['ca'],
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             Hilos::$db->countries['ca']->actions->update('$', 'CAD', $locale->id);
         });

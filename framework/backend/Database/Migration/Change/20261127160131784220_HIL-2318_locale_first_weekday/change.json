@@ -1,0 +1,14 @@
+{
+    "format": 1,
+    "id": "20261127160131784220_HIL-2318_locale_first_weekday",
+    "parts": [
+        {
+            "unit": "locale",
+            "up": "locale_first_weekday.sql",
+            "down": "locale_first_weekday_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "c22899ff16a2ad7ef2a4414b77921aed702d5088f062e385411422dd0fecea60",
+            "afterStubDownSha256": "f21be167fe7013150aa9818091b54fea81949834cf99724422d4131066c0e61c"
+        }
+    ]
+}

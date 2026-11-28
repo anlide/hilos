@@ -143,7 +143,7 @@ export const frenchName: HilosI18nNameRow = {
   corrections: [],
 }
 
-/** The seven formats of the built-in catalog for uk-UA. */
+/** The formats of the built-in catalog for uk-UA. */
 export const catalogFormats: HilosI18nLocaleFormats = {
   date: 'dd.MM.yyyy',
   time: 'HH:mm',
@@ -152,6 +152,7 @@ export const catalogFormats: HilosI18nLocaleFormats = {
   address: 'street, city, postcode',
   measurement: 'metric',
   collation: 'uk',
+  firstWeekday: 1,
 }
 
 /** The closed format lists the first page answer carries. */
@@ -163,6 +164,7 @@ export const localeTemplates: HilosI18nLocaleTemplates = {
   address: ['street, city, postcode', 'city, street'],
   measurement: ['metric', 'imperial'],
   collation: ['uk', 'en'],
+  firstWeekday: [1, 2, 3, 4, 5, 6, 0],
 }
 
 /** The language's own pair: a switched-on locale without a country. */

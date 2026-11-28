@@ -44,8 +44,10 @@ use Hilos\Database\View\Item\Country;
 use Hilos\Database\View\Item\Locale;
 use Hilos\HilosException;
 use Hilos\I18n\Browser\CountryCardBrowserData;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nCountryDeleteActionDTO;
 use Hilos\Pages\I18n\Lists\DTO\HilosI18nCountryRowDeleteActionDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -450,8 +452,12 @@ final class I18nCountryDeleteTest extends IntegrationTestCase
     private static function createLocale(?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            Hilos::$db->languages['en'], $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            Hilos::$db->languages['en'],
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

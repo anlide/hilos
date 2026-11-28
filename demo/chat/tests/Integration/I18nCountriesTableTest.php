@@ -48,8 +48,10 @@ use Hilos\I18n\Catalog\CountryDefinition;
 use Hilos\I18n\DTO\BuiltInCatalogTally;
 use Hilos\I18n\DTO\BuiltInCountryCodes;
 use Hilos\I18n\DTO\CountryCardSummary;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\I18n\HilosI18nCountriesTable;
@@ -163,13 +165,10 @@ final class I18nCountriesTableTest extends IntegrationTestCase
             $locale = Hilos::$db->locales->actions->create(
                 $english,
                 $own,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             Hilos::$db->countryNames->actions->createManual($own, $english, $locale, 'Qx locale');
             $own->actions->update('¤', 'XQX', $locale->id);
@@ -691,8 +690,12 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                 [ObjectCountryName::countryId => $countryId]), true, null, null);
 
             $locale = $this->underAgent($this->agent, static fn () => Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['en'], Hilos::$db->countries['qx'], 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00',
-                '+XX-XXXX-XXXX', 'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                Hilos::$db->languages['en'],
+                Hilos::$db->countries['qx'],
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             ));
             $this->assertLiveDeleteVerdict(SourceChange::dbCreated(HilosDbContext::locales, (string) $locale->id, []),
                 false, CountryCardSummary::DELETE_LOCALES, self::LOCALES_REFUSAL);
@@ -709,8 +712,12 @@ final class I18nCountriesTableTest extends IntegrationTestCase
                 [ObjectLocale::countryId => $countryId]), true, null, null);
 
             $countryless = $this->underAgent($this->agent, static fn () => Hilos::$db->locales->actions->create(
-                Hilos::$db->languages['en'], null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                Hilos::$db->languages['en'],
+                null,
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             ));
             self::assertNull(new HilosI18nCountriesTable()->buildMutationForSourceEvent(
                 SourceChange::dbCreated(HilosDbContext::locales, (string) $countryless->id, []),
@@ -859,8 +866,12 @@ final class I18nCountriesTableTest extends IntegrationTestCase
     private function locale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

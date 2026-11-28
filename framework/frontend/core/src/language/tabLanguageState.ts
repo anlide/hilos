@@ -10,10 +10,14 @@ import {
   type HilosConnection,
 } from '../connection/HilosConnection.js'
 import { applyDocumentLanguage } from '../dom/applyDocumentLanguage.js'
+import { type DateTimePickerWeekday } from '../primitives/dateTimePickerFactors.js'
 import { SIGNAL_HANDSHAKE_RESPONSE } from '../protocol/constants.js'
 import { createSignal, type ReadonlySignal } from '../state/signal.js'
 
-/** The seven display formats of a tab's region, as the server writes them. */
+/**
+ * The display values of a tab's region, as the server writes them: seven formats
+ * and the first day of the week.
+ */
 export interface HilosLocaleFormats {
   readonly date: string
   readonly time: string
@@ -22,6 +26,8 @@ export interface HilosLocaleFormats {
   readonly address: string
   readonly measurement: 'metric' | 'imperial'
   readonly collation: string
+  /** Sunday is 0, through Saturday as 6. */
+  readonly firstWeekday: DateTimePickerWeekday
 }
 
 /**
@@ -45,6 +51,7 @@ const localeFormatsSchema = z.object({
   address: z.string(),
   measurement: z.enum(['metric', 'imperial']),
   collation: z.string(),
+  firstWeekday: z.literal([0, 1, 2, 3, 4, 5, 6]),
 }) satisfies z.ZodType<HilosLocaleFormats>
 const LOCALE_FORMAT_KEYS = localeFormatsSchema.keyof().options
 const tabLanguageSchema = z.object({

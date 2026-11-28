@@ -109,9 +109,9 @@ invalidate. Do not grow a central switch over every setting, or introduce a
 global reverse-dependency registry merely to reset all cubes.
 
 HIL-1402 owns the cube schemas and aggregation boundaries, including which MCP
-metrics are affected and which could remain intact. HIL-2318 gives a locale
-its first weekday, see
-[The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees);
+metrics are affected and which could remain intact. A locale has its first
+weekday, see
+[languages and countries](languages-and-countries.md#the-five-tables);
 the analytics week start stays HIL-1402's. Neither a new setting nor an
 existing first-weekday API is implied here; Monday in today's Overview remains
 a code fact.
@@ -259,7 +259,7 @@ later leaf.
 | A real consumer's current attempt, reset and building | Use the actual cube and aggregation boundaries of HIL-1402. Put threshold and definition invalidation with their feature owner. Preserve one current attempt durably and fence superseded work; do not build an abstract kernel or global registry without a consumer. | Late work cannot publish rows/progress/readiness; A→B→C and A→B→A; a normal restart with unchanged basis does not reset; personal-zone changes do not reset shared cubes; Visitors and MCP thresholds remain independent; failure and missing/archived source data have the accepted availability and loss outcomes; rolling restart and owner handover preserve the boundary. |
 | Actual basis in answers and readers in Vue, React and Angular | Use the real consumer's result and availability from the preceding item. Carry only its influencing grounds with the numbers through contracts approved at that leaf's interview. Use ordinary page delivery and unavailable states, without an old served fallback. | Labels and numbers remain one calculation; unavailable data is distinct from a true zero; no partial total is presented as whole; a late old answer is rejected after the new attempt is known; failure never restores invalid numbers; changing a personal zone preserves the project calendar meaning. |
 | Project-env warning and instructions | Install the warning at the actual configuration sources and in new-project instructions. Its OLAP status depends on the reset behavior landing; keep PLANNED until then. This work does not introduce a configuration UI or approval gate. | The example keeps the assignment commented, names history loss first and links to the full consequences; project examples and separate declarations have the intended route; existing `.env` files are not represented as automatically updated. |
-| Transition of the temporary Overview | Move the HIL-1734 reader-zone calculation to the real project calculation when its HIL-1402 result and the answer/reader lifecycle exist. Coordinate locale/first-weekday work with HIL-2318; do not invent that API here. | Project calendar bounds, cutoff, numbers and labels agree; personal-zone changes leave shared calculations intact; current-attempt replacement and reconnect do not revive an invalid snapshot; unavailable and zero remain distinct in every supported reader. |
+| Transition of the temporary Overview | Move the HIL-1734 reader-zone calculation to the real project calculation when its HIL-1402 result and the answer/reader lifecycle exist. The first weekday of a locale is not the analytics week start; do not invent that API here. | Project calendar bounds, cutoff, numbers and labels agree; personal-zone changes leave shared calculations intact; current-attempt replacement and reconnect do not revive an invalid snapshot; unavailable and zero remain distinct in every supported reader. |
 
 This research adds no tests, CLI commands, timers or stand changes. Its existing
 documentation guard is `composer run test:framework:unit -- --filter AgentDocGuardTest`.

@@ -38,8 +38,10 @@ use Hilos\Database\Database;
 use Hilos\Database\Object\Item\Locale as ObjectLocale;
 use Hilos\HilosException;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLocaleSwitchOffActionDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -80,9 +82,12 @@ final class I18nLocaleDeleteTest extends IntegrationTestCase
             Hilos::$db->countries->actions->create('gb', '£', 'GBP');
             foreach ([null, 'gb'] as $countryCode) {
                 Hilos::$db->locales->actions->create(
-                    Hilos::$db->languages['en'], Hilos::$db->countries[$countryCode] ?? null,
-                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                    Hilos::$db->languages['en'],
+                    Hilos::$db->countries[$countryCode] ?? null,
+                    new LocaleFormats(
+                        'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                        'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                    ),
                 );
             }
             Hilos::$db->languageNames->actions->createManual(

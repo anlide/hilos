@@ -31,7 +31,9 @@ use Hilos\Database\View\Item\Language;
 use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Tables\I18n\AbstractHilosI18nNamesTable;
 use Hilos\Tables\I18n\HilosI18nCountryNamesTable;
 use Hilos\Tables\I18n\HilosI18nLanguageNamesTable;
@@ -514,8 +516,12 @@ final class HilosI18nNamesTableIntegrationTest extends FrameworkIntegrationTestC
     private static function locale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

@@ -44,6 +44,7 @@ const fields = [
   'address',
   'measurement',
   'collation',
+  'firstWeekday',
 ] as const
 const editor = createHilosI18nLocaleEdit(props.controller, props.context)
 const creator = createHilosI18nLocaleAdd(props.controller, props.context)
@@ -342,20 +343,22 @@ async function confirm(): Promise<void> {
   }
 }
 
-function choiceLabel(field: (typeof fields)[number], value: string): string {
-  return field === 'measurement' && (value === 'metric' || value === 'imperial')
-    ? copy.measurement[value]
-    : value
+function choiceLabel(
+  field: (typeof fields)[number],
+  value: HilosI18nLocaleFormats[(typeof fields)[number]],
+): string {
+  return field === 'firstWeekday' && typeof value === 'number'
+    ? copy.weekdays[value]
+    : field === 'measurement' && (value === 'metric' || value === 'imperial')
+      ? copy.measurement[value]
+      : String(value)
 }
 
 function changeField(field: (typeof fields)[number], event: Event): void {
   const target = event.target
   if (!(target instanceof HTMLSelectElement)) return
   if (mode.value === 'add') creator.setField(field, target.value)
-  if (mode.value === 'edit')
-    editor.patchForm({
-      [field]: target.value,
-    } as Partial<HilosI18nLocaleFormats>)
+  if (mode.value === 'edit') editor.setField(field, target.value)
 }
 
 async function submit(): Promise<void> {

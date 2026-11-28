@@ -24,7 +24,7 @@ final class LocaleTemplates
     ];
     public const array COLLATION = ['und'];
 
-    /** @return array<string, list<string>> Templates for each format field */
+    /** @return array<string, list<string>|list<int>> Templates for each format field; first weekdays Monday to Sunday */
     public static function toArray(): array
     {
         return [
@@ -38,33 +38,48 @@ final class LocaleTemplates
                 MeasurementSystem::cases(),
             ),
             LocaleFormats::collation => self::COLLATION,
+            LocaleFormats::firstWeekday => [
+                Weekday::MONDAY->value,
+                Weekday::TUESDAY->value,
+                Weekday::WEDNESDAY->value,
+                Weekday::THURSDAY->value,
+                Weekday::FRIDAY->value,
+                Weekday::SATURDAY->value,
+                Weekday::SUNDAY->value,
+            ],
         ];
     }
 
+    /** @return LocaleFormats The first template of each list, the metric system and Monday */
+    public static function firsts(): LocaleFormats
+    {
+        return new LocaleFormats(
+            self::DATE[0],
+            self::TIME[0],
+            self::NUMBER[0],
+            self::PHONE[0],
+            self::ADDRESS[0],
+            MeasurementSystem::METRIC,
+            self::COLLATION[0],
+            Weekday::MONDAY,
+        );
+    }
+
     /**
-     * @param string $date Date template
-     * @param string $time Time template
-     * @param string $number Number template
-     * @param string $phone Phone template
-     * @param string $address Address template
-     * @param string $collation Sorting template
+     * The unit system and the first weekday are not checked here: their types admit only known values.
+     *
+     * @param LocaleFormats $formats Display values to check
      * @throws ValidationException When the first unknown template is found
      */
-    public static function refuseUnknown(
-        string $date,
-        string $time,
-        string $number,
-        string $phone,
-        string $address,
-        string $collation,
-    ): void {
+    public static function refuseUnknown(LocaleFormats $formats): void
+    {
         foreach ([
-            'Date format' => [$date, self::DATE],
-            'Time format' => [$time, self::TIME],
-            'Number format' => [$number, self::NUMBER],
-            'Phone format' => [$phone, self::PHONE],
-            'Address format' => [$address, self::ADDRESS],
-            'Sorting' => [$collation, self::COLLATION],
+            'Date format' => [$formats->date, self::DATE],
+            'Time format' => [$formats->time, self::TIME],
+            'Number format' => [$formats->number, self::NUMBER],
+            'Phone format' => [$formats->phone, self::PHONE],
+            'Address format' => [$formats->address, self::ADDRESS],
+            'Sorting' => [$formats->collation, self::COLLATION],
         ] as $label => [$value, $templates]) {
             if (!in_array($value, $templates, true)) {
                 throw new ValidationException("{$label} '{$value}' is not recognized: expected one of the known templates.");

@@ -26,10 +26,12 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Language as EntityLanguage;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Exception\DefaultLanguageProtectedException;
 use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Pages\I18n\Details\DTO\HilosI18nLanguageSwitchOffActionDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -84,7 +86,12 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             $french = Hilos::$db->languages->actions->create('fr', 'Français', false);
             $french->actions->switchOn();
             Hilos::$db->locales->actions->create(
-                $french, null, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX', 'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+                $french,
+                null,
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             Hilos::$db->languageNames->actions->createManual($french, $english, null, 'French');
         });
@@ -232,13 +239,10 @@ final class I18nLanguageSwitchOffTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 Hilos::$db->languages['fr'],
                 null,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
         });
 

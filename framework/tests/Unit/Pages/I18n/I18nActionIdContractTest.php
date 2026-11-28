@@ -50,7 +50,7 @@ final class I18nActionIdContractTest extends TestCase
     {
         $formats = [
             'date' => 'yyyy-MM-dd', 'time' => 'HH:mm', 'number' => '1,234.5',
-            'phone' => '', 'address' => '', 'measurement' => 'metric', 'collation' => '',
+            'phone' => '', 'address' => '', 'measurement' => 'metric', 'collation' => '', 'firstWeekday' => 1,
         ];
         $contracts = [
             HilosI18nLanguageAddActionDTO::class => [

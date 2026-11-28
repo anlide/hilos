@@ -43,7 +43,7 @@ export const HILOS_I18N_COUNTRY_ADD_COPY = {
   consequences: [
     'nobody will correct its currency symbol and code if they change;',
     'the built-in catalog has no names for it — you will type each one in yourself;',
-    'its locales get no formats from the catalog — you will choose all seven for each.',
+    'its locales get no formats from the catalog — you will choose every format for each.',
   ],
   confirmNote:
     'Check the code: people most often land here because of a typo in the two letters, not because the country is truly missing from the list.',

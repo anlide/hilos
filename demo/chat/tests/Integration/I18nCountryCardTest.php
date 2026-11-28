@@ -40,8 +40,10 @@ use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\DTO\CountryCardSummary;
 use Hilos\I18n\DTO\I18nOverviewData;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -155,25 +157,19 @@ final class I18nCountryCardTest extends IntegrationTestCase
             $locale = Hilos::$db->locales->actions->create(
                 $english,
                 $own,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             $locale->actions->switchOn();
             $disabledLocale = Hilos::$db->locales->actions->create(
                 $german,
                 $own,
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
             Hilos::$db->countryNames->actions->createManual($own, $french, null, 'Qxlande');
             Hilos::$db->countryNames->actions->createManual($own, $english, $locale, 'Qxland EN');
@@ -269,13 +265,10 @@ final class I18nCountryCardTest extends IntegrationTestCase
             Hilos::$db->locales->actions->create(
                 Hilos::$db->languages['en'],
                 Hilos::$db->countries['qx'],
-                'YYYY-MM-DD',
-                'HH:mm:ss',
-                '1,000.00',
-                '+XX-XXXX-XXXX',
-                'Street, House, City, Index',
-                MeasurementSystem::METRIC,
-                'und',
+                new LocaleFormats(
+                    'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                    'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+                ),
             );
         });
         $locale = Hilos::$db->locales['en-QX'];

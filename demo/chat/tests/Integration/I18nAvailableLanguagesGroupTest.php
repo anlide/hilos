@@ -21,7 +21,6 @@ use Hilos\Database\View\Item\Language;
 use Hilos\I18n\DTO\I18nTestLanguageCreateDTO;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\LocaleTemplates;
-use Hilos\I18n\MeasurementSystem;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
@@ -282,13 +281,7 @@ final class I18nAvailableLanguagesGroupTest extends IntegrationTestCase
         $locale = Hilos::$db->locales->actions->create(
             $language,
             $country,
-            LocaleTemplates::DATE[0],
-            LocaleTemplates::TIME[0],
-            LocaleTemplates::NUMBER[0],
-            LocaleTemplates::PHONE[0],
-            LocaleTemplates::ADDRESS[0],
-            MeasurementSystem::METRIC,
-            LocaleTemplates::COLLATION[0],
+            LocaleTemplates::firsts(),
         );
         if ($enabled) {
             $locale->actions->switchOn();

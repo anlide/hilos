@@ -25,6 +25,7 @@ use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\DTO\TabLanguage;
 use Hilos\I18n\MeasurementSystem;
 use Hilos\I18n\TabLanguageLadder;
+use Hilos\I18n\Weekday;
 
 /** The two ladders of a tab's language and region over a seeded reference. */
 final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCase
@@ -129,6 +130,26 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
 
         self::assertTab($tab, $fr, $variant);
         self::assertSame('fr-FR', $tab?->localeCode);
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testChosenVariantCarriesItsStoredFirstWeekday(): void
+    {
+        self::switchedOnLocale(self::switchedOnLanguage('es', 'Español', false), null);
+        $en = self::switchedOnLanguage('en', 'English', false);
+        self::switchedOnLocale($en, null);
+        $american = Hilos::$db->locales->actions->create(
+            $en,
+            self::switchedOnCountry('us'),
+            LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('en-US')),
+        );
+        $american->actions->switchOn();
+
+        $tab = TabLanguageLadder::resolve($en->id, $american->id, BrowserLanguages::fromAcceptLanguage(null), null, null);
+
+        self::assertTab($tab, $en, $american);
+        self::assertSame(Weekday::SUNDAY, $tab?->formats->firstWeekday);
+        self::assertSame(0, $tab?->toArray()[TabLanguage::formats][LocaleFormats::firstWeekday]);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -239,6 +260,21 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
         self::assertNull($tab->localeId);
         self::assertNull($tab->localeCode);
         self::assertSame(LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('es'))->toArray(), $tab->formats->toArray());
+    }
+
+    /** @throws HilosException When a database or action fails unexpectedly */
+    public function testCatalogTailCarriesTheCatalogFirstWeekday(): void
+    {
+        putenv(EnvConstants::HILOS_DEFAULT_LANGUAGE->name . '=fa');
+        $fa = self::switchedOnLanguage('fa', 'فارسی', true);
+
+        $tab = TabLanguageLadder::resolve(null, null, BrowserLanguages::fromAcceptLanguage(null), null, null);
+
+        self::assertNotNull($tab);
+        self::assertSame($fa->id, $tab->languageId);
+        self::assertNull($tab->localeId);
+        self::assertSame(LocaleFormats::ofCatalog(BuiltInI18nCatalog::locale('fa-IR'))->toArray(), $tab->formats->toArray());
+        self::assertSame(Weekday::SATURDAY, $tab->formats->firstWeekday);
     }
 
     /** @throws HilosException When a database or action fails unexpectedly */
@@ -765,8 +801,12 @@ final class TabLanguageLadderIntegrationTest extends FrameworkIntegrationTestCas
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::METRIC, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::METRIC, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

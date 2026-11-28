@@ -125,13 +125,13 @@ describe('React locale window forms', () => {
     expect(h.calls).toHaveLength(0)
   })
 
-  it('prefills all seven closed selects from the focused catalog and sends fixed coordinates', async () => {
+  it('prefills every closed select from the focused catalog and sends fixed coordinates', async () => {
     const h = setup(absentLocale)
     const selects = document.querySelectorAll('select')
-    expect(selects).toHaveLength(7)
+    expect(selects).toHaveLength(8)
     for (const [field, value] of Object.entries(formats))
       expect(el<HTMLSelectElement>(`i18n-locale-field-${field}`).value).toBe(
-        value,
+        String(value),
       )
     expect(el('i18n-locale-code').textContent).toBe('uk-GB')
     expect(document.querySelector('input')).toBeNull()
@@ -149,7 +149,7 @@ describe('React locale window forms', () => {
     expect(el('i18n-locale-window')).toBeNull()
     expect(h.focused.get()).toBeUndefined()
   })
-  it('requires seven choices for an unknown pair and offers named units', () => {
+  it('requires every choice for an unknown pair and offers named units', () => {
     const h = setup({
       ...absentLocale,
       countryName: null,
@@ -162,12 +162,82 @@ describe('React locale window forms', () => {
     for (const [field, value] of Object.entries(formats)) {
       expect(el<HTMLSelectElement>(`i18n-locale-field-${field}`).value).toBe('')
       expect(el(`i18n-locale-field-${field}`).textContent).toContain('Choose…')
-      change(`i18n-locale-field-${field}`, value)
+      change(`i18n-locale-field-${field}`, String(value))
     }
     expect(el('i18n-locale-field-measurement').textContent).toContain(
       'MetricImperial',
     )
     expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(false)
+  })
+  it('lists the days from Monday to Sunday by name and sends the chosen day as a number', () => {
+    const h = setup({ ...absentLocale, catalogFormats: null })
+    const day = el<HTMLSelectElement>('i18n-locale-field-firstWeekday')
+    expect(day.labels[0]?.textContent).toBe('First day of week')
+    expect([...day.options].map((option) => option.textContent)).toEqual([
+      'Choose…',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ])
+    for (const field of [
+      'date',
+      'time',
+      'number',
+      'phone',
+      'address',
+      'measurement',
+      'collation',
+    ] as const)
+      change(`i18n-locale-field-${field}`, formats[field])
+    expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(true)
+    change('i18n-locale-field-firstWeekday', '0')
+    expect(day.selectedOptions[0]?.textContent).toBe('Sunday')
+    expect(el<HTMLButtonElement>('i18n-locale-submit').disabled).toBe(false)
+    enter()
+    expect(h.calls[0]).toMatchObject({
+      action: 'hilos_i18n_locale_add',
+      payload: {
+        languageId: 19,
+        countryId: 101,
+        formats: { ...formats, firstWeekday: 0 },
+      },
+    })
+  })
+  it('edits the day like any format and names a day changed elsewhere', () => {
+    const h = setup()
+    const day = el<HTMLSelectElement>('i18n-locale-field-firstWeekday')
+    expect(day.selectedOptions[0]?.textContent).toBe('Monday')
+    change('i18n-locale-field-firstWeekday', '6')
+    act(() =>
+      h.focused.set({
+        ...localeRow,
+        formats: { ...formats, firstWeekday: 0 },
+      }),
+    )
+    expect(el('i18n-locale-notice').textContent).toContain(
+      'First day of week changed elsewhere to "Sunday"; your choice stays selected.',
+    )
+    expect(day.selectedOptions[0]?.textContent).toBe('Saturday')
+    click('conflict-accept-mine')
+    enter()
+    expect(h.calls[0]).toMatchObject({
+      action: 'hilos_i18n_locale_update',
+      payload: { localeId: 19101, formats: { ...formats, firstWeekday: 6 } },
+    })
+  })
+  it('shows the day of a switched-on locale in a closed list', () => {
+    setup({
+      ...localeRow,
+      enabled: true,
+      formats: { ...formats, firstWeekday: 0 },
+    })
+    const day = el<HTMLSelectElement>('i18n-locale-field-firstWeekday')
+    expect(day.disabled).toBe(true)
+    expect(day.selectedOptions[0]?.textContent).toBe('Sunday')
   })
   it('keeps the Add title, merges a new locale and saves a resolved draft by live id', async () => {
     const h = setup(absentLocale)

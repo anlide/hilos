@@ -37,10 +37,12 @@ use Hilos\Database\View\Item\Locale;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\I18n\Catalog\BuiltInI18nCatalog;
+use Hilos\I18n\DTO\LocaleFormats;
 use Hilos\I18n\I18nTestCommandConstants;
 use Hilos\I18n\Library\I18nLibraryAgent;
 use Hilos\I18n\LocaleTemplates;
 use Hilos\I18n\MeasurementSystem;
+use Hilos\I18n\Weekday;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 
@@ -448,18 +450,20 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
         self::assertFalse($this->changes->sawOpenTransaction);
     }
 
-    public function testCreateLocalesUsesAllSevenCatalogOrFallbackFormats(): void
+    public function testCreateLocalesUsesAllCatalogOrFallbackFormatsAndFirstWeekday(): void
     {
         $known = $this->command(CliCommands::I18N_TEST_LANGUAGE_CREATE, ['code' => 'en', 'nativeName' => 'English']);
         $own = $this->command(CliCommands::I18N_TEST_LANGUAGE_CREATE, ['code' => 'qx', 'nativeName' => 'Own language']);
         $britain = $this->command(CliCommands::I18N_TEST_COUNTRY_CREATE, ['code' => 'gb', 'currencySymbol' => '£', 'currencyCode' => 'GBP']);
         $custom = $this->command(CliCommands::I18N_TEST_COUNTRY_CREATE, ['code' => 'qy', 'currencySymbol' => 'Y', 'currencyCode' => 'QYY']);
-        foreach ([$known, $own, $britain, $custom] as $parent) {
+        $america = $this->command(CliCommands::I18N_TEST_COUNTRY_CREATE, ['code' => 'us', 'currencySymbol' => '$', 'currencyCode' => 'USD']);
+        foreach ([$known, $own, $britain, $custom, $america] as $parent) {
             self::assertTrue($parent->isOk());
         }
         foreach ([
             [$known->payload['id'], null, 'en', false],
             [$known->payload['id'], $britain->payload['id'], 'en-GB', true],
+            [$known->payload['id'], $america->payload['id'], 'en-US', false],
             [$known->payload['id'], $custom->payload['id'], 'en-QY', false],
             [$own->payload['id'], null, 'qx', true],
             [$own->payload['id'], $britain->payload['id'], 'qx-GB', false],
@@ -485,13 +489,16 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
             $expected = $definition === null ? [
                 LocaleTemplates::DATE[0], LocaleTemplates::TIME[0], LocaleTemplates::NUMBER[0],
                 LocaleTemplates::PHONE[0], LocaleTemplates::ADDRESS[0], 'metric', LocaleTemplates::COLLATION[0],
+                Weekday::MONDAY->value,
             ] : [
                 $definition->dateFormat, $definition->timeFormat, $definition->numberFormat,
                 $definition->phoneFormat, $definition->addressFormat, $definition->measurementSystem, $definition->collation,
+                $definition->firstWeekday,
             ];
             self::assertSame($expected, [
                 $stored['date_format'], $stored['time_format'], $stored['number_format'],
                 $stored['phone_format'], $stored['address_format'], $stored['measurement_system'], $stored['collation'],
+                (int)$stored['first_weekday'],
             ], $code);
         }
         self::assertFalse($this->changes->sawOpenTransaction);
@@ -1024,8 +1031,12 @@ final class I18nCatalogTakeInIntegrationTest extends FrameworkIntegrationTestCas
     private static function createLocale(Language $language, ?Country $country): Locale
     {
         return Hilos::$db->locales->actions->create(
-            $language, $country, 'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
-            'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und',
+            $language,
+            $country,
+            new LocaleFormats(
+                'YYYY-MM-DD', 'HH:mm:ss', '1,000.00', '+XX-XXXX-XXXX',
+                'Street, House, City, Index', MeasurementSystem::IMPERIAL, 'und', Weekday::MONDAY,
+            ),
         );
     }
 

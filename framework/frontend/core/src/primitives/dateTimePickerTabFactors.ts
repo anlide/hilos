@@ -1,8 +1,8 @@
 // The date picker's display factors that the tab's region decides: the order
-// of the date parts and their separator from the region's date template, and
-// the twelve- or twenty-four-hour clock from its time template — the same
-// templates the core formatter writes with. The first day of the week joins
-// them here when the tab learns it (HIL-2318).
+// of the date parts and their separator from the region's date template, the
+// twelve- or twenty-four-hour clock from its time template — the same
+// templates the core formatter writes with — and the region's first day of the
+// week.
 import { hilosReaderFormats } from '../format/readerDisplay.js'
 import {
   DEFAULT_DATE_TIME_PICKER_FACTORS,
@@ -13,7 +13,7 @@ import {
 /** The region's date factors the picker takes. */
 type TabPickerFactors = Pick<
   DateTimePickerFactors,
-  'dateOrder' | 'dateSeparator' | 'hourCycle'
+  'dateOrder' | 'dateSeparator' | 'hourCycle' | 'firstWeekday'
 >
 
 /** A date template: three tokens with the same separator between them. */
@@ -32,7 +32,7 @@ const TWELVE_HOUR_TOKEN = 'hh'
  * that is not three distinct date tokens keeps the picker's default order and
  * separator.
  *
- * @returns The date order, the date separator and the hour cycle.
+ * @returns The date order and separator, the hour cycle, the first weekday.
  */
 export function hilosTabPickerFactors(): TabPickerFactors {
   const formats = hilosReaderFormats()
@@ -43,6 +43,7 @@ export function hilosTabPickerFactors(): TabPickerFactors {
       dateOrder: DEFAULT_DATE_TIME_PICKER_FACTORS.dateOrder,
       dateSeparator: DEFAULT_DATE_TIME_PICKER_FACTORS.dateSeparator,
       hourCycle,
+      firstWeekday: formats.firstWeekday,
     }
   }
 
@@ -54,5 +55,6 @@ export function hilosTabPickerFactors(): TabPickerFactors {
     ],
     dateSeparator: parts[2],
     hourCycle,
+    firstWeekday: formats.firstWeekday,
   }
 }

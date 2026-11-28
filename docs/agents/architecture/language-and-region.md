@@ -210,8 +210,8 @@ Editions on language addresses and `hreflang` — HIL-130.
 
 ## What Every Tab Knows
 
-- On connecting, a tab learns its active language and region, the seven
-  formats of that region
+- On connecting, a tab learns its active language and region, the formats of
+  that region with its first weekday
   ([`LocaleFormats`](../../../framework/backend/I18n/DTO/LocaleFormats.php))
   and the language's `rtl` flag. Every handshake response carries them as
   `handshake_response.data.tabLanguage` — `languageId`, `languageCode`, `rtl`,
@@ -228,8 +228,12 @@ Editions on language addresses and `hreflang` — HIL-130.
 - The document carries `lang`: the code of the active language, never of its
   region. A null node leaves it as the page was served, and a response naming
   another language rewrites it at once, with no reload.
-- A tab also learns the first day of the week of its region
-  (not in the code yet — HIL-2318).
+- A tab also learns the first day of the week of its region:
+  `handshake_response.data.tabLanguage.formats.firstWeekday`, 0 = Sunday …
+  6 = Saturday. In the browser `hilosTabPickerFactors()` from
+  `@hilos/core/base` hands it to a date picker as its `firstWeekday` factor;
+  a tab whose node is null reads the built-in formats, whose week starts on
+  Monday.
 - A language with `rtl` sets `dir` and the RTL build of Bootstrap on the shell
   and the framework's windows in all three view frameworks; a demo's own pages
   come later, separately (not in the code yet — HIL-2317).
@@ -311,14 +315,16 @@ which the formatter and the date picker both read.
 
 `hilosTabPickerFactors()`, exported from `@hilos/core/base`, gives a date
 picker the order of the date parts and their separator from the region's date
-template, and its clock from the time template: twelve-hour when the template
-carries the `hh` token, the same token the formatter writes by. A picker takes
-them when it opens, as it takes the zone, and an open picker keeps them; a date
-template that is not three distinct tokens keeps the picker's default order and
-separator. The Works window of the Status section takes its factors this way
-([date-time-picker.md](../frontend/date-time-picker.md)). The date picker
-starts its week on the first day of the week of the locale; an administrator
-edits that day in the locale window (not in the code yet — HIL-2318).
+template, its clock from the time template — twelve-hour when the template
+carries the `hh` token, the same token the formatter writes by — and the
+region's first day of the week, on which the picker starts its week. A picker
+takes them when it opens, as it takes the zone, and an open picker keeps them;
+a date template that is not three distinct tokens keeps the picker's default
+order and separator. The Works window of the Status section takes its factors
+this way
+([date-time-picker.md](../frontend/date-time-picker.md#existing-foundations-and-scope)).
+An administrator edits the first day of the week in the locale window beside
+the formats.
 
 When the region or the reader's zone changes, an open screen reformats without
 a reload. `hilosReaderDisplay`, exported from `@hilos/core/base`, is how the

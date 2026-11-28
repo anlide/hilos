@@ -18,6 +18,7 @@ final readonly class LocaleDefinition
      * @param string $addressFormat Address display template
      * @param string $measurementSystem 'metric' or 'imperial'
      * @param string $collation Built-in collation code 'und'
+     * @param int $firstWeekday First day of the week, 0 = Sunday … 6 = Saturday
      */
     public function __construct(
         public string $code,
@@ -30,6 +31,7 @@ final readonly class LocaleDefinition
         public string $addressFormat,
         public string $measurementSystem,
         public string $collation,
+        public int $firstWeekday,
     ) {
     }
 }
