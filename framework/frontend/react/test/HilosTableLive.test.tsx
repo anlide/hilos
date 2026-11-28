@@ -7,8 +7,8 @@ import {
   TableViewportController,
   bindTimeZoneState,
   createSignal,
+  hilosReaderDisplay,
   hilosTableFrozenLabel,
-  hilosTimeZone,
 } from '@hilos/core/base'
 import * as core from '@hilos/core/base'
 import type {
@@ -31,6 +31,7 @@ import { registerTableLiveFrozenCases } from '../../test-support/tableLiveFrozen
 import { registerTableLiveRoomCases } from '../../test-support/tableLiveRoomCases.js'
 
 import { HilosTableLive } from '../src/HilosTableLive.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 // The React port of vue/src/HilosTableLive.test.ts, under the same case names.
 
@@ -227,21 +228,21 @@ describe('HilosTableLive', () => {
     const subscribe = core.subscribeSignal
     const callbacks = vi.fn()
     const releases = vi.fn()
-    let activeZoneSubscriptions = 0
+    let activeRedrawSubscriptions = 0
     const subscriptions = vi
       .spyOn(core, 'subscribeSignal')
       .mockImplementation(
         <T,>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
           let active = true
           const stop = subscribe(source, (value) => {
-            if (source === hilosTimeZone) callbacks(value)
+            if (source === hilosReaderDisplay) callbacks(value)
             listener(value)
           })
-          if (source === hilosTimeZone) activeZoneSubscriptions++
+          if (source === hilosReaderDisplay) activeRedrawSubscriptions++
           return () => {
             if (!active) return
             active = false
-            if (source === hilosTimeZone) activeZoneSubscriptions--
+            if (source === hilosReaderDisplay) activeRedrawSubscriptions--
             releases()
             stop()
           }
@@ -253,10 +254,7 @@ describe('HilosTableLive', () => {
     controller.ingestFrozen(since)
     const rows = controller.rows.get()
     const expected = (timeZone: string) =>
-      `This table has not updated since ${new Intl.DateTimeFormat(undefined, {
-        timeStyle: 'medium',
-        timeZone,
-      }).format(since)}. The rows shown may be out of date.`
+      `This table has not updated since ${readerMomentText(since, timeZone, { kind: 'time' })}. The rows shown may be out of date.`
     const mounted = render(
       <StrictMode>
         <HilosTableLive controller={controller} columns={COLUMNS} />
@@ -266,7 +264,7 @@ describe('HilosTableLive', () => {
     const element = line
     try {
       expect(line.textContent).toBe(expected('UTC'))
-      expect(activeZoneSubscriptions).toBe(1)
+      expect(activeRedrawSubscriptions).toBe(1)
       expect(connection.listenerCount()).toBe(2)
 
       receive('Europe/Kyiv')
@@ -277,7 +275,7 @@ describe('HilosTableLive', () => {
       expect(byId(mounted.container, 'hilos-table-frozen')).toBe(element)
       expect(controller.rows.get()).toBe(rows)
       expect(controller.frozenSince.get()).toBe(since)
-      expect(activeZoneSubscriptions).toBe(1)
+      expect(activeRedrawSubscriptions).toBe(1)
       expect(callbacks).toHaveBeenCalledTimes(1)
 
       receive('Europe/Kyiv')
@@ -290,7 +288,7 @@ describe('HilosTableLive', () => {
       expect(callbacks).toHaveBeenCalledTimes(2)
 
       mounted.unmount()
-      expect(activeZoneSubscriptions).toBe(0)
+      expect(activeRedrawSubscriptions).toBe(0)
       receive('UTC')
       expect(callbacks).toHaveBeenCalledTimes(2)
 
@@ -309,14 +307,14 @@ describe('HilosTableLive', () => {
         expect(
           byId(reboundMount.container, 'hilos-table-frozen')?.textContent,
         ).toBe(expected('UTC'))
-        expect(activeZoneSubscriptions).toBe(1)
+        expect(activeRedrawSubscriptions).toBe(1)
         receiveRebound('Europe/Kyiv')
         expect(
           byId(reboundMount.container, 'hilos-table-frozen')?.textContent,
         ).toBe(expected('Europe/Kyiv'))
         expect(callbacks).toHaveBeenCalledTimes(3)
         reboundMount.unmount()
-        expect(activeZoneSubscriptions).toBe(0)
+        expect(activeRedrawSubscriptions).toBe(0)
         receiveRebound(null)
         expect(callbacks).toHaveBeenCalledTimes(3)
       } finally {

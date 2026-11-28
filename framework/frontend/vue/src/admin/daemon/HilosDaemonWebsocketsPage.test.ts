@@ -36,7 +36,7 @@ describe('HilosDaemonWebsocketsPage', () => {
     await nextTick()
     expect(h.view.findAll(id('tile'))).toHaveLength(1)
     expect(h.view.get(id('tile')).text()).toContain('WebSocket connections now')
-    expect(h.view.get(id('count')).text()).toBe((1284).toLocaleString())
+    expect(h.view.get(id('count')).text()).toBe('1,284')
     expect(h.view.get(id('note')).text()).toBe(LIVE)
     expect(h.view.get(id('tile')).text()).not.toMatch(/sessions/i)
     expect(

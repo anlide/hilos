@@ -199,7 +199,7 @@ it('shows a guest the current text with nothing to accept', async () => {
   await settle()
   expect(one('terms-reader')!.getAttribute('data-state')).toBe('guest')
   expect(one('terms-reader')!.textContent).toContain(
-    'in force since 1 October 2026',
+    'in force since 01.10.2026',
   )
   expect(one('terms-text')!.querySelectorAll('li')).toHaveLength(1)
   expect(one('legal-document-accept')).toBeNull()
@@ -218,7 +218,7 @@ it('confirms in green a reader holding the revision in force', async () => {
   expect(reader.getAttribute('data-state')).toBe('covered')
   expect(reader.querySelector('.text-success')).not.toBeNull()
   expect(reader.textContent).toContain(
-    'You accepted the revision of 1 October 2026',
+    'You accepted the revision of 01.10.2026',
   )
   expect(one('legal-document-accept')).toBeNull()
 })
@@ -267,7 +267,7 @@ it('keeps the refusal of an acceptance in its room under the buttons', async () 
   )
   await settle()
   expect(one('legal-document-reader-plate')!.textContent).toContain(
-    'account frozen · deadline passed 1 October 2026',
+    'account frozen · deadline passed 01.10.2026',
   )
   fireEvent.click(one('legal-document-accept')!)
   await settle()

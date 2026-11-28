@@ -3,7 +3,7 @@ subscription controller; its actions never delay or replace the file reader. -->
 <script setup lang="ts">
 import {
   formatMoment,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type ActionLifecycle,
   type HilosConnection,
 } from '@hilos/core/base'
@@ -77,7 +77,7 @@ const history = useSignal(reader.history)
 const upcomingWorks = useSignal(reader.upcomingWorks)
 const currentMaintenance = useSignal(reader.currentMaintenance)
 const dayStrips = useSignal(reader.dayStrips)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const detailId = useId()
 const selectedDay = ref<{ componentKey: string; startTs: number } | null>(null)
 
@@ -116,12 +116,12 @@ const lastUpdate = computed(() =>
 )
 
 function moment(at: number): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatMoment(at) ?? '—'
 }
 
 function dayLabel(day: PublicStatusDay): string {
-  void timeZone.value
+  void readerDisplay.value
   return publicStatusDayLabel(day)
 }
 

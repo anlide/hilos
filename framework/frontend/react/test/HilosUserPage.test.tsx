@@ -1978,7 +1978,7 @@ describe('HilosUserPage standing (HIL-945)', () => {
     expect(badge()?.querySelector('.bi-snow')).not.toBeNull()
     expect(byId('hilos-user-frozen-state')?.textContent).toContain('Yes')
     expect(byId('hilos-user-frozen-lapsed')?.textContent).toContain(
-      'Terms of use — deadline passed 1 September 2026',
+      'Terms of use — deadline passed 01.09.2026',
     )
     expect(byId('hilos-user-frozen-open')).toBeNull()
     const states = Array.from(
@@ -2020,7 +2020,7 @@ describe('HilosUserPage standing (HIL-945)', () => {
       'Past deadline — reminders only',
     )
     expect(byId('hilos-user-frozen-lapsed')?.textContent).toContain(
-      'Privacy policy — deadline passed 15 September 2026',
+      'Privacy policy — deadline passed 15.09.2026',
     )
 
     // Hidden from a viewer of the admin view mode: no standing to show.

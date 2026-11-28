@@ -4,6 +4,15 @@
 /** Signal `type` of the framework welcome frame (PHP `SignalTypeConstants::HANDSHAKE`). */
 export const SIGNAL_TYPE_HANDSHAKE = 'handshake'
 
+/**
+ * Signal `type` of the session-scope response a project sends after the
+ * handshake, carrying the session scope payload. Each project keeps its backend
+ * signal byte-equal (e.g. PHP `ChatSignalConstants::HANDSHAKE_RESPONSE`). It
+ * lives with the wire constants, not with the session reader, so a module that
+ * routes on it does not load the session scope.
+ */
+export const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
+
 /** Transport wrapper (PHP `SignalTypeConstants::SIGNAL_BATCH`). */
 export const SIGNAL_TYPE_SIGNAL_BATCH = 'signal_batch'
 

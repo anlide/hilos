@@ -9,7 +9,7 @@ import {
   type HilosAnalyticsOverviewTile,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, inject, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -24,11 +24,13 @@ overview.start()
 onUnmounted(() => overview.dispose())
 
 const snapshot = useSignal(overview.snapshot)
-const tiles = computed(() =>
-  snapshot.value === undefined
+const readerDisplay = useSignal(hilosReaderDisplay)
+const tiles = computed(() => {
+  void readerDisplay.value
+  return snapshot.value === undefined
     ? undefined
-    : analyticsOverviewTiles(snapshot.value),
-)
+    : analyticsOverviewTiles(snapshot.value)
+})
 
 const sessionsPath = (
   key: HilosAnalyticsOverviewTile['key'],

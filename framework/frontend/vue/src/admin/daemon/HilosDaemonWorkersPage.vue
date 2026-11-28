@@ -13,9 +13,10 @@ import {
   formatDaemonWorkerPid,
   readDaemonProcessesReported,
   readHilosDaemonNodeHeading,
+  type HilosDaemonWorkerRow,
   type HilosDaemonWorkersContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'
@@ -43,11 +44,17 @@ const rows = useSignal(workers.controller.rows)
 const emptyState = computed(() =>
   daemonProcessesEmptyState(heading.value, reported.value),
 )
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const silentSince = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeSilentSince(heading.value, Date.now())
 })
+
+/** @param row The worker whose measured memory is written. */
+function memory(row: HilosDaemonWorkerRow): string {
+  void readerDisplay.value
+  return formatDaemonWorkerMemory(row)
+}
 
 onMounted(() => workers.start())
 onUnmounted(() => workers.dispose())
@@ -89,9 +96,7 @@ onUnmounted(() => workers.dispose())
           {{ formatDaemonWorkerAgentCount(row) }}
         </span>
       </template>
-      <template #cell-memoryBytes="{ row }">{{
-        formatDaemonWorkerMemory(row)
-      }}</template>
+      <template #cell-memoryBytes="{ row }">{{ memory(row) }}</template>
       <template #cell-actions="{ row }">
         <HilosLink
           :to="daemonWorkerLogPath(nodeId, row)"

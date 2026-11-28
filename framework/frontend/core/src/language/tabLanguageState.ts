@@ -10,7 +10,7 @@ import {
   type HilosConnection,
 } from '../connection/HilosConnection.js'
 import { applyDocumentLanguage } from '../dom/applyDocumentLanguage.js'
-import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../protocol/constants.js'
 import { createSignal, type ReadonlySignal } from '../state/signal.js'
 
 /** The seven display formats of a tab's region, as the server writes them. */

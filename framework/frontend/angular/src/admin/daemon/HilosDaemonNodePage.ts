@@ -33,7 +33,7 @@ import {
 import {
   computedSignal,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   subscribeSignal,
 } from '@hilos/core/base'
 import {
@@ -490,16 +490,31 @@ export class HilosDaemonNodePage {
   protected readonly daemonMemoryBoundHint = daemonMemoryBoundHint
   protected readonly daemonMonopolisticCount = daemonMonopolisticCount
   protected readonly daemonProgressWidth = daemonProgressWidth
-  protected readonly formatDaemonBytes = formatDaemonBytes
-  protected readonly formatDaemonCores = formatDaemonCores
-  protected readonly formatDaemonNumber = formatDaemonNumber
+  protected readonly formatDaemonBytes = (
+    bytes: number | null | undefined,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonBytes(bytes)
+  }
+  protected readonly formatDaemonCores = (
+    cores: number | null | undefined,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonCores(cores)
+  }
+  protected readonly formatDaemonNumber = (
+    value: number | null | undefined,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonNumber(value)
+  }
   protected readonly formatDaemonPercentage = formatDaemonPercentage
   protected readonly formatDaemonUptime = formatDaemonUptime
   /** The project’s existing connection and page scopes. */
   readonly context = input.required<HilosDaemonContext>()
   protected readonly page = HilosPages.DAEMON_NODE
   private readonly router = inject(HILOS_ROUTER)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly current = signal<{
     node: HilosDaemonNodeOverviewData
     heading: HilosDaemonNodeHeading
@@ -560,7 +575,7 @@ export class HilosDaemonNodePage {
   )
   protected readonly noticeOpen = signal(false)
   protected readonly reportNotice = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const current = this.current()
     if (!current) return null
     const { node, heading } = current

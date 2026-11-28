@@ -5,6 +5,7 @@ import { shownByTestId } from './table.js'
 import { fitsInScrollport } from './geometry.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 import { deliveryObject } from './deliveryFrames.js'
+import { readerMillisecondMoment, readerNumber } from './moments.js'
 import { nextClientPaint, watchClientDocument } from './lazyBundles.js'
 import { reportDaemonNode, reportDaemonNodeUntil } from './daemonReport.js'
 import type { DeliveryFrameLog } from './deliveryFrames.js'
@@ -676,10 +677,11 @@ export function readDaemonCronMoment(
 }
 
 /**
- * Compare both cells with one current wire row through independent browser Intl.
+ * Compare both cells with one current wire row through the independent oracle.
  * Each attempt reads the cells together and discards its answer if that row
  * changed during the read. One poll keeps the caller's delivery timeout.
- * `timeOnly` checks hours and minutes; the default keeps full calendar labels.
+ * Each cell is compared whole. `timeOnly` checks hours and minutes after any
+ * calendar label; the default keeps full calendar labels.
  */
 export async function expectDaemonCronMoments(
   expect: Expect,
@@ -707,57 +709,37 @@ export async function expectDaemonCronMoments(
         expect(value).toBeLessThan(Date.UTC(2100, 0))
       }
       expect(rule.nextRunAt).not.toBeNull()
+      const moment = (at: number) => {
+        const time = readerMillisecondMoment(at, timeZone, {
+          kind: 'time',
+          seconds: false,
+        })
+        if (timeOnly) return time
+        const day = readerMillisecondMoment(at, timeZone, { kind: 'calendar' })
+        return `${day}, ${time}`
+      }
+      const lastRunAt = rule.lastRunAt as number | null
       const observation = await row.getByRole('cell').evaluateAll(
-        (cells, { lastRunAt, nextRunAt, timeZone, timeOnly }) => {
-          const calendar = new Intl.DateTimeFormat('en-US', {
-            timeZone,
-            year: 'numeric',
-            month: 'numeric',
-            day: 'numeric',
-          })
-          const dayNumber = (at: number) => {
-            const parts = calendar.formatToParts(at)
-            const part = (type: string) =>
-              Number(parts.find((part) => part.type === type)!.value)
-            return (
-              Date.UTC(part('year'), part('month') - 1, part('day')) /
-              86_400_000
-            )
-          }
-          const now = timeOnly ? 0 : dayNumber(Date.now())
-          const moment = (at: number) => {
-            const time = new Intl.DateTimeFormat('en-US', {
-              timeZone,
-              hour: '2-digit',
-              minute: '2-digit',
-            }).format(at)
-            if (timeOnly) return time
-            const days = dayNumber(at) - now
-            const date =
-              Math.abs(days) <= 1
-                ? new Intl.RelativeTimeFormat('en-US', {
-                    numeric: 'auto',
-                  }).format(days, 'day')
-                : new Intl.DateTimeFormat('en-US', {
-                    timeZone,
-                    dateStyle: 'medium',
-                  }).format(at)
-            return `${date}, ${time}`
-          }
-          const expected = {
-            lastRun: lastRunAt === null ? 'Not yet' : moment(lastRunAt),
-            nextRun: moment(nextRunAt),
-          }
+        (cells, { expected, anyDay }) => {
           const normalize = (text: string) => text.replace(/\s+/g, ' ').trim()
           const displayed = cells.map((cell) =>
             normalize(cell.textContent ?? ''),
           )
-          // Preserve toContainText's ordered, distinct-cell comparison.
+          // A run cell holds only its text: «<calendar label>, <time>» or a
+          // word. It is compared whole; under timeOnly a moment's cell keeps
+          // any one calendar label before the expected time.
+          const shows = (cell: string, text: string, day: boolean) => {
+            if (!day) return cell === text
+            const [label, time, ...rest] = cell.split(', ')
+            return label !== '' && time === text && rest.length === 0
+          }
+          // Ordered and distinct: the next run stands in a later cell.
           let previous = -1
-          const matches = [expected.lastRun, expected.nextRun].every((text) => {
+          const matches = (['lastRun', 'nextRun'] as const).every((name) => {
             const index = displayed.findIndex(
               (cell, index) =>
-                index > previous && cell.includes(normalize(text)),
+                index > previous &&
+                shows(cell, normalize(expected[name]), anyDay[name]),
             )
             previous = index
             return index !== -1
@@ -765,10 +747,14 @@ export async function expectDaemonCronMoments(
           return { expected, displayed, matches }
         },
         {
-          lastRunAt: rule.lastRunAt as number | null,
-          nextRunAt: rule.nextRunAt as number,
-          timeZone,
-          timeOnly,
+          expected: {
+            lastRun: lastRunAt === null ? 'Not yet' : moment(lastRunAt),
+            nextRun: moment(rule.nextRunAt as number),
+          },
+          anyDay: {
+            lastRun: timeOnly && lastRunAt !== null,
+            nextRun: timeOnly,
+          },
         },
       )
       expect(frames.filter((frame) => frame.failure !== undefined)).toEqual([])
@@ -871,10 +857,7 @@ export async function expectStandaloneWebsockets(
       const last = frames.at(-1)
       const count = readDaemonWebsocketsCount(frames)
       if (count === null) return false
-      const formatted = await page.evaluate(
-        (value) => value.toLocaleString(),
-        count,
-      )
+      const formatted = readerNumber(count, { maximumFractionDigits: 2 })
       return (
         (
           await page.getByTestId('hilos-daemon-websockets-count').innerText()
@@ -1298,24 +1281,20 @@ export async function expectClusterDaemonNodeOverview(
   await expect
     .poll(async () => {
       const overview = read(frames.at(-1)!).overview
-      const reported = await page.evaluate((overview) => {
-        const number = (value: number | null | undefined) =>
-          value == null
-            ? '—'
-            : value.toLocaleString(undefined, { maximumFractionDigits: 2 })
-        return [
-          number(overview.measurements?.cores),
-          `${number(overview.measurements?.daemonCores)} cores`,
-          number(
-            overview.workers === null
-              ? null
-              : overview.workers.filter(
-                  (worker) => worker.kind === 'monopolistic',
-                ).length,
-          ),
-          `${number(overview.measurements?.workersMeasured)} of ${number(overview.workers?.length)} worker processes measured`,
-        ]
-      }, overview)
+      const number = (value: number | null | undefined) =>
+        value == null ? '—' : readerNumber(value, { maximumFractionDigits: 2 })
+      const reported = [
+        number(overview.measurements?.cores),
+        `${number(overview.measurements?.daemonCores)} cores`,
+        number(
+          overview.workers === null
+            ? null
+            : overview.workers.filter(
+                (worker) => worker.kind === 'monopolistic',
+              ).length,
+        ),
+        `${number(overview.measurements?.workersMeasured)} of ${number(overview.workers?.length)} worker processes measured`,
+      ]
       const displayed = await Promise.all(
         ['cores', 'daemon-cores', 'monopolistic-count', 'workers-measured'].map(
           async (id) =>

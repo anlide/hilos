@@ -10,7 +10,7 @@ import {
   formatChangeLogEntries,
   readHilosChangeLogOverview,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTabLinks, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, hilosTabLinks } from '@hilos/core/base'
 import type { HilosChangeLogContext } from '@hilos/core/admin/change-log'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
@@ -47,7 +47,7 @@ export function HilosChangeLogPage({ context }: HilosChangeLogPageProps) {
   const tablesPath = tabs.find(
     (tab) => tab.page === HilosPages.CHANGE_LOG_TABLES,
   )?.to
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const overviewSection = useMemo(
     () => context.scopes.pageDataSignal(CHANGE_LOG_OVERVIEW_SECTION),
     [context],

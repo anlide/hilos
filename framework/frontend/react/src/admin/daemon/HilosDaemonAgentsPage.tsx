@@ -21,7 +21,7 @@ import {
   type HilosDaemonAgentRow,
   type HilosDaemonAgentsContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { HilosActionError } from '../../HilosActionError.js'
 import { HilosActionReason } from '../../HilosActionReason.js'
 import { HilosLink } from '../../HilosLink.js'
@@ -93,6 +93,7 @@ function Agents({
   const canRestart = useSignal(restart.canSubmit)
   const restartOpen = useSignal(restart.opened)
   const restartTarget = useSignal(restart.target)
+  useSignal(hilosReaderDisplay)
   const restartAction = useTrackedAction()
   const { busy } = restartAction
   const [identity, setIdentity] = useState<HilosDaemonAgentRow | null>(null)

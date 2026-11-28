@@ -4,6 +4,7 @@ import { z } from 'zod'
 
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
+import { formatNumber } from '../../format/number.js'
 import { type HilosPathResolver } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type ScopeManager } from '../../state/ScopeManager.js'
@@ -166,7 +167,7 @@ export function createHilosDaemonOverview(
 export function formatDaemonNumber(value: number | null | undefined): string {
   return value == null || !Number.isFinite(value)
     ? '—'
-    : value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : formatNumber(value, { maximumFractionDigits: 2 })
 }
 
 /** @param cores Occupied or available CPU cores, including a known zero. */

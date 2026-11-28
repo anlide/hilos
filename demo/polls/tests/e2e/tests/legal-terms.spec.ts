@@ -113,7 +113,7 @@ test('reads public legal history and returns keyboard focus in both documents', 
             await expectPageReady(expect, page)
             const reader = page.getByTestId('terms-reader')
             await expect(reader).toHaveAttribute('data-state', 'guest')
-            await expect(reader).toContainText('in force since 7 October 2026')
+            await expect(reader).toContainText('in force since 07.10.2026')
             const text = page.getByTestId('terms-text')
             await expect(text.getByTestId('legal-revision-clause')).toHaveCount(
               6,
@@ -237,7 +237,7 @@ test('reads public legal history and returns keyboard focus in both documents', 
             await expect(
               reader.getByTestId('legal-document-reader-line'),
             ).toHaveText(
-              'Revision in force since 9 October 2026. Without an account there is nothing to accept.',
+              'Revision in force since 09.10.2026. Without an account there is nothing to accept.',
             )
             const text = page.getByTestId('privacy-text')
             await expect(text.getByTestId('legal-revision-clause')).toHaveCount(
@@ -319,7 +319,7 @@ test('reads public legal history and returns keyboard focus in both documents', 
         await expect(dialog).toHaveRole('dialog')
         await expect(dialog).toHaveAttribute('aria-modal', 'true')
         await expect(dialog).toHaveAccessibleName(
-          `${history.title} — revision of 17 September 2026`,
+          `${history.title} — revision of 17.09.2026`,
         )
         await expect(dialog).toBeFocused()
         await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
@@ -362,7 +362,7 @@ test('clears both accepted legal history readers after one sign-out', async ({
     const reader = page.getByTestId('terms-reader')
     await expect(reader).toHaveAttribute('data-state', 'covered')
     await expect(reader).toContainText(
-      'You accepted the revision of 7 October 2026',
+      'You accepted the revision of 07.10.2026',
     )
     await expect(reader.getByTestId('legal-document-accept')).toHaveCount(0)
 
@@ -393,7 +393,7 @@ test('clears both accepted legal history readers after one sign-out', async ({
       const privacyReader = privacyPage.getByTestId('privacy-reader')
       await expect(privacyReader).toHaveAttribute('data-state', 'covered')
       await expect(privacyReader).toContainText(
-        'You accepted the revision of 9 October 2026',
+        'You accepted the revision of 09.10.2026',
       )
       await expect(
         privacyReader.getByTestId('legal-document-accept'),
@@ -490,7 +490,7 @@ test('the page follows a revision moved under it, and accepting there lifts the 
   // with the sessions library's next tick - /terms stays open while frozen.
   await expect(reader).toHaveAttribute('data-state', 'due')
   await expect(reader.getByTestId('legal-document-reader-plate')).toContainText(
-    'account frozen · deadline passed 1 October 2026',
+    'account frozen · deadline passed 01.10.2026',
   )
   await expect(page.getByTestId('legal-frozen-screen')).toHaveCount(0)
 

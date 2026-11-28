@@ -9,7 +9,7 @@ import {
 } from '@angular/core'
 import {
   formatMoment,
-  hilosTimeZone,
+  hilosReaderDisplay,
   hilosToasts,
   type ActionError,
 } from '@hilos/core/base'
@@ -120,7 +120,7 @@ export class HilosStatusCancelWorkModal {
   protected readonly blockedReason = signal<string | null>(null)
   protected readonly error = signal<string | null>(null)
   protected readonly failure = signal<ActionError | null>(null)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly copyText = computed(() => {
     const failure = this.failure()
     return failure?.errorDetail
@@ -147,20 +147,8 @@ export class HilosStatusCancelWorkModal {
   }
 
   protected moment(at: number): string {
-    this.timeZone()
-    return (
-      formatMoment(at, {
-        format: {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZoneName: 'short',
-        },
-      }) ?? '—'
-    )
+    this.readerDisplay()
+    return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
   }
 
   protected async submit(event: Event): Promise<void> {

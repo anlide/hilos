@@ -169,24 +169,12 @@ describe('HilosStatusHistoryPage', () => {
     expect(h.wrapper.find('[data-id="hilos-table-main-action"]').exists()).toBe(
       false,
     )
-    const options = {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZoneName: 'short',
-    } as const
-    expect(table.text()).toContain(
-      formatMoment(incident.startedAt, { format: options })!,
-    )
+    const options = { kind: 'dateTime', zoneName: true } as const
+    expect(table.text()).toContain(formatMoment(incident.startedAt, options)!)
     const before = table.text()
     zone.choose('America/New_York')
     await nextTick()
-    expect(table.text()).toContain(
-      formatMoment(incident.startedAt, { format: options })!,
-    )
+    expect(table.text()).toContain(formatMoment(incident.startedAt, options)!)
     expect(table.text()).not.toBe(before)
     expect(h.sent).toEqual([])
   })

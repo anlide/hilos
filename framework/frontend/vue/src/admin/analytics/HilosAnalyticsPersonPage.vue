@@ -27,7 +27,7 @@ import {
   bindPageInstanceName,
   computedSignal,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
 } from '@hilos/core/base'
 import { computed, inject, onUnmounted, shallowRef, watch } from 'vue'
@@ -80,9 +80,9 @@ const userId = computed(() =>
 )
 const sessions = shallowRef<HilosAnalyticsBrowserSessionsTable | null>(null)
 
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 function time(moment: number): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatAnalyticsTime(moment)
 }
 

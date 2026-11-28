@@ -491,8 +491,8 @@ describe('daemon cron cell text', () => {
     expect(formatDaemonCronLastRun(row(), now)).toBe('Not yet')
     expect(formatDaemonCronNextRun(row(), now)).toBe('Never')
     const agent = row({ agentId: 'log', lastRunAt: now, nextRunAt: now })
-    expect(formatDaemonCronLastRun(agent, now)).toBe('today, 01:30 AM')
-    expect(formatDaemonCronNextRun(agent, now)).toBe('today, 01:30 AM')
+    expect(formatDaemonCronLastRun(agent, now)).toBe('today, 01:30')
+    expect(formatDaemonCronNextRun(agent, now)).toBe('today, 01:30')
   })
 
   it('uses the own zone rather than browser or project at a year boundary', () => {
@@ -500,22 +500,22 @@ describe('daemon cron cell text', () => {
     expect(hilosTimeZone.get()).toBe('Europe/Kyiv')
     expect(
       formatDaemonCronMoment(Date.parse('2025-12-31T21:30:00Z'), now),
-    ).toBe('yesterday, 11:30 PM')
+    ).toBe('yesterday, 23:30')
     expect(
       formatDaemonCronMoment(Date.parse('2026-01-01T22:15:00Z'), now),
-    ).toBe('tomorrow, 12:15 AM')
+    ).toBe('tomorrow, 00:15')
     expect(
       formatDaemonCronMoment(Date.parse('2026-01-05T22:15:00Z'), now),
-    ).toBe('Jan 6, 2026, 12:15 AM')
+    ).toBe('06.01.2026, 00:15')
     choose('America/Los_Angeles')
-    expect(formatDaemonCronMoment(now, now)).toBe('today, 03:30 PM')
+    expect(formatDaemonCronMoment(now, now)).toBe('today, 15:30')
   })
 
   it.each([
-    ['2026-03-28T22:30:00Z', '2026-03-29T21:30:00Z', 'tomorrow, 12:30 AM'],
-    ['2026-03-29T21:30:00Z', '2026-03-28T22:30:00Z', 'yesterday, 12:30 AM'],
-    ['2026-10-24T21:30:00Z', '2026-10-25T22:30:00Z', 'tomorrow, 12:30 AM'],
-    ['2026-10-25T22:30:00Z', '2026-10-24T21:30:00Z', 'yesterday, 12:30 AM'],
+    ['2026-03-28T22:30:00Z', '2026-03-29T21:30:00Z', 'tomorrow, 00:30'],
+    ['2026-03-29T21:30:00Z', '2026-03-28T22:30:00Z', 'yesterday, 00:30'],
+    ['2026-10-24T21:30:00Z', '2026-10-25T22:30:00Z', 'tomorrow, 00:30'],
+    ['2026-10-25T22:30:00Z', '2026-10-24T21:30:00Z', 'yesterday, 00:30'],
   ])('compares calendar days over DST: %s to %s', (reference, at, expected) => {
     expect(formatDaemonCronMoment(Date.parse(at), Date.parse(reference))).toBe(
       expected,
@@ -533,10 +533,10 @@ describe('daemon cron cell text', () => {
       applyServerTime(serverNow)
       const at = Date.parse('2025-12-31T21:59:00Z')
       expect(formatDaemonCronMoment(at, browserNow)).toBe(
-        offset > 0 ? 'yesterday, 11:59 PM' : 'today, 11:59 PM',
+        offset > 0 ? 'yesterday, 23:59' : 'today, 23:59',
       )
       expect(formatDaemonCronMoment(serverNow, browserNow)).toBe(
-        offset > 0 ? 'today, 12:02 AM' : 'today, 11:58 PM',
+        offset > 0 ? 'today, 00:02' : 'today, 23:58',
       )
     },
   )
@@ -545,7 +545,7 @@ describe('daemon cron cell text', () => {
     choose('UTC')
     expect(
       formatDaemonCronMoment(1000, Date.parse('1970-01-01T12:00:00Z')),
-    ).toBe('today, 12:00 AM')
+    ).toBe('today, 00:00')
   })
 
   it.each([NaN, Infinity, -Infinity, 8.64e15 + 1])(

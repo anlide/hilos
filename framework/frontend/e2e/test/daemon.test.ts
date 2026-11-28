@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Expect, Page } from '@playwright/test'
 
 import {
@@ -610,10 +610,10 @@ describe('real Cron moment evidence', () => {
                       observations++
                       const texts =
                         staysStale || observations === 1
-                          ? ['today, 09:15 AM', 'tomorrow, 10:00 AM']
+                          ? ['today, 09:15', 'tomorrow, 10:00']
                           : observations === 2
-                            ? ['today, 09:15 AM', 'tomorrow, 12:45 PM']
-                            : ['today, 11:30 AM', 'tomorrow, 12:45 PM']
+                            ? ['today, 09:15', 'tomorrow, 12:45']
+                            : ['today, 11:30', 'tomorrow, 12:45']
                       const result = callback(
                         texts.map(
                           (textContent) => ({ textContent }) as Element,
@@ -659,13 +659,91 @@ describe('real Cron moment evidence', () => {
       if (staysStale) await expect(comparison).rejects.toThrow()
       else {
         await expect(comparison).resolves.toEqual({
-          lastRun: '11:30 AM',
-          nextRun: '12:45 PM',
+          lastRun: '11:30',
+          nextRun: '12:45',
         })
       }
       expect(waits).toBe(1)
       expect(observations).toBe(3)
       expect(frames).toHaveLength(2)
+    }
+  })
+
+  it('compares each run cell whole and refuses a cell that only contains the moment', async () => {
+    // The calendar label is read against the runner's clock.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.UTC(2030, 0, 1, 9, 30))
+    try {
+      const read = createSocketFrameReader(1)
+      const frames = read(
+        JSON.stringify({
+          ...initial,
+          data: {
+            ...initial.data,
+            payload: {
+              windows: {
+                hilosDaemonCron: {
+                  filter: {},
+                  rows: [
+                    ruleRow(
+                      Date.UTC(2030, 0, 1, 10),
+                      Date.UTC(2030, 0, 1, 9, 15),
+                    ),
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      )
+      const checks = Object.assign((value: unknown) => expect(value), {
+        any: expect.any,
+        poll: (sample: () => Promise<unknown>) => ({
+          toMatchObject: async (wanted: unknown) => {
+            expect(await sample()).toMatchObject(wanted)
+          },
+        }),
+      }) as unknown as Expect
+      const compare = (texts: readonly string[], timeOnly: boolean) =>
+        expectDaemonCronMoments(
+          checks,
+          {
+            getByTestId: () => ({
+              filter: () => ({
+                getByRole: () => ({
+                  evaluateAll: async <T, Arg>(
+                    callback: (cells: Element[], arg: Arg) => T,
+                    arg: Arg,
+                  ) =>
+                    callback(
+                      texts.map((textContent) => ({ textContent }) as Element),
+                      arg,
+                    ),
+                }),
+              }),
+            }),
+          } as unknown as Page,
+          frames,
+          rowKey,
+          'UTC',
+          { timeOnly },
+        )
+
+      await expect(
+        compare(['today, 09:15', 'today, 10:00'], false),
+      ).resolves.toEqual({ lastRun: 'today, 09:15', nextRun: 'today, 10:00' })
+      await expect(
+        compare(['today, 09:15', 'today, 10:00'], true),
+      ).resolves.toEqual({ lastRun: '09:15', nextRun: '10:00' })
+      for (const shown of ['today, 09:15 AM', 'today, 09:15:00']) {
+        for (const timeOnly of [false, true]) {
+          await expect(
+            compare([shown, 'today, 10:00'], timeOnly),
+          ).rejects.toThrow()
+        }
+      }
+    } finally {
+      vi.useRealTimers()
     }
   })
 })

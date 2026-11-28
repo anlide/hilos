@@ -25,6 +25,7 @@ import {
 import { mount, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import HilosDataExport from './HilosDataExport.vue'
+import { readerMomentText } from '../../../test-support/readerMomentText.js'
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
@@ -279,23 +280,12 @@ describe('HilosDataExport', () => {
       const expectedPreparing = (timeZone: string) =>
         HILOS_DATA_EXPORT_COPY.preparing.replace(
           '{time}',
-          new Intl.DateTimeFormat(undefined, {
-            year: 'numeric',
-            month: 'numeric',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-            timeZone,
-          }).format(moment),
+          readerMomentText(moment, timeZone),
         )
       const expectedStatus = (timeZone: string) =>
         state === 'preparing'
           ? expectedPreparing(timeZone)
-          : `Your copy is ready · 456 B · available until ${new Intl.DateTimeFormat(
-              undefined,
-              { dateStyle: 'long', timeZone },
-            ).format(moment)}`
+          : `Your copy is ready · 456 B · available until ${readerMomentText(moment, timeZone, { kind: 'date' })}`
       try {
         expect(status.text()).toBe(expectedStatus('UTC'))
         expect(room.text()).toBe(expectedPreparing('UTC'))

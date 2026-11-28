@@ -24,6 +24,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosChangeLogTablePage } from '../src/admin/changeLog/HilosChangeLogTablePage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
 import { bindTestTimeZone } from './timeZoneTestHarness.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 const HISTORY = 'hilosChangeLogHistory'
 const BOT = {
@@ -447,11 +448,7 @@ describe('HilosChangeLogTablePage', () => {
     const identity = identitySource.get()
     const viewportRequests = h.connection.sendTableViewport.mock.calls.length
     const expectedActivity = (zone: string): string =>
-      `Changes in 24 hours 3 Last change: ${new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-        timeZone: zone,
-      }).format(new Date(lastChangeAt))}`
+      `Changes in 24 hours 3 Last change: ${readerMomentText(new Date(lastChangeAt), zone)}`
     const utc = expectedActivity('UTC')
     const kyiv = expectedActivity('Europe/Kyiv')
     expect(utc).not.toBe(kyiv)

@@ -377,7 +377,7 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
   const reader = page.getByTestId('privacy-reader')
   await expect(reader).toHaveAttribute('data-state', 'covered')
   await expect(reader.getByTestId('legal-document-reader-line')).toContainText(
-    'You accepted the revision of 9 October 2026',
+    'You accepted the revision of 09.10.2026',
   )
   await expect(reader.locator('i')).toHaveAttribute('aria-hidden', 'true')
 
@@ -386,7 +386,7 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
     await expect(reader).toHaveAttribute('data-state', 'due')
     await expect(
       reader.getByTestId('legal-document-reader-plate'),
-    ).toContainText('deadline passed 9 October 2026')
+    ).toContainText('deadline passed 09.10.2026')
     const directSlot = reader.getByTestId('legal-document-accept-refusal-slot')
     await expect(directSlot).toHaveAttribute('role', 'alert')
     await expect(directSlot).toHaveAttribute('aria-live', 'assertive')
@@ -405,7 +405,7 @@ test('Privacy comparison and erase expose names, keyboard focus and live regions
     await expect(dialog).toHaveAttribute('role', 'dialog')
     await expect(dialog).toHaveAttribute('aria-modal', 'true')
     await expect(dialog).toHaveAccessibleName(
-      'What changed · 17 September 2026 → 9 October 2026',
+      'What changed · 17.09.2026 → 09.10.2026',
     )
     await expect(dialog).toBeFocused()
     const refusal = dialog.getByTestId('privacy-changes-refusal-slot')

@@ -16,8 +16,8 @@
 // marker (styling-rules.md, accessibility.md). Bootstrap classes only.
 import {
   formatMoment,
-  hilosTimeZone,
   hilosNotifications,
+  hilosReaderDisplay,
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
   type HilosConnection,
@@ -46,7 +46,7 @@ export function HilosNotificationBell({
   connection,
   store = hilosNotifications,
 }: HilosNotificationBellProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const notifications = useSignal(store.notifications)
   const unreadCount = useSignal(store.unreadCount)
   // The badge caps its label so a runaway count never breaks the bell's layout.

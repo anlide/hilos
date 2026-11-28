@@ -19,11 +19,13 @@ import { type HilosDaemonNodeHeading } from '@hilos/core/admin/daemon'
 import {
   bindAdminAccess,
   hilosAdminAccess,
+  hilosReaderDisplay,
   hilosTimeZone,
 } from '@hilos/core/base'
 import { HilosDaemonCronPage } from '../src/admin/daemon/HilosDaemonCronPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import { readerTimeZone } from './readerTimeZone.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 function transport(initialProjectTimeZone?: string) {
   let projectTimeZone = initialProjectTimeZone
@@ -512,7 +514,7 @@ describe('HilosDaemonCronPage', () => {
     const releases: ReturnType<typeof vi.fn>[] = []
     vi.spyOn(core, 'subscribeSignal').mockImplementation(
       <T,>(source: core.ReadonlySignal<T>, listener: (value: T) => void) => {
-        if (source !== hilosTimeZone) return subscribe(source, listener)
+        if (source !== hilosReaderDisplay) return subscribe(source, listener)
         const stop = vi.fn(
           subscribe(source, (value) => {
             deliveries(value)
@@ -548,11 +550,7 @@ describe('HilosDaemonCronPage', () => {
       const descriptor = controller.descriptor()
       const requests = h.sendViewport.mock.calls.length
       const expected = (zone: string, moment: number, day: string) =>
-        `${day}, ${new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(moment)}`
+        `${day}, ${readerMomentText(moment, zone, { kind: 'time', seconds: false })}`
       for (const [own, zone, day, nextDay] of [
         ['UTC', 'UTC', 'today', 'today'],
         ['Pacific/Honolulu', 'Pacific/Honolulu', 'today', 'today'],
@@ -635,15 +633,11 @@ describe('HilosDaemonCronPage', () => {
         [...h.find(`hilos-table-row-${key}`)!.querySelectorAll('td')]
           .slice(3, 5)
           .map((cell) => cell.textContent)
-      const date = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'Pacific/Honolulu',
-        dateStyle: 'medium',
-      }).format(0)
-      const time = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'Pacific/Honolulu',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(0)
+      const date = readerMomentText(0, 'Pacific/Honolulu', { kind: 'date' })
+      const time = readerMomentText(0, 'Pacific/Honolulu', {
+        kind: 'time',
+        seconds: false,
+      })
       expect(cells('epoch')).toEqual([`${date}, ${time}`, `${date}, ${time}`])
       expect(cells('null')).toEqual(['Not yet', 'Never'])
       expect(cells('invalid')).toEqual(['—', '—'])

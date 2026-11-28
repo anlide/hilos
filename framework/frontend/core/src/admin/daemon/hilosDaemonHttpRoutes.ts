@@ -3,6 +3,7 @@
 // The page header and empty states belong to the per-framework view.
 
 import { type HilosConnection } from '../../connection/HilosConnection.js'
+import { formatNumber } from '../../format/number.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import {
   readNumber,
@@ -171,12 +172,12 @@ export function formatDaemonHttpRoute(row: HilosDaemonHttpRouteRow): string {
 }
 
 /**
- * Format a request count with the browser's digit separators.
+ * Format a request count with the digit separators of the tab's region.
  *
  * @param count Count to display.
  */
 export function formatDaemonHttpCount(count: number): string {
-  return count.toLocaleString()
+  return formatNumber(count)
 }
 
 /**
@@ -185,5 +186,5 @@ export function formatDaemonHttpCount(count: number): string {
  * @param row Route being drawn.
  */
 export function formatDaemonHttpSlowest(row: HilosDaemonHttpRouteRow): string {
-  return row.slowestMs === null ? '—' : `${row.slowestMs.toLocaleString()} ms`
+  return row.slowestMs === null ? '—' : `${formatNumber(row.slowestMs)} ms`
 }

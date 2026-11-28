@@ -23,6 +23,7 @@ import {
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import HilosChangeLogReceiptModal from './HilosChangeLogReceiptModal.vue'
 import HilosLongText from '../../HilosLongText.vue'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 function header(
   overrides: Partial<HilosChangeLogReceiptHeader> = {},
@@ -218,11 +219,7 @@ describe('HilosChangeLogReceiptModal', () => {
           : { ...dialog(), kind, entryId: 11, header: null },
       )
       const expected = (timeZone: string) =>
-        new Intl.DateTimeFormat(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'medium',
-          timeZone,
-        }).format(new Date('2026-10-09T10:11:12.123Z'))
+        readerMomentText(new Date('2026-10-09T10:11:12.123Z'), timeZone)
       const first = await render(snapshot)
       const element = document.querySelector('[role="dialog"]')
       const subscriptionCount = subscriptions.mock.calls.length

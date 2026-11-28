@@ -1,6 +1,6 @@
 <!-- The subscriber list and its aggregates share the complete page answer. -->
 <script setup lang="ts">
-import { HilosPages, formatMoment } from '@hilos/core/base'
+import { HilosPages, formatMoment, hilosReaderDisplay } from '@hilos/core/base'
 import {
   createHilosStatusSubscribersTable,
   createHilosStatusSubscribersState,
@@ -9,6 +9,7 @@ import {
   STATUS_SUBSCRIBER_EMAIL_FIELD,
   STATUS_SUBSCRIBER_SUBSCRIBED_AT_FIELD,
   STATUS_SUBSCRIBER_CONFIRMED_FIELD,
+  type HilosStatusSubscriberRow,
   type HilosStatusSubscribersContext,
 } from '@hilos/core/admin/status'
 import { onMounted, onUnmounted } from 'vue'
@@ -29,6 +30,12 @@ const state = createHilosStatusSubscribersState(props.context)
 const controller = createHilosStatusSubscriberController(props.context, table)
 const counts = useSignal(state.counts)
 const personalControlsReason = useSignal(table.personalControlsReason)
+const readerDisplay = useSignal(hilosReaderDisplay)
+
+function subscribed(row: HilosStatusSubscriberRow): string {
+  void readerDisplay.value
+  return formatMoment(row.subscribedAt) ?? '—'
+}
 onMounted(() => {
   table.start()
   state.start()
@@ -88,7 +95,7 @@ onUnmounted(() => {
         /></span>
       </template>
       <template #[`cell-${STATUS_SUBSCRIBER_SUBSCRIBED_AT_FIELD}`]="{ row }">
-        {{ formatMoment(row.subscribedAt) ?? '—' }}
+        {{ subscribed(row) }}
       </template>
       <template #[`cell-${STATUS_SUBSCRIBER_CONFIRMED_FIELD}`]="{ row }">
         <span

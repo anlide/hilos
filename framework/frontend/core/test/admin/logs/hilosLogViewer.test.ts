@@ -48,6 +48,7 @@ import { createAppPageRouter } from '../../../src/routing/appPageRouter.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import { createSignal, subscribeSignal } from '../../../src/state/signal.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
+import { bindReader } from '../../format/readerFixture.js'
 
 const pageRouter = createAppPageRouter({})
 
@@ -2008,10 +2009,8 @@ describe('reactive log viewer clocks', () => {
   })
 
   it('repaints the visible stack without disturbing its follow or buffered lines', async () => {
-    const zone = createSignal('UTC')
-    const zoneGet = vi
-      .spyOn(hilosTimeZone, 'get')
-      .mockImplementation(() => zone.get())
+    const reader = bindReader()
+    reader.choose('UTC')
     const { context, connection, actions, address } = viewer(
       '/hilos/logs/view/node-1/live/worker-0.log',
     )
@@ -2073,7 +2072,7 @@ describe('reactive log viewer clocks', () => {
       const addressBefore = [...address.written]
       const connectionActionsBefore = [...connection.sent]
       rowUpdates = 0
-      zone.set('America/Los_Angeles')
+      reader.choose('America/Los_Angeles')
       await Promise.resolve()
 
       const repainted = asEntry(view.rows.get()[0])
@@ -2112,7 +2111,7 @@ describe('reactive log viewer clocks', () => {
 
       const updatesBeforeDispose = rowUpdates
       view.dispose()
-      zone.set('UTC')
+      reader.choose('UTC')
       await Promise.resolve()
 
       expect(rowUpdates).toBe(updatesBeforeDispose)
@@ -2120,15 +2119,13 @@ describe('reactive log viewer clocks', () => {
     } finally {
       view.dispose()
       stopRows()
-      zoneGet.mockRestore()
+      reader.release()
     }
   })
 
   it('keeps an anchored entry and its older-page cursor through a zone change', async () => {
-    const zone = createSignal('UTC')
-    const zoneGet = vi
-      .spyOn(hilosTimeZone, 'get')
-      .mockImplementation(() => zone.get())
+    const reader = bindReader()
+    reader.choose('UTC')
     const { context, actions, address } = viewer(
       '/hilos/logs/view/node-1/live/worker-0.log/1788000000250',
     )
@@ -2160,7 +2157,7 @@ describe('reactive log viewer clocks', () => {
       const selectionBefore = view.selection.get()
       const addressBefore = [...address.written]
       const actionsBefore = actions.sent.length
-      zone.set('America/Los_Angeles')
+      reader.choose('America/Los_Angeles')
       await Promise.resolve()
 
       expect(asEntry(view.rows.get()[0])).toMatchObject({
@@ -2207,7 +2204,48 @@ describe('reactive log viewer clocks', () => {
       )
     } finally {
       view.dispose()
-      zoneGet.mockRestore()
+      reader.release()
+    }
+  })
+
+  it('rewrites the clocks and the jump note when the region changes', async () => {
+    const reader = bindReader()
+    reader.choose('UTC')
+    const { context, connection, actions, address } = viewer(
+      '/hilos/logs/view/node-1/live/worker-0.log',
+    )
+    const view = createHilosLogViewer(context, address)
+
+    try {
+      view.start()
+      const followId = actions.sent[0]?.requestId ?? ''
+      actions.answer(followId, {
+        readable: true,
+        lines: [
+          wireLine('[2026-01-01T13:30:05.123Z] ERROR: Deadlock', 'ERROR'),
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+      await Promise.resolve()
+      connection.sendAppended({ followId, skippedBytes: 1536 })
+
+      expect(view.rows.get()).toMatchObject([
+        { kind: 'entry', key: '1:0', time: '13:30:05.123' },
+        { kind: 'notice', text: 'Jumped over 1.5 KB to catch up.' },
+      ])
+
+      reader.region({ time: 'hh:mm:ss a', number: '1.000,00' })
+      await Promise.resolve()
+
+      expect(view.rows.get()).toMatchObject([
+        { kind: 'entry', key: '1:0', time: '01:30:05.123 PM' },
+        { kind: 'notice', text: 'Jumped over 1,5 KB to catch up.' },
+      ])
+    } finally {
+      view.dispose()
+      reader.region(null)
+      reader.release()
     }
   })
 })

@@ -112,11 +112,11 @@ describe('framework profile identities list', () => {
 
     const zone = vi.spyOn(hilosTimeZone, 'get').mockReturnValue('Europe/Warsaw')
     expect(hilosProfileSignInSubtitle(methods.get()[1]!)).toBe(
-      'Passkey · added Jan 1, 2026',
+      'Passkey · added 01.01.2026',
     )
     zone.mockReturnValue('America/New_York')
     expect(hilosProfileSignInSubtitle(methods.get()[1]!)).toBe(
-      'Passkey · added Dec 31, 2025',
+      'Passkey · added 31.12.2025',
     )
 
     ingest(page, {
@@ -183,18 +183,18 @@ describe('framework profile identities list', () => {
         { passwordChangedAt: null, providerName: 'Octocat' },
       ])
       expect(captions.get()).toEqual([
-        'Set · last changed Jan 1, 2026, 1:30:00 AM',
+        'Set · last changed 01.01.2026 01:30:00',
         'Octocat',
       ])
 
       connection.choose('America/New_York')
       expect(methodsSignal.get()).toBe(methods)
       expect(captions.get()).toEqual([
-        'Set · last changed Dec 31, 2025, 7:30:00 PM',
+        'Set · last changed 31.12.2025 19:30:00',
         'Octocat',
       ])
       expect(changes).toEqual([
-        ['Set · last changed Dec 31, 2025, 7:30:00 PM', 'Octocat'],
+        ['Set · last changed 31.12.2025 19:30:00', 'Octocat'],
       ])
 
       ingest(page, {
@@ -205,9 +205,7 @@ describe('framework profile identities list', () => {
           },
         },
       })
-      expect(captions.get()[0]).toBe(
-        'Set · last changed Jan 31, 2026, 7:30:00 PM',
-      )
+      expect(captions.get()[0]).toBe('Set · last changed 31.01.2026 19:30:00')
       expect(methodsSignal.get()[0]?.identifier).toBe('account@example.test')
 
       ingest(page, {

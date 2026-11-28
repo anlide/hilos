@@ -23,8 +23,8 @@ import { useContext, useEffect, useMemo, useState } from 'react'
 import {
   formatMoment,
   HILOS_PAGE_ROUTES,
-  hilosTimeZone,
   HilosPages,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
@@ -155,7 +155,7 @@ function offersUndo(row: HilosLogRotationRow): boolean {
 export function HilosLogsRotationsPage({
   context,
 }: HilosLogsRotationsPageProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   // The navigator the switch reads its entry value from and writes its choice to;
   // mounted without one, the screen opens on All and leaves the address alone.
   const router = useContext(HilosRouterContext)

@@ -42,6 +42,7 @@ import {
   watchPublicStatus,
   watchStatusFrames,
   type StatusWorkDraft,
+  type ReaderMomentOptions,
   type StatusWorkFixtureScope,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -63,15 +64,8 @@ const test = base.extend<{
 const READER_ZONE = 'Pacific/Johnston'
 const OVERLAP =
   'This maintenance window overlaps another announcement. Choose a different time.'
-const MOMENT_FORMAT: Intl.DateTimeFormatOptions = {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZoneName: 'short',
-}
+// Works and History write a window's moment with the short name of its zone.
+const MOMENT_FORMAT: ReaderMomentOptions = { zoneName: true }
 
 test.use({ colorScheme: 'light', timezoneId: READER_ZONE })
 
@@ -151,12 +145,7 @@ test('Angular Works preserves a refused draft, merges another admin edit and can
     shownByTestId(page, `hilos-status-work-title-${work.id}`),
   ).toHaveText(work.title)
   await expect(shownByTestId(page, `hilos-table-row-${work.id}`)).toContainText(
-    await readerMillisecondMoment(
-      page,
-      work.startsAt,
-      READER_ZONE,
-      MOMENT_FORMAT,
-    ),
+    readerMillisecondMoment(work.startsAt, READER_ZONE, MOMENT_FORMAT),
   )
   const scheduled = await expectPublicStatusPair(
     expect,
@@ -610,19 +599,14 @@ test('Angular Service status reads Maintenance during a real freeze and History 
     await expectStatusHistoryFact(expect, page, fact)
     const row = shownByTestId(page, `hilos-table-row-${fact.id}`)
     await expect(row).toContainText(
-      await readerMillisecondMoment(
-        page,
-        fact.startedAt,
-        READER_ZONE,
-        MOMENT_FORMAT,
-      ),
+      readerMillisecondMoment(fact.startedAt, READER_ZONE, MOMENT_FORMAT),
     )
     if (fact.endedAt === null) {
       await expect(
         row.getByRole('cell', { name: 'Unknown', exact: true }),
       ).toBeVisible()
       await expect(row).toContainText(
-        `Completion observed at ${await readerMillisecondMoment(page, fact.completionObservedAt!, READER_ZONE, MOMENT_FORMAT)}`,
+        `Completion observed at ${readerMillisecondMoment(fact.completionObservedAt!, READER_ZONE, MOMENT_FORMAT)}`,
       )
     }
     let sent = log.sent.length

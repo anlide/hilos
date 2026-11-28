@@ -2,6 +2,7 @@
 // existing server viewport. Counting hours belong to the last server report.
 
 import { z } from 'zod'
+import { formatNumber } from '../../format/number.js'
 import { type HilosDaemonHttpRoutesContext } from './hilosDaemonHttpRoutes.js'
 import {
   DAEMON_NODE_STATE_SILENT,
@@ -87,5 +88,5 @@ export function formatDaemonHttpPeriod(http: HilosDaemonHttpSummary): string {
   }
   return http.countingHours === 0
     ? 'Since start, <1 h'
-    : `Since start, ${http.countingHours.toLocaleString()} h`
+    : `Since start, ${formatNumber(http.countingHours)} h`
 }

@@ -46,7 +46,7 @@ import {
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
-import { SIGNAL_HANDSHAKE_RESPONSE } from '../../../../../framework/frontend/core/src/session/sessionScope.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../../../../../framework/frontend/core/src/protocol/constants.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
   dictateModerationVerdict,

@@ -17,7 +17,7 @@ import {
   readHilosChangeLogTable,
   type HilosChangeLogReceiptContext,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTabLinks, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, hilosTabLinks } from '@hilos/core/base'
 
 import {
   HilosLink,
@@ -142,7 +142,7 @@ export class HilosChangeLogTablePage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly identity = hilosSignal(this.router.pageIdentity)
   private readonly route = hilosSignal(this.router.currentRoute)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   private readonly tabs = computed(() =>
     hilosTabLinks(
       this.identity()?.pageTabs ?? [],
@@ -170,9 +170,9 @@ export class HilosChangeLogTablePage {
     return this.tabs().find((tab) => tab.page === page)?.to
   }
 
-  /** Format the moment again when the reader's effective time zone changes. */
+  /** Format the moment again when the reader's zone or formats change. */
   protected lastChange(at: string | null): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatChangeLogTableLastChange(at)
   }
 }

@@ -20,7 +20,7 @@ import {
   type HilosChangeLogOverview,
   type HilosChangeLogContext,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTabLinks, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, hilosTabLinks } from '@hilos/core/base'
 
 import {
   HilosAdminPage,
@@ -146,15 +146,18 @@ export class HilosChangeLogPage {
     trackedLabel: CHANGE_LOG_TILE_TRACKED_LABEL,
     trackedNote: CHANGE_LOG_TILE_TRACKED_NOTE,
   } as const
-  protected readonly journalEntries = formatChangeLogEntries
+  protected readonly journalEntries = (entries: number): string => {
+    this.readerDisplay()
+    return formatChangeLogEntries(entries)
+  }
   protected readonly journalNote = (
     overview: HilosChangeLogOverview,
   ): string => {
-    this.timeZone()
+    this.readerDisplay()
     return changeLogJournalNote(overview)
   }
   protected readonly coverage = formatChangeLogCoverage
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   private readonly router = inject(HILOS_ROUTER)
   private readonly identity = hilosSignal(this.router.pageIdentity)
   private readonly route = hilosSignal(this.router.currentRoute)

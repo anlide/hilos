@@ -61,6 +61,7 @@ import {
   type HilosStepUpOpenOutcome,
   HilosPages,
   hiddenAsWord,
+  hilosReaderDisplay,
   isHiddenValue,
   sessionUserId,
 } from '@hilos/core/base'
@@ -186,7 +187,11 @@ const graceDays = useSignal(lifecycle.graceDays)
 const lifecycleUserId = useSignal(lifecycle.currentUserId)
 const userStanding = createHilosUserStanding(props.context)
 const standing = useSignal(userStanding.standing)
-const frozenRow = computed(() => hilosUserFrozenRow(standing.value))
+const readerDisplay = useSignal(hilosReaderDisplay)
+const frozenRow = computed(() => {
+  void readerDisplay.value
+  return hilosUserFrozenRow(standing.value)
+})
 // A merged account (HIL-1292) or one being erased (HIL-1957): the line under
 // the header stands in for every action, and the core leaves the action
 // sections empty for it.
@@ -279,15 +284,16 @@ watch(
   },
 )
 const lifecycleCopy = HILOS_USER_LIFECYCLE_COPY
-const lifecycleSections = computed(() =>
-  hilosUserLifecycleSections(
+const lifecycleSections = computed(() => {
+  void readerDisplay.value
+  return hilosUserLifecycleSections(
     detail.value,
     lifecycleUserId.value,
     graceDays.value,
     lifecycleNow.value,
     standing.value,
-  ),
-)
+  )
+})
 const lifecycleOffered = computed(
   () =>
     lifecyclePrompt.value === null ||

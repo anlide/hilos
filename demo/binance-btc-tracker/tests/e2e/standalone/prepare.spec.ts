@@ -22,6 +22,7 @@ import {
   gotoPublicStatus,
   PAGE_READY,
   grantAdminToSelf,
+  readerMillisecondMoment,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { expectedPublicStatusArchiveDays } from '../../../../../framework/frontend/e2e/publicStatus.js'
 import { standaloneStatusControl } from '../../../../../framework/frontend/scripts/standaloneStatus.mjs'
@@ -254,24 +255,25 @@ test('prepare an accepted public archive through real loss, publication and reso
         (outage) => outage.detectedAt === detectedAt,
       ),
     ).toMatchObject({ severity: 'major_outage' })
-    const today = await guest.evaluate(() => {
+    const { timeZone, ...today } = await guest.evaluate(() => {
       const now = new Date()
       return {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         start: new Date(
           now.getFullYear(),
           now.getMonth(),
           now.getDate(),
         ).getTime(),
         end: now.getTime(),
-        label: new Intl.DateTimeFormat(undefined, {
-          dateStyle: 'medium',
-        }).format(now),
       }
     })
+    const label = readerMillisecondMoment(today.start, timeZone, {
+      kind: 'date',
+    })
     const expectedDays = expectedPublicStatusArchiveDays(
-      [`${today.label} · Major outage`],
+      [`${label} · Major outage`],
       accepted.status,
-      [today],
+      [{ ...today, label }],
       'silencePeriods' in accepted.status ? accepted.status.silencePeriods : [],
       today.end,
     )

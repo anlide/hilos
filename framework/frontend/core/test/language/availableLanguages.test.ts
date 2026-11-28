@@ -9,6 +9,7 @@ import {
 } from '../../src/language/availableLanguages.js'
 import { NOTIFICATION_GROUP } from '../../src/notifications/notificationCenter.js'
 import {
+  SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_GROUP_RESPONSE,
   SIGNAL_TYPE_GROUP_SUBSCRIBE,
   SIGNAL_TYPE_GROUP_SUBSCRIPTION_ERROR,
@@ -18,7 +19,6 @@ import {
 import {
   bindSessionScope,
   sessionUserId,
-  SIGNAL_HANDSHAKE_RESPONSE,
 } from '../../src/session/sessionScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 

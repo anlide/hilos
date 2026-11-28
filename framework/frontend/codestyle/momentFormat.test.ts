@@ -59,7 +59,7 @@ const TIME_ZONE_RULE = 'framework/frontend/core/src/timeZone/timeZoneRule.ts'
 const CALENDAR_PERIODS =
   'framework/frontend/core/src/timeZone/calendarPeriods.ts'
 
-/** The legal calendar date. */
+/** The legal documents, whose revision day has no exception of its own. */
 const LEGAL_AGREEMENTS = 'framework/frontend/core/src/legal/legalAgreements.ts'
 
 /** The browser-zone read, whose chain passes by its form alone. */
@@ -71,8 +71,9 @@ const CONSTRUCTION = `Intl.DateTimeFormat prints a moment past the core formatte
 
 /** Reason of a toLocaleString() whose receiver is not proven numeric. */
 const LOCALE_STRING =
-  'toLocaleString() is allowed on a receiver typed number or bigint only, and this' +
-  ` one is not proven numeric; display a moment with ${FORMATTER}`
+  'toLocaleString() is not proven numeric: the receiver is typed neither number' +
+  ' nor bigint; print a number with formatNumber() from @hilos/core, as' +
+  ` NUMBER-FORMAT asks of a number, and a moment with ${FORMATTER}`
 
 /** Reason of a toString() on a Date. */
 const DATE_TO_STRING = `toString() of a Date prints a moment past the core formatter; display it with ${FORMATTER}`
@@ -82,9 +83,9 @@ const HAND_BUILT_TEXT = `text built from Date getters prints a moment past the c
 
 /** Reason of a toLocaleString() in a template whose receiver is not proven numeric. */
 const TEMPLATE_LOCALE_STRING =
-  'toLocaleString() in a template is allowed on a literal, Number() or BigInt() only:' +
-  ' a name the template reads proves no type; print a count through a typed' +
-  ` TypeScript helper, and a moment with ${FORMATTER}`
+  'toLocaleString() in a template is not proven numeric: a name the template' +
+  ' reads proves no type; print a number with formatNumber() from @hilos/core,' +
+  ` and a moment with ${FORMATTER}`
 
 /** Reason of Angular's date pipe. */
 const DATE_PIPE = `the date pipe prints a moment past the core formatter; display it with ${FORMATTER}`
@@ -616,35 +617,15 @@ it(
 )
 
 it(
-  'lets one explicit-UTC calendar date through in formatHilosLegalDate, and not its neighbor',
+  'reports an explicit-UTC print in formatHilosLegalDate: a revision day goes through the core formatter',
   () => {
-    const neighbor = neighborOf(LEGAL_AGREEMENTS)
-
-    expect(
-      reportFixture('exceptions/legalAgreements.ts', LEGAL_AGREEMENTS),
-    ).toEqual([report(LEGAL_AGREEMENTS, 18, CONSTRUCTION)])
-    expect(reportFixture('exceptions/legalAgreements.ts', neighbor)).toEqual([
-      report(neighbor, 8, CONSTRUCTION),
-      report(neighbor, 18, CONSTRUCTION),
-    ])
-
-    const widened = [
-      'export function formatHilosLegalDate(date: Date, zone: string): string {',
-      "  const utc = { timeZone: 'UTC' }",
-      '  return [',
-      "    new Intl.DateTimeFormat('en-GB', { timeZone: zone }).format(date),",
-      "    new Intl.DateTimeFormat('en-GB', utc).format(date),",
-      "    new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).formatToParts(date)[0].value,",
-      "    new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(date),",
-      "    new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(date),",
-      "  ].join(' ')",
+    const source = [
+      'export function formatHilosLegalDate(date: string): string {',
+      "  return new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC' }).format(new Date(date))",
       '}',
     ].join('\n')
-    expect(checkSource(LEGAL_AGREEMENTS, widened)).toEqual([
-      report(LEGAL_AGREEMENTS, 4, CONSTRUCTION),
-      report(LEGAL_AGREEMENTS, 5, CONSTRUCTION),
-      report(LEGAL_AGREEMENTS, 6, CONSTRUCTION),
-      report(LEGAL_AGREEMENTS, 8, CONSTRUCTION),
+    expect(checkSource(LEGAL_AGREEMENTS, source)).toEqual([
+      report(LEGAL_AGREEMENTS, 2, CONSTRUCTION),
     ])
   },
   COMPILE_TIMEOUT_MS,

@@ -31,9 +31,9 @@ import {
   type HilosViewLayer,
 } from '../routing/hilosUnbuiltPages.js'
 import { type PageRouter } from '../routing/PageRouter.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../protocol/constants.js'
 import {
   bindSessionScope,
-  SIGNAL_HANDSHAKE_RESPONSE,
   sessionAdminViewMode,
   sessionUserId,
   sessionUserIsAdmin,

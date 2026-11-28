@@ -2,7 +2,11 @@
 // bar, columns, cards, and footer; this page supplies cells and its four empty
 // states. The header names nodes reactively, and Open leads to the stream viewer.
 import { useEffect, useMemo } from 'react'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
+import {
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import {
   createHilosLogKeysHeader,
   createHilosLogKeysTable,
@@ -64,6 +68,7 @@ export function HilosLogsKeysPage({ context }: HilosLogsKeysPageProps) {
   )
   const streamsTable = streams.controller
   const header = useSignal(headerHandle.header)
+  useSignal(hilosReaderDisplay)
 
   // Bind the server-windowed table and start listening for the header on mount; the
   // header also arrives once as the answer to the subscription.

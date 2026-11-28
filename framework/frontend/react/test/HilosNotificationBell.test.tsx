@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosNotificationBell } from '../src/HilosNotificationBell.js'
 import { readerTimeZone } from './readerTimeZone.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 // The React bell renders its dropdown only while open (the Vue bell keeps it in the
 // DOM via v-show), so tests open the menu before asserting on its contents.
@@ -52,11 +53,7 @@ function byId(id: string): HTMLElement | null {
 }
 
 function formatIndependent(moment: number, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    timeZone,
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  }).format(moment)
+  return readerMomentText(moment, timeZone)
 }
 
 describe('HilosNotificationBell', () => {

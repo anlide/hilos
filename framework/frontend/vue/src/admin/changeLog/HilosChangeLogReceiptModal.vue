@@ -19,7 +19,7 @@ import {
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptReader,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTimeZone, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 import { computed, inject, nextTick, ref } from 'vue'
 
 import HilosFormError from '../../HilosFormError.vue'
@@ -38,17 +38,17 @@ const props = defineProps<{
 }>()
 
 const router = inject(hilosRouterKey, undefined)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 const title = computed(() => formatChangeLogReceiptTitle(props.dialog))
 const attribution = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return props.dialog?.header
     ? changeLogReceiptAttribution(props.dialog.header)
     : null
 })
 const entryTime = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   const first = props.dialog?.entries[0]
   return first ? formatChangeLogTime(first.createdAt) : ''
 })

@@ -46,7 +46,11 @@ import {
   type HilosLogRotationRow,
   type HilosLogRotationsContext,
 } from '@hilos/core/admin/logs'
-import { HILOS_PAGE_ROUTES, HilosPages, hilosTimeZone } from '@hilos/core/base'
+import {
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
@@ -80,7 +84,7 @@ const rotations = createHilosLogRotationsTable(
 const rotationsTable = rotations.controller
 const rotationsActions = createHilosLogRotationsActions(props.context)
 const header = useSignal(headerHandle.header)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 // Bind the server-windowed table and start listening for the header on mount; the
 // header also arrives once as the answer to the subscription.
@@ -116,8 +120,13 @@ const emptyState = computed(() =>
 // The batch's own name is its rotation time; the archive directory under it is
 // what an operator types into scp, so both are in the cell.
 function batchTime(row: HilosLogRotationRow): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
+}
+
+function batchWeight(row: HilosLogRotationRow): string {
+  void readerDisplay.value
+  return formatRotationWeight(row)
 }
 
 function batchViewerPath(row: HilosLogRotationRow): string {
@@ -258,7 +267,7 @@ const undoNotice = computed(() =>
 // installation that told it not to wait, and that is said in words too: a blank
 // would read as "we do not know" rather than "at any moment".
 const undoDeadline = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   // The node may change its promise while this dialog is open. Keep the opening
   // details only when the focused batch has gone, as the disappearance notice does.
   const pruneNotBefore = (focusedRow.value ?? undoRow.value)?.pruneNotBefore
@@ -352,7 +361,7 @@ const legendOpen = ref(false)
       <template #cell-daemonFileCount="{ row }">
         <span class="small">{{ formatRotationFileCounts(row) }}</span>
       </template>
-      <template #cell-bytes="{ row }">{{ formatRotationWeight(row) }}</template>
+      <template #cell-bytes="{ row }">{{ batchWeight(row) }}</template>
       <template #cell-retentionState="{ row }">
         <span class="badge" :class="retentionClass(row)">
           {{ formatRotationState(row) }}

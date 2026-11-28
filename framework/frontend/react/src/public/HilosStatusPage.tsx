@@ -14,9 +14,9 @@
 import { Fragment, useEffect, useId, useState } from 'react'
 import {
   formatMoment,
-  hilosTimeZone,
   type ActionLifecycle,
   type HilosConnection,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import {
   createPublicStatus,
@@ -153,9 +153,9 @@ function PublicStatusView({ reader, subscription }: PublicStatusGeneration) {
   const upcomingWorks = useSignal(reader.upcomingWorks)
   const currentMaintenance = useSignal(reader.currentMaintenance)
   const dayStrips = useSignal(reader.dayStrips)
-  // Every moment below is formatted in the reader's zone; a zone change
-  // redraws them all.
-  useSignal(hilosTimeZone)
+  // Every moment below is written in the reader's zone and region formats; a
+  // change of either redraws them all.
+  useSignal(hilosReaderDisplay)
   const detailId = useId()
   const [selectedDay, setSelectedDay] = useState<SelectedDay | null>(null)
 

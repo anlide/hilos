@@ -29,6 +29,7 @@ import type {
 
 import HilosLogsViewPage from './HilosLogsViewPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 /** Any fixed batch, so a timestamp in a fixture means something to read. */
 const BATCH = 1800000000000
@@ -39,22 +40,14 @@ const DST_MOMENT_ISO = '2026-03-29T01:30:00.123Z'
 const releases: (() => void)[] = []
 
 function dateTimeLabel(moment: number, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-    timeZone,
-  }).format(new Date(moment))
+  return readerMomentText(new Date(moment), timeZone)
 }
 
 function logTimeLabel(timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    fractionalSecondDigits: 3,
-    hourCycle: 'h23',
-    timeZone,
-  }).format(new Date(DST_MOMENT))
+  return readerMomentText(new Date(DST_MOMENT), timeZone, {
+    kind: 'time',
+    milliseconds: true,
+  })
 }
 
 function bindReaderZone(): {

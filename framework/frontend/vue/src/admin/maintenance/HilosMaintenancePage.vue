@@ -7,7 +7,7 @@ import {
   ActionError,
   formatMoment,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import {
   createHilosMaintenanceActions,
@@ -46,7 +46,7 @@ const props = defineProps<{
 
 const stateHandle = createHilosMaintenanceState(props.context)
 const maintenanceState = useSignal(stateHandle.state)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const nowMs = ref(Date.now())
 const position = computed(() =>
   hilosMaintenancePosition(maintenanceState.value),
@@ -55,27 +55,27 @@ const stateCard = computed(() =>
   hilosMaintenanceCard(maintenanceState.value, nowMs.value),
 )
 const watchdogAlert = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return hilosMaintenanceWatchdogAlert(maintenanceState.value)
 })
 const watchdogThresholds = computed(() =>
   hilosMaintenanceWatchdogThresholds(maintenanceState.value),
 )
 const startedAt = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return (
     formatMoment(stateCard.value?.startedAt ?? '', { kind: 'dateTime' }) ?? '—'
   )
 })
 const activatedAt = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return (
     formatMoment(stateCard.value?.activatedAt ?? '', { kind: 'dateTime' }) ??
     '—'
   )
 })
 const progressAt = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return (
     formatMoment(stateCard.value?.progressAt ?? '', { kind: 'dateTime' }) ?? '—'
   )

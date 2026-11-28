@@ -14,6 +14,7 @@ import {
   describeHilosLegalPrivacyReader,
   formatHilosLegalDate,
   hilosLegalReconsentPerson,
+  hilosReaderDisplay,
   LEGAL_PRIVACY_COPY,
   LEGAL_RECONSENT_COPY,
   sessionAccountStanding,
@@ -72,15 +73,17 @@ const agreement = shallowRef<HilosLegalAgreement | null | undefined>(undefined)
 const accepting = ref(false)
 const refusal = ref<string | null>(null)
 const person = useSignal(hilosLegalReconsentPerson)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const standing = shallowRef<HilosAccountStanding | null>(null)
 const comparing = ref(false)
-const line = computed(() =>
-  describeHilosLegalPrivacyReader(privacy.value, agreement.value, {
+const line = computed(() => {
+  void readerDisplay.value
+  return describeHilosLegalPrivacyReader(privacy.value, agreement.value, {
     person: person.value,
     frozen: standing.value?.frozen === true,
     now: Date.now(),
-  }),
-)
+  })
+})
 const changes = computed(() =>
   comparing.value && line.value.canCompare
     ? (privacy.value?.changes ?? null)
@@ -141,6 +144,7 @@ onUnmounted(() => stop?.())
 
 /** The publication day of a revision, falling back to its id. */
 function publishedOf(revisionId: string): string {
+  void readerDisplay.value
   const revision = privacy.value?.revisions.find(
     (item) => item.revisionId === revisionId,
   )

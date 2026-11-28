@@ -3,7 +3,10 @@ import type { Expect, Locator, Page } from '@playwright/test'
 import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
 import { HilosPages } from '../core/src/routing/hilosPages.js'
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
-import { expectReaderMillisecondMoment } from './moments.js'
+import {
+  expectReaderMillisecondMoment,
+  readerMillisecondMoment,
+} from './moments.js'
 import { shownByTestId } from './table.js'
 import { watchSocketFrames, type SocketFrame } from './socket.js'
 
@@ -1040,7 +1043,7 @@ export async function expectAnalyticsOverview(
 
 /**
  * Match all three tiles to one real reply, including zeros and its captured
- * calendar context. Native Intl expectations do not use the core's formatter.
+ * calendar context. The independent oracle does not use the core's formatter.
  *
  * @param expect The spec's expect.
  * @param page The page showing the ready overview.
@@ -1060,34 +1063,34 @@ export async function expectAnalyticsOverviewTiles(
   )
   expect(canonicalZone).toBe(browserTimeZone)
 
-  const time = new Intl.DateTimeFormat('en-GB', {
-    timeZone: snapshot.timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  })
-  const weekday = new Intl.DateTimeFormat('en-GB', {
-    timeZone: snapshot.timeZone,
-    weekday: 'long',
-  }).format(snapshot.weekStartTs)
+  const time = (moment: number) =>
+    readerMillisecondMoment(moment, snapshot.timeZone, {
+      kind: 'time',
+      seconds: false,
+    })
+  const weekday = readerMillisecondMoment(
+    snapshot.weekStartTs,
+    snapshot.timeZone,
+    { kind: 'weekday' },
+  )
   const periods = [
     {
       key: 'week',
       label: 'Visitors this week',
       count: snapshot.visitorsThisWeek,
-      since: `${weekday}, ${time.format(snapshot.weekStartTs)}`,
+      since: `${weekday}, ${time(snapshot.weekStartTs)}`,
     },
     {
       key: 'day',
       label: 'Visitors today',
       count: snapshot.visitorsToday,
-      since: time.format(snapshot.dayStartTs),
+      since: time(snapshot.dayStartTs),
     },
     {
       key: 'hour',
       label: 'Visitors this hour',
       count: snapshot.visitorsThisHour,
-      since: time.format(snapshot.hourStartTs),
+      since: time(snapshot.hourStartTs),
     },
   ]
   for (const { key, label, count, since } of periods) {

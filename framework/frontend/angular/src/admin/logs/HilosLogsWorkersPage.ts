@@ -20,7 +20,11 @@ import {
   logWorkerViewerPath,
   logWorkersEmptyState,
 } from '@hilos/core/admin/logs'
-import { HilosPages, subscribeSignal } from '@hilos/core/base'
+import {
+  HilosPages,
+  hilosReaderDisplay,
+  subscribeSignal,
+} from '@hilos/core/base'
 import type {
   HilosLogWorkerRow,
   HilosLogWorkersContext,
@@ -32,6 +36,7 @@ import {
   HilosLink,
   HilosTableCell,
   HilosViewportTable,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** The framework by-worker page: the worker stream list and its type distinction. */
@@ -167,7 +172,11 @@ export class HilosLogsWorkersPage {
   protected readonly page = HilosPages.LOGS_WORKERS
   protected readonly formatState = formatLogWorkerState
   protected readonly formatType = formatLogWorkerType
-  protected readonly formatWeight = formatLogWorkerWeight
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly formatWeight = (row: HilosLogWorkerRow): string => {
+    this.readerDisplay()
+    return formatLogWorkerWeight(row)
+  }
   protected readonly viewerPath = logWorkerViewerPath
 
   private readonly headerHandle = computed(() =>

@@ -10,7 +10,7 @@ import {
   formatProfileDateTime,
   hilosProfileDeviceKind,
   hilosPushSubscription,
-  hilosTimeZone,
+  hilosReaderDisplay,
   subscribeSignal,
   type HilosConnection,
   type HilosProfileDevice,
@@ -199,7 +199,7 @@ export class HilosProfileDevices {
       this.pushChannel() !== null &&
       this.supported(),
   )
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   constructor() {
     effect((onCleanup) => {
@@ -229,7 +229,7 @@ export class HilosProfileDevices {
   }
 
   protected date(value: number): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatProfileDateTime(value)
   }
 

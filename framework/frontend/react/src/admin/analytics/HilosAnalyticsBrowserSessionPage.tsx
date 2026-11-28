@@ -24,7 +24,11 @@ import {
   type HilosAnalyticsActionsTable,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { computedSignal, HilosPages, hilosTimeZone } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'
@@ -82,7 +86,7 @@ export function HilosAnalyticsBrowserSessionPage({
   const icon = identity?.pageHeadOwner?.icon
 
   const route = useSignal(router.currentRoute)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const browserSessionId = readAnalyticsRouteId(
     route.params[ANALYTICS_BROWSER_SESSION_ROUTE_PARAM],
   )

@@ -849,14 +849,12 @@ describe('HilosMaintenancePage restore card', () => {
       expect(textOf('hilos-maintenance-initiator')).toBe(
         'hilos_backup · node node-1',
       )
-      expect(textOf('hilos-maintenance-started-at')).toBe(
-        'Sep 11, 2026, 3:14:02 AM',
-      )
+      expect(textOf('hilos-maintenance-started-at')).toBe('11.09.2026 03:14:02')
       expect(textOf('hilos-maintenance-activated-at')).toBe(
-        'Sep 11, 2026, 3:14:09 AM',
+        '11.09.2026 03:14:09',
       )
       expect(textOf('hilos-maintenance-progress-at')).toBe(
-        'Sep 11, 2026, 3:21:44 AM',
+        '11.09.2026 03:21:44',
       )
       expect(textOf('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
       expect(textOf('hilos-maintenance-stopped-agents')).toBe(
@@ -892,18 +890,18 @@ describe('HilosMaintenancePage restore card', () => {
 
       act(() => reader.choose('America/Los_Angeles'))
       expect(textOf('hilos-maintenance-activated-at')).toBe(
-        'Sep 10, 2026, 8:14:09 PM',
+        '10.09.2026 20:14:09',
       )
       expect(textOf('hilos-maintenance-progress-at')).toBe(
-        'Sep 10, 2026, 8:21:44 PM',
+        '10.09.2026 20:21:44',
       )
       expect(textOf('hilos-maintenance-progress-elapsed')).toBe('2 minutes ago')
       act(() => reader.choose('Europe/Kyiv'))
       expect(textOf('hilos-maintenance-activated-at')).toBe(
-        'Sep 11, 2026, 6:14:09 AM',
+        '11.09.2026 06:14:09',
       )
       expect(textOf('hilos-maintenance-progress-at')).toBe(
-        'Sep 11, 2026, 6:21:44 AM',
+        '11.09.2026 06:21:44',
       )
       expect(state.activatedAt).toBe('2026-09-11T03:14:09.000Z')
       expect(state.progressAt).toBe('2026-09-11T03:21:44.000Z')
@@ -917,11 +915,9 @@ describe('HilosMaintenancePage restore card', () => {
       })
       expect(textOf('hilos-maintenance-progress-elapsed')).toBe('3 minutes ago')
       expect(textOf('hilos-maintenance-progress-at')).toBe(
-        'Sep 11, 2026, 6:21:44 AM',
+        '11.09.2026 06:21:44',
       )
-      expect(textOf('hilos-maintenance-started-at')).toBe(
-        'Sep 11, 2026, 6:14:02 AM',
-      )
+      expect(textOf('hilos-maintenance-started-at')).toBe('11.09.2026 06:14:02')
     } finally {
       cleanup()
       reader.release()
@@ -2244,23 +2240,23 @@ describe('HilosMaintenancePage watchdog', () => {
       const full = byId('hilos-maintenance-watchdog-full') as HTMLElement
       const moments = () => definitions(full).slice(4, 7)
       expect(moments()).toEqual([
-        'Sep 11, 2026, 3:14:02 AM',
-        'Sep 11, 2026, 3:14:09 AM',
-        'Sep 11, 2026, 3:21:44 AM',
+        '11.09.2026 03:14:02',
+        '11.09.2026 03:14:09',
+        '11.09.2026 03:21:44',
       ])
       expect(full.textContent).toContain('node-3, node-4')
 
       act(() => reader.choose('America/Los_Angeles'))
       expect(moments()).toEqual([
-        'Sep 10, 2026, 8:14:02 PM',
-        'Sep 10, 2026, 8:14:09 PM',
-        'Sep 10, 2026, 8:21:44 PM',
+        '10.09.2026 20:14:02',
+        '10.09.2026 20:14:09',
+        '10.09.2026 20:21:44',
       ])
       act(() => reader.choose('Europe/Kyiv'))
       expect(moments()).toEqual([
-        'Sep 11, 2026, 6:14:02 AM',
-        'Sep 11, 2026, 6:14:09 AM',
-        'Sep 11, 2026, 6:21:44 AM',
+        '11.09.2026 06:14:02',
+        '11.09.2026 06:14:09',
+        '11.09.2026 06:21:44',
       ])
 
       await settled(() =>

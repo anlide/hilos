@@ -32,6 +32,7 @@ import {
   channelSummary,
 } from './hilosCommunicationsHarness.js'
 import { readerTimeZone } from './readerTimeZone.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 const TABLE = 'hilosNotificationDeliveries'
 
@@ -239,11 +240,7 @@ function retryState(rowKey: string) {
 }
 
 function formatIndependent(moment: number, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    timeZone,
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  }).format(moment)
+  return readerMomentText(moment, timeZone)
 }
 
 const RESTING = {

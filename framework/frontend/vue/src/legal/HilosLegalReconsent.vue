@@ -33,6 +33,7 @@ import {
   hilosLegalDocumentLabel,
   hilosLegalReconsentSections,
   HilosPages,
+  hilosReaderDisplay,
   keepMyAccount,
   LEGAL_RECONSENT_COPY,
   signOut,
@@ -46,6 +47,7 @@ import {
 import HilosFormError from '../HilosFormError.vue'
 import HilosLink from '../HilosLink.vue'
 import LoadingButton from '../LoadingButton.vue'
+import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
 import HilosLegalChanges from './HilosLegalChanges.vue'
 import HilosLegalRevisionText from './HilosLegalRevisionText.vue'
@@ -94,17 +96,19 @@ const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE] ?? '/'
 const { busy: signOutBusy, run: runSignOut } = useTrackedAction()
 const { busy: keepBusy, run: runKeep } = useTrackedAction()
 
+const readerDisplay = useSignal(hilosReaderDisplay)
 const sections = computed<readonly HilosLegalReconsentSection[]>(() =>
   props.content === null ? [] : hilosLegalReconsentSections(props.content),
 )
-const rows = computed(() =>
-  sections.value.map((section) => ({
+const rows = computed(() => {
+  void readerDisplay.value
+  return sections.value.map((section) => ({
     section,
     plate: describeHilosLegalReconsentPlate(section, props.variant, props.now),
     accepted: describeHilosLegalReconsentAccepted(section),
     changes: section.changes.map(describeHilosLegalReconsentChange),
-  })),
-)
+  }))
+})
 const firstRevision = computed(
   () =>
     props.variant === 'preview' &&
@@ -120,13 +124,14 @@ const viewed = computed(() => {
   if (view.kind !== 'text' && view.kind !== 'compare') return null
   return sections.value.find((item) => item.document === view.document) ?? null
 })
-const refusal = computed(() =>
-  props.content !== null && 'refusal' in props.content
+const refusal = computed(() => {
+  void readerDisplay.value
+  return props.content !== null && 'refusal' in props.content
     ? describeHilosLegalReconsentRefusal(
         props.content as HilosLegalReconsentContent,
       )
-    : copy.refuseRemind,
-)
+    : copy.refuseRemind
+})
 const acceptOffered = computed(
   () => props.variant !== 'frozen' || !impersonated.value,
 )

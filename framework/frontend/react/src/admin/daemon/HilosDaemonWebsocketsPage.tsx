@@ -7,7 +7,11 @@ import {
   readHilosDaemonWebsockets,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
 import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
@@ -45,6 +49,7 @@ export function HilosDaemonWebsocketsPage({
     })
   }, [context, router])
   const current = useSignal(currentSource)
+  useSignal(hilosReaderDisplay)
   const data = current?.websockets
   const count = data?.dataNode ? '—' : formatDaemonNumber(data?.connections)
   const dataNodeNote = 'Data nodes do not accept browsers'

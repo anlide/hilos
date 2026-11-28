@@ -15,7 +15,7 @@ import {
   ActionError,
   formatMoment,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import {
   createHilosMaintenanceActions,
@@ -83,7 +83,7 @@ function readerMoment(moment: string | null | undefined): string {
  * @param props The project's connection, scopes and action lifecycle.
  */
 export function HilosMaintenancePage({ context }: HilosMaintenancePageProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const stateHandle = useMemo(
     () => createHilosMaintenanceState(context),
     [context],

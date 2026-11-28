@@ -10,7 +10,7 @@
 // not close it, and the toggle only asks that surface to flip it.
 import {
   formatProfileDateTime,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type HilosProfileSession,
 } from '@hilos/core/base'
 
@@ -38,15 +38,15 @@ defineSlots<{
   actions?(): unknown
 }>()
 
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 /**
- * Format a session moment again when the reader's zone changes.
+ * Format a session moment again when the reader's zone or formats change.
  *
  * @param moment UTC epoch milliseconds, or null for a moment that never comes.
  */
 function dateTime(moment: number | null): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatProfileDateTime(moment)
 }
 

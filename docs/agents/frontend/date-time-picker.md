@@ -385,9 +385,18 @@ and placeholders. `DEFAULT_DATE_TIME_PICKER_LABELS` is frozen and contains
 `invalidZone: '{zone} is not a usable time zone.'`,
 `gap: '{time} does not exist on {date} in {zone}: at {from} the clocks jump to {to}.'`,
 and `ambiguous: '{time} happens twice on {date} in {zone}. Which one?'`.
-`showSeconds` defaults to `false`. These defaults do not constrain the later
-i18n provider, which supplies explicit factors and labels without changing
-picker semantics.
+`showSeconds` defaults to `false`. These defaults do not constrain a provider
+of factors, which supplies explicit factors and labels without changing picker
+semantics. The one provider today is the tab's region: `hilosTabPickerFactors()`
+from `@hilos/core/base` gives `dateOrder` and `dateSeparator` from the region's
+date template and `hourCycle` from its time template — `'h12'` when the template
+carries the `hh` token, otherwise `'h23'` — and a date template that is not
+three distinct tokens keeps the default order and separator. The Works window of
+the Status section reads them when its picker opens, so in the built-in English
+locale without a country its parts run day, month, year with `.` between them
+on a 24-hour clock, and an open picker keeps them. The first day of the week
+stays the default until the locale supplies it (HIL-2318); see
+[The Formats A Reader Sees](../architecture/language-and-region.md#the-formats-a-reader-sees).
 
 Reason templates substitute the five known slots `{time}`, `{date}`, `{zone}`,
 `{from}` and `{to}`; an unknown slot remains literal text. Visible date parts

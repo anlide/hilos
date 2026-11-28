@@ -7,9 +7,9 @@ import {
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import { applyTheme } from '../dom/applyTheme.js'
 import { entityFragmentSchema } from '../protocol/scopePayload.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../protocol/constants.js'
 import {
   sessionThemeSettings,
-  SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_THEME_SETTINGS,
   themeSettingsSchema,
   type ThemeSettings,

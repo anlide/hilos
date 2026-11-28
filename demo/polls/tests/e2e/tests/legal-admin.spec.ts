@@ -519,7 +519,7 @@ test('previews consent and both document changes without accepting', async ({
     const privacyPreview = page.getByTestId('legal-reconsent-preview')
     await expect(
       privacyPreview.getByTestId('legal-reconsent-badge'),
-    ).toHaveText('No window · in force since 9 October 2026')
+    ).toHaveText('No window · in force since 09.10.2026')
     await expect(
       privacyPreview.getByTestId('legal-reconsent-change'),
     ).toHaveCount(1)

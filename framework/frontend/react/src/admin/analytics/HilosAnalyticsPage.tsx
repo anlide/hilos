@@ -10,7 +10,7 @@ import {
   type HilosAnalyticsContext,
   type HilosAnalyticsOverviewTile,
 } from '@hilos/core/admin/analytics'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
@@ -47,10 +47,11 @@ export function HilosAnalyticsPage({ context }: HilosAnalyticsPageProps) {
   }, [overview])
 
   const snapshot = useSignal(overview.snapshot)
+  const readerDisplay = useSignal(hilosReaderDisplay)
   const tiles = useMemo(
     () =>
       snapshot === undefined ? undefined : analyticsOverviewTiles(snapshot),
-    [snapshot],
+    [snapshot, readerDisplay],
   )
 
   return (

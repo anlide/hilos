@@ -73,7 +73,7 @@ import {
   createHilosRestoreProgress,
   formatBackupProgressLabel,
   formatRestoreOutcomeLine,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
 } from '@hilos/core/base'
 import type { Hideable, HilosProgressAnchors } from '@hilos/core/base'
@@ -179,7 +179,7 @@ function outOfReachClass(row: HilosBackupRow): string | undefined {
  * @param props The project context (scope stores + action lifecycle).
  */
 export function HilosBackupPage({ context }: HilosBackupPageProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   // Create dialog: the table's main action opens it, the scope is picked inside, and
   // the command leaves from its confirm button as a tracked action. Its state stands
   // above the table factory because the opener goes into it as an argument — and the

@@ -19,6 +19,7 @@ import {
 import { ActionError } from '../../connection/actionLifecycle.js'
 import { formatBytes } from '../../format/bytes.js'
 import { formatMoment } from '../../format/moment.js'
+import { formatNumber } from '../../format/number.js'
 import { type HilosLegalContext } from '../../legal/legalAgreements.js'
 import {
   createSignal,
@@ -82,35 +83,15 @@ export function hilosLegalAcceptancesExportStatus(
     case 'preparing':
       return HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY.preparing.replace(
         '{time}',
-        formatMoment(node.requestedAt, {
-          kind: 'dateTime',
-          format: {
-            year: 'numeric',
-            month: 'numeric',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-          },
-        }) ?? '—',
+        formatMoment(node.requestedAt, { kind: 'dateTime' }) ?? '—',
       )
     case 'ready':
       return HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY.ready
-        .replace('{records}', node.records.toLocaleString())
+        .replace('{records}', formatNumber(node.records))
         .replace('{size}', formatBytes(node.sizeBytes))
         .replace(
           '{time}',
-          formatMoment(node.expiresAt, {
-            kind: 'dateTime',
-            format: {
-              year: 'numeric',
-              month: 'numeric',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: 'numeric',
-              second: 'numeric',
-            },
-          }) ?? '—',
+          formatMoment(node.expiresAt, { kind: 'dateTime' }) ?? '—',
         )
     case 'failed':
       return HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY.failed

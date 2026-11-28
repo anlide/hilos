@@ -33,7 +33,7 @@ import {
   HILOS_DATA_EXPORT_COPY,
   HILOS_PAGE_ROUTES,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   sendProgressLine,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -329,7 +329,7 @@ export class HilosAccountDeletion {
   protected readonly stepUpOpening = signal<HilosStepUpOpening | null>(null)
   protected readonly stepUpRefusal = signal<string | null>(null)
   protected readonly stepUpSendProgress = signal<CodeSendProgress | null>(null)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   private readonly now = signal(Date.now())
   private readonly body = viewChild<ElementRef<HTMLElement>>('body')
   private readonly dataLink = viewChild<ElementRef<HTMLElement>>('dataLink')
@@ -366,7 +366,7 @@ export class HilosAccountDeletion {
       : ''
   })
   private readonly daysLeft = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const deletion = this.deletion()
     return deletion === null
       ? ''
@@ -481,7 +481,7 @@ export class HilosAccountDeletion {
    * @param template The line, with its `{…}` places.
    */
   protected fill(template: string): string {
-    this.timeZone()
+    this.readerDisplay()
     const deletion = this.deletion()
     const opening = this.opening()
     return template

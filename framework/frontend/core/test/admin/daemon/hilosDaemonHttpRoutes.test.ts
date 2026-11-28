@@ -187,11 +187,9 @@ describe('daemon HTTP route cell text', () => {
     )
   })
 
-  it('formats counts and the longest duration in the browser locale', () => {
-    expect(formatDaemonHttpCount(1_240)).toBe((1_240).toLocaleString())
-    expect(formatDaemonHttpSlowest(row({ slowestMs: 1_240 }))).toBe(
-      `${(1_240).toLocaleString()} ms`,
-    )
+  it('formats counts and the longest duration in the number template of the region', () => {
+    expect(formatDaemonHttpCount(1_240)).toBe('1,240')
+    expect(formatDaemonHttpSlowest(row({ slowestMs: 1_240 }))).toBe('1,240 ms')
     expect(formatDaemonHttpSlowest(row({ slowestMs: null }))).toBe('—')
   })
 })

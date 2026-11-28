@@ -7,7 +7,7 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, HilosPages } from '@hilos/core/base'
 import {
   createHilosStatusWorksState,
   createHilosStatusWorksTable,
@@ -147,7 +147,7 @@ export class HilosStatusWorksPage {
     STATUS_WORK_LAST_MAIL_QUEUED_AT_FIELD
   protected readonly actionsField = 'actions'
   protected readonly data = signal<HilosStatusWorksData>(null)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   protected readonly model = computed(() => {
     const context = this.context()
@@ -207,20 +207,8 @@ export class HilosStatusWorksPage {
 
   /** Display seconds in the live reader zone without changing the viewport. */
   protected moment(at: number | null): string {
-    this.timeZone()
+    this.readerDisplay()
     if (at === null) return '—'
-    return (
-      formatMoment(at, {
-        format: {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZoneName: 'short',
-        },
-      }) ?? '—'
-    )
+    return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
   }
 }

@@ -44,7 +44,7 @@ describe('profile sign-in projection', () => {
     expect(hilosProfileSignInTitle(single, offered)).toBe('Laptop')
     vi.spyOn(hilosTimeZone, 'get').mockReturnValue('UTC')
     expect(hilosProfileSignInSubtitle(single)).toBe(
-      'Passkey · added Sep 26, 2026',
+      'Passkey · added 26.09.2026',
     )
     expect(
       resolveHilosProfileSignInMethods([password, key], []).every(
@@ -96,7 +96,7 @@ describe('profile sign-in projection', () => {
     )
     expect(method.passwordChangedAt).toBe(1767227400000)
     expect(hilosProfileSignInSubtitle(method)).toBe(
-      'Set · last changed Jan 1, 2026, 1:30:00 AM',
+      'Set · last changed 01.01.2026 01:30:00',
     )
     expect(hilosProfilePasswordState([method]).verifiedEmail).toBe(
       password.identifier,
@@ -112,15 +112,12 @@ describe('profile sign-in projection', () => {
       expect(hilosProfileSignInSubtitle(method)).toBe('Set')
     },
   )
-  it('uses Set when the moment formatter is unavailable or returns empty text', () => {
+  it('uses Set when the moment formatter is unavailable', () => {
     const [method] = resolveHilosProfileSignInMethods(
       [{ ...password, passwordChangedAt: 1767227400000 }],
       [],
     )
-    const formatter = new Intl.DateTimeFormat()
-    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function () {
-      return { ...formatter, format: () => '' } as Intl.DateTimeFormat
-    })
+    vi.stubGlobal('Intl', {})
     expect(hilosProfileSignInSubtitle(method)).toBe('Set')
     vi.stubGlobal('Intl', undefined)
     expect(hilosProfileSignInSubtitle(method)).toBe('Set')
@@ -162,11 +159,11 @@ describe('profile sign-in projection', () => {
     )
     const zone = vi.spyOn(hilosTimeZone, 'get').mockReturnValue('Europe/Warsaw')
     expect(hilosProfileSignInSubtitle(method)).toBe(
-      'Passkey · added Jan 1, 2026',
+      'Passkey · added 01.01.2026',
     )
     zone.mockReturnValue('America/New_York')
     expect(hilosProfileSignInSubtitle(method)).toBe(
-      'Passkey · added Dec 31, 2025',
+      'Passkey · added 31.12.2025',
     )
     expect(hilosProfileSignInSubtitle({ ...method, addedAt: null })).toBe(
       'Passkey',

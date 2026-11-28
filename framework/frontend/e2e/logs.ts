@@ -11,6 +11,7 @@ import {
   deliveryObject as object,
   watchDeliveryFrames,
 } from './deliveryFrames.js'
+import { readerMillisecondMoment, readerMoment } from './moments.js'
 
 /**
  * The cap a wait on an appended line reaching the screen gets, in milliseconds.
@@ -201,42 +202,6 @@ export function watchLogFrames(page: Page) {
 /** One observation, including the original physical transport and outgoing requests. */
 export type LogFrameLog = ReturnType<typeof watchLogFrames>
 
-/** An independent browser-locale oracle with an explicit reader zone. */
-export async function logMomentLabel(
-  page: Page,
-  moment: string | number,
-  timeZone: string,
-  kind: 'clock' | 'dateTime' | 'overview' = 'dateTime',
-): Promise<string> {
-  return page.evaluate(
-    ({ moment, timeZone, kind }) => {
-      const format: Intl.DateTimeFormatOptions =
-        kind === 'clock'
-          ? {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-              fractionalSecondDigits: 3,
-              hourCycle: 'h23',
-            }
-          : kind === 'overview'
-            ? {
-                year: 'numeric',
-                month: 'numeric',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: 'numeric',
-                second: 'numeric',
-              }
-            : { dateStyle: 'medium', timeStyle: 'medium' }
-      return new Intl.DateTimeFormat(undefined, { ...format, timeZone }).format(
-        new Date(moment),
-      )
-    },
-    { moment, timeZone, kind },
-  )
-}
-
 /** Assert canonical UTC, retaining the exact milliseconds sent by the real owner. */
 export function expectLogUtcMoment(expect: Expect, moment: unknown): string {
   expect(moment).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
@@ -284,7 +249,7 @@ export async function expectLogBatchViewer(
     await source.evaluate((select: HTMLSelectElement) =>
       select.selectedOptions[0]?.textContent?.trim(),
     ),
-  ).toBe(`Batch — ${await logMomentLabel(page, batchAt, timeZone)}`)
+  ).toBe(`Batch — ${readerMillisecondMoment(batchAt, timeZone)}`)
   const stream = await page.getByTestId('hilos-log-stream').inputValue()
   await expect(page).toHaveURL(
     `/hilos/logs/view/${batch.node}/${batchAt}/${stream}`,
@@ -325,12 +290,11 @@ export async function expectLogLineClock(
   const entry: Locator = page
     .getByTestId('hilos-log-entry')
     .filter({ hasText: `${marker} #1` })
-  const expected = await logMomentLabel(page, moment, timeZone, 'clock')
+  const clock = { kind: 'time', milliseconds: true } as const
+  const expected = readerMoment(moment, timeZone, clock)
   await expect(entry.getByTestId('hilos-log-entry-time')).toHaveText(expected)
   if (timeZone !== 'UTC') {
-    expect(expected).not.toBe(
-      await logMomentLabel(page, moment, 'UTC', 'clock'),
-    )
+    expect(expected).not.toBe(readerMoment(moment, 'UTC', clock))
   }
   expect(expected).not.toBe(moment)
   return moment

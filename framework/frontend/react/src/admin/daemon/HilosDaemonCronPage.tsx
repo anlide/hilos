@@ -18,7 +18,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonCronContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
@@ -50,7 +50,7 @@ export function HilosDaemonCronPage({
   const reported = useSignal(
     useMemo(() => readDaemonCronReported(context.scopes), [context]),
   )
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const [projectTimeZone, setProjectTimeZone] = useState(
     () => context.connection.projectTimeZone,
   )

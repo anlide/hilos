@@ -21,7 +21,7 @@ import {
   HILOS_STEP_UP_COPY,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   resolveHilosPath,
   subscribeSignal,
   type HilosLegalAcceptancesExportNode,
@@ -219,9 +219,9 @@ export class HilosLegalAcceptancesPage {
   protected readonly copy = HILOS_LEGAL_ACCEPTANCES_EXPORT_COPY
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
   protected readonly downloadPath = LEGAL_ACCEPTANCES_EXPORT_DOWNLOAD_PATH
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly statusRoom = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return hilosLegalAcceptancesExportStatusRoom()
   })
   protected readonly table = computed(() =>
@@ -236,7 +236,7 @@ export class HilosLegalAcceptancesPage {
   protected readonly stepRefusal = signal<string | null>(null)
   protected readonly open = signal(false)
   protected readonly status = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return hilosLegalAcceptancesExportStatus(this.node())
   })
   protected readonly filterLine = computed(() => {

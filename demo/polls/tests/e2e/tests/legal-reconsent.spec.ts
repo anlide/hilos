@@ -71,7 +71,7 @@ test('keeps data and open routes available throughout a legal freeze', async ({
     const screen = page.getByTestId('legal-frozen-screen')
     await expect(screen).toBeVisible()
     await expect(screen.getByTestId('legal-reconsent-badge')).toContainText(
-      'account frozen · deadline passed 1 October 2026',
+      'account frozen · deadline passed 01.10.2026',
     )
     const change = screen.getByTestId('legal-reconsent-change')
     await expect(change).toHaveCount(1)
@@ -142,7 +142,7 @@ test('under "remind" the window rises on sign-in and the header icon keeps the r
     const window = page.getByTestId('legal-reconsent-modal')
     await expect(window).toBeVisible()
     await expect(window.getByTestId('legal-reconsent-badge')).toContainText(
-      'deadline passed 1 October 2026',
+      'deadline passed 01.10.2026',
     )
     await expect(window.getByTestId('legal-reconsent-person')).toContainText(
       person.name,

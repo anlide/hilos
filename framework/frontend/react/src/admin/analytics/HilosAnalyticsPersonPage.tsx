@@ -27,7 +27,7 @@ import {
 import {
   computedSignal,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
 } from '@hilos/core/base'
 
@@ -108,7 +108,7 @@ export function HilosAnalyticsPersonPage({
       : currentPerson.photo
 
   const route = useSignal(router.currentRoute)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const userId = readAnalyticsRouteId(
     route.params[ANALYTICS_PERSON_ROUTE_PARAM],
   )

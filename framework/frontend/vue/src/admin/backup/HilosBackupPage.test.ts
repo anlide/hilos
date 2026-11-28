@@ -656,13 +656,13 @@ describe('HilosBackupPage reader-zone moments', () => {
     ]
     for (const row of projections) {
       expect(row.get('[data-id="hilos-backup-created-at"]').text()).toBe(
-        'Dec 31, 2025, 4:30:05 PM',
+        '31.12.2025 16:30:05',
       )
       expect(row.get('[data-id="hilos-backup-checksum"]').text()).toBe(
-        '✓ Jan 1, 2026',
+        '✓ 01.01.2026',
       )
       expect(row.get('[data-id="hilos-backup-shipping"]').text()).toBe(
-        '✓ Jan 2, 2026',
+        '✓ 02.01.2026',
       )
       expect(row.text()).toContain('5s')
       expect(row.text()).toContain('success')
@@ -676,26 +676,26 @@ describe('HilosBackupPage reader-zone moments', () => {
     )!
     const modal = outcome.closest('[role="dialog"]')
     expect(outcome.textContent?.trim()).toBe(
-      'Finished Jan 3, 2026, 4:05:08 PM · success',
+      'Finished 03.01.2026 16:05:08 · success',
     )
 
     setZone('Europe/Kyiv')
     await settled()
     for (const row of projections) {
       expect(row.get('[data-id="hilos-backup-created-at"]').text()).toBe(
-        'Jan 1, 2026, 2:30:05 AM',
+        '01.01.2026 02:30:05',
       )
       expect(row.get('[data-id="hilos-backup-checksum"]').text()).toBe(
-        '✓ Jan 2, 2026',
+        '✓ 02.01.2026',
       )
       expect(row.get('[data-id="hilos-backup-shipping"]').text()).toBe(
-        '✓ Jan 3, 2026',
+        '✓ 03.01.2026',
       )
       expect(row.text()).toContain('5s')
       expect(row.text()).toContain('success')
     }
     expect(outcome.textContent?.trim()).toBe(
-      'Finished Jan 4, 2026, 2:05:08 AM · success',
+      'Finished 04.01.2026 02:05:08 · success',
     )
     expect(outcome.closest('[role="dialog"]')).toBe(modal)
     expect(viewport).toHaveBeenCalledTimes(1)

@@ -18,6 +18,7 @@ import {
   type ProjectSignal,
 } from '@hilos/core/base'
 import { readerTimeZone } from './readerTimeZone.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 /** The acceptance's person fields, as the server sent them to this viewer. */
 interface PersonFields {
@@ -123,11 +124,7 @@ afterEach(() => {
 })
 
 function formatIndependent(moment: number, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    timeZone,
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  }).format(moment)
+  return readerMomentText(moment, timeZone)
 }
 
 describe('HilosLegalAcceptancesPage (HIL-1260)', () => {

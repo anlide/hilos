@@ -1370,7 +1370,7 @@ describe('formatBackupChecksum', () => {
           verifiedAt: '2026-08-02T06:07:08.000000Z',
         }),
       ),
-    ).toBe('✓ Aug 2, 2026')
+    ).toBe('✓ 02.08.2026')
   })
 
   it('still marks a verified archive whose instant went missing', () => {
@@ -1388,8 +1388,8 @@ describe('formatBackupChecksum', () => {
   })
 
   it.each([
-    ['America/New_York', '2026-08-02T00:30:00.000000Z', '✓ Aug 1, 2026'],
-    ['Asia/Tokyo', '2026-08-02T23:30:00.000000Z', '✓ Aug 3, 2026'],
+    ['America/New_York', '2026-08-02T00:30:00.000000Z', '✓ 01.08.2026'],
+    ['Asia/Tokyo', '2026-08-02T23:30:00.000000Z', '✓ 03.08.2026'],
   ])('shows the local day in %s at %s', (zone, verifiedAt, expected) => {
     zones.choose(zone)
     applyServerTime(Date.now() + 86400000)
@@ -1434,7 +1434,7 @@ describe('formatBackupShipping', () => {
       formatBackupShipping(
         row({ shipState: 'shipped', shippedAt: '2026-08-16T06:07:08.000000Z' }),
       ),
-    ).toBe('✓ Aug 16, 2026')
+    ).toBe('✓ 16.08.2026')
   })
 
   it('shows a bare tick for a copy that landed without an instant', () => {
@@ -1448,8 +1448,8 @@ describe('formatBackupShipping', () => {
   })
 
   it.each([
-    ['America/New_York', '2026-08-16T00:30:00.000000Z', '✓ Aug 15, 2026'],
-    ['Asia/Tokyo', '2026-08-16T23:30:00.000000Z', '✓ Aug 17, 2026'],
+    ['America/New_York', '2026-08-16T00:30:00.000000Z', '✓ 15.08.2026'],
+    ['Asia/Tokyo', '2026-08-16T23:30:00.000000Z', '✓ 17.08.2026'],
   ])('shows the local day in %s at %s', (zone, shippedAt, expected) => {
     zones.choose(zone)
     expect(formatBackupShipping(row({ shipState: 'shipped', shippedAt }))).toBe(

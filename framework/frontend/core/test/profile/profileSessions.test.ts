@@ -131,30 +131,12 @@ describe('profile sessions', () => {
     const instant = 1767227400000
     const zone = vi.spyOn(hilosTimeZone, 'get')
     applyServerTime(Date.now() + 86_400_000)
-    const options = {
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
-      second: 'numeric',
-    } as const
     zone.mockReturnValue('Europe/Warsaw')
     const warsaw = formatProfileDateTime(instant)
-    expect(warsaw).toBe(
-      new Date(instant).toLocaleString(undefined, {
-        ...options,
-        timeZone: 'Europe/Warsaw',
-      }),
-    )
+    expect(warsaw).toBe('01.01.2026 01:30:00')
     zone.mockReturnValue('America/New_York')
     const newYork = formatProfileDateTime(instant)
-    expect(newYork).toBe(
-      new Date(instant).toLocaleString(undefined, {
-        ...options,
-        timeZone: 'America/New_York',
-      }),
-    )
+    expect(newYork).toBe('31.12.2025 19:30:00')
     expect(newYork).not.toBe(warsaw)
     expect(formatProfileDateTime('2026-01-01T00:30:00Z')).toBe(newYork)
     expect(formatProfileDateTime(null)).toBe('never')

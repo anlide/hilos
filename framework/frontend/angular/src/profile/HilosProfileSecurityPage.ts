@@ -37,7 +37,7 @@ import {
   createHilosStepUpStep,
   focusInitial,
   formatCalendarDate,
-  hilosTimeZone,
+  hilosReaderDisplay,
   HILOS_STEP_UP_COPY,
   sendProgressLine,
   subscribeSignal,
@@ -865,9 +865,9 @@ export class HilosProfileSecurityPage {
   protected readonly resetOpen = signal(false)
   protected readonly resetAction = createHilosTrackedAction()
   protected readonly resetCancelAction = createHilosTrackedAction()
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly resetDate = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return formatCalendarDate(
       Date.now() + (this.state()?.resetWait.days ?? 0) * DAY_MS,
     )
@@ -948,7 +948,7 @@ export class HilosProfileSecurityPage {
    * @param moment The absolute epoch-ms moment.
    */
   protected day(moment: number): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatCalendarDate(moment)
   }
 

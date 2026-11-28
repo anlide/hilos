@@ -47,10 +47,10 @@ import {
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { formatMoment } from '../../format/moment.js'
+import { hilosReaderDisplay } from '../../format/readerDisplay.js'
 import { resolveHilosPath } from '../../routing/hilosAdmin.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { type PageRouteMatch } from '../../routing/PageRouter.js'
-import { hilosTimeZone } from '../../timeZone/timeZoneState.js'
 import { isHiddenValue, type Hideable } from '../../state/hiddenValue.js'
 import {
   computedSignal,
@@ -273,8 +273,15 @@ export type HilosLogViewerFeedItem =
   | {
       readonly kind: 'notice'
       readonly key: string
-      readonly notice: HilosLogViewerNotice
+      readonly notice: Exclude<HilosLogViewerNotice, 'skipped'>
       readonly text: string
+    }
+  | {
+      readonly kind: 'notice'
+      readonly key: string
+      readonly notice: 'skipped'
+      /** The size jumped over, kept as a number and written with the rows. */
+      readonly skippedBytes: number
     }
 
 /** One row of the pane: an entry with its continuation frames, or a note. */
@@ -388,18 +395,7 @@ export function logViewerPath(selection: HilosLogViewerSelection): string {
  */
 export function logLineClock(time: string | null): string {
   if (time === null) return ''
-  return (
-    formatMoment(time, {
-      kind: 'time',
-      format: {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        fractionalSecondDigits: 3,
-        hourCycle: 'h23',
-      },
-    }) ?? ''
-  )
+  return formatMoment(time, { kind: 'time', milliseconds: true }) ?? ''
 }
 
 /**
@@ -970,12 +966,24 @@ export function createHilosLogViewer(
   }
 
   const note = (
-    notice: HilosLogViewerNotice,
+    notice: Exclude<HilosLogViewerNotice, 'skipped'>,
     text: string,
   ): HilosLogViewerFeedItem => {
     notices += 1
 
     return { kind: 'notice', key: `notice:${notices}`, notice, text }
+  }
+  // A jump keeps its size as a number: the rows write it in the formats of the
+  // tab's region each time they are drawn, so a change of region rewrites it.
+  const jumpNote = (skippedBytes: number): HilosLogViewerFeedItem => {
+    notices += 1
+
+    return {
+      kind: 'notice',
+      key: `notice:${notices}`,
+      notice: 'skipped',
+      skippedBytes,
+    }
   }
 
   // Pouring the buffer in rebuilds the entries over the WHOLE feed rather than
@@ -1234,12 +1242,7 @@ export function createHilosLogViewer(
         ),
       ]
     } else if (frame.skippedBytes !== null) {
-      items = [
-        note(
-          'skipped',
-          `Jumped over ${formatBytes(frame.skippedBytes)} to catch up.`,
-        ),
-      ]
+      items = [jumpNote(frame.skippedBytes)]
     } else if (frame.stopped) {
       items = [note('stopped', 'Following stopped on the server.')]
       followId = null
@@ -1500,7 +1503,9 @@ export function createHilosLogViewer(
             read(false)
           }
         }),
-        subscribeSignal(hilosTimeZone, () => {
+        // The rows are written in the reader's zone and the region's
+        // formats, so either changing rewrites them over the same feed.
+        subscribeSignal(hilosReaderDisplay, () => {
           rows.set(toLogViewerRows(feed.get(), anchoredLineId))
         }),
       )
@@ -1524,6 +1529,9 @@ export function createHilosLogViewer(
  * open for the same reason: the first line after a rotation belongs to the new
  * file, not to the error that was being written when the old one was carried off.
  *
+ * The clocks of the lines and the size of a jump are written here, in the
+ * reader's zone and the formats of the tab's region, never kept in the feed.
+ *
  * @param items The accumulated feed, oldest first.
  * @param anchoredLineId The id of the line the viewer was opened on, whose entry is
  *   drawn highlighted, or null when there is none.
@@ -1536,7 +1544,16 @@ export function toLogViewerRows(
   let open: EntryDraft | null = null
   for (const item of items) {
     if (item.kind === 'notice') {
-      rows.push(item)
+      rows.push(
+        item.notice === 'skipped'
+          ? {
+              kind: 'notice',
+              key: item.key,
+              notice: item.notice,
+              text: `Jumped over ${formatBytes(item.skippedBytes)} to catch up.`,
+            }
+          : item,
+      )
       open = null
       continue
     }

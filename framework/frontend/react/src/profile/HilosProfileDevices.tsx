@@ -2,13 +2,13 @@ import {
   formatProfileDateTime,
   hilosProfileDeviceKind,
   hilosPushSubscription,
-  hilosTimeZone,
   type HilosConnection,
   type HilosProfileDevice,
   type HilosProfileDeviceActions,
   type HilosProfileDeviceKind,
   type HilosProfilePushChannel,
   type HilosPushSubscriptionStore,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import { useEffect, useState } from 'react'
 
@@ -48,7 +48,7 @@ export function HilosProfileDevices({
   pushChannel,
   pushStore = hilosPushSubscription,
 }: HilosProfileDevicesProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const [target, setTarget] = useState<RemoveTarget | null>(null)
   const supported = useSignal(pushStore.supported)
   const refreshed = useSignal(pushStore.refreshed)

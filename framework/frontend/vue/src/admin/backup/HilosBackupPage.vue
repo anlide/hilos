@@ -64,7 +64,7 @@ import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import {
   formatMoment,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
   type Hideable,
 } from '@hilos/core/base'
@@ -89,20 +89,25 @@ const props = defineProps<{
   context: HilosBackupsContext
 }>()
 
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 function time(moment: string | null | undefined): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatMoment(moment ?? '', { kind: 'dateTime' }) ?? '—'
 }
 
+function size(row: HilosBackupRow): string {
+  void readerDisplay.value
+  return formatBackupSize(row)
+}
+
 function checksum(row: HilosBackupRow): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatBackupChecksum(row)
 }
 
 function shipping(row: HilosBackupRow): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatBackupShipping(row)
 }
 
@@ -509,7 +514,7 @@ function openOutcome(row: HilosBackupRow): void {
         </span>
       </template>
       <template #cell-sizeBytes="{ row }">
-        <span :class="outOfReachClass(row)">{{ formatBackupSize(row) }}</span>
+        <span :class="outOfReachClass(row)">{{ size(row) }}</span>
       </template>
       <template #cell-checksumState="{ row }">
         <span :class="outOfReachClass(row)">

@@ -25,7 +25,7 @@ import {
 import {
   computedSignal,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -65,9 +65,9 @@ const pageTable = useSignal(
 )
 const table = computed(() => readHilosChangeLogTable(pageTable.value))
 const journaled = computed(() => table.value?.journaled === true)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 function time(moment: string): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatChangeLogTime(moment)
 }
 const tablePath = computed(() =>

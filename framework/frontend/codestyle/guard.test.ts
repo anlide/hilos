@@ -33,6 +33,7 @@ import { checkRepository as checkIconNameExists } from './iconNameExists.js'
 import { checkRepository as checkModalErrorRoom } from './modalErrorRoom.js'
 import { checkRepository as checkModalFocus } from './modalFocus.js'
 import { checkRepository as checkMomentFormat } from './momentFormat.js'
+import { checkRepository as checkNumberFormat } from './numberFormat.js'
 import { checkRepository as checkShellParity } from './shellParity.js'
 import { checkRepository as checkUnbuiltPages } from './unbuiltPages.js'
 import { checkRepository as checkSpelling } from './spelling.js'
@@ -69,6 +70,7 @@ const RULES = [
   modalErrorRoomViolations,
   checkModalFocus,
   checkMomentFormat,
+  checkNumberFormat,
   checkShellParity,
   checkUnbuiltPages,
   checkSpelling,

@@ -7,6 +7,7 @@ import {
 import { resolveHilosPath } from '../core/src/routing/hilosAdmin.js'
 import { HilosPages } from '../core/src/routing/hilosPages.js'
 import { watchClientDocument } from './lazyBundles.js'
+import { readerMoment } from './moments.js'
 import type { SocketFrame } from './socket.js'
 import { shownByTestId, tableRowKeyByText } from './table.js'
 
@@ -270,7 +271,7 @@ export function expectChangeLogReceiptMoment(
   return moment
 }
 
-/** Check both rendered times with an independent, explicitly zoned Intl oracle. */
+/** Check both rendered times with the independent oracle in an explicit zone. */
 export async function expectChangeLogTimes(
   expect: Expect,
   page: Page,
@@ -278,15 +279,7 @@ export async function expectChangeLogTimes(
   createdAt: string,
   timeZone: string,
 ): Promise<string> {
-  const expected = await page.evaluate(
-    ({ createdAt, timeZone }) =>
-      new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-        timeZone,
-      }).format(new Date(createdAt)),
-    { createdAt, timeZone },
-  )
+  const expected = readerMoment(createdAt, timeZone)
   await expectChangeLogReceiptOpen(expect, page, receiptId)
   await expect(page.getByTestId('hilos-change-log-receipt-time')).toHaveText(
     expected,

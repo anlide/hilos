@@ -248,7 +248,7 @@ export function publicHistoryComponentTests(draw: DrawPublicHistory): void {
       expect(
         one('public-legal-history-accepted', table).textContent?.trim(),
       ).toBe('you accepted this')
-      expect(table.textContent).toContain('17 September 2026')
+      expect(table.textContent).toContain('17.09.2026')
       expect(table.textContent).toContain('First revision')
       const tabs = one('hilos-page-tabs')
       expect(
@@ -445,9 +445,7 @@ export function publicHistoryComponentTests(draw: DrawPublicHistory): void {
       expect(one('public-legal-history-modal').textContent).toContain(
         clause.statement,
       )
-      expect(one('modal').getAttribute('aria-label')).toContain(
-        '17 September 2026',
-      )
+      expect(one('modal').getAttribute('aria-label')).toContain('17.09.2026')
     })
 
     it('clears personal marks and the reader when identity changes and releases a departed page', async () => {

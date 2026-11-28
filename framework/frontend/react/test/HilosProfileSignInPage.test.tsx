@@ -353,9 +353,7 @@ it('redraws the password subtitle from a live identity entity update', () => {
       .querySelector('[data-identity-key="1"]'),
   )
   expect(subtitle).toBe(row.querySelector('[data-id="identity-identifier"]'))
-  expect(subtitle.textContent).toBe(
-    'Set · last changed Jan 1, 2026, 1:30:00 AM',
-  )
+  expect(subtitle.textContent).toBe('Set · last changed 01.01.2026 01:30:00')
   expect(world.identityList()).toBe(identityList)
   expect(world.dispatch).toHaveBeenCalledTimes(dispatches)
 })
@@ -427,9 +425,7 @@ it('reformats the password subtitle when only the reader time zone changes', () 
   const identityList = world.identityList()
   const dispatches = world.dispatch.mock.calls.length
 
-  expect(subtitle.textContent).toBe(
-    'Set · last changed Jan 1, 2026, 9:30:00 AM',
-  )
+  expect(subtitle.textContent).toBe('Set · last changed 01.01.2026 09:30:00')
   browserZone = 'America/New_York'
   act(() => window.dispatchEvent(new Event('focus')))
 
@@ -439,9 +435,7 @@ it('reformats the password subtitle when only the reader time zone changes', () 
       .querySelector('[data-identity-key="1"]'),
   )
   expect(subtitle).toBe(row.querySelector('[data-id="identity-identifier"]'))
-  expect(subtitle.textContent).toBe(
-    'Set · last changed Dec 31, 2025, 7:30:00 PM',
-  )
+  expect(subtitle.textContent).toBe('Set · last changed 31.12.2025 19:30:00')
   expect(world.identityList()).toBe(identityList)
   expect(world.dispatch).toHaveBeenCalledTimes(dispatches)
 })

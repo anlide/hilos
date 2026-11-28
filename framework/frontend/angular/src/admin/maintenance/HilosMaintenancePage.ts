@@ -28,7 +28,7 @@ import {
   formatMoment,
   ActionError,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   subscribeSignal,
   type HilosMaintenanceState,
 } from '@hilos/core/base'
@@ -633,7 +633,7 @@ export class HilosMaintenancePage {
   protected readonly restorePassCopy = HILOS_MAINTENANCE_RESTORE_PASS_COPY
   protected readonly restoreOpenCopy = HILOS_MAINTENANCE_RESTORE_OPEN_COPY
   protected readonly restoreCloseCopy = HILOS_MAINTENANCE_RESTORE_CLOSE_COPY
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   private readonly injector = inject(Injector)
   private readonly stateHandle = computed(() =>
@@ -656,9 +656,10 @@ export class HilosMaintenancePage {
 
     return state === null ? '' : hilosMaintenanceOtherBrowserLine(state)
   })
-  // The verdict is the server's; the zone is read so its moments follow the reader.
+  // The verdict is the server's; the reader display is read so its moments
+  // follow the reader's zone and region formats.
   protected readonly watchdogAlert = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
 
     return hilosMaintenanceWatchdogAlert(this.maintenanceState())
   })
@@ -668,7 +669,7 @@ export class HilosMaintenancePage {
 
   /** Format an absolute maintenance moment in the reader's current time zone. */
   protected formatTime(moment: string | null): string {
-    this.timeZone()
+    this.readerDisplay()
 
     return formatMoment(moment ?? '', { kind: 'dateTime' }) ?? '—'
   }

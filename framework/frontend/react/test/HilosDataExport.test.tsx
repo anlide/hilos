@@ -23,6 +23,7 @@ import {
 } from '@hilos/core/base'
 import { HilosDataExport } from '../src/profile/HilosDataExport.js'
 import { readerTimeZone } from './readerTimeZone.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 const releases: Array<() => void> = []
 afterEach(() => {
@@ -452,21 +453,13 @@ describe('HilosDataExport', () => {
         act(() => reader.choose(timeZone))
         const expectedPreparing = HILOS_DATA_EXPORT_COPY.preparing.replace(
           '{time}',
-          new Intl.DateTimeFormat(undefined, {
-            year: 'numeric',
-            month: 'numeric',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-            timeZone,
-          }).format(node.requestedAt),
+          readerMomentText(node.requestedAt, timeZone),
         )
         expect(room.textContent).toBe(expectedPreparing)
         expect(status.textContent).toBe(
           node.state === 'preparing'
             ? expectedPreparing
-            : `Your copy is ready · 456 B · available until ${new Intl.DateTimeFormat(undefined, { dateStyle: 'long', timeZone }).format(node.requestedAt)}`,
+            : `Your copy is ready · 456 B · available until ${readerMomentText(node.requestedAt, timeZone, { kind: 'date' })}`,
         )
         expect(byId(`data-export-${node.state}`)).toBe(status)
         expect(w.store.state.get()).toBe(snapshot)

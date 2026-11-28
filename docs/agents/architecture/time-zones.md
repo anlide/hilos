@@ -549,8 +549,9 @@ accepts epoch milliseconds and calls the shared
 separately for a calendar label and a time.
 [`offsetMs()`](../../../framework/frontend/core/src/session/serverClock.ts)
 adjusts only the calendar reference (`nowMs + offsetMs()`); both calls format
-the same absolute `atMs`, so the displayed clock time is not shifted. Far dates
-use the ordinary medium date. If either call returns `null` for an invalid
+the same absolute `atMs`, so the displayed clock time is not shifted: the run
+reads `today, 14:03`, and a far date uses the region's date template,
+`28.11.2026, 09:00`. If either call returns `null` for an invalid
 moment or unavailable `Intl`, the helper returns `—`. It does not guess seconds,
 call [`serverClock.toLocal()`](../../../framework/frontend/core/src/session/serverClock.ts),
 or format with its own `Intl` code. Row state is resolved first: an idle last
@@ -560,9 +561,10 @@ or next value says `Not yet` or `Never`.
 In Vue, the Cron page reads its project-zone line from the
 [connection's `projectTimeZone` getter](../../../framework/frontend/core/src/connection/HilosConnection.ts)
 and refreshes it on every welcome; a welcome without a zone clears the line to
-`—`. Its `useSignal(hilosTimeZone)` bridge reformats open Last/Next cells and
-the silent notices and shared node head when the reader zone changes. The same
-signal is used by the seven current Vue silent-time readers, including the
+`—`. Its `useSignal(hilosReaderDisplay)` bridge reformats open Last/Next cells
+and the silent notices and shared node head when the reader zone or the
+region's formats change. The same signal is used by the seven current Vue
+silent-time readers, including the
 [overview root](../../../framework/frontend/vue/src/admin/daemon/HilosDaemonPage.vue)
 and [shared node head](../../../framework/frontend/vue/src/admin/daemon/HilosDaemonNodeShell.vue).
 The existing table, controller, rows, viewport windows and subscriptions stay
@@ -573,9 +575,9 @@ Angular's [Cron page](../../../framework/frontend/angular/src/admin/daemon/Hilos
 reads the project zone from `connection.projectTimeZone` and refreshes it on
 each handshake. It shows that zone beside run times from the shared
 [cron browser formatter](../../../framework/frontend/core/src/admin/daemon/hilosDaemonCron.ts);
-those times use the current reader zone. The page tracks `hilosTimeZone` through
-`hilosSignal()`, so its open cells and silent label redraw without replacing the
-report rows. The same reader signal feeds all seven Angular Daemon silent-time
+those times use the current reader zone. The page tracks `hilosReaderDisplay`
+through `hilosSignal()`, so its open cells and silent label redraw without
+replacing the report rows. The same reader signal feeds all seven Angular Daemon silent-time
 readers: [overview](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonPage.ts),
 [node shell](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonNodeShell.ts),
 [agents](../../../framework/frontend/angular/src/admin/daemon/HilosDaemonAgentsPage.ts),
@@ -598,8 +600,8 @@ The Angular [logs overview](../../../framework/frontend/angular/src/admin/logs/H
 [log view](../../../framework/frontend/angular/src/admin/logs/HilosLogsViewPage.ts)
 and [rotation page](../../../framework/frontend/angular/src/admin/logs/HilosLogsRotationsPage.ts)
 use the same reader-zone formatting for line moments, batch labels and undo
-deadlines. Their `hilosSignal(hilosTimeZone)` dependencies redraw the labels
-when the reader zone changes.
+deadlines. Their `hilosSignal(hilosReaderDisplay)` dependencies redraw the
+labels when the reader zone or the region's formats change.
 
 ## One Core Formatter
 
@@ -611,15 +613,40 @@ and `Z`. It does not accept a `Date`, a calendar date, a local or offset
 timestamp, or a numeric string, and it never guesses that a number is in
 seconds. The caller declares the unit; even a small number is epoch milliseconds.
 
-`MomentFormatOptions.kind` selects `date`, `time`, `dateTime` (the default), or
-`calendar`. Without a replacement `format`, the presets are respectively a
-medium date, a medium time, a medium date and time, and a medium date. An
-explicit `format` replaces the preset in full; it is not combined with it.
-`format` omits `timeZone`, and the formatter supplies `hilosTimeZone.get()`
-after the caller's options on every call, so the effective reader zone always
-wins. The formatter does not cache the zone between calls or expose a separate
-setter. An omitted `locale` keeps the browser's default locale; a caller may
-pass one locale or a locale list.
+Two things decide the text, and the caller passes neither. The reader's zone
+decides which hour it is: the formatter reads `hilosTimeZone.get()` on every
+call. The formats of the tab's region decide how it is written: the formatter
+reads them on every call from `hilosReaderFormats()`, an internal entry outside
+the package barrel, which gives the region's formats or, while the tab knows no
+region, the built-in ones. Neither is cached, and there is no `locale` and no
+`format` option: the client never formats by the browser's locale — the formats
+come from the server, which reads the browser's languages, `Accept-Language`,
+only on the two ladders. Which region a tab has, the built-in formats, the
+words inside a date and how an open screen redraws when either half changes are
+in [The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees).
+
+`MomentFormatOptions.kind` selects what is written:
+
+- `date` — the region's date template, its `DD`, `MM` and `YYYY` replaced and
+  its separators kept as written: `26.11.2026`;
+- `time` — the region's time template, `HH:mm:ss` or `hh:mm:ss a`: `14:03:05`;
+- `dateTime`, the default — the date, a space and the time:
+  `26.11.2026 14:03:05`;
+- `calendar` — `today`, `yesterday` or `tomorrow`, otherwise the date;
+- `monthYear` — the month's name and the year: `November 2026`;
+- `weekday` — the weekday's name: `Monday`.
+
+Three flags shape the time. `seconds` (true by default) drops `:ss` when false;
+`milliseconds` (false by default) writes `.SSS` after the seconds and is read
+only while the seconds are written; `zoneName` (false by default) follows the
+text with the zone's short English name at that moment, as `en-US` names it —
+`UTC`, `EDT`, or `GMT+3` for a zone without a name of its own there. The year
+is astronomical, so 1 BC is year 0: it is written with four digits at least,
+and with a minus before the years before 1 BC. `Intl` supplies only the numeric
+local parts of the moment in the zone — Gregorian, Latin digits, a 24-hour
+clock, a fixed metadata locale — and the text is assembled from the template by
+hand. In a project without the I18N feature a screen that showed
+«Nov 26, 2026, 2:03:05 PM» now shows «26.11.2026 14:03:05».
 
 Preserve the absolute server moment when formatting it. Do not pass it through
 the device clock correction in
@@ -634,16 +661,12 @@ with server time. It compares the moment and reference by their local Gregorian
 year, month, and day in the effective zone, not by elapsed milliseconds. This
 keeps the labels correct at local day boundaries and across daylight-saving
 changes without treating a day as a fixed 24-hour duration. A difference of
-zero or one day in either direction uses
-`Intl.RelativeTimeFormat(locale, { numeric: 'auto' })` (`today`, `tomorrow`, or
-`yesterday`); other dates use the ordinary date format. No timer updates a
-`calendar` result after formatting.
+zero or one day in either direction writes the word for it; other dates use the
+region's date template. No timer updates a `calendar` result after formatting.
 
 An invalid moment, impossible calendar date, or invalid `now` for `calendar`
-returns `null`. An unavailable `Intl.DateTimeFormat` also returns `null`; if
-`Intl.RelativeTimeFormat` is unavailable, `calendar` returns the ordinary date
-instead. Errors in the caller's `locale` or `format` options remain visible.
-Callers keep their own fallback text when the formatter returns `null`.
+returns `null`, and so does an unavailable `Intl.DateTimeFormat`. Callers keep
+their own fallback text when the formatter returns `null`.
 
 ### Profile Time Zone Choice And Preview
 
@@ -693,15 +716,16 @@ against the same profile context. The window starts and stops the core preview
 with its open lifecycle, and the profile disposes the picker when its context
 ends. Angular [session](../../../framework/frontend/angular/src/profile/HilosProfileSessions.ts)
 and [device](../../../framework/frontend/angular/src/profile/HilosProfileDevices.ts)
-moments follow reader-zone changes through `hilosSignal(hilosTimeZone)`; the
+moments follow reader-zone changes through `hilosSignal(hilosReaderDisplay)`; the
 session row shows its stored `browserTimeZone` beside the device name.
 
 The picker previews every row from one shared `Date.now() + offsetMs()` sample,
 refreshed on minute boundaries, focus and when the document becomes visible
 while its window is open. Its internal
 [`formatTimeZoneChoiceMoment()`](../../../framework/frontend/core/src/format/moment.ts)
-uses the same strict parser and `Intl` engine as the live formatter, with an
-`en-GB` two-digit hour and minute with `hourCycle: 'h23'`, and returns `null`
+uses the same strict parser and engine as the live formatter and writes the
+hour and minute in the region's time template without its seconds — `14:03`,
+or `02:03 PM` under `hh:mm:ss a` — and returns `null`
 for an unusable zone, moment or `Intl` formatter. It is not exported from
 `@hilos/core/base`: [`formatMoment()`](../../../framework/frontend/core/src/format/moment.ts)
 remains the live reader entry, while `formatSnapshotMoment()` keeps an accepted
@@ -730,13 +754,15 @@ Lord Howe Island. The explicit UTC path also works when `Intl` is unavailable.
 `formatMoment()` remains the live reader formatter: it has no time-zone override
 and reads the current `hilosTimeZone` on every call. Analytics uses the narrow
 internal `formatSnapshotMoment(moment, timeZone, options)` entry for labels that
-belong to an accepted snapshot. It shares the same strict parser and `Intl`
-engine, but its explicit zone does not extend the public `MomentFormatOptions`
-contract. The named entry is not re-exported from any public core entry. For a
+belong to an accepted snapshot. It shares the same strict parser and engine, but
+its explicit zone does not extend the public `MomentFormatOptions` contract. The
+zone is the snapshot's own, captured with it; the formats are the current ones
+of the tab's region, because they say how this tab reads, not what was
+captured — the entry never reads the live reader zone. The named entry is not
+re-exported from any public core entry. For a
 `calendar` label, pass the snapshot's `asOfTs` as `options.now`;
 without that reference the helper returns `null` instead of reading the live
-clock. Invalid moments or zones return `null`, while caller errors in `locale`
-or `format` remain visible.
+clock. Invalid moments or zones return `null`.
 
 The Analytics overview subscription captures its time context through
 `prepareHilosPageSubscribeParams()`, bound by `bindPageScope` to the existing
@@ -764,9 +790,13 @@ planned warning at its configuration source are in
 ### A Calendar Date Or Duration Is Not A Moment
 
 A calendar date names a day, not a point in time. A legal document revision's
-`YYYY-MM-DD` date stays explicitly UTC when displayed; it does not pass through
-the reader's zone. A recorded acceptance timestamp is an absolute moment and
-uses the core formatter in the reader's zone.
+`YYYY-MM-DD` date is written by the internal
+[`formatCalendarDay()`](../../../framework/frontend/core/src/format/moment.ts)
+in the region's date template, on that very day: no zone is applied, so the day
+stays the day that was recorded, and a text that is not a real `YYYY-MM-DD`
+gives `null`. The entry is not exported from `@hilos/core/base`. A recorded
+acceptance timestamp is an absolute moment and uses the core formatter in the
+reader's zone.
 
 In Angular's [legal acceptances table](../../../framework/frontend/angular/src/admin/legal/HilosLegalAcceptancesPage.ts),
 the core [legal row resolver](../../../framework/frontend/core/src/admin/legal/hilosLegal.ts)
@@ -789,21 +819,23 @@ Checked automatically: `MOMENT-FORMAT`, see
 for the forms it reads, the roots it walks and what stays with review. Every
 report line names the file and line, says why, and sends back to this section.
 
-Two uses are not display and stay allowed. Numeric `toLocaleString` formats a
-number, not a date, and passes only when the receiver is proven a `number` or a
-`bigint`. Reading `Intl.DateTimeFormat().resolvedOptions().timeZone` discovers
-browser metadata and prints no moment; the chain is allowed wherever it is
-written.
+Numeric `toLocaleString` prints a number, not a date: this rule lets it pass
+when the receiver is proven a `number` or a `bigint`, and the number rule
+`NUMBER-FORMAT` reports it there — a number reaches a reader through
+`formatNumber()`
+([The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees)).
+Reading `Intl.DateTimeFormat().resolvedOptions().timeZone` discovers browser
+metadata and prints no moment; the chain is allowed wherever it is written.
 
 The guard reads types, not names. A receiver typed `any` or `unknown`, or a type
 that did not resolve, proves nothing, and the guard does not guess in the code's
 favor: `toLocaleString()` on such a receiver is reported, and so is any method
 the standard library gives to `Date` alone. A Vue or Angular template has no
 type-checker here, so every name a template reads is unknown. In a template
-`toLocaleString()` passes only on a literal, `Number(…)` or `BigInt(…)`; print a
-count through a typed TypeScript helper and call the helper from the template.
+`toLocaleString()` passes this rule only on a literal, `Number(…)` or
+`BigInt(…)`; print a count with `formatNumber()` instead.
 
-Five exceptions are made by address. The engine file is left out whole. Each of
+Four exceptions are made by address. The engine file is left out whole. Each of
 the others names a file, the function in it and the one form allowed there, and
 lets exactly one site through, so a second formatter beside it is reported:
 
@@ -817,14 +849,13 @@ lets exactly one site through, so a second formatter beside it is reported:
   [`calendarPeriods.ts`](../../../framework/frontend/core/src/timeZone/calendarPeriods.ts):
   the first constructs a numeric Gregorian formatter without printing with it,
   the second reads its parts as a numeric coordinate (see
-  [Analytics Calendar Period Starts](#analytics-calendar-period-starts));
-- `formatHilosLegalDate()` in
-  [`legalAgreements.ts`](../../../framework/frontend/core/src/legal/legalAgreements.ts):
-  the explicit-UTC formatter of a revision's calendar date (see
-  [A Calendar Date Or Duration Is Not A Moment](#a-calendar-date-or-duration-is-not-a-moment)).
-  The acceptance timestamp beside it goes through `formatMoment()`.
+  [Analytics Calendar Period Starts](#analytics-calendar-period-starts)).
 
-Text assembled from `Date` getters has no exception of its own. A green run does
+Text assembled from `Date` getters has no exception of its own, and a
+revision's calendar date needs none: `formatHilosLegalDate()` in
+[`legalAgreements.ts`](../../../framework/frontend/core/src/legal/legalAgreements.ts)
+writes it through the core's `formatCalendarDay()` (see
+[A Calendar Date Or Duration Is Not A Moment](#a-calendar-date-or-duration-is-not-a-moment)). A green run does
 not prove that no way around the rule is left: a detached method, a moment
 carried through helpers, and the template forms the guard does not read are
 review work, and the lists are in the document linked above.
@@ -895,7 +926,8 @@ commit, following [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule
   global component that the owner will implement; it is not a formatter mode
   decided here (owner's decision, HIL-1584:26746).
 - The first day of the week comes from the reader's locale (HIL-2318); names
-  of months and weekdays on a screen are HIL-2303's; see
+  of months and weekdays on a screen are English words of the core until the
+  interface is translated (HIL-2280); see
   [The Formats A Reader Sees](language-and-region.md#the-formats-a-reader-sees).
 - Suggestions of a country's time zones remain undecided. A locale does not
   store a time zone; see [languages and countries](languages-and-countries.md).

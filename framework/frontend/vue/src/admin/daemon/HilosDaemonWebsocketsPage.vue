@@ -7,7 +7,11 @@ import {
   readHilosDaemonWebsockets,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import { computed, inject } from 'vue'
 
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -35,10 +39,14 @@ const current = useSignal(
       : null
   }),
 )
+const readerDisplay = useSignal(hilosReaderDisplay)
 const data = computed(() => current.value?.websockets)
-const count = computed(() =>
-  data.value?.dataNode ? '—' : formatDaemonNumber(data.value?.connections),
-)
+const count = computed(() => {
+  void readerDisplay.value
+  return data.value?.dataNode
+    ? '—'
+    : formatDaemonNumber(data.value?.connections)
+})
 const dataNodeNote = 'Data nodes do not accept browsers'
 const waitingNote = 'Waiting for the node report'
 const silentNote = 'At the time of the last report'

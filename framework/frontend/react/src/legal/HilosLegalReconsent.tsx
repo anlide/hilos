@@ -25,6 +25,7 @@ import {
   hilosLegalDocumentLabel,
   hilosLegalReconsentSections,
   HilosPages,
+  hilosReaderDisplay,
   keepMyAccount,
   LEGAL_RECONSENT_COPY,
   signOut,
@@ -37,6 +38,7 @@ import {
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosLink } from '../HilosLink.js'
 import { LoadingButton } from '../LoadingButton.js'
+import { useSignal } from '../useSignal.js'
 import { useTrackedAction } from '../useTrackedAction.js'
 import { HilosLegalChanges } from './HilosLegalChanges.js'
 import { HilosLegalRevisionText } from './HilosLegalRevisionText.js'
@@ -89,6 +91,7 @@ export function HilosLegalReconsent({
   const headingId = useId()
   const signOutAction = useTrackedAction()
   const keepAction = useTrackedAction()
+  useSignal(hilosReaderDisplay)
   const sections = content === null ? [] : hilosLegalReconsentSections(content)
   const rows = sections.map((section) => ({
     section,

@@ -11,10 +11,8 @@ import {
   type HilosConnection,
 } from '../connection/HilosConnection.js'
 import { entityFragmentSchema } from '../protocol/scopePayload.js'
-import {
-  SIGNAL_HANDSHAKE_RESPONSE,
-  type SessionScopeOptions,
-} from '../session/sessionScope.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../protocol/constants.js'
+import { type SessionScopeOptions } from '../session/sessionScope.js'
 import {
   computedSignal,
   createSignal,

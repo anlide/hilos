@@ -1,6 +1,6 @@
 <!-- Cancellation follows the live caption of the captured public identity. -->
 <script setup lang="ts">
-import { formatMoment, hilosTimeZone, hilosToasts } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, hilosToasts } from '@hilos/core/base'
 import type { HilosStatusWorkCancel } from '@hilos/core/admin/status'
 import { computed, useId } from 'vue'
 
@@ -21,7 +21,7 @@ const canSubmit = useSignal(props.controller.canSubmit)
 const blockedReason = useSignal(props.controller.blockedReason)
 const error = useSignal(props.controller.error)
 const failure = useSignal(props.controller.failure)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const formId = useId()
 const descriptionId = useId()
 const copyText = computed(() =>
@@ -33,20 +33,8 @@ const copyText = computed(() =>
 )
 
 function moment(at: number): string {
-  void timeZone.value
-  return (
-    formatMoment(at, {
-      format: {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short',
-      },
-    }) ?? '—'
-  )
+  void readerDisplay.value
+  return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
 }
 
 async function submit(): Promise<void> {

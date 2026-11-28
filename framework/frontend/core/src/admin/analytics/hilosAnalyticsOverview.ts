@@ -161,15 +161,12 @@ export function analyticsOverviewTiles(
   const time = (moment: number): string =>
     formatSnapshotMoment(moment, snapshot.timeZone, {
       kind: 'time',
-      locale: 'en-GB',
-      format: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+      seconds: false,
       now: snapshot.asOfTs,
     }) ?? ANALYTICS_NO_VALUE
   const weekday =
     formatSnapshotMoment(snapshot.weekStartTs, snapshot.timeZone, {
-      kind: 'date',
-      locale: 'en-GB',
-      format: { weekday: 'long' },
+      kind: 'weekday',
       now: snapshot.asOfTs,
     }) ?? ANALYTICS_NO_VALUE
 

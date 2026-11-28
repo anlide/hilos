@@ -14,6 +14,7 @@ import {
   describeHilosLegalPrivacyReader,
   formatHilosLegalDate,
   hilosLegalReconsentPerson,
+  hilosReaderDisplay,
   LEGAL_PRIVACY_COPY,
   LEGAL_RECONSENT_COPY,
   sessionAccountStanding,
@@ -72,6 +73,7 @@ export function HilosPrivacyPage({
     }
   }, [store])
   const privacy = useSignal(store.privacy)
+  useSignal(hilosReaderDisplay)
   const agreement = useSignal(store.agreement)
   const accepting = useSignal(store.accepting)
   const refusal = useSignal(store.refusal)

@@ -303,7 +303,7 @@ describe('HilosStatusWorkModal with real creation and row-edit factories', () =>
     zone.choose('Asia/Tokyo')
     await nextTick()
     expect(body().get('[data-id="hilos-status-work-notice"]').text()).toContain(
-      'Keep mine: 02/01/2031, 04:06:03 (UTC)',
+      'Keep mine: 02.01.2031, 04:06:03 (UTC)',
     )
     expect(body().get('[data-id="hilos-status-work-notice"]').text()).toContain(
       '(Asia/Tokyo)',

@@ -30,7 +30,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonWorkersContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import {
   HilosLink,
   HilosViewportTable,
@@ -174,7 +174,12 @@ export class HilosDaemonWorkersPage {
   protected readonly daemonWorkerLogPath = daemonWorkerLogPath
   protected readonly formatDaemonWorkerAgentCount = formatDaemonWorkerAgentCount
   protected readonly formatDaemonWorkerKind = formatDaemonWorkerKind
-  protected readonly formatDaemonWorkerMemory = formatDaemonWorkerMemory
+  protected readonly formatDaemonWorkerMemory = (
+    row: HilosDaemonWorkerRow,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonWorkerMemory(row)
+  }
   protected readonly formatDaemonWorkerName = formatDaemonWorkerName
   protected readonly formatDaemonWorkerPid = formatDaemonWorkerPid
   /** The project's existing connection and page scopes. */
@@ -183,7 +188,7 @@ export class HilosDaemonWorkersPage {
 
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly nodeId = computed(
     () => this.route().params['nodeId'] ?? '',
   )
@@ -193,7 +198,7 @@ export class HilosDaemonWorkersPage {
     daemonProcessesEmptyState(this.heading(), this.reported()),
   )
   protected readonly silentSince = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return formatDaemonNodeSilentSince(this.heading(), Date.now())
   })
 

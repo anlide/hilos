@@ -7,7 +7,7 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, HilosPages } from '@hilos/core/base'
 import {
   createHilosStatusSubscribersState,
   createHilosStatusSubscribersTable,
@@ -132,7 +132,7 @@ export class HilosStatusSubscribersPage {
   protected readonly counts = signal<HilosStatusSubscribersData>(null)
   protected readonly personalControlsReason = signal<string | null>(null)
 
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   private readonly state = computed(() =>
     createHilosStatusSubscribersState(this.context()),
   )
@@ -168,7 +168,7 @@ export class HilosStatusSubscribersPage {
 
   /** Format the subscription instant in the reader's current zone. */
   protected moment(at: number): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatMoment(at) ?? '—'
   }
 }

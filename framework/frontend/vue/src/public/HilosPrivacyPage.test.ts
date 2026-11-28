@@ -437,7 +437,7 @@ it('reads the public policy without acceptance or a history interface', async ()
   )
   expect(policyNode('privacy-reader')!.getAttribute('data-state')).toBe('guest')
   expect(policyNode('privacy-reader')!.textContent).toContain(
-    'in force since 14 November 2026',
+    'in force since 14.11.2026',
   )
   expect(policyNode('privacy-text')!.textContent).toContain('First paragraph.')
   expect(policyNode('privacy-text')!.querySelectorAll('li')).toHaveLength(1)
@@ -497,7 +497,7 @@ it('confirms server coverage in green', async () => {
     policyNode('privacy-reader')!.querySelector('.text-success'),
   ).not.toBeNull()
   expect(policyNode('privacy-reader')!.textContent).toContain(
-    'You accepted the revision of 5 October 2026',
+    'You accepted the revision of 05.10.2026',
   )
   expect(policyNode('legal-document-accept')).toBeNull()
 })
@@ -527,9 +527,7 @@ it('compares editorial changes with Close alone and returns focus', async () => 
     '[role="dialog"]',
   )!
   expect(dialog.getAttribute('aria-modal')).toBe('true')
-  expect(dialog.textContent).toContain(
-    'What changed · 17 September 2026 → 5 October 2026',
-  )
+  expect(dialog.textContent).toContain('What changed · 17.09.2026 → 05.10.2026')
   expect(policyNode('privacy-changes-accept')).toBeNull()
   await policyUpdate(() => policyNode('privacy-changes-close')!.click())
   expect(policyNode('privacy-changes-modal')).toBeNull()
@@ -539,7 +537,7 @@ it('compares editorial changes with Close alone and returns focus', async () => 
 it('accepts only the shown policy from the shared reader, once, without optimistic coverage', async () => {
   const { dispatch } = await drawPolicy(POLICY_DUE, {})
   expect(policyNode('legal-document-reader-plate')!.textContent).toContain(
-    '14 November 2026',
+    '14.11.2026',
   )
   expect(policyNode('legal-document-accept-refusal-idle')).not.toBeNull()
   await policyUpdate(() => {
@@ -568,7 +566,7 @@ it('shows a frozen deadline and permits comparison under impersonation without a
     { frozen: true, impersonated: true },
   )
   expect(policyNode('legal-document-reader-plate')!.textContent).toContain(
-    'account frozen · deadline passed 1 October 2026',
+    'account frozen · deadline passed 01.10.2026',
   )
   expect(
     policyNode('legal-document-reader-impersonated')!.textContent?.trim(),

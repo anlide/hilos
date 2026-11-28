@@ -7,8 +7,8 @@ import {
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
   hilosLegalRevisionHistory,
-  hilosTimeZone,
   type HilosLegalContext,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosModal } from '../HilosModal.js'
@@ -25,7 +25,7 @@ export interface HilosProfileAgreementsHistoryPageProps {
 export function HilosProfileAgreementsHistoryPage({
   context,
 }: HilosProfileAgreementsHistoryPageProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const store = useMemo(
     () => createHilosLegalAgreementsStore(context),
     [context],

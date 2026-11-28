@@ -28,15 +28,12 @@ import type {
 
 import HilosLogsRotationsPage from './HilosLogsRotationsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 const DST_MOMENT = Date.parse('2026-03-29T01:30:00.123Z')
 
 function dateTimeLabel(moment: number, timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-    timeZone,
-  }).format(new Date(moment))
+  return readerMomentText(new Date(moment), timeZone)
 }
 
 function bindReaderZone(): {

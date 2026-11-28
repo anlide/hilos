@@ -301,7 +301,7 @@ describe('HilosMaintenancePage reader-zone moments', () => {
         `[data-id="hilos-maintenance-state-${manual ? 'manual' : 'operation'}"]`,
       )
       const timestamp = card.get('[data-id="hilos-maintenance-started-at"]')
-      expect(timestamp.text()).toBe('Dec 31, 2025, 4:30:05 PM')
+      expect(timestamp.text()).toBe('31.12.2025 16:30:05')
       expect(card.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
         '2',
       )
@@ -310,7 +310,7 @@ describe('HilosMaintenancePage reader-zone moments', () => {
 
       setZone('Europe/Kyiv')
       await nextTick()
-      expect(timestamp.text()).toBe('Jan 1, 2026, 2:30:05 AM')
+      expect(timestamp.text()).toBe('01.01.2026 02:30:05')
       expect(card.get('[data-id="hilos-maintenance-pass-count"]').text()).toBe(
         '2',
       )
@@ -322,7 +322,7 @@ describe('HilosMaintenancePage reader-zone moments', () => {
         expect(card.text()).toContain('2 minutes ago')
         await vi.advanceTimersByTimeAsync(1)
         expect(card.text()).toContain('3 minutes ago')
-        expect(timestamp.text()).toBe('Jan 1, 2026, 2:30:05 AM')
+        expect(timestamp.text()).toBe('01.01.2026 02:30:05')
       } else {
         expect(card.text()).not.toContain('minutes ago')
         expect(card.text()).not.toContain(HILOS_MAINTENANCE_STATE_COPY.justNow)
@@ -498,7 +498,7 @@ describe('HilosMaintenancePage', () => {
     expect(card.get('[data-id="hilos-maintenance-initiator"]').text()).toBe(
       '— · node —',
     )
-    expect(card.text()).toContain('Oct 10, 2026, 10:00:00 AM')
+    expect(card.text()).toContain('10.10.2026 10:00:00')
     expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
       '—',
     )
@@ -1745,13 +1745,13 @@ describe('HilosMaintenancePage restore card', () => {
       'hilos_backup · node node-1',
     )
     expect(card.get('[data-id="hilos-maintenance-started-at"]').text()).toBe(
-      'Sep 11, 2026, 3:14:02 AM',
+      '11.09.2026 03:14:02',
     )
     expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
-      'Sep 11, 2026, 3:14:09 AM',
+      '11.09.2026 03:14:09',
     )
     const progress = card.get('[data-id="hilos-maintenance-progress-at"]')
-    expect(progress.text()).toBe('Sep 11, 2026, 3:21:44 AM')
+    expect(progress.text()).toBe('11.09.2026 03:21:44')
     expect(
       card.get('[data-id="hilos-maintenance-progress-elapsed"]').text(),
     ).toBe('2 minutes ago')
@@ -1782,18 +1782,18 @@ describe('HilosMaintenancePage restore card', () => {
     setZone('America/Los_Angeles')
     await nextTick()
     expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
-      'Sep 10, 2026, 8:14:09 PM',
+      '10.09.2026 20:14:09',
     )
-    expect(progress.text()).toBe('Sep 10, 2026, 8:21:44 PM')
+    expect(progress.text()).toBe('10.09.2026 20:21:44')
     expect(
       card.get('[data-id="hilos-maintenance-progress-elapsed"]').text(),
     ).toBe('2 minutes ago')
     setZone('Europe/Kyiv')
     await nextTick()
     expect(card.get('[data-id="hilos-maintenance-activated-at"]').text()).toBe(
-      'Sep 11, 2026, 6:14:09 AM',
+      '11.09.2026 06:14:09',
     )
-    expect(progress.text()).toBe('Sep 11, 2026, 6:21:44 AM')
+    expect(progress.text()).toBe('11.09.2026 06:21:44')
     expect(state.activatedAt).toBe('2026-09-11T03:14:09.000Z')
     expect(state.progressAt).toBe('2026-09-11T03:21:44.000Z')
 
@@ -1805,9 +1805,9 @@ describe('HilosMaintenancePage restore card', () => {
     expect(
       card.get('[data-id="hilos-maintenance-progress-elapsed"]').text(),
     ).toBe('3 minutes ago')
-    expect(progress.text()).toBe('Sep 11, 2026, 6:21:44 AM')
+    expect(progress.text()).toBe('11.09.2026 06:21:44')
     expect(card.get('[data-id="hilos-maintenance-started-at"]').text()).toBe(
-      'Sep 11, 2026, 6:14:02 AM',
+      '11.09.2026 06:14:02',
     )
   })
 
@@ -2501,24 +2501,24 @@ describe('HilosMaintenancePage watchdog', () => {
     const moments = () =>
       [...full.querySelectorAll('dd')].slice(4, 7).map((row) => row.textContent)
     expect(moments()).toEqual([
-      'Sep 11, 2026, 3:14:02 AM',
-      'Sep 11, 2026, 3:14:09 AM',
-      'Sep 11, 2026, 3:21:44 AM',
+      '11.09.2026 03:14:02',
+      '11.09.2026 03:14:09',
+      '11.09.2026 03:21:44',
     ])
     expect(full.textContent).toContain('node-3, node-4')
     setZone('America/Los_Angeles')
     await nextTick()
     expect(moments()).toEqual([
-      'Sep 10, 2026, 8:14:02 PM',
-      'Sep 10, 2026, 8:14:09 PM',
-      'Sep 10, 2026, 8:21:44 PM',
+      '10.09.2026 20:14:02',
+      '10.09.2026 20:14:09',
+      '10.09.2026 20:21:44',
     ])
     setZone('Europe/Kyiv')
     await nextTick()
     expect(moments()).toEqual([
-      'Sep 11, 2026, 6:14:02 AM',
-      'Sep 11, 2026, 6:14:09 AM',
-      'Sep 11, 2026, 6:21:44 AM',
+      '11.09.2026 06:14:02',
+      '11.09.2026 06:14:09',
+      '11.09.2026 06:21:44',
     ])
     pushState(
       restoreFrame({

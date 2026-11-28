@@ -16,6 +16,7 @@ import {
   SIGNAL_PROFILE_FLOWS,
   profileFlowsSchema,
 } from '../profile/profileFlows.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../protocol/constants.js'
 import {
   SIGNAL_PROFILE_NAME_STATE,
   profileNameStateSchema,
@@ -48,13 +49,6 @@ import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import { type AccessLossReason } from './accessLoss.js'
 import { applyServerTime, toLocal } from './serverClock.js'
 import { SIGNAL_SESSION_TOASTS, sessionToastsSchema } from './sessionToasts.js'
-
-/**
- * The session-scope response the backend sends after the handshake, carrying the
- * session scope payload. Each project keeps its backend signal byte-equal (e.g.
- * `ChatSignalConstants::HANDSHAKE_RESPONSE`).
- */
-export const SIGNAL_HANDSHAKE_RESPONSE = 'handshake_response'
 
 const DEFAULT_CURRENT_USER_SLOT = 'currentUser'
 const DEFAULT_CURRENT_USER_ENTITY_TYPE = USER_ENTITY_TYPE

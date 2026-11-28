@@ -48,7 +48,7 @@ import {
   hilosAdminAccess,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type PageRouteMatch,
 } from '@hilos/core/base'
 import {
@@ -76,7 +76,7 @@ const props = defineProps<{
 // Read the same source from which that child provides its view-mode verdict.
 const adminAccess = useSignal(hilosAdminAccess)
 const viewMode = computed(() => adminAccess.value === 'view')
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 const router = inject(hilosRouterKey)
 // The address IS what this screen is showing, so the navigator is what it reads
@@ -155,7 +155,7 @@ function sourceValue(source: typeof LOG_SOURCE_LIVE | number | null): string {
 }
 
 function batchLabel(batch: number): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatMoment(batch, { kind: 'dateTime' }) ?? '—'
 }
 

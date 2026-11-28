@@ -4,10 +4,12 @@
 // through a printer of the engine's own.
 //
 // Types, not names. The rule reads a TypeScript program with the compiler's own
-// standard library, so `count.toLocaleString()` passes because `count` is typed
-// a number, not because of what it is called; any, unknown and a type that did
-// not resolve prove nothing and are reported. No Date or Number of our own is
-// declared: a stub would make every receiver whatever the stub says it is.
+// standard library, so `count.toLocaleString()` prints no moment because `count`
+// is typed a number, not because of what it is called; any, unknown and a type
+// that did not resolve prove nothing and are reported. A number printed that
+// way does not pass silently: NUMBER-FORMAT in numberFormat.ts reports it and
+// sends the reader to formatNumber(). No Date or Number of our own is declared:
+// a stub would make every receiver whatever the stub says it is.
 //
 // What is read: direct calls and constructions, a member named by an identifier
 // or by a string literal (`date['toLocaleString']()`), optional chains, and
@@ -53,10 +55,11 @@
 // The expressions a template runs are judged in a module of their own in that
 // program, with the standard library and nothing else. No template type-checker
 // is built here, so every name a template reads is declared unknown: it proves
-// nothing. `count.toLocaleString()` is reported with the hint to print the count
-// through a typed helper, and a literal, Number(…), BigInt(…) and a helper's call
-// pass. Number, BigInt, String, Date and Intl stay the standard library's — the
-// globals the rule itself asks about.
+// nothing. `count.toLocaleString()` is reported with the hint to print a number
+// with formatNumber(); a literal, Number(…), BigInt(…) and a helper's call print
+// no moment and pass here, and NUMBER-FORMAT reports the toLocaleString() of the
+// first three. Number, BigInt, String, Date and Intl stay the standard library's
+// — the globals the rule itself asks about.
 //
 // An interpolation prints its value as text, as a JSX child does, and the
 // interpolations of one text — a run between two pieces of markup, or one
@@ -93,6 +96,13 @@
 // an earlier root of the same scan parsed and bound, by its name and the parse
 // options the program asks for it with; what a checker learns stays in that
 // checker, and nothing is kept between scans.
+//
+// The walk and the program are not this rule's alone. A rule over the same
+// roots is a ProgramRule — an id, the document its report sends the reader to,
+// the one file it leaves out whole and the sites it finds in a program — judged
+// by judgeSource(), judgeSourceRoot() and judgeRepository() the way this one is.
+// NUMBER-FORMAT is one, and takes the proof of a number and the reading of an
+// Intl formatter from here as well, so both rules prove a type the same way.
 //
 // A setup the rule cannot read — a config, the standard library, a source or a
 // template that does not parse — is thrown, never returned as an empty list.
@@ -134,10 +144,6 @@ const TIME_ZONE_RULE_PATH =
 const CALENDAR_PERIODS_PATH =
   'framework/frontend/core/src/timeZone/calendarPeriods.ts'
 
-/** The legal documents, whose revision dates are calendar dates. */
-const LEGAL_AGREEMENTS_PATH =
-  'framework/frontend/core/src/legal/legalAgreements.ts'
-
 /**
  * Methods the standard library gives to Date alone. A receiver that answers to
  * one is date-like whatever its type says, so each call is reported.
@@ -176,9 +182,6 @@ const RESOLVED_OPTIONS_METHOD = 'resolvedOptions'
 /** The option both the metadata chain and the exceptions read. */
 const TIME_ZONE_OPTION = 'timeZone'
 
-/** The zone a calendar date is printed in, so that its day never moves. */
-const UTC_ZONE = 'UTC'
-
 /**
  * Getters that read one component of a moment. getTime() and valueOf() read
  * the moment whole, as a number, and are not among them.
@@ -215,11 +218,17 @@ const STRING_FUNCTION = 'String'
 /** Reason of a site that turns Date components into text. */
 const HAND_BUILT_TEXT = `text built from Date getters prints a moment past the core formatter; display it with ${FORMATTER}`
 
+/** Reason of a toLocaleString() whose receiver is not proven numeric. */
+const LOCALE_STRING =
+  'toLocaleString() is not proven numeric: the receiver is typed neither number' +
+  ' nor bigint; print a number with formatNumber() from @hilos/core, as' +
+  ` NUMBER-FORMAT asks of a number, and a moment with ${FORMATTER}`
+
 /** Reason of a toLocaleString() in a template whose receiver is not proven numeric. */
 const TEMPLATE_LOCALE_STRING =
-  'toLocaleString() in a template is allowed on a literal, Number() or BigInt() only:' +
-  ' a name the template reads proves no type; print a count through a typed' +
-  ` TypeScript helper, and a moment with ${FORMATTER}`
+  'toLocaleString() in a template is not proven numeric: a name the template' +
+  ' reads proves no type; print a number with formatNumber() from @hilos/core,' +
+  ` and a moment with ${FORMATTER}`
 
 /** The Angular pipe that prints a moment. */
 const DATE_PIPE = 'date'
@@ -327,7 +336,7 @@ const SKIPPED_DIRECTORIES = [
 const SKIPPED_FILES = [/\.test\./, /\.spec\./, /\.d\.ts$/]
 
 /** One file the analyzer judges, and the sources of the program that stand for it. */
-interface JudgedSource {
+export interface JudgedSource {
   /** Path from the repository root, as it appears in the report. */
   relativePath: string
   /** Offsets of the line starts of the file as written; the report numbers its lines by them. */
@@ -343,7 +352,7 @@ interface JudgedSource {
 }
 
 /** The expressions a file's templates run, as one module of the program. */
-interface TemplateModule {
+export interface TemplateModule {
   /** Name of the module in the program. */
   fileName: string
   /** Its text. */
@@ -357,7 +366,7 @@ interface TemplateModule {
 }
 
 /** A judged file with the sources of the program that stand for it. */
-interface ProgramSources {
+export interface ProgramSources {
   source: JudgedSource
   /** Its TypeScript, or null when it has none. */
   script: ts.SourceFile | null
@@ -379,16 +388,50 @@ interface Segment {
 interface StandardLibrary {
   /** Instance type of the global Date. */
   date: ts.Type
-  /** Call and construct signatures of Intl.DateTimeFormat. */
-  constructors: ReadonlySet<ts.Node>
-  /** Declarations of the DateTimeFormat methods that print a moment. */
-  formatters: ReadonlySet<ts.Node>
+  /** Intl.DateTimeFormat and the methods it prints a moment with. */
+  dateTimeFormat: IntlFormatter
   /** The global String function. */
   string: ts.Symbol
 }
 
+/** One formatter of the standard Intl, as a site is recognized by it. */
+export interface IntlFormatter {
+  /** Its name in Intl; a call through a member of this name may construct it. */
+  name: string
+  /** Its call and construct signatures. */
+  constructors: ReadonlySet<ts.Node>
+  /** Declarations of its methods that print. */
+  formatters: ReadonlySet<ts.Node>
+}
+
+/**
+ * A rule judged over the program of each source root: the walk, the program
+ * and the report line are shared, the sites are the rule's own.
+ */
+export interface ProgramRule {
+  /** Rule id: the head of every report line and of every setup failure. */
+  id: string
+  /** The document that owns the rule; every report line ends with it. */
+  doc: string
+  /** The one file left out whole, by its exact path from the repository root. */
+  enginePath: string
+  /**
+   * Prepares the judgement of one program: what the rule recognizes a site by
+   * is read off the standard library here, once per program.
+   *
+   * @param program A program whose options and standard library are sound
+   * @param checker Its checker
+   * @returns What finds every site of one judged file, at offsets of the file
+   * @throws Error When the standard library declares nothing the rule needs
+   */
+  sites(
+    program: ts.Program,
+    checker: ts.TypeChecker,
+  ): (files: ProgramSources) => Site[]
+}
+
 /** A member access whose name is written out in the source. */
-interface LiteralMember {
+export interface LiteralMember {
   /** The access itself. */
   access: ts.PropertyAccessExpression | ts.ElementAccessExpression
   /** The member's name. */
@@ -398,7 +441,7 @@ interface LiteralMember {
 }
 
 /** One place that prints a moment past the core formatter. */
-interface Site {
+export interface Site {
   /** Offset the report points at, in the program's text of the file. */
   position: number
   /** Why it is reported, the middle of the report line. */
@@ -485,31 +528,23 @@ const ALLOWANCES: readonly Allowance[] = [
     functionName: 'localCoordinate',
     allows: (site) => site.operation === 'formatToParts',
   },
-  {
-    // A revision's YYYY-MM-DD, printed in explicit UTC so its day stays put.
-    path: LEGAL_AGREEMENTS_PATH,
-    functionName: 'formatHilosLegalDate',
-    allows: (site) => {
-      const zone = zoneOption(site.node)
-
-      return (
-        site.operation === CONSTRUCTION &&
-        zone !== undefined &&
-        ts.isStringLiteralLike(zone) &&
-        zone.text === UTC_ZONE &&
-        formattingMember(site.node) === 'format'
-      )
-    },
-  },
 ]
 
+/** This rule, as the shared walk judges it. */
+const MOMENT_FORMAT: ProgramRule = {
+  id: MOMENT_FORMAT_RULE_ID,
+  doc: DOC,
+  enginePath: ENGINE_PATH,
+  sites: (program, checker) => {
+    const library = standardLibrary(program, checker)
+
+    return (files) => fileSites(files, checker, library)
+  },
+}
+
 /**
- * Reports every direct moment print in one file, judged in a program of its own.
- *
- * The program holds this file and the compiler's standard library and nothing
- * else: an import resolves to nothing, so an imported type reads as unproven.
- * The exceptions are read off the path, so a fixture is judged under the path
- * of the file it stands for.
+ * Reports every direct moment print in one file, judged in a program of its
+ * own as judgeSource() judges one.
  *
  * @param relativePath Path of the file from the repository root, as it
  * appears in the report: a .ts or .tsx file, a .vue file or an Angular .html template
@@ -519,26 +554,12 @@ const ALLOWANCES: readonly Allowance[] = [
  * a template of it does not parse
  */
 export function checkSource(relativePath: string, source: string): string[] {
-  const texts = new Map<string, string>()
-  const judged = judgedSource(
-    relativePath,
-    posix.join(ISOLATED_ROOT, relativePath),
-    source,
-    texts,
-  )
-
-  return judge(programOf(ISOLATED_OPTIONS, texts, new Map()), [judged])
+  return judgeSource(MOMENT_FORMAT, relativePath, source)
 }
 
 /**
  * Reports every direct moment print in a group of files of one source root,
- * judged in one program built with that root's own compiler options.
- *
- * The config is read for its options: the program's roots are the files named
- * here — the script of a .vue file and the template expressions of a file
- * among them — and what they import loads the ordinary way through the
- * compiler host, with no emit and nothing run. One program and one checker
- * serve the call.
+ * judged in one program as judgeSourceRoot() judges them.
  *
  * @param repositoryRoot Absolute path of the repository root
  * @param configPath tsconfig that owns the source root, from the repository root
@@ -553,17 +574,17 @@ export function checkSourceRoot(
   configPath: string,
   relativePaths: readonly string[],
 ): string[] {
-  return judgeRoot(
+  return judgeSourceRoot(
+    MOMENT_FORMAT,
     repositoryRoot,
-    readConfig(repositoryRoot, configPath).options,
+    configPath,
     relativePaths,
-    new Map(),
   )
 }
 
 /**
  * Reports every direct moment print in the SDK and the demos' frontends, each
- * source root judged in one program with the options of the config that owns it.
+ * source root judged in one program as judgeRepository() judges it.
  *
  * @param repositoryRoot Absolute path of the repository root
  * @returns One finished report line per site, in path and then source order
@@ -572,6 +593,92 @@ export function checkSourceRoot(
  * template of it does not read
  */
 export function checkRepository(repositoryRoot: string): string[] {
+  return judgeRepository(MOMENT_FORMAT, repositoryRoot)
+}
+
+/**
+ * Reports every site of a rule in one file, judged in a program of its own.
+ *
+ * The program holds this file and the compiler's standard library and nothing
+ * else: an import resolves to nothing, so an imported type reads as unproven.
+ * A rule's exceptions are read off the path, so a fixture is judged under the
+ * path of the file it stands for.
+ *
+ * @param rule The rule the file is judged by
+ * @param relativePath Path of the file from the repository root, as it
+ * appears in the report: a .ts or .tsx file, a .vue file or an Angular .html template
+ * @param source Contents of the file
+ * @returns One finished report line per site, in source order
+ * @throws Error When the standard library cannot be loaded or lacks what the
+ * rule needs, or the source or a template of it does not parse
+ */
+export function judgeSource(
+  rule: ProgramRule,
+  relativePath: string,
+  source: string,
+): string[] {
+  const texts = new Map<string, string>()
+  const judged = judgedSource(
+    rule.id,
+    relativePath,
+    posix.join(ISOLATED_ROOT, relativePath),
+    source,
+    texts,
+  )
+
+  return judge(rule, programOf(ISOLATED_OPTIONS, texts, new Map()), [judged])
+}
+
+/**
+ * Reports every site of a rule in a group of files of one source root, judged
+ * in one program built with that root's own compiler options.
+ *
+ * The config is read for its options: the program's roots are the files named
+ * here — the script of a .vue file and the template expressions of a file
+ * among them — and what they import loads the ordinary way through the
+ * compiler host, with no emit and nothing run. One program and one checker
+ * serve the call.
+ *
+ * @param rule The rule the files are judged by
+ * @param repositoryRoot Absolute path of the repository root
+ * @param configPath tsconfig that owns the source root, from the repository root
+ * @param relativePaths Files to judge, from the repository root: .ts and .tsx
+ * files, .vue files and Angular .html templates
+ * @returns One finished report line per site, in path and then source order
+ * @throws Error When the config, the standard library or a judged file cannot
+ * be read, the standard library lacks what the rule needs, or a judged file or
+ * a template of it does not parse
+ */
+export function judgeSourceRoot(
+  rule: ProgramRule,
+  repositoryRoot: string,
+  configPath: string,
+  relativePaths: readonly string[],
+): string[] {
+  return judgeRoot(
+    rule,
+    repositoryRoot,
+    readConfig(rule.id, repositoryRoot, configPath).options,
+    relativePaths,
+    new Map(),
+  )
+}
+
+/**
+ * Reports every site of a rule in the SDK and the demos' frontends, each source
+ * root judged in one program with the options of the config that owns it.
+ *
+ * @param rule The rule the roots are judged by
+ * @param repositoryRoot Absolute path of the repository root
+ * @returns One finished report line per site, in path and then source order
+ * @throws Error When a root has no config that owns it, a config cannot be read
+ * or used, the standard library cannot be loaded or lacks what the rule needs,
+ * or a judged file or a template of it does not read
+ */
+export function judgeRepository(
+  rule: ProgramRule,
+  repositoryRoot: string,
+): string[] {
   const declarations = new Map<string, ts.SourceFile>()
 
   // Roots never nest, so roots in path order keep their files in path order.
@@ -579,8 +686,9 @@ export function checkRepository(repositoryRoot: string): string[] {
     .sort()
     .flatMap((root) =>
       judgeRoot(
+        rule,
         repositoryRoot,
-        ownerOptions(repositoryRoot, root),
+        ownerOptions(rule.id, repositoryRoot, root),
         sourceFiles(repositoryRoot, root),
         declarations,
       ),
@@ -588,6 +696,7 @@ export function checkRepository(repositoryRoot: string): string[] {
 }
 
 /**
+ * @param rule The rule the files are judged by
  * @param repositoryRoot Absolute path of the repository root
  * @param options Compiler options of the config that owns the files
  * @param relativePaths Files to judge, from the repository root
@@ -598,6 +707,7 @@ export function checkRepository(repositoryRoot: string): string[] {
  * judged file or a template of it does not read
  */
 function judgeRoot(
+  rule: ProgramRule,
   repositoryRoot: string,
   options: ts.CompilerOptions,
   relativePaths: readonly string[],
@@ -608,24 +718,27 @@ function judgeRoot(
     const fileName = join(repositoryRoot, relativePath)
     const source = ts.sys.readFile(fileName)
     if (source === undefined) {
-      failSetup(`${relativePath} cannot be read`, [])
+      failSetup(rule.id, `${relativePath} cannot be read`, [])
     }
-    return judgedSource(relativePath, fileName, source, texts)
+    return judgedSource(rule.id, relativePath, fileName, source, texts)
   })
 
   return judge(
+    rule,
     programOf({ ...options, noEmit: true }, texts, declarations),
     sources,
   )
 }
 
 /**
+ * @param ruleId Id of the rule the config is read for
  * @param repositoryRoot Absolute path of the repository root
  * @param configPath A tsconfig, from the repository root
  * @returns The config as the compiler reads it, with what it extends
  * @throws Error When the config cannot be read or used
  */
 function readConfig(
+  ruleId: string,
   repositoryRoot: string,
   configPath: string,
 ): ts.ParsedCommandLine {
@@ -636,6 +749,7 @@ function readConfig(
   const config: unknown = loaded.config
   if (loaded.error !== undefined || config === undefined) {
     failSetup(
+      ruleId,
       `${configPath} cannot be read`,
       loaded.error !== undefined ? [loaded.error] : [],
     )
@@ -650,7 +764,7 @@ function readConfig(
   )
   const parseErrors = errorDiagnostics(parsed.errors)
   if (parseErrors.length > 0) {
-    failSetup(`${configPath} cannot be used`, parseErrors)
+    failSetup(ruleId, `${configPath} cannot be used`, parseErrors)
   }
 
   return parsed
@@ -661,6 +775,7 @@ function readConfig(
  * root. A solution config compiles none of its own and hands the root to the
  * first config it references that does.
  *
+ * @param ruleId Id of the rule the root is judged by
  * @param repositoryRoot Absolute path of the repository root
  * @param root A source root, from the repository root
  * @returns Compiler options of the config that owns the root
@@ -668,11 +783,12 @@ function readConfig(
  * read or used, or none of them compiles a file of the root
  */
 function ownerOptions(
+  ruleId: string,
   repositoryRoot: string,
   root: string,
 ): ts.CompilerOptions {
   const configPath = posix.join(posix.dirname(root), OWNER_CONFIG)
-  const config = readConfig(repositoryRoot, configPath)
+  const config = readConfig(ruleId, repositoryRoot, configPath)
   const ownsRoot = (candidate: ts.ParsedCommandLine): boolean =>
     candidate.fileNames.some((fileName) =>
       fromRepository(repositoryRoot, fileName).startsWith(`${root}/`),
@@ -683,6 +799,7 @@ function ownerOptions(
 
   for (const reference of config.projectReferences ?? []) {
     const referenced = readConfig(
+      ruleId,
       repositoryRoot,
       fromRepository(repositoryRoot, ts.resolveProjectReferencePath(reference)),
     )
@@ -692,6 +809,7 @@ function ownerOptions(
   }
 
   failSetup(
+    ruleId,
     `${configPath} and the configs it references compile no file of ${root}`,
     [],
   )
@@ -757,6 +875,7 @@ function fromRepository(repositoryRoot: string, fileName: string): string {
  * Puts one judged file into the terms of the program: its TypeScript, and the
  * module of what its templates run.
  *
+ * @param ruleId Id of the rule the file is judged by
  * @param relativePath Path of the file from the repository root
  * @param fileName Its name in the program; the sources standing for it are named after it
  * @param source Contents of the file
@@ -765,12 +884,13 @@ function fromRepository(repositoryRoot: string, fileName: string): string {
  * @throws Error When a template of the file does not read
  */
 function judgedSource(
+  ruleId: string,
   relativePath: string,
   fileName: string,
   source: string,
   texts: Map<string, string>,
 ): JudgedSource {
-  const read = templates(relativePath, source)
+  const read = templates(ruleId, relativePath, source)
   let scriptName: string | null = null
   if (read.script !== null) {
     // Beside the component, so its relative imports resolve as the owner's do.
@@ -793,16 +913,25 @@ function judgedSource(
 }
 
 /**
+ * @param ruleId Id of the rule the file is judged by
  * @param relativePath Path of the file from the repository root
  * @param source Contents of the file
  * @returns What its templates run, and its script when it is a single-file component
  * @throws Error When a template does not read, or the file is of no kind the rule reads
  */
-function templates(relativePath: string, source: string): TemplateSource {
+function templates(
+  ruleId: string,
+  relativePath: string,
+  source: string,
+): TemplateSource {
   try {
     return templateSource(relativePath, source)
   } catch (error) {
-    failSetup(error instanceof Error ? error.message : String(error), [])
+    failSetup(
+      ruleId,
+      error instanceof Error ? error.message : String(error),
+      [],
+    )
   }
 }
 
@@ -874,6 +1003,7 @@ function declarationKey(
 }
 
 /**
+ * @param rule The rule the files are judged by
  * @param program Program that holds every judged file
  * @param sources Files to judge in it
  * @returns One finished report line per site, in path and then source order
@@ -881,6 +1011,7 @@ function declarationKey(
  * a judged file is missing or does not parse
  */
 function judge(
+  rule: ProgramRule,
   program: ts.Program,
   sources: readonly JudgedSource[],
 ): string[] {
@@ -897,12 +1028,14 @@ function judge(
     return {
       source,
       script:
-        scriptName === null ? null : programSource(program, source, scriptName),
+        scriptName === null
+          ? null
+          : programSource(rule.id, program, source, scriptName),
       template:
         template === null
           ? null
           : {
-              file: programSource(program, source, template.fileName),
+              file: programSource(rule.id, program, source, template.fileName),
               module: template,
             },
     }
@@ -912,33 +1045,37 @@ function judge(
     ...program.getGlobalDiagnostics(),
   ])
   if (setup.length > 0) {
-    failSetup('the compiler options or the standard library are broken', setup)
+    failSetup(
+      rule.id,
+      'the compiler options or the standard library are broken',
+      setup,
+    )
   }
 
   const checker = program.getTypeChecker()
-  const library = standardLibrary(program, checker)
+  const sitesOf = rule.sites(program, checker)
   const rows: ReportRow[] = []
   for (const sourceFiles of files) {
     const { source, script, template } = sourceFiles
     if (script !== null) {
-      requireParse(program, script, source, (position) => position)
+      requireParse(rule.id, program, script, source, (position) => position)
     }
     if (template !== null) {
-      requireParse(program, template.file, source, (position) =>
+      requireParse(rule.id, program, template.file, source, (position) =>
         templateOffset(template.module, position),
       )
     }
-    if (source.relativePath === ENGINE_PATH) {
+    if (source.relativePath === rule.enginePath) {
       continue
     }
 
-    for (const site of fileSites(sourceFiles, checker, library)) {
+    for (const site of sitesOf(sourceFiles)) {
       rows.push({
         path: source.relativePath,
         position: site.position,
         line:
-          `${MOMENT_FORMAT_RULE_ID} ${source.relativePath}:` +
-          `${sourceLine(source, site.position)} — ${site.reason} (see ${DOC})`,
+          `${rule.id} ${source.relativePath}:` +
+          `${sourceLine(source, site.position)} — ${site.reason} (see ${rule.doc})`,
       })
     }
   }
@@ -954,6 +1091,7 @@ function judge(
 }
 
 /**
+ * @param ruleId Id of the rule the file is judged by
  * @param program Program that holds every judged file
  * @param source The judged file a source stands for
  * @param fileName Name of that source in the program
@@ -961,19 +1099,21 @@ function judge(
  * @throws Error When the program has none of that name
  */
 function programSource(
+  ruleId: string,
   program: ts.Program,
   source: JudgedSource,
   fileName: string,
 ): ts.SourceFile {
   const file = program.getSourceFile(fileName)
   if (file === undefined) {
-    failSetup(`${source.relativePath} cannot be read`, [])
+    failSetup(ruleId, `${source.relativePath} cannot be read`, [])
   }
 
   return file
 }
 
 /**
+ * @param ruleId Id of the rule the file is judged by
  * @param program Program the source belongs to
  * @param file A source standing for a judged file
  * @param source That judged file
@@ -981,6 +1121,7 @@ function programSource(
  * @throws Error When the source does not parse; the line named is the file's
  */
 function requireParse(
+  ruleId: string,
   program: ts.Program,
   file: ts.SourceFile,
   source: JudgedSource,
@@ -989,6 +1130,7 @@ function requireParse(
   const broken = errorDiagnostics(program.getSyntacticDiagnostics(file))
   if (broken.length > 0) {
     failSetup(
+      ruleId,
       `${source.relativePath}:${sourceLine(source, offsetOf(broken[0].start ?? 0))} does not parse`,
       broken,
     )
@@ -1006,11 +1148,34 @@ function fileSites(
   checker: ts.TypeChecker,
   library: StandardLibrary,
 ): Site[] {
-  const { source, script, template } = sourceFiles
-  const sites =
-    script === null
-      ? []
-      : scan(script, source.relativePath, checker, library, null)
+  const { source, template } = sourceFiles
+
+  return [
+    ...sourceSites(sourceFiles, (file, module) =>
+      scan(file, source.relativePath, checker, library, module),
+    ),
+    ...(template?.module.datePipes ?? []).map((position) => ({
+      position,
+      reason: DATE_PIPE_REASON,
+    })),
+  ]
+}
+
+/**
+ * The sites a rule finds in a judged file's script and in its template module,
+ * each source scanned on its own and every site put at its offset in the file.
+ *
+ * @param sourceFiles A judged file with the sources standing for it
+ * @param scan Finds the sites of one source at offsets of that source: the
+ * script, with null, or the template module, with that module
+ * @returns The sites of the script and then of the template, at offsets of the file
+ */
+export function sourceSites(
+  sourceFiles: ProgramSources,
+  scan: (file: ts.SourceFile, template: TemplateModule | null) => Site[],
+): Site[] {
+  const { script, template } = sourceFiles
+  const sites = script === null ? [] : scan(script, null)
   if (template === null) {
     return sites
   }
@@ -1018,15 +1183,9 @@ function fileSites(
   const { file, module } = template
   return [
     ...sites,
-    ...scan(file, source.relativePath, checker, library, module).map(
-      (site) => ({
-        position: templateOffset(module, site.position),
-        reason: site.reason,
-      }),
-    ),
-    ...module.datePipes.map((position) => ({
-      position,
-      reason: DATE_PIPE_REASON,
+    ...scan(file, module).map((site) => ({
+      position: templateOffset(module, site.position),
+      reason: site.reason,
     })),
   ]
 }
@@ -1226,43 +1385,78 @@ function standardLibrary(
   program: ts.Program,
   checker: ts.TypeChecker,
 ): StandardLibrary {
-  const declaredByLibrary = (symbol: ts.Symbol | undefined): boolean =>
-    symbol?.declarations?.some((declaration) =>
-      program.isSourceFileDefaultLibrary(declaration.getSourceFile()),
-    ) === true
-
   const date = checker.resolveName(
     'Date',
     undefined,
     ts.SymbolFlags.Interface,
     false,
   )
-  if (date === undefined || !declaredByLibrary(date)) {
-    failSetup('the standard library declares no Date', [])
+  if (date === undefined || !declaredByLibrary(program, date)) {
+    failSetup(
+      MOMENT_FORMAT_RULE_ID,
+      'the standard library declares no Date',
+      [],
+    )
   }
-  const intl = checker.resolveName(
-    'Intl',
-    undefined,
-    ts.SymbolFlags.Namespace,
-    false,
+  const dateTimeFormat = intlFormatter(
+    MOMENT_FORMAT_RULE_ID,
+    program,
+    checker,
+    DATE_TIME_FORMAT,
+    FORMAT_METHODS,
   )
-  const dateTimeFormat = intl?.exports?.get(
-    ts.escapeLeadingUnderscores(DATE_TIME_FORMAT),
-  )
-  if (dateTimeFormat === undefined || !declaredByLibrary(dateTimeFormat)) {
-    failSetup('the standard library declares no Intl.DateTimeFormat', [])
-  }
   const string = checker.resolveName(
     STRING_FUNCTION,
     undefined,
     ts.SymbolFlags.Value,
     false,
   )
-  if (string === undefined || !declaredByLibrary(string)) {
-    failSetup(`the standard library declares no ${STRING_FUNCTION}`, [])
+  if (string === undefined || !declaredByLibrary(program, string)) {
+    failSetup(
+      MOMENT_FORMAT_RULE_ID,
+      `the standard library declares no ${STRING_FUNCTION}`,
+      [],
+    )
   }
 
-  const constructorType = checker.getTypeOfSymbol(dateTimeFormat)
+  return {
+    date: checker.getDeclaredTypeOfSymbol(date),
+    dateTimeFormat,
+    string,
+  }
+}
+
+/**
+ * Reads one formatter of Intl off the standard library, the way a rule
+ * recognizes its constructions and its printing methods.
+ *
+ * @param ruleId Id of the rule that reads the formatter
+ * @param program Program whose default library is read
+ * @param checker Its checker
+ * @param name Name of the formatter in Intl: DateTimeFormat, NumberFormat
+ * @param methods Names of its methods that print
+ * @returns The formatter's signatures and the declarations of those methods
+ * @throws Error When the default library declares no such formatter in Intl
+ */
+export function intlFormatter(
+  ruleId: string,
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  name: string,
+  methods: readonly string[],
+): IntlFormatter {
+  const intl = checker.resolveName(
+    'Intl',
+    undefined,
+    ts.SymbolFlags.Namespace,
+    false,
+  )
+  const formatter = intl?.exports?.get(ts.escapeLeadingUnderscores(name))
+  if (formatter === undefined || !declaredByLibrary(program, formatter)) {
+    failSetup(ruleId, `the standard library declares no Intl.${name}`, [])
+  }
+
+  const constructorType = checker.getTypeOfSymbol(formatter)
   const constructors = new Set<ts.Node>()
   for (const signature of [
     ...constructorType.getConstructSignatures(),
@@ -1272,19 +1466,30 @@ function standardLibrary(
       constructors.add(signature.declaration)
     }
   }
-  const instanceType = checker.getDeclaredTypeOfSymbol(dateTimeFormat)
+  const instanceType = checker.getDeclaredTypeOfSymbol(formatter)
   const formatters = new Set<ts.Node>(
-    FORMAT_METHODS.flatMap(
-      (name) => instanceType.getProperty(name)?.declarations ?? [],
+    methods.flatMap(
+      (method) => instanceType.getProperty(method)?.declarations ?? [],
     ),
   )
 
-  return {
-    date: checker.getDeclaredTypeOfSymbol(date),
-    constructors,
-    formatters,
-    string,
-  }
+  return { name, constructors, formatters }
+}
+
+/**
+ * @param program Program whose default library is asked
+ * @param symbol A resolved name, or undefined when it did not resolve
+ * @returns Whether the default library declares it
+ */
+function declaredByLibrary(
+  program: ts.Program,
+  symbol: ts.Symbol | undefined,
+): boolean {
+  return (
+    symbol?.declarations?.some((declaration) =>
+      program.isSourceFileDefaultLibrary(declaration.getSourceFile()),
+    ) === true
+  )
 }
 
 /**
@@ -1352,7 +1557,7 @@ function judgeCall(
   library: StandardLibrary,
   inTemplate: boolean,
 ): CallSite | null {
-  if (isConstruction(node, checker, library)) {
+  if (isConstruction(node, checker, library.dateTimeFormat)) {
     if (readsZoneMetadata(node)) {
       return null
     }
@@ -1388,12 +1593,7 @@ function judgeCall(
       return null
     }
 
-    return site(
-      inTemplate
-        ? TEMPLATE_LOCALE_STRING
-        : 'toLocaleString() is allowed on a receiver typed number or bigint only, and this' +
-            ` one is not proven numeric; display a moment with ${FORMATTER}`,
-    )
+    return site(inTemplate ? TEMPLATE_LOCALE_STRING : LOCALE_STRING)
   }
   if (member.name === TO_STRING_METHOD) {
     return carriesDate(receiverType(member, checker), checker, library.date)
@@ -1404,8 +1604,12 @@ function judgeCall(
   }
   if (
     FORMAT_METHODS.includes(member.name) &&
-    isFormatterMember(member, checker, library) &&
-    !isConstruction(innerExpression(member.access.expression), checker, library)
+    isFormatterMember(member, checker, library.dateTimeFormat) &&
+    !isConstruction(
+      innerExpression(member.access.expression),
+      checker,
+      library.dateTimeFormat,
+    )
   ) {
     return site(
       `Intl.DateTimeFormat ${member.name}() prints a moment past the core formatter;` +
@@ -1418,35 +1622,35 @@ function judgeCall(
 
 /**
  * A construction is asked for its signature only when it could be one: any
- * `new`, or a call through a member named DateTimeFormat. A plain call through
- * an alias of the constructor is not followed.
+ * `new`, or a call through a member named after the formatter. A plain call
+ * through an alias of the constructor is not followed.
  *
  * The callee is asked before the call. The compiler resolves a call among the
  * signatures of its callee, so a callee with none of the standard ones builds
- * no DateTimeFormat, and resolving it — inference over every argument — is
+ * no such formatter, and resolving it — inference over every argument — is
  * left to the calls that could.
  *
  * @param node Any node
  * @param checker Checker of the program
- * @param library Standard-library declarations of that program
- * @returns Whether it calls or constructs the standard Intl.DateTimeFormat
+ * @param formatter The Intl formatter of that program's standard library
+ * @returns Whether it calls or constructs that standard formatter
  */
-function isConstruction(
+export function isConstruction(
   node: ts.Node,
   checker: ts.TypeChecker,
-  library: StandardLibrary,
+  formatter: IntlFormatter,
 ): boolean {
   if (
     !ts.isNewExpression(node) &&
     !(
       ts.isCallExpression(node) &&
-      literalMember(innerExpression(node.expression))?.name === DATE_TIME_FORMAT
+      literalMember(innerExpression(node.expression))?.name === formatter.name
     )
   ) {
     return false
   }
   const isStandard = (declaration: ts.Node | undefined): boolean =>
-    declaration !== undefined && library.constructors.has(declaration)
+    declaration !== undefined && formatter.constructors.has(declaration)
   // Null and undefined dropped, as the compiler drops them from a callee.
   const callee = checker.getNonNullableType(
     checker.getTypeAtLocation(node.expression),
@@ -1527,13 +1731,13 @@ function zoneOption(
  *
  * @param member A called member
  * @param checker Checker of the program
- * @param library Standard-library declarations of that program
- * @returns Whether some branch of the receiver takes the member from DateTimeFormat
+ * @param formatter The Intl formatter of that program's standard library
+ * @returns Whether some branch of the receiver takes the member from that formatter
  */
-function isFormatterMember(
+export function isFormatterMember(
   member: LiteralMember,
   checker: ts.TypeChecker,
-  library: StandardLibrary,
+  formatter: IntlFormatter,
 ): boolean {
   const receiver = checker.getNonNullableType(
     checker.getTypeAtLocation(member.access.expression),
@@ -1545,7 +1749,7 @@ function isFormatterMember(
       checker
         .getPropertyOfType(branch, member.name)
         ?.declarations?.some((declaration) =>
-          library.formatters.has(declaration),
+          formatter.formatters.has(declaration),
         ) === true,
   )
 }
@@ -1558,7 +1762,10 @@ function isFormatterMember(
  * @param checker Checker of the program
  * @returns Type of the value the member is called on
  */
-function receiverType(member: LiteralMember, checker: ts.TypeChecker): ts.Type {
+export function receiverType(
+  member: LiteralMember,
+  checker: ts.TypeChecker,
+): ts.Type {
   const type = checker.getTypeAtLocation(member.access.expression)
 
   return ts.isOptionalChain(member.access)
@@ -1567,12 +1774,15 @@ function receiverType(member: LiteralMember, checker: ts.TypeChecker): ts.Type {
 }
 
 /**
+ * The one proof of a number both MOMENT-FORMAT and NUMBER-FORMAT read: what
+ * passes here prints no moment, and is a number printed past formatNumber().
+ *
  * @param type Receiver of toLocaleString()
  * @param checker Checker of the program
  * @returns Whether every branch is a number or a bigint — literals, numeric
  * enums, aliases, branded numbers and numeric generic bounds included
  */
-function isNumeric(type: ts.Type, checker: ts.TypeChecker): boolean {
+export function isNumeric(type: ts.Type, checker: ts.TypeChecker): boolean {
   if (type.isUnion()) {
     return type.types.every((branch) => isNumeric(branch, checker))
   }
@@ -1914,7 +2124,7 @@ function isDateGetter(value: ts.Expression, reader: TextReader): boolean {
  * @param node Any node
  * @returns The member access it is, when its name is an identifier or a string literal
  */
-function literalMember(node: ts.Node): LiteralMember | null {
+export function literalMember(node: ts.Node): LiteralMember | null {
   if (ts.isPropertyAccessExpression(node) && ts.isIdentifier(node.name)) {
     return { access: node, name: node.name.text, nameNode: node.name }
   }
@@ -1958,7 +2168,7 @@ function calledThrough(member: LiteralMember): ts.CallExpression | null {
  * @param expression Any expression
  * @returns It without the parentheses, assertions and `!` wrapped around it
  */
-function innerExpression(expression: ts.Expression): ts.Expression {
+export function innerExpression(expression: ts.Expression): ts.Expression {
   let inner = expression
   while (isWrapper(inner)) {
     inner = inner.expression
@@ -2059,11 +2269,13 @@ function sourceLine(source: JudgedSource, offset: number): number {
 }
 
 /**
+ * @param ruleId Id of the rule whose setup failed; the message opens with it
  * @param reason What about the setup cannot be read
  * @param diagnostics Compiler diagnostics that belong to the failure, if any
  * @throws Error Always — a setup failure is not a report line
  */
-function failSetup(
+export function failSetup(
+  ruleId: string,
   reason: string,
   diagnostics: readonly ts.Diagnostic[],
 ): never {
@@ -2076,9 +2288,7 @@ function failSetup(
 
     return `${where}TS${diagnostic.code}: ${flatten(diagnostic)}`
   })
-  throw new Error(
-    [`${MOMENT_FORMAT_RULE_ID} setup failed: ${reason}`, ...details].join('\n'),
-  )
+  throw new Error([`${ruleId} setup failed: ${reason}`, ...details].join('\n'))
 }
 
 /**

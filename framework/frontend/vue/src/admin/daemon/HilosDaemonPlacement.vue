@@ -16,6 +16,7 @@ import {
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementView,
 } from '@hilos/core/admin/daemon'
+import { hilosReaderDisplay } from '@hilos/core/base'
 import { computed } from 'vue'
 
 import HilosSkeleton from '../../HilosSkeleton.vue'
@@ -28,6 +29,7 @@ const props = defineProps<{
 }>()
 const nodes = useSignal(props.view.nodes)
 const selectedCell = useSignal(props.view.selectedCell)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const placement = computed(() => props.overview?.placement)
 const unplacedTypes = computed(() => placement.value?.unplacedTypes ?? null)
 const knownNodes = computed(
@@ -38,6 +40,12 @@ const knownNodes = computed(
         .map((node) => node.nodeId),
     ),
 )
+
+/** @param value A placement total of the overview. */
+function count(value: number | null | undefined): string {
+  void readerDisplay.value
+  return formatDaemonNumber(value)
+}
 
 /**
  * A silent node cannot disclose ids retained in an older window.
@@ -66,7 +74,7 @@ function cellIds(
           <section class="border rounded p-3 h-100">
             <h2 class="h6">Running instances</h2>
             <div class="fs-3" data-id="hilos-daemon-placement-instances">
-              {{ formatDaemonNumber(placement?.instances) }}
+              {{ count(placement?.instances) }}
             </div>
             <p class="small text-body-secondary mb-0">Instances, not types</p>
           </section>
@@ -75,7 +83,7 @@ function cellIds(
           <section class="border rounded p-3 h-100">
             <h2 class="h6">Agent types</h2>
             <div class="fs-3" data-id="hilos-daemon-placement-types">
-              {{ formatDaemonNumber(placement?.types) }}
+              {{ count(placement?.types) }}
             </div>
             <p class="small text-body-secondary mb-0">
               Declared in the project
@@ -86,7 +94,7 @@ function cellIds(
           <section class="border rounded p-3 h-100">
             <h2 class="h6">One per cluster</h2>
             <div class="fs-3" data-id="hilos-daemon-placement-cluster-types">
-              {{ formatDaemonNumber(placement?.clusterTypes) }}
+              {{ count(placement?.clusterTypes) }}
             </div>
             <p class="small text-body-secondary mb-0">
               Declared in the project
@@ -103,7 +111,7 @@ function cellIds(
               }"
               data-id="hilos-daemon-placement-unplaced"
             >
-              {{ formatDaemonNumber(unplacedTypes?.length) }}
+              {{ count(unplacedTypes?.length) }}
             </div>
             <p class="small text-body-secondary mb-0">
               {{

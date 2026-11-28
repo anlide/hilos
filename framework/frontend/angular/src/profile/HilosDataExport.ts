@@ -12,7 +12,7 @@ import {
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
   hilosImpersonation,
-  hilosTimeZone,
+  hilosReaderDisplay,
   sendProgressLine,
   subscribeSignal,
   type CodeSendProgress,
@@ -174,7 +174,7 @@ export class HilosDataExport {
   protected readonly stepUpCopy = HILOS_STEP_UP_COPY
   protected readonly downloadPath = DATA_EXPORT_DOWNLOAD_PATH
   protected readonly node = signal<DataExportNode | null>(null)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly busy = signal(false)
   protected readonly stepUpBusy = signal(false)
   protected readonly refusal = signal<string | null>(null)
@@ -183,11 +183,11 @@ export class HilosDataExport {
   protected readonly stepSendProgress = signal<CodeSendProgress | null>(null)
   protected readonly open = signal(false)
   protected readonly status = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return dataExportStatusText(this.node())
   })
   protected readonly preparingRoom = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const node = this.node()
     return dataExportStatusText({
       state: 'preparing',

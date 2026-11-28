@@ -34,6 +34,7 @@ import {
   hilosLegalDocumentLabel,
   hilosLegalReconsentSections,
   HilosPages,
+  hilosReaderDisplay,
   keepMyAccount,
   LEGAL_RECONSENT_COPY,
   signOut,
@@ -46,6 +47,7 @@ import {
 import { HilosFormError } from '../HilosFormError.js'
 import { HilosLink } from '../HilosLink.js'
 import { LoadingButton } from '../LoadingButton.js'
+import { hilosSignal } from '../hilosSignal.js'
 import { createHilosTrackedAction } from '../hilosTrackedAction.js'
 import { HilosLegalChanges } from './HilosLegalChanges.js'
 import { HilosLegalRevisionText } from './HilosLegalRevisionText.js'
@@ -421,13 +423,15 @@ export class HilosLegalReconsent {
   protected readonly signOutAction = createHilosTrackedAction()
   protected readonly keepAction = createHilosTrackedAction()
   protected readonly label = hilosLegalDocumentLabel
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   private readonly sections = computed(() => {
     const content = this.content()
     return content === null ? [] : hilosLegalReconsentSections(content)
   })
-  protected readonly rows = computed(() =>
-    this.sections().map((section) => ({
+  protected readonly rows = computed(() => {
+    this.readerDisplay()
+    return this.sections().map((section) => ({
       section,
       plate: describeHilosLegalReconsentPlate(
         section,
@@ -436,8 +440,8 @@ export class HilosLegalReconsent {
       ),
       accepted: describeHilosLegalReconsentAccepted(section),
       changes: section.changes.map(describeHilosLegalReconsentChange),
-    })),
-  )
+    }))
+  })
   protected readonly firstRevision = computed(
     () =>
       this.variant() === 'preview' &&
@@ -461,6 +465,7 @@ export class HilosLegalReconsent {
     ...(this.viewed()?.changes ?? []),
   ])
   protected readonly refusal = computed(() => {
+    this.readerDisplay()
     const content = this.content()
     return content !== null && 'refusal' in content
       ? describeHilosLegalReconsentRefusal(

@@ -832,12 +832,7 @@ describe('change-log detail copy and projections', () => {
       label: 'Deleted user #8',
       explanation: CHANGE_LOG_RECEIPT_COPY.deletedPerson,
     })
-    expect(attribution.when).toBe(
-      new Date(receipt.createdAt).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }),
-    )
+    expect(attribution.when).toBe('14.10.2026 10:00:00')
     expect(attribution.channel).toEqual({ label: 'Cron', icon: 'bi-alarm' })
     expect(attribution.agent).toBe('hilos_user:7')
     expect(attribution.source).toBe('sweep (0 * * * *)')

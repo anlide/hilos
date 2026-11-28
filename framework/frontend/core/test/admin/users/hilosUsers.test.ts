@@ -335,13 +335,7 @@ describe('activity display projections', () => {
 
       choose(null)
       const automaticActivity = formatMoment(0)
-      expect(automaticActivity).toBe(
-        new Intl.DateTimeFormat(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'medium',
-          timeZone: 'Asia/Tokyo',
-        }).format(0),
-      )
+      expect(automaticActivity).toBe('01.01.1970 09:00:00')
       expect(automaticActivity).not.toBe(kyivActivity)
       expect(detail.get()?.lastActivity).toBe(automaticActivity)
       expect(list.controller.rows.get()[0].row?.lastActivity).toBe(
@@ -424,7 +418,7 @@ describe('resolveHilosMergeCandidateRow', () => {
     expect(resolveHilosMergeCandidateRow(row, users)).toEqual({
       id: 7,
       name: 'Loser',
-      lastActivity: 'Sep 24, 2026, 10:00:00 AM',
+      lastActivity: '24.09.2026 10:00:00',
       identities: [
         {
           type: 'email',
@@ -1836,7 +1830,7 @@ describe('hilosUsersErasureCaption (HIL-1956)', () => {
       expect(caption?.summary).toBe(
         `Erasure in progress · 3 of 5 parts done · started ${String(formatMoment(startedAt, { kind: 'dateTime' }))}`,
       )
-      expect(caption?.summary).toContain('Jan 14, 2027')
+      expect(caption?.summary).toContain('14.01.2027')
       expect(caption?.expected).toEqual({
         shown: [
           expect.objectContaining({ participant: 'chat', account: null }),
@@ -3329,8 +3323,8 @@ describe('hilosUserFrozenRow (HIL-945)', () => {
       state: true,
       hint: null,
       lapsed: [
-        'Terms of use — deadline passed 1 September 2026',
-        'Privacy policy — deadline passed 15 September 2026',
+        'Terms of use — deadline passed 01.09.2026',
+        'Privacy policy — deadline passed 15.09.2026',
       ],
     })
   })
@@ -3341,7 +3335,7 @@ describe('hilosUserFrozenRow (HIL-945)', () => {
     ).toMatchObject({
       state: false,
       hint: 'Past deadline — reminders only',
-      lapsed: ['Terms of use — deadline passed 1 September 2026'],
+      lapsed: ['Terms of use — deadline passed 01.09.2026'],
     })
   })
 
@@ -3709,7 +3703,7 @@ describe('an erasing account on the card (HIL-1957)', () => {
       expect(section?.started).toBe(
         `Started ${String(formatMoment(startedAt, { kind: 'dateTime' }))} — it cannot be canceled`,
       )
-      expect(section?.started).toContain('Dec 31, 2025')
+      expect(section?.started).toContain('31.12.2025')
       expect(section).toMatchObject({ parts: [], waits: [], refusals: [] })
     } finally {
       zone.mockRestore()
@@ -3884,7 +3878,7 @@ describe('createHilosUsersTable', () => {
           id: 7,
           name: 'Maria',
           block: false,
-          lastActivity: 'Sep 24, 2026, 10:00:00 AM',
+          lastActivity: '24.09.2026 10:00:00',
           presence: 'probably_offline',
           onlineSessionCount: 2,
           merged: true,
@@ -4807,7 +4801,7 @@ it.each([-300_000, 300_000])(
       )
       expect(
         sections.find((section) => section.key === 'access')?.rows[1]?.hint,
-      ).toContain('December 31, 2025')
+      ).toContain('31.12.2025')
       expect(
         sections.find((section) => section.key === 'access')?.rows[1]?.hint,
       ).toContain('2 days left')

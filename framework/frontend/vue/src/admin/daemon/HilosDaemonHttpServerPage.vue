@@ -14,8 +14,9 @@ import {
   readHilosDaemonHttpSummary,
   readHilosDaemonNodeHeading,
   type HilosDaemonHttpContext,
+  type HilosDaemonHttpRouteRow,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import {
   computed,
   inject,
@@ -53,14 +54,28 @@ const emptyState = computed(() =>
   daemonHttpEmptyState(heading.value, summary.value),
 )
 const silent = computed(() => heading.value?.state === DAEMON_NODE_STATE_SILENT)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const silentSince = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeSilentSince(heading.value, Date.now())
 })
-const period = computed(() =>
-  summary.value === null ? '—' : formatDaemonHttpPeriod(summary.value),
-)
+const period = computed(() => {
+  void readerDisplay.value
+  return summary.value === null ? '—' : formatDaemonHttpPeriod(summary.value)
+})
+
+/** @param value A request counter of the summary or of one route. */
+function count(value: number): string {
+  void readerDisplay.value
+  return formatDaemonHttpCount(value)
+}
+
+/** @param row The route whose slowest request is written. */
+function slowest(row: HilosDaemonHttpRouteRow): string {
+  void readerDisplay.value
+  return formatDaemonHttpSlowest(row)
+}
+
 const status = computed(() =>
   emptyState.value !== 'none'
     ? emptyState.value
@@ -175,9 +190,7 @@ onUnmounted(() => {
             class="fs-5 lh-1 mb-1 text-break"
             data-id="hilos-daemon-http-requests"
           >
-            {{
-              summary === null ? '—' : formatDaemonHttpCount(summary.requests)
-            }}
+            {{ summary === null ? '—' : count(summary.requests) }}
           </div>
           <div
             class="small text-body-secondary"
@@ -197,11 +210,7 @@ onUnmounted(() => {
             class="fs-5 lh-1 mb-1 text-break"
             data-id="hilos-daemon-http-errors"
           >
-            {{
-              summary === null
-                ? '—'
-                : formatDaemonHttpCount(summary.serverErrors)
-            }}
+            {{ summary === null ? '—' : count(summary.serverErrors) }}
           </div>
           <div class="small text-body-secondary">{{ '5xx · ' + period }}</div>
         </div>
@@ -216,7 +225,7 @@ onUnmounted(() => {
             class="fs-5 lh-1 mb-1 text-break"
             data-id="hilos-daemon-http-slow"
           >
-            {{ summary === null ? '—' : formatDaemonHttpCount(summary.slow) }}
+            {{ summary === null ? '—' : count(summary.slow) }}
           </div>
           <div class="small text-body-secondary">
             {{ 'Over 1 s · ' + period }}
@@ -237,19 +246,19 @@ onUnmounted(() => {
       </template>
       <template #cell-requests="{ row }">
         <span :class="{ 'text-body-secondary': row.requests === 0 }">{{
-          formatDaemonHttpCount(row.requests)
+          count(row.requests)
         }}</span>
       </template>
       <template #cell-serverErrors="{ row }">
         <span :class="{ 'text-body-secondary': row.serverErrors === 0 }">{{
-          formatDaemonHttpCount(row.serverErrors)
+          count(row.serverErrors)
         }}</span>
       </template>
       <template #cell-slowestMs="{ row }">
         <span
           class="small"
           :class="{ 'text-body-secondary': row.slowestMs === null }"
-          >{{ formatDaemonHttpSlowest(row) }}</span
+          >{{ slowest(row) }}</span
         >
       </template>
       <template #empty>

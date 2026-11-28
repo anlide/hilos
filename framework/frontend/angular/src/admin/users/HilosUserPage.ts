@@ -66,6 +66,7 @@ import {
   HilosPages,
   hiddenAsWord,
   hilosAdminAccess,
+  hilosReaderDisplay,
   hilosRowEditIdle,
   isHiddenValue,
   sessionUserId,
@@ -1328,9 +1329,10 @@ export class HilosUserPage {
 
     return standing === null ? null : hilosStandingBadge(standing.shown)
   })
-  protected readonly frozenRow = computed(() =>
-    hilosUserFrozenRow(this.standing()),
-  )
+  protected readonly frozenRow = computed(() => {
+    this.readerDisplay()
+    return hilosUserFrozenRow(this.standing())
+  })
   // A merged account (HIL-1292) or one being erased (HIL-1962): the notice under
   // the header stands in for every action section, which the core leaves empty
   // for it.
@@ -1349,15 +1351,16 @@ export class HilosUserPage {
   protected readonly overviewCopy = HILOS_USER_OVERVIEW_COPY
   protected readonly lifecycleSections = computed<
     readonly HilosUserLifecycleSection[]
-  >(() =>
-    hilosUserLifecycleSections(
+  >(() => {
+    this.readerDisplay()
+    return hilosUserLifecycleSections(
       this.detail(),
       this.currentUserId(),
       this.graceDays(),
       this.lifecycleNow(),
       this.standing(),
-    ),
-  )
+    )
+  })
   protected readonly lifecycleOffered = computed(() => {
     const prompt = this.lifecyclePrompt()
     if (prompt === null) {
@@ -1429,6 +1432,7 @@ export class HilosUserPage {
   protected readonly mergeWindowCopy = HILOS_ACCOUNT_MERGE_WINDOW_COPY
   protected readonly cancelCopy = HILOS_ACCOUNT_MERGE_CANCEL_COPY
   protected readonly adminAccess = hilosSignal(hilosAdminAccess)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   protected readonly mergeCandidatesController = signal<
     TableViewportController<HilosMergeCandidateRow> | undefined
@@ -1718,9 +1722,9 @@ export class HilosUserPage {
           hilosUserAnalyticsEnabled(context.scopes),
           this.analyticsEnabled,
         ),
-        // The start of an erasure progress is in the reader's time zone; the
-        // core's computedSignal tracks the zone, while Angular computed does
-        // not see core signals.
+        // The start of an erasure progress is in the reader's time zone and
+        // formats; the core's computedSignal tracks both, while Angular
+        // computed does not see core signals.
         mirrorHilosSignal(
           computedSignal(() =>
             hilosUserErasureSection(

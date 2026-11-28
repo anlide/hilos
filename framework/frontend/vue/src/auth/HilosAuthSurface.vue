@@ -54,7 +54,7 @@ import {
   formatCountdown,
   hilosCodeSendProgress,
   hilosLegalDocumentLabel,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isPasskeySupported,
   isPlatformPasskeyAvailable,
   oauthTrip,
@@ -103,7 +103,7 @@ const props = defineProps<{
 /** How often the countdowns redraw — one second, the smallest unit they show. */
 const COUNTDOWN_TICK_MS = 1000
 
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 // The declarations the project makes and the stores it owns (HIL-409): the ordered
 // method registry that drives the field, the icons and the reveal, the code
@@ -804,7 +804,7 @@ const trustDeviceDays = computed(
   () => secondFactor.value?.trustDeviceDays ?? null,
 )
 const resetDate = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   const moment = secondFactor.value?.resetEffectiveAt ?? null
 
   return moment === null ? null : formatCalendarDate(moment)

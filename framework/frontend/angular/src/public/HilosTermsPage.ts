@@ -26,6 +26,7 @@ import {
   describeHilosLegalTermsReader,
   formatHilosLegalDate,
   hilosLegalReconsentPerson,
+  hilosReaderDisplay,
   LEGAL_RECONSENT_COPY,
   LEGAL_TERMS_COPY,
   sessionAccountStanding,
@@ -172,16 +173,18 @@ export class HilosTermsPage {
   protected readonly refusal = signal<string | null>(null)
   protected readonly standing = signal<HilosAccountStanding | null>(null)
   protected readonly person = hilosSignal(hilosLegalReconsentPerson)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   /** Whether the comparison of the held revision with the one in force is open. */
   protected readonly comparing = signal(false)
 
-  protected readonly line = computed(() =>
-    describeHilosLegalTermsReader(this.terms(), this.agreement(), {
+  protected readonly line = computed(() => {
+    this.readerDisplay()
+    return describeHilosLegalTermsReader(this.terms(), this.agreement(), {
       person: this.person(),
       frozen: this.standing()?.frozen === true,
       now: Date.now(),
-    }),
-  )
+    })
+  })
   protected readonly changes = computed(() =>
     this.comparing() && this.line().canCompare
       ? (this.terms()?.changes ?? null)
@@ -230,6 +233,7 @@ export class HilosTermsPage {
    * @param revisionId The revision.
    */
   protected publishedOf(revisionId: string): string {
+    this.readerDisplay()
     const revision = this.terms()?.revisions.find(
       (item) => item.revisionId === revisionId,
     )

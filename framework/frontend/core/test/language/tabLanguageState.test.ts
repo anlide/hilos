@@ -10,7 +10,7 @@ import {
   hilosTabLanguage,
   type HilosTabLanguage,
 } from '../../src/language/tabLanguageState.js'
-import { SIGNAL_HANDSHAKE_RESPONSE } from '../../src/session/sessionScope.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../../src/protocol/constants.js'
 import { subscribeSignal } from '../../src/state/signal.js'
 
 const GERMAN: HilosTabLanguage = {

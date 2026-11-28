@@ -1,6 +1,6 @@
 <!-- Completed facts use the ordinary read-only viewport and shared Status head. -->
 <script setup lang="ts">
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, HilosPages } from '@hilos/core/base'
 import {
   createHilosStatusHistoryState,
   createHilosStatusHistoryTable,
@@ -23,23 +23,11 @@ const props = defineProps<{ context: HilosStatusContext }>()
 const state = createHilosStatusHistoryState(props.context)
 const table = createHilosStatusHistoryTable(props.context)
 const data = useSignal(state.data)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 function moment(at: number): string {
-  void timeZone.value
-  return (
-    formatMoment(at, {
-      format: {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short',
-      },
-    }) ?? '—'
-  )
+  void readerDisplay.value
+  return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
 }
 
 onMounted(() => {

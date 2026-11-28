@@ -424,21 +424,21 @@ describe('the screen content (HIL-500)', () => {
     ).toMatchObject({
       tone: 'warning',
       text: '9 days left',
-      detail: 'until 10 November 2026',
+      detail: 'until 10.11.2026',
     })
     const lapsed = { ...section!, standing: 'lapsed' as const }
     expect(
       describeHilosLegalReconsentPlate(lapsed, 'window', NOVEMBER_FIRST),
     ).toMatchObject({
       tone: 'secondary',
-      text: 'deadline passed 10 November 2026',
+      text: 'deadline passed 10.11.2026',
     })
     expect(
       describeHilosLegalReconsentPlate(lapsed, 'frozen', NOVEMBER_FIRST),
     ).toMatchObject({
       tone: 'info',
       icon: 'bi-snow',
-      text: 'account frozen · deadline passed 10 November 2026',
+      text: 'account frozen · deadline passed 10.11.2026',
     })
     const substantial = { ...current, significance: 'substantial' as const }
     expect(
@@ -447,14 +447,14 @@ describe('the screen content (HIL-500)', () => {
         'preview',
         NOVEMBER_FIRST,
       ),
-    ).toMatchObject({ text: 'No window · in force since 27 September 2026' })
+    ).toMatchObject({ text: 'No window · in force since 27.09.2026' })
     expect(
       describeHilosLegalReconsentPlate(
         { ...section!, current: substantial },
         'preview',
         NOVEMBER_FIRST,
       ),
-    ).toMatchObject({ text: '9 days left · until 10 November 2026' })
+    ).toMatchObject({ text: '9 days left · until 10.11.2026' })
     expect(
       describeHilosLegalReconsentPlate(section!, 'preview', NOVEMBER_FIRST),
     ).toMatchObject({ text: 'Editorial · nobody is asked to accept it' })
@@ -470,7 +470,7 @@ describe('the screen content (HIL-500)', () => {
   it('says what the person accepted and what changed since', () => {
     const [section] = content().documents
     expect(describeHilosLegalReconsentAccepted(section!)).toBe(
-      'You accepted the revision of 17 September 2026. Since then 1 clause changed — the rest is as before.',
+      'You accepted the revision of 17.09.2026. Since then 1 clause changed — the rest is as before.',
     )
     expect(
       describeHilosLegalReconsentAccepted({ ...section!, changes: [] }),
@@ -503,7 +503,7 @@ describe('the screen content (HIL-500)', () => {
 
   it('words the refusal step by the setting', () => {
     expect(describeHilosLegalReconsentRefusal(content('freeze'))).toBe(
-      'After 10 November 2026 you will not be able to use the product until you accept. Sign-in, your data and its export stay.',
+      'After 10.11.2026 you will not be able to use the product until you accept. Sign-in, your data and its export stay.',
     )
     expect(describeHilosLegalReconsentRefusal(content('remind'))).toBe(
       'Nothing changes: this reminder will keep coming back.',

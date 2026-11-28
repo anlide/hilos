@@ -151,8 +151,8 @@ export function registerLegalReconsentPreviewCases(
         )
       }
       expect(plates).toEqual([
-        '9 days left · until 10 November 2026',
-        'No window · in force since 27 September 2026',
+        '9 days left · until 10.11.2026',
+        'No window · in force since 27.09.2026',
         'Editorial · nobody is asked to accept it',
       ])
     })

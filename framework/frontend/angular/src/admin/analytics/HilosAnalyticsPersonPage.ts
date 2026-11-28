@@ -38,7 +38,7 @@ import {
   bindPageInstanceName,
   computedSignal,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
 } from '@hilos/core/base'
 
@@ -171,9 +171,9 @@ export class HilosAnalyticsPersonPage {
   protected readonly page = HilosPages.ANALYTICS_PERSON
   protected readonly noValue = ANALYTICS_NO_VALUE
   protected readonly sessionNumber = formatAnalyticsSessionNumber
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly time = (moment: number): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatAnalyticsTime(moment)
   }
   protected readonly keys = {

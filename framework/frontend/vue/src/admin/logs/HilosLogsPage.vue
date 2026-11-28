@@ -50,7 +50,7 @@ import {
   type HilosLogNodesContext,
   type HilosLogsRecentTab,
 } from '@hilos/core/admin/logs'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -70,19 +70,31 @@ const nodesHandle = createHilosLogNodesTable(props.context)
 const nodesTable = nodesHandle.controller
 const overview = useSignal(handle.overview)
 
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 function rotationAt(moment: string | null): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatLogsOverviewRotationAt(moment)
 }
 function recentAt(moment: string): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatLogsOverviewRecentAt(moment)
 }
 function nodeRotationAt(moment: number | null): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatLogsOverviewRotationAt(moment)
 }
+function bytes(value: number | null): string {
+  void readerDisplay.value
+  return formatLogsOverviewBytes(value)
+}
+const growth = computed(() => {
+  void readerDisplay.value
+  return formatLogsOverviewGrowth(overview.value)
+})
+const forecastNote = computed(() => {
+  void readerDisplay.value
+  return logsOverviewForecastNote(overview.value)
+})
 
 // The subscription supplies the first overview and table window. Bind both push
 // paths on mount without requesting a second window.
@@ -175,7 +187,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
             <span class="small text-body-secondary">Written per day</span>
           </div>
           <div class="fs-4 lh-1 mb-1" data-id="hilos-logs-tile-growth">
-            {{ formatLogsOverviewGrowth(overview) }}
+            {{ growth }}
           </div>
           <div
             v-if="logsOverviewGrowthNote(overview)"
@@ -187,7 +199,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
           <!-- The disk consequence follows the caveat about the measured rate.
           A reached threshold remains a warning even before a rate is known. -->
           <div
-            v-if="logsOverviewForecastNote(overview)"
+            v-if="forecastNote"
             class="small"
             :class="
               thresholdPassed ? 'text-danger-emphasis' : 'text-body-secondary'
@@ -199,7 +211,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
               class="bi bi-exclamation-triangle me-1"
               aria-hidden="true"
             ></i>
-            <HilosHideable :value="logsOverviewForecastNote(overview)" />
+            <HilosHideable :value="forecastNote" />
           </div>
         </div>
       </div>
@@ -224,11 +236,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
             {{ formatLogsOverviewCount(overview?.logKeysPerDaemon ?? null) }}
             <span class="fs-6 text-body-secondary">
               ·
-              {{
-                formatLogsOverviewBytes(
-                  overview?.totalWeightDaemonKeysBytes ?? null,
-                )
-              }}
+              {{ bytes(overview?.totalWeightDaemonKeysBytes ?? null) }}
             </span>
           </div>
           <div class="small text-body-secondary">The raw pair counted in</div>
@@ -245,11 +253,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
             {{ formatLogsOverviewCount(overview?.logKeysPerAgent ?? null) }}
             <span class="fs-6 text-body-secondary">
               ·
-              {{
-                formatLogsOverviewBytes(
-                  overview?.totalWeightAgentKeysBytes ?? null,
-                )
-              }}
+              {{ bytes(overview?.totalWeightAgentKeysBytes ?? null) }}
             </span>
           </div>
           <div class="small text-body-secondary">
@@ -268,11 +272,7 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
             {{ formatLogsOverviewCount(overview?.logKeysPerWorker ?? null) }}
             <span class="fs-6 text-body-secondary">
               ·
-              {{
-                formatLogsOverviewBytes(
-                  overview?.totalWeightWorkerKeysBytes ?? null,
-                )
-              }}
+              {{ bytes(overview?.totalWeightWorkerKeysBytes ?? null) }}
             </span>
           </div>
           <div class="small text-body-secondary">
@@ -437,14 +437,14 @@ const rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
       </template>
       <template #[`cell-${NODE_LIVE_BYTES_FIELD}`]="{ row }">
         <span :data-id="`hilos-logs-node-live-${row.nodeId}`">
-          {{ formatLogsOverviewBytes(row.liveBytes) }}
+          {{ bytes(row.liveBytes) }}
         </span>
       </template>
       <template #[`cell-${NODE_ARCHIVE_BYTES_FIELD}`]="{ row }">
-        {{ formatLogsOverviewBytes(row.archiveBytes) }}
+        {{ bytes(row.archiveBytes) }}
       </template>
       <template #[`cell-${NODE_GROWTH_BYTES_PER_DAY_FIELD}`]="{ row }">
-        {{ formatLogsOverviewBytes(row.growthBytesPerDay) }}
+        {{ bytes(row.growthBytesPerDay) }}
       </template>
       <template #[`cell-${NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD}`]="{ row }">
         <HilosLink

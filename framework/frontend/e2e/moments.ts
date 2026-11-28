@@ -2,36 +2,176 @@ import type { Expect, Locator, Page } from '@playwright/test'
 
 import { deliveryObject, type DeliveryFrameLog } from './deliveryFrames.js'
 
-/** Native browser Intl oracle with the caller's display options and reader zone. */
-export function readerMillisecondMoment(
-  page: Page,
+// The tab of every stand writes in the formats of the built-in English locale
+// without a country — DD.MM.YYYY, HH:mm:ss and 1,000.00 — with or without the
+// I18N feature. The client never formats by the browser's locale: the formats
+// come from the server, and with the feature its region ladder passes over the
+// en-US or en-GB a stand's browser names, since the stand keeps the countries
+// us and gb switched off. The moment oracles below spell those templates out by
+// hand from the numeric parts Intl gives in a zone; readerNumber() has
+// Intl.NumberFormat('en-US') write the figure, which equals the 1,000.00
+// template on the values the specs pass and does not repeat its edges (-0, the
+// infinities, compact). None imports the product formatter into the check.
+
+/** The kinds and flags of the core moment formatter, mirrored by the oracle. */
+export interface ReaderMomentOptions {
+  /** What is written: the date, the time, both (the default), a calendar label, «November 2026» or «Monday». */
+  readonly kind?:
+    'date' | 'time' | 'dateTime' | 'calendar' | 'monthYear' | 'weekday'
+  /** Whether a time carries its seconds; true by default. */
+  readonly seconds?: boolean
+  /** Whether a time with seconds carries «.SSS» after them; false by default. */
+  readonly milliseconds?: boolean
+  /** Whether the zone's short en-US name follows the text; false by default. */
+  readonly zoneName?: boolean
+  /** The reference of a calendar label in epoch milliseconds; the runner's clock by default. */
+  readonly now?: number
+}
+
+/** The calendar words by the local-day difference from the reference. */
+const CALENDAR_WORDS: ReadonlyMap<number, string> = new Map([
+  [-1, 'yesterday'],
+  [0, 'today'],
+  [1, 'tomorrow'],
+])
+const DAY_MS = 86_400_000
+
+/**
+ * The numeric local parts of a moment in a zone, two digits each but the year,
+ * on a 24-hour clock.
+ *
+ * @param moment The moment in epoch milliseconds.
+ * @param timeZone The zone it is read in.
+ * @param milliseconds Whether the fraction of a second is read too.
+ */
+function localParts(moment: number, timeZone: string, milliseconds: boolean) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+    ...(milliseconds ? { fractionalSecondDigits: 3 } : {}),
+  }).formatToParts(new Date(moment))
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? ''
+  const [year, month, day] = [part('year'), part('month'), part('day')]
+  return {
+    date: `${day}.${month}.${year}`,
+    time: `${part('hour')}:${part('minute')}`,
+    second: part('second'),
+    millisecond: part('fractionalSecond'),
+    dayNumber: Date.UTC(Number(year), Number(month) - 1, Number(day)) / DAY_MS,
+  }
+}
+
+/**
+ * One English word or name of a moment in a zone by en-US Intl.
+ *
+ * @param moment The moment in epoch milliseconds.
+ * @param timeZone The zone it is read in.
+ * @param options The single Intl field asked for.
+ */
+function localName(
   moment: number,
   timeZone: string,
-  format: Intl.DateTimeFormatOptions = {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  },
-): Promise<string> {
-  return page.evaluate(
-    ({ moment, timeZone, format }) =>
-      new Intl.DateTimeFormat(undefined, { ...format, timeZone }).format(
-        new Date(moment),
-      ),
-    { moment, timeZone, format },
+  options: Intl.DateTimeFormatOptions,
+): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone, ...options }).format(
+    new Date(moment),
   )
 }
 
-/** Independent Intl oracle: never import the product formatter into this check. */
+/**
+ * Independent oracle of an epoch-millisecond moment as the stand's tab writes
+ * it in the reader's zone: the en templates, the core's kinds and flags.
+ *
+ * @param moment The moment in epoch milliseconds.
+ * @param timeZone The reader's zone.
+ * @param options The kind and flags the screen asks the core formatter for.
+ */
+export function readerMillisecondMoment(
+  moment: number,
+  timeZone: string,
+  options: ReaderMomentOptions = {},
+): string {
+  const kind = options.kind ?? 'dateTime'
+  const seconds = options.seconds ?? true
+  const milliseconds = seconds && options.milliseconds === true
+  const local = localParts(moment, timeZone, milliseconds)
+  const time = !seconds
+    ? local.time
+    : `${local.time}:${local.second}${milliseconds ? `.${local.millisecond}` : ''}`
+  const now = options.now ?? Date.now()
+  const text =
+    kind === 'date'
+      ? local.date
+      : kind === 'time'
+        ? time
+        : kind === 'calendar'
+          ? (CALENDAR_WORDS.get(
+              local.dayNumber - localParts(now, timeZone, false).dayNumber,
+            ) ?? local.date)
+          : kind === 'monthYear'
+            ? `${localName(moment, timeZone, { month: 'long' })} ${local.date.slice(-4)}`
+            : kind === 'weekday'
+              ? localName(moment, timeZone, { weekday: 'long' })
+              : `${local.date} ${time}`
+  if (options.zoneName !== true) return text
+  const zone = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'short',
+  })
+    .formatToParts(new Date(moment))
+    .find((item) => item.type === 'timeZoneName')?.value
+  return `${text} ${zone ?? timeZone}`
+}
+
+/**
+ * Independent oracle of an ISO UTC wire moment as the stand's tab writes it in
+ * the reader's zone; never import the product formatter into this check.
+ *
+ * @param moment The moment as ISO UTC ending in Z.
+ * @param timeZone The reader's zone.
+ * @param options The kind and flags the screen asks the core formatter for.
+ */
 export function readerMoment(
   moment: string,
   timeZone: string,
-  kind: 'date' | 'dateTime' = 'dateTime',
+  options: ReaderMomentOptions = {},
 ): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    dateStyle: 'medium',
-    ...(kind === 'dateTime' ? { timeStyle: 'medium' } : {}),
-  }).format(new Date(moment))
+  return readerMillisecondMoment(Date.parse(moment), timeZone, options)
+}
+
+/**
+ * Independent oracle of a number as the stand's tab writes it in the en
+ * template 1,000.00. Intl.NumberFormat('en-US') writes the figure — thousands
+ * grouped by a comma, a point before the fraction, trailing fraction zeros
+ * dropped down to the minimum — which equals the template on the values the
+ * specs pass; the template's edges (-0, the infinities, compact) are not
+ * repeated.
+ *
+ * @param value The number the screen writes.
+ * @param options The fraction digits the screen asks the core for (0…3 by default).
+ */
+export function readerNumber(
+  value: number,
+  options: {
+    readonly minimumFractionDigits?: number
+    readonly maximumFractionDigits?: number
+  } = {},
+): string {
+  return new Intl.NumberFormat('en-US', {
+    useGrouping: true,
+    minimumFractionDigits: options.minimumFractionDigits ?? 0,
+    maximumFractionDigits: Math.max(
+      options.minimumFractionDigits ?? 0,
+      options.maximumFractionDigits ?? 3,
+    ),
+  }).format(value)
 }
 
 /** An absolute server moment and its exact reader-local DOM representation. */
@@ -47,7 +187,7 @@ export async function expectReaderMoment(
   return stamp
 }
 
-/** Numeric wire proof and an independent oracle in the actual browser's locale. */
+/** Numeric wire proof and the independent oracle of the stand tab's formats. */
 export async function expectReaderMillisecondMoment(
   expect: Expect,
   target: Locator,
@@ -59,7 +199,7 @@ export async function expectReaderMillisecondMoment(
   expect(Number.isSafeInteger(moment)).toBe(true)
   const stamp = moment as number
   expect(Number.isFinite(new Date(stamp).getTime())).toBe(true)
-  const expected = await readerMillisecondMoment(target.page(), stamp, timeZone)
+  const expected = readerMillisecondMoment(stamp, timeZone)
   await expect(target).toHaveText(`${prefix}${expected}`)
   return expected
 }
@@ -121,7 +261,7 @@ export async function expectBackupMoments(
     if (backup[state] === expectedState && typeof backup[field] === 'string') {
       expect(backup[field]).toMatch(/Z$/)
       await expect(row.getByTestId(handle)).toHaveText(
-        `✓ ${readerMoment(backup[field], timeZone, 'date')}`,
+        `✓ ${readerMoment(backup[field], timeZone, { kind: 'date' })}`,
       )
     }
   }
@@ -192,8 +332,7 @@ export async function expectLegalAcceptanceMoments(
   expect(Number.isSafeInteger(acceptance.acceptedAt)).toBe(true)
   const stamp = acceptance.acceptedAt as number
   expect(Number.isFinite(new Date(stamp).getTime())).toBe(true)
-  const acceptedIso = new Date(stamp).toISOString()
-  const expected = readerMoment(acceptedIso, timeZone)
+  const expected = readerMillisecondMoment(stamp, timeZone)
   const row = page.getByTestId(`hilos-table-row-${rowKey}`)
   await expect(row.getByTestId('legal-acceptance-accepted-at')).toHaveText(
     expected,

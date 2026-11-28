@@ -21,7 +21,7 @@ import {
   type HilosDaemonContext,
   type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, inject } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -35,21 +35,39 @@ const props = defineProps<{ context: HilosDaemonContext }>()
 const daemon = createHilosDaemonOverview(props.context)
 const overview = useSignal(daemon.overview)
 const database = useSignal(daemon.database)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const router = inject(hilosRouterKey)
 if (!router)
   throw new Error('HilosDaemonPage requires a provided Hilos router.')
 
 /** @param node The silent node's last-known silence boundary. */
 function formatSilentSince(node: HilosDaemonOverviewNode): string | null {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
 }
 
 /** @param node The server's clock projection in the current reader zone. */
 function formatClock(node: HilosDaemonOverviewNode): string | null {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeClock(node.clock, Date.now())
+}
+
+/** @param value A core count of a node's measurements. */
+function cores(value: number | null | undefined): string {
+  void readerDisplay.value
+  return formatDaemonCores(value)
+}
+
+/** @param value A memory figure of a node's measurements. */
+function bytes(value: number | null | undefined): string {
+  void readerDisplay.value
+  return formatDaemonBytes(value)
+}
+
+/** @param value A count the cluster or a node reports. */
+function count(value: number | null | undefined): string {
+  void readerDisplay.value
+  return formatDaemonNumber(value)
 }
 
 /** Scroll the Clock lines from their link without nesting a Tab stop in it. */
@@ -171,7 +189,7 @@ const metricsPath = computed(() => {
           <span
             class="badge bg-body-tertiary text-body border"
             data-id="hilos-daemon-term"
-            >Term: {{ formatDaemonNumber(overview.consensus?.term) }}</span
+            >Term: {{ count(overview.consensus?.term) }}</span
           >
           <span v-if="overview.consensus" class="text-body-secondary text-break"
             >Report:
@@ -320,8 +338,8 @@ const metricsPath = computed(() => {
                   <span class="d-flex justify-content-between gap-2 mb-1"
                     ><span>Daemon CPU</span
                     ><span
-                      >{{ formatDaemonCores(node.measurements?.daemonCores) }} /
-                      {{ formatDaemonCores(node.measurements?.cores) }}
+                      >{{ cores(node.measurements?.daemonCores) }} /
+                      {{ cores(node.measurements?.cores) }}
                       cores</span
                     ></span
                   >
@@ -352,10 +370,8 @@ const metricsPath = computed(() => {
                   <span class="d-flex justify-content-between gap-2 mb-1"
                     ><span>Measured memory</span
                     ><span
-                      >{{ formatDaemonBytes(daemonTotalMemory(node)) }} /
-                      {{
-                        formatDaemonBytes(node.measurements?.memoryCeiling)
-                      }}</span
+                      >{{ bytes(daemonTotalMemory(node)) }} /
+                      {{ bytes(node.measurements?.memoryCeiling) }}</span
                     ></span
                   >
                   <span class="progress" aria-hidden="true"
@@ -372,16 +388,12 @@ const metricsPath = computed(() => {
                     ></span
                   ></span>
                   <span class="d-block text-body-secondary mb-2"
-                    >{{
-                      formatDaemonNumber(node.measurements?.workersMeasured)
-                    }}
-                    worker processes measured</span
+                    >{{ count(node.measurements?.workersMeasured) }} worker
+                    processes measured</span
                   >
                   <span class="d-block"
                     >Monopolistic:
-                    {{
-                      formatDaemonNumber(daemonMonopolisticCount(node))
-                    }}</span
+                    {{ count(daemonMonopolisticCount(node)) }}</span
                   >
                   <span class="d-block text-body-secondary mb-2"
                     >Pool grows on demand</span
@@ -392,7 +404,7 @@ const metricsPath = computed(() => {
                     >{{
                       node.role === 'slave'
                         ? 'Does not accept browsers'
-                        : `Browser connections: ${formatDaemonNumber(node.standing?.connections)}`
+                        : `Browser connections: ${count(node.standing?.connections)}`
                     }}</span
                   >
                   <!-- Keep both lines and the scrollbar's room through clock
@@ -461,7 +473,7 @@ const metricsPath = computed(() => {
           <span
             class="badge bg-body text-body border"
             data-id="hilos-daemon-database-migration"
-            >Migration: {{ formatDaemonNumber(database?.migrationIndex) }}</span
+            >Migration: {{ count(database?.migrationIndex) }}</span
           >
         </div>
         <p

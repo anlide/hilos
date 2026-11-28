@@ -305,13 +305,13 @@ it.each([-300_000, 300_000])(
     try {
       const at = Date.parse('2026-01-01T00:30:05Z')
       expect(dataExportStatusText({ ...preparing, requestedAt: at })).toBe(
-        'Preparing your copy… Started at 12/31/2025, 4:30:05 PM. You can close this page: the copy will wait here.',
+        'Preparing your copy… Started at 31.12.2025 16:30:05. You can close this page: the copy will wait here.',
       )
       expect(dataExportStatusText({ ...ready, expiresAt: at })).toBe(
-        'Your copy is ready · 456 B · available until December 31, 2025',
+        'Your copy is ready · 456 B · available until 31.12.2025',
       )
       expect(describeHilosDataExport({ ...ready, expiresAt: at })).toBe(
-        'Copy ready until December 31, 2025',
+        'Copy ready until 31.12.2025',
       )
       const w = world()
       w.initial.set({

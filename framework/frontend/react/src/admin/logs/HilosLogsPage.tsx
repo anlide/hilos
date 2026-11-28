@@ -45,7 +45,7 @@ import {
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
 } from '@hilos/core/admin/logs'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import type {
   HilosLogNodeRow,
   HilosLogNodesContext,
@@ -85,7 +85,7 @@ export function HilosLogsPage({ context }: HilosLogsPageProps) {
     [context],
   )
   const overview = useSignal(handle.overview)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
 
   // The table's first window rides in page_response; later windows and the overview
   // frame arrive on their own signals.

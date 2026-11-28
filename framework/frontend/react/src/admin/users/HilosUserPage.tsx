@@ -55,6 +55,7 @@ import {
   createSignal,
   focusInitial,
   HILOS_STEP_UP_COPY,
+  hilosReaderDisplay,
   type HilosStepUpOpenOutcome,
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
@@ -224,6 +225,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   )
 
   const detail = useSignal(userDetail)
+  useSignal(hilosReaderDisplay)
   const detailRef = useRef(detail)
   useEffect(() => {
     detailRef.current = detail

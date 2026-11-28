@@ -273,6 +273,7 @@ export {
   type DateTimePickerFactors,
   type DateTimePickerLabels,
 } from '../primitives/dateTimePickerFactors.js'
+export { hilosTabPickerFactors } from '../primitives/dateTimePickerTabFactors.js'
 export type {
   DateTimePickerKind,
   DateTimePickerCount,
@@ -461,7 +462,6 @@ export {
   SIGNAL_IMPERSONATION_POLICY,
   SIGNAL_THEME_SETTINGS,
   SIGNAL_CODE_DELIVERY,
-  SIGNAL_HANDSHAKE_RESPONSE,
   SESSION_ACK_PASSWORD_CHANGED,
   SESSION_ACK_REGISTERED,
   SESSION_ACK_SIGNED_IN,
@@ -940,6 +940,12 @@ export {
   calendarMonthMatrix,
 } from '../calendar/monthMatrix.js'
 export { formatMoment, type MomentFormatOptions } from '../format/moment.js'
+export { formatNumber } from '../format/number.js'
+export {
+  hilosReaderDisplay,
+  HILOS_DEFAULT_READER_FORMATS,
+  type HilosReaderDisplay,
+} from '../format/readerDisplay.js'
 export { formatInitials } from '../format/initials.js'
 export {
   AUTH_CONVERGE_SIGNAL,
@@ -1119,6 +1125,7 @@ export {
 } from '../auth/cookiesRefused.js'
 export {
   SIGNAL_TYPE_HANDSHAKE,
+  SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_SIGNAL_BATCH,
   SIGNAL_TYPE_PROTECTED_MODE,
   SIGNAL_TYPE_RT_STALENESS,

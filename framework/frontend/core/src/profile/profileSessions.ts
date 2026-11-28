@@ -194,16 +194,5 @@ export function formatProfileDateTime(value: string | number | null): string {
   if (value === null) {
     return 'never'
   }
-  return (
-    formatMoment(value, {
-      format: {
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        second: 'numeric',
-      },
-    }) ?? String(value)
-  )
+  return formatMoment(value, { kind: 'dateTime' }) ?? String(value)
 }

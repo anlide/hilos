@@ -37,15 +37,7 @@ afterEach(() => {
 })
 
 /** The format both moments and the mail mark of a row are drawn in. */
-const MOMENT_FORMAT: Intl.DateTimeFormatOptions = {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZoneName: 'short',
-}
+const MOMENT_FORMAT = { kind: 'dateTime', zoneName: true } as const
 
 function find(
   id: string,
@@ -169,7 +161,7 @@ describe('HilosStatusWorksPage with real normalized rows and viewport', () => {
     expect(table().querySelector('script')).toBeNull()
     expect(get('hilos-status-work-mail-7', table()).textContent).toBe('—')
     expect(table().textContent).toContain(
-      formatMoment(announcement.startsAt, { format: MOMENT_FORMAT })!,
+      formatMoment(announcement.startsAt, MOMENT_FORMAT)!,
     )
     expect(
       get('hilos-status-work-edit-7', table()).getAttribute('aria-label'),
@@ -180,7 +172,7 @@ describe('HilosStatusWorksPage with real normalized rows and viewport', () => {
     const before = table().textContent
     act(() => zone.choose('America/New_York'))
     expect(table().textContent).toContain(
-      formatMoment(announcement.startsAt, { format: MOMENT_FORMAT })!,
+      formatMoment(announcement.startsAt, MOMENT_FORMAT)!,
     )
     expect(table().textContent).not.toBe(before)
     expect(h.sent).toEqual([])
@@ -255,7 +247,7 @@ describe('HilosStatusWorksPage with real normalized rows and viewport', () => {
       'Changed elsewhere',
     )
     expect(get('hilos-status-work-mail-7', table()).textContent).toBe(
-      formatMoment(1_800_000_000_000, { format: MOMENT_FORMAT }),
+      formatMoment(1_800_000_000_000, MOMENT_FORMAT),
     )
     expect(find('hilos-status-work-title-8', table())).not.toBeNull()
     expect(get('hilos-table-pending').textContent).toBe('1')
@@ -359,7 +351,7 @@ describe('HilosStatusWorksPage with real normalized rows and viewport', () => {
     expect(get('hilos-status-work-mail-7', table()).textContent).toBe('—')
     h.update({ lastMailQueuedAt: 1_800_000_000_000 })
     expect(get('hilos-status-work-mail-7', table()).textContent).toBe(
-      formatMoment(1_800_000_000_000, { format: MOMENT_FORMAT }),
+      formatMoment(1_800_000_000_000, MOMENT_FORMAT),
     )
   })
 })

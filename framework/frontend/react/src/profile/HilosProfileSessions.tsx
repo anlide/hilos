@@ -1,9 +1,9 @@
 import {
   endableProfileSessionCount,
   formatProfileDateTime,
-  hilosTimeZone,
   type HilosProfileSession,
   type HilosProfileSessionActions,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import { useState } from 'react'
 
@@ -37,7 +37,7 @@ export function HilosProfileSessions({
   sessions,
   actions,
 }: HilosProfileSessionsProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
   const [endingSessionId, setEndingSessionId] = useState<number | null>(null)
   const [endOthersOpen, setEndOthersOpen] = useState(false)

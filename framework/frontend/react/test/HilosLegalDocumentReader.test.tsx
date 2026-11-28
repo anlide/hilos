@@ -49,10 +49,10 @@ function draw(
 it('renders the core line and plate and sends each available intent to its owner', () => {
   const { accept, compare } = draw(DUE, false, 'This revision changed.')
   expect(node('legal-document-reader-line')!.textContent).toContain(
-    'The privacy policy changed on 5 October 2026.',
+    'The privacy policy changed on 05.10.2026.',
   )
   expect(node('legal-document-reader-plate')!.textContent).toContain(
-    '14 November 2026',
+    '14.11.2026',
   )
   expect(node('legal-document-accept-refusal')!.textContent).toContain(
     'This revision changed.',

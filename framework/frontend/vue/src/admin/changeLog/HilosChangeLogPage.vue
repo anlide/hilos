@@ -11,7 +11,7 @@ import {
   readHilosChangeLogOverview,
   type HilosChangeLogContext,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTabLinks, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosTabLinks, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, inject } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -48,9 +48,15 @@ const pageOverview = useSignal(
   props.context.scopes.pageDataSignal(CHANGE_LOG_OVERVIEW_SECTION),
 )
 const overview = computed(() => readHilosChangeLogOverview(pageOverview.value))
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
+const journalEntries = computed(() => {
+  void readerDisplay.value
+  return overview.value
+    ? formatChangeLogEntries(overview.value.journalEntries)
+    : '—'
+})
 const journalNote = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return overview.value ? changeLogJournalNote(overview.value) : '—'
 })
 </script>
@@ -78,9 +84,7 @@ const journalNote = computed(() => {
             <span class="small">{{ CHANGE_LOG_TILE_JOURNAL_LABEL }}</span>
           </div>
           <div class="fs-4 lh-1 mb-1" data-id="hilos-change-log-tile-journal">
-            {{
-              overview ? formatChangeLogEntries(overview.journalEntries) : '—'
-            }}
+            {{ journalEntries }}
           </div>
           <div class="small text-body-secondary">
             {{ journalNote }}

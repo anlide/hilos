@@ -9,6 +9,7 @@ import {
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
 import { hilosTimeZone } from '@hilos/core/base'
+import { bindReader } from '../../core/test/format/readerFixture.js'
 import { HilosProfileSessions } from '../src/profile/HilosProfileSessions.js'
 import { readerTimeZone } from './readerTimeZone.js'
 
@@ -454,6 +455,67 @@ describe('HilosProfileSessions (React)', () => {
     expect(byId('profile-session-tab')).toBe(tabs[0])
     expect(tabs[0]?.textContent).toContain(`opened ${after.epoch}`)
     expect(tabs[1]?.textContent).toContain(`opened ${after.dstBoundary}`)
+    expect(
+      rows[0]!
+        .querySelector('[data-id="profile-session-tabs"]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('true')
+    expect(byId('profile-session-device').textContent).toBe(
+      'Device 1 · Europe/Kyiv',
+    )
+    expect(byId('profile-session-end-confirm')).toBe(dialog)
+    view.unmount()
+  })
+
+  it('redraws session moments in the formats of a new region without remounting', async () => {
+    const reader = bindReader()
+    readerTimeZoneReleases.push(() => {
+      reader.region(null)
+      reader.release()
+    })
+    await act(async () => {
+      reader.choose('UTC')
+    })
+    const { view } = setup([
+      {
+        ...makeSession(1, { current: true }),
+        browserTimeZone: 'Europe/Kyiv',
+        createdAt: 1767227400000,
+        expiresAt: 1767313800000,
+        tabs: [
+          makeTab('tab-current', { connectedAt: 1767227520000, current: true }),
+        ],
+      },
+      { ...makeSession(2), lastSeenAt: 1767227460000 },
+    ])
+    const rows = sessionRows()
+    expect(rows[0]?.textContent).toContain('created 01.01.2026 00:30:00')
+    expect(rows[0]?.textContent).toContain('expires 02.01.2026 00:30:00')
+    expect(rows[1]?.textContent).toContain('last seen 01.01.2026 00:31:00')
+    await act(async () => {
+      fireEvent.click(
+        rows[0]!.querySelector('[data-id="profile-session-tabs"]')!,
+      )
+      fireEvent.click(
+        rows[1]!.querySelector('[data-id="profile-session-revoke"]')!,
+      )
+    })
+    const tab = byId('profile-session-tab')
+    const dialog = byId('profile-session-end-confirm')
+    expect(tab.textContent).toContain('opened 01.01.2026 00:32:00')
+
+    await act(async () => {
+      reader.region({ date: 'MM/DD/YYYY', time: 'hh:mm:ss a' })
+    })
+
+    expect(hilosTimeZone.get()).toBe('UTC')
+    expect(sessionRows()[0]).toBe(rows[0])
+    expect(sessionRows()[1]).toBe(rows[1])
+    expect(rows[0]?.textContent).toContain('created 01/01/2026 12:30:00 AM')
+    expect(rows[0]?.textContent).toContain('expires 01/02/2026 12:30:00 AM')
+    expect(rows[1]?.textContent).toContain('last seen 01/01/2026 12:31:00 AM')
+    expect(byId('profile-session-tab')).toBe(tab)
+    expect(tab.textContent).toContain('opened 01/01/2026 12:32:00 AM')
     expect(
       rows[0]!
         .querySelector('[data-id="profile-session-tabs"]')

@@ -15,6 +15,7 @@ import {
   createDateTimePickerController,
   type DateTimePickerController,
 } from '../../primitives/dateTimePicker.js'
+import { hilosTabPickerFactors } from '../../primitives/dateTimePickerTabFactors.js'
 import type { DateTimePickerEndpointSnapshot } from '../../primitives/dateTimePickerValue.js'
 import { HilosPages } from '../../routing/hilosPages.js'
 import { hilosAdminAccess } from '../../session/adminAccess.js'
@@ -312,7 +313,8 @@ function serverToday(adapter: DateTimeZoneAdapter, zone: string): CalendarDate {
 }
 
 /**
- * Create the window picker of one opening in the zone captured on open.
+ * Create the window picker of one opening in the zone and the region's date
+ * order, separator and hour cycle captured on open.
  *
  * @param zone The zone captured when the form opened.
  * @param value The saved window, or null for a new one.
@@ -330,6 +332,7 @@ function openWindowPicker(
     count: 'range',
     value,
     timeZone: zone,
+    factors: hilosTabPickerFactors(),
     adapter,
     today,
     minDate: today(),

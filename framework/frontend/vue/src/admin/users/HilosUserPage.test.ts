@@ -1064,7 +1064,7 @@ describe('HilosUserPage Overview', () => {
       overview.get('[data-id="hilos-user-deletion-state"]').text(),
     ).toContain('5 days left')
     expect(overview.get('[data-id="hilos-user-frozen-lapsed"]').text()).toBe(
-      'Terms of use — deadline passed 1 September 2026',
+      'Terms of use — deadline passed 01.09.2026',
     )
     expect(overview.findAll('.badge')).toHaveLength(0)
   })
@@ -3729,7 +3729,7 @@ describe('HilosUserPage standing (HIL-945)', () => {
         ?.textContent?.trim(),
     ).toBe('Frozen')
     expect(modalEl('hilos-user-frozen-lapsed')?.textContent).toContain(
-      'Terms of use — deadline passed 1 September 2026',
+      'Terms of use — deadline passed 01.09.2026',
     )
     expect(modalEl('hilos-user-frozen-open')).toBeNull()
     const states = Array.from(
@@ -3775,7 +3775,7 @@ describe('HilosUserPage standing (HIL-945)', () => {
       'Past deadline — reminders only',
     )
     expect(modalEl('hilos-user-frozen-lapsed')?.textContent).toContain(
-      'Privacy policy — deadline passed 15 September 2026',
+      'Privacy policy — deadline passed 15.09.2026',
     )
 
     // Hidden from a viewer of the admin view mode: no standing to show.

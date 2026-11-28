@@ -82,12 +82,17 @@ test(
         shownByTestId(page, `hilos-table-row-${slave}`),
         `hilos-logs-node-live-${slave}`,
       )
-      await expect(live).toHaveText(/^\d+(?:\.\d+)? (?:B|KB|MB|GB|TB)$/)
-      const [beforeValue, beforeUnit] = (await live.innerText())
-        .trim()
-        .split(/\s+/)
-      const beforeBytes =
-        Number(beforeValue) * 1024 ** byteUnits.indexOf(beforeUnit)
+      // The figure is written in the en template: «1,023 B», «1.5 MB».
+      await expect(live).toHaveText(
+        /^\d{1,3}(?:,\d{3})*(?:\.\d+)? (?:B|KB|MB|GB|TB)$/,
+      )
+      const liveBytes = (text: string) => {
+        const [value, unit] = text.trim().split(/\s+/)
+        return (
+          Number(value.replaceAll(',', '')) * 1024 ** byteUnits.indexOf(unit)
+        )
+      }
+      const beforeBytes = liveBytes(await live.innerText())
       await markDocument(page)
 
       // Make growth visible even when the byte label rounds to one decimal place.
@@ -95,13 +100,9 @@ test(
       const lines = 128
       expect(await appendLogLines(marker, lines, nodeHost(slave))).toBe(lines)
       await expect
-        .poll(
-          async () => {
-            const [value, unit] = (await live.innerText()).trim().split(/\s+/)
-            return Number(value) * 1024 ** byteUnits.indexOf(unit)
-          },
-          { timeout: TAIL_ARRIVAL_TIMEOUT_MS },
-        )
+        .poll(async () => liveBytes(await live.innerText()), {
+          timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+        })
         .toBeGreaterThan(beforeBytes)
       await expectDocumentUnchanged(expect, page)
 
@@ -115,7 +116,9 @@ test(
           shownByTestId(page, `hilos-table-row-${node}`),
         ).toBeVisible()
       }
-      await expect(live).toHaveText(/^\d+(?:\.\d+)? (?:B|KB|MB|GB|TB)$/)
+      await expect(live).toHaveText(
+        /^\d{1,3}(?:,\d{3})*(?:\.\d+)? (?:B|KB|MB|GB|TB)$/,
+      )
     } finally {
       frames.stop()
       await test.info().attach('log-nodes-window-frames', {

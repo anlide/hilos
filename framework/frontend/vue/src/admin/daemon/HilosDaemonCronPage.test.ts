@@ -17,6 +17,7 @@ import {
   bindAdminAccess,
   hilosAdminAccess,
   ingest,
+  hilosReaderDisplay,
   hilosTimeZone,
   type ReadonlySignal,
   type TableViewportController,
@@ -31,6 +32,7 @@ import { markRaw, nextTick } from 'vue'
 
 import HilosDaemonCronPage from './HilosDaemonCronPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 const NOTICE_ROOM =
   '.position-relative > .alert-warning.invisible[aria-hidden="true"]'
@@ -439,11 +441,11 @@ describe('HilosDaemonCronPage', () => {
     vi.spyOn(core, 'subscribeSignal').mockImplementation(
       <T>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
         const stop = nativeSubscribe(source, (value) => {
-          if (source === hilosTimeZone) callbacks(value)
+          if (source === hilosReaderDisplay) callbacks(value)
           listener(value)
         })
         return () => {
-          if (source === hilosTimeZone) releases()
+          if (source === hilosReaderDisplay) releases()
           stop()
         }
       },
@@ -475,11 +477,7 @@ describe('HilosDaemonCronPage', () => {
       const requests = h.sendViewport.mock.calls.length
       const registrations = h.register.mock.calls.length
       const expected = (zone: string, moment: number, day: string) =>
-        `${day}, ${new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(moment)}`
+        `${day}, ${readerMomentText(moment, zone, { kind: 'time', seconds: false })}`
       for (const [own, zone, day, nextDay] of [
         ['UTC', 'UTC', 'today', 'today'],
         ['Pacific/Honolulu', 'Pacific/Honolulu', 'today', 'today'],

@@ -8,7 +8,7 @@
 // server's answer alone; only a correlated success of this still-mounted window
 // speaks to its initiator. Bootstrap classes only.
 import { useId } from 'react'
-import { formatMoment, hilosTimeZone, hilosToasts } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, hilosToasts } from '@hilos/core/base'
 import type { HilosStatusWorkCancel } from '@hilos/core/admin/status'
 
 import { HilosEditNotice } from '../../HilosEditNotice.js'
@@ -32,19 +32,7 @@ const TITLE = 'Cancel scheduled maintenance'
  * @param at The moment in epoch milliseconds.
  */
 function moment(at: number): string {
-  return (
-    formatMoment(at, {
-      format: {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short',
-      },
-    }) ?? '—'
-  )
+  return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
 }
 
 /**
@@ -62,8 +50,8 @@ export function HilosStatusCancelWorkModal({
   const blockedReason = useSignal(controller.blockedReason)
   const error = useSignal(controller.error)
   const failure = useSignal(controller.failure)
-  // The interval follows the reader zone without a server reread.
-  useSignal(hilosTimeZone)
+  // The interval follows the reader's zone and formats without a server reread.
+  useSignal(hilosReaderDisplay)
   const formId = useId()
   const descriptionId = useId()
   const copyText = failure?.errorDetail

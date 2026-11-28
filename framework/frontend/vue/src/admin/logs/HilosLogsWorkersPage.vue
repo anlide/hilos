@@ -15,7 +15,7 @@ import {
   type HilosLogWorkerRow,
   type HilosLogWorkersContext,
 } from '@hilos/core/admin/logs'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -48,6 +48,7 @@ onUnmounted(() => {
 const rows = useSignal(streamsTable.rows)
 const search = useSignal(streamsTable.search)
 const filter = useSignal(streamsTable.filter)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 // The node column, the node filter and the footnote's wording all follow the same
 // question: in a single-node installation a column repeating one name and a filter
@@ -78,6 +79,11 @@ function stateClass(row: HilosLogWorkerRow): string {
   return row.live
     ? 'text-bg-success'
     : 'bg-body-tertiary text-body-emphasis border'
+}
+
+function weight(row: HilosLogWorkerRow): string {
+  void readerDisplay.value
+  return formatLogWorkerWeight(row)
 }
 
 function clearFilters(): void {
@@ -115,9 +121,7 @@ function clearFilters(): void {
         </span>
       </template>
       <template #cell-batchCount="{ row }">{{ row.batchCount }}</template>
-      <template #cell-bytes="{ row }">{{
-        formatLogWorkerWeight(row)
-      }}</template>
+      <template #cell-bytes="{ row }">{{ weight(row) }}</template>
       <template #cell-actions="{ row }">
         <HilosLink
           v-if="logWorkerViewerPath(row) !== ''"

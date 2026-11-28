@@ -23,12 +23,14 @@ import {
   type HilosDaemonPlacementNode,
   type HilosDaemonPlacementSelection,
 } from '@hilos/core/admin/daemon'
+import { hilosReaderDisplay } from '@hilos/core/base'
 
 import {
   HilosSkeleton,
   HilosViewportTable,
   HilosTableCell,
   HilosTableDetail,
+  hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 
@@ -254,7 +256,13 @@ export class HilosDaemonPlacement {
       ),
   )
   protected readonly daemonPlacementNodeColumnKey = daemonPlacementNodeColumnKey
-  protected readonly formatDaemonNumber = formatDaemonNumber
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly formatDaemonNumber = (
+    value: number | null | undefined,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonNumber(value)
+  }
   protected readonly formatDaemonPlacementKind = formatDaemonPlacementKind
   protected readonly formatDaemonPlacementState = formatDaemonPlacementState
   protected readonly formatHilosNodeLabel = formatHilosNodeLabel

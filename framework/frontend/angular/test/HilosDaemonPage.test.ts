@@ -13,6 +13,7 @@ import {
   daemonPicture,
 } from './helpers/hilosDaemon.js'
 import { bindTestTimeZone } from './timeZoneTestHarness.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 function harness() {
   return daemonHarness(HilosDaemonPage, HilosPages.DAEMON)
@@ -252,15 +253,11 @@ describe('HilosDaemonPage', () => {
         ]),
       )
       h.detect()
-      const date = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'UTC',
-        dateStyle: 'medium',
-      }).format(measuredAt)
-      const time = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'UTC',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(measuredAt)
+      const date = readerMomentText(measuredAt, 'UTC', { kind: 'date' })
+      const time = readerMomentText(measuredAt, 'UTC', {
+        kind: 'time',
+        seconds: false,
+      })
       expect(h.el('hilos-daemon-clock-n1')?.textContent).toBe(
         'Clock: reference',
       )
@@ -526,15 +523,11 @@ describe('HilosDaemonPage', () => {
       const card = h.el('hilos-daemon-node-n2')!
       const picture = h.scope.data.signal(DAEMON_OVERVIEW_DATA).get()
       const formatExpected = (zone: string) => {
-        const date = new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          dateStyle: 'medium',
-        }).format(measuredAt)
-        const time = new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(measuredAt)
+        const date = readerMomentText(measuredAt, zone, { kind: 'date' })
+        const time = readerMomentText(measuredAt, zone, {
+          kind: 'time',
+          seconds: false,
+        })
         return `Clock: +120 ms to the leader, measured ${date}, ${time}`
       }
       expect(clockLine.textContent).toBe(formatExpected('UTC'))

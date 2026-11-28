@@ -180,7 +180,7 @@ it('shows a guest the current text with nothing to accept', async () => {
   await flushPromises()
   const reader = view.get('[data-id="terms-reader"]')
   expect(reader.attributes('data-state')).toBe('guest')
-  expect(reader.text()).toContain('in force since 1 October 2026')
+  expect(reader.text()).toContain('in force since 01.10.2026')
   expect(view.findAll('[data-id="terms-text"] li')).toHaveLength(1)
   expect(view.find('[data-id="legal-document-accept"]').exists()).toBe(false)
 })
@@ -197,7 +197,7 @@ it('confirms in green a reader holding the revision in force', async () => {
   const reader = view.get('[data-id="terms-reader"]')
   expect(reader.attributes('data-state')).toBe('covered')
   expect(reader.find('.text-success').exists()).toBe(true)
-  expect(reader.text()).toContain('You accepted the revision of 1 October 2026')
+  expect(reader.text()).toContain('You accepted the revision of 01.10.2026')
   expect(view.find('[data-id="legal-document-accept"]').exists()).toBe(false)
 })
 
@@ -265,7 +265,7 @@ it('keeps the refusal of an acceptance in its room under the buttons', async () 
   )
   await flushPromises()
   expect(view.get('[data-id="legal-document-reader-plate"]').text()).toContain(
-    'account frozen · deadline passed 1 October 2026',
+    'account frozen · deadline passed 01.10.2026',
   )
   await view.get('[data-id="legal-document-accept"]').trigger('click')
   await flushPromises()

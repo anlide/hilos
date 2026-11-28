@@ -13,7 +13,7 @@ import {
   bindPageInstanceName,
   computedSignal,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import { computed, inject, onUnmounted, ref, watch } from 'vue'
 
@@ -100,9 +100,9 @@ const logPath = computed(() =>
     ? daemonNodeLogPath(router.resolvePath, current.value.nodeId)
     : undefined,
 )
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const silentSince = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeSilentSince(heading.value ?? null, Date.now())
 })
 

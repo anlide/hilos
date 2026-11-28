@@ -927,7 +927,10 @@ test.describe('Cron reader time zone', () => {
         browserTimeZone: browserZone,
         projectTimeZone: projectZone,
       })
-      // The expected run texts are composed in en-US, so the browser must read so.
+      // The browser asks for en-US, whose own formats differ from the
+      // region's. The client never formats by the browser's locale, and
+      // without the I18N feature the tab writes in the built-in en formats:
+      // the run texts follow them.
       expect(await page.evaluate(() => navigator.language)).toBe('en-US')
       expect(browserZone).not.toBe(projectZone)
       await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)

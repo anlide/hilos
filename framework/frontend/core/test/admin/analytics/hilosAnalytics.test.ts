@@ -12,12 +12,7 @@ import {
 describe('Analytics labels', () => {
   it('formats source milliseconds as local date and time with seconds', () => {
     const ms = Date.UTC(2026, 9, 9, 10, 11, 12, 123)
-    expect(formatAnalyticsTime(ms)).toBe(
-      new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }).format(ms),
-    )
+    expect(formatAnalyticsTime(ms)).toBe('09.10.2026 10:11:12')
   })
 
   it('keeps an absent-value label separate from a session number', () => {
@@ -56,7 +51,7 @@ it.each([-300_000, 300_000])(
     applyServerTime(Date.now() + drift)
     try {
       expect(formatAnalyticsTime(Date.parse('2026-01-01T00:30:05Z'))).toBe(
-        'Dec 31, 2025, 4:30:05 PM',
+        '31.12.2025 16:30:05',
       )
       expect(formatAnalyticsTime(NaN)).toBe('Invalid Date')
     } finally {

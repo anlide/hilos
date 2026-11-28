@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
 import HilosNotificationBell from './HilosNotificationBell.vue'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 // A minimal connection stub: the bell calls sendAction on it, and timeZoneState listens on it.
 function fakeConnection(): {
@@ -207,11 +208,7 @@ describe('HilosNotificationBell', () => {
 
     // Independent formatter that does not call formatMoment
     const formatIndependent = (moment: number, timeZone: string): string =>
-      new Intl.DateTimeFormat(undefined, {
-        timeZone,
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }).format(moment)
+      readerMomentText(moment, timeZone)
 
     // 1. Initial render in UTC
     setOwnZone('UTC')

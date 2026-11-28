@@ -23,6 +23,7 @@ import type { HilosLogNodeRow } from '@hilos/core/admin/logs'
 
 import HilosLogsPage from './HilosLogsPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 /** One node in the full overview, independent of the table window. */
 function node(
@@ -92,24 +93,11 @@ const DST_MOMENT = Date.parse('2026-03-29T01:30:00.123Z')
 const DST_MOMENT_ISO = '2026-03-29T01:30:00.123Z'
 
 function rotationLabel(timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    timeZone,
-  }).format(new Date(DST_MOMENT))
+  return readerMomentText(new Date(DST_MOMENT), timeZone)
 }
 
 function recentLabel(timeZone: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    timeZone,
-  }).format(new Date(DST_MOMENT))
+  return readerMomentText(new Date(DST_MOMENT), timeZone, { kind: 'time' })
 }
 
 function bindReaderZone(): {

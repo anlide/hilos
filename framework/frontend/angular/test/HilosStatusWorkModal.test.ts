@@ -334,7 +334,7 @@ describe('HilosStatusWorkModal over real creation and row-edit windows', () => {
     })
     h.chooseZone('Asia/Tokyo')
     expect(el('hilos-status-work-notice').textContent).toContain(
-      'Keep mine: 02/01/2031, 04:06:03 (UTC)',
+      'Keep mine: 02.01.2031, 04:06:03 (UTC)',
     )
     expect(el('hilos-status-work-notice').textContent).toContain('(Asia/Tokyo)')
     h.act(() => el('conflict-accept-theirs').click())

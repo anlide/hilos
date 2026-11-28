@@ -12,13 +12,14 @@ import {
   describeHilosLegalRevision,
   formatHilosLegalAcceptanceDate,
   formatHilosLegalDate,
-  hilosTimeZone,
+  hilosReaderDisplay,
   hilosLegalDocumentLabel,
   hilosLegalRevisionHistory,
   subscribeSignal,
   type HilosLegalAgreementsState,
   type HilosLegalContext,
   type HilosLegalDocumentKey,
+  type HilosLegalHistoryRevision,
   type HilosLegalRevisionDialog,
 } from '@hilos/core/base'
 import { HilosFormError } from '../HilosFormError.js'
@@ -203,13 +204,21 @@ export class HilosProfileAgreementsHistoryPage {
   protected readonly history = signal<LegalHistory>([])
   protected readonly dialog = signal<HilosLegalRevisionDialog | null>(null)
   protected readonly documentLabel = hilosLegalDocumentLabel
-  protected readonly date = formatHilosLegalDate
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly date = (date: string): string => {
+    this.readerDisplay()
+    return formatHilosLegalDate(date)
+  }
   protected readonly acceptanceDate = (moment: number): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatHilosLegalAcceptanceDate(moment)
   }
-  protected readonly description = describeHilosLegalRevision
+  protected readonly description = (
+    revision: HilosLegalHistoryRevision,
+  ): string => {
+    this.readerDisplay()
+    return describeHilosLegalRevision(revision)
+  }
   protected readonly title = computed(() => {
     const dialog = this.dialog()
     return dialog

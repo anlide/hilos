@@ -17,9 +17,10 @@ import {
   createHilosAnalyticsPeopleTable,
   formatAnalyticsPeopleTime,
   formatAnalyticsPersonName,
+  type AnalyticsPeriodContext,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 
 import {
   HilosAdminPage,
@@ -28,6 +29,7 @@ import {
   HilosTableCell,
   HilosViewportTable,
   HILOS_ROUTER,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** People whose browser sessions touch the selected calendar period. */
@@ -109,7 +111,14 @@ export class HilosAnalyticsPeoplePage {
   protected readonly page = HilosPages.ANALYTICS_PEOPLE
   protected readonly personName = formatAnalyticsPersonName
   protected readonly isHidden = isHiddenValue
-  protected readonly time = formatAnalyticsPeopleTime
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly time = (
+    ms: number,
+    periodContext: AnalyticsPeriodContext,
+  ): string => {
+    this.readerDisplay()
+    return formatAnalyticsPeopleTime(ms, periodContext)
+  }
   protected readonly keys = {
     rowKey: ANALYTICS_PERSON_ROW_KEY_FIELD,
     sessionCount: ANALYTICS_PERSON_SESSION_COUNT_FIELD,

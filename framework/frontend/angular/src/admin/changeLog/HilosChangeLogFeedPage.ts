@@ -34,7 +34,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -176,9 +176,9 @@ export class HilosChangeLogFeedPage {
     touched: CHANGE_LOG_FEED_TOUCHED_FIELD,
     actions: HILOS_TABLE_ACTIONS_KEY,
   } as const
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly time = (moment: string): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatChangeLogTime(moment)
   }
   protected readonly who = formatChangeLogWho

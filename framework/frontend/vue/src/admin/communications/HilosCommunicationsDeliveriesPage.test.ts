@@ -36,6 +36,7 @@ import {
 import { readTextWithoutAriaHidden } from '../../../../test/breadcrumb.js'
 import HilosCommunicationsDeliveriesPage from './HilosCommunicationsDeliveriesPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 const TABLE = 'hilosNotificationDeliveries'
 
@@ -610,11 +611,7 @@ describe('HilosCommunicationsDeliveriesPage time zone reactivity', () => {
     expect(hilosTimeZone.get()).toBe('UTC')
 
     const formatIndependent = (moment: number, timeZone: string): string =>
-      new Intl.DateTimeFormat(undefined, {
-        timeZone,
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }).format(moment)
+      readerMomentText(moment, timeZone)
 
     const expectedUtcCreatedAt = formatIndependent(at, 'UTC')
     const expectedUtcDeliveredAt = formatIndependent(deliveredAt, 'UTC')

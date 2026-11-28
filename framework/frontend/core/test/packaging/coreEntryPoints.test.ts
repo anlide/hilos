@@ -256,9 +256,15 @@ const legalHistoryTypes = [
   'HilosLegalHistoryRow',
   'HilosLegalHistoryReader',
 ]
-/** The moment formatter's public declarations. */
-const momentValues = ['formatMoment']
-const momentTypes = ['MomentFormatOptions']
+/** The moment and number formatters' public declarations, with their reader. */
+const momentValues = [
+  'formatMoment',
+  'formatNumber',
+  'hilosReaderDisplay',
+  'HILOS_DEFAULT_READER_FORMATS',
+  'hilosTabPickerFactors',
+]
+const momentTypes = ['MomentFormatOptions', 'HilosReaderDisplay']
 /** One common live-loss controller, shared by base. */
 const accessLossValues = [
   'ACCESS_LOSS_COPY',
@@ -1538,7 +1544,12 @@ describe('core public entries', () => {
     ]) {
       expect(baseExports.get(name), name).toBeDefined()
     }
-    const momentExports = exportsOf('format/moment.ts')
+    const momentExports = new Map([
+      ...exportsOf('format/moment.ts'),
+      ...exportsOf('format/number.ts'),
+      ...exportsOf('format/readerDisplay.ts'),
+      ...exportsOf('primitives/dateTimePickerTabFactors.ts'),
+    ])
     for (const name of [...momentValues, ...momentTypes]) {
       expect(baseExports.get(name), name).toBe(momentExports.get(name))
     }
@@ -1989,6 +2000,12 @@ describe('core public entries', () => {
       }
     }
   }, 30_000)
+
+  it('keeps the moment formatter clear of the session reader and the legal state', () => {
+    const closure = runtimeClosure('format/moment.ts')
+    expect(closure).not.toContain('session/sessionScope.ts')
+    expect(closure).not.toContain('legal/legalAgreements.ts')
+  })
 
   it('keeps the entire base runtime closure free of public Status and admin implementations', () => {
     const closure = runtimeClosure('base/index.ts')

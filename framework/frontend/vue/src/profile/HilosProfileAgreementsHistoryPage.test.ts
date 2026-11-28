@@ -51,7 +51,7 @@ it('orders history newest first, marks current and accepted, and loads compariso
   )
   expect(
     revisions[1]!.find('[data-id="legal-history-accepted"]').text(),
-  ).toContain('18 September 2026')
+  ).toContain('18.09.2026')
   expect(revisions[1]!.find('[data-id="legal-history-compare"]').exists()).toBe(
     false,
   )

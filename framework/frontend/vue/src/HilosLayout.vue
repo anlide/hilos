@@ -79,7 +79,7 @@ import {
   hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
-  hilosTimeZone,
+  hilosReaderDisplay,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
   isDisplayed,
@@ -215,7 +215,7 @@ watch(
   },
   { immediate: true },
 )
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const build = ref(props.connection.build)
 watch(
   () => props.connection,
@@ -308,7 +308,7 @@ watch(
 )
 onUnmounted(() => clearInterval(deletionTick))
 const deletionStripText = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return deletionStrip.value === null
     ? ''
     : formatHilosDeletionStrip(deletionStrip.value, deletionNow.value)
@@ -571,11 +571,11 @@ const connVisual = computed(() => CONN_VISUAL[connectionState.value])
 // stale copy is the least of what is out of date.
 const staleness = useRtStaleness(() => props.connection)
 const stalenessLabel = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return rtStalenessLabel(staleness.value)
 })
 const compactStalenessLabel = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return rtStalenessCompactLabel(staleness.value)
 })
 const showsFrozenData = computed(

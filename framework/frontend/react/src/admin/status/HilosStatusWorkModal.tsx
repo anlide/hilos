@@ -13,6 +13,7 @@ import type { KeyboardEvent } from 'react'
 import {
   createSignal,
   formatMoment,
+  hilosReaderDisplay,
   hilosTimeZone,
   hilosToasts,
   type DateTimePickerSnapshot,
@@ -117,7 +118,10 @@ export function HilosStatusWorkModal({
   const form = useSignal(controller.form)
   const dirty = useSignal(controller.dirty)
   const timeZone = useSignal(controller.timeZone)
+  // The zone the conflict notice names is data; the moments beside it redraw
+  // on the reader's zone and formats.
   const readerTimeZone = useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const windowPicker = useSignal(controller.windowPicker)
   const windowState = useSignal<DateTimePickerSnapshot<
     'datetime',

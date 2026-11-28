@@ -86,13 +86,13 @@ import {
   hilosLegalReconsentDue,
   hilosLegalReconsentOpen,
   hilosLegalReconsentPerson,
+  hilosReaderDisplay,
   LEGAL_RECONSENT_COPY,
   openLegalReconsent,
   hilosDeletionStrip,
   hilosImpersonation,
   hilosSignedIn,
   hilosTakeoverViewOnly,
-  hilosTimeZone,
   IMPERSONATION_STRIP_COPY,
   keepMyAccount,
   isDisplayed,
@@ -297,7 +297,7 @@ export function HilosLayout({
 
   const pageRoot = useRef<HTMLElement>(null)
   const pageFieldset = useRef<HTMLFieldSetElement>(null)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const connectionState = useConnectionState(connection)
   const visual = CONN_VISUAL[connectionState]
   const subscribeBuild = useCallback(

@@ -13,7 +13,7 @@ import {
   formatAnalyticsPersonName,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 import { inject, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -21,6 +21,7 @@ import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{ context: HilosAnalyticsContext }>()
 const router = inject(hilosRouterKey)
@@ -33,6 +34,12 @@ const people = createHilosAnalyticsPeopleTable(props.context, {
 })
 people.start()
 onUnmounted(() => people.dispose())
+
+const readerDisplay = useSignal(hilosReaderDisplay)
+function time(ms: number): string {
+  void readerDisplay.value
+  return formatAnalyticsPeopleTime(ms, people.periodContext)
+}
 
 // A person's existing Analytics page, when the project serves it.
 const personPath = (rowKey: number): string | undefined =>
@@ -96,9 +103,7 @@ const personPath = (rowKey: number): string | undefined =>
           :data-record="row.rowKey"
         >
           <HilosHideable :value="row.lastSeenTs">
-            <template #default="{ value }">{{
-              formatAnalyticsPeopleTime(value, people.periodContext)
-            }}</template>
+            <template #default="{ value }">{{ time(value) }}</template>
           </HilosHideable>
         </span>
       </template>

@@ -23,7 +23,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -55,7 +55,7 @@ export function HilosChangeLogFeedPage({
   context,
 }: HilosChangeLogFeedPageProps) {
   const router = useContext(HilosRouterContext)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const overviewSection = useMemo(
     () => context.scopes.pageDataSignal(CHANGE_LOG_OVERVIEW_SECTION),
     [context],

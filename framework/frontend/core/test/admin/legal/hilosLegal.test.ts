@@ -1600,21 +1600,21 @@ describe('legal administration rows and sections', () => {
       expect(utcRow.acceptedAt).toBe(
         formatMoment(lateMoment, { kind: 'dateTime' }),
       )
-      expect(utcRow.acceptedAt).toContain('Sep 27, 2026')
+      expect(utcRow.acceptedAt).toContain('27.09.2026')
 
       h.choose('Europe/Kyiv')
       const kyivRow = resolveHilosLegalAcceptanceRow(tableRow)
       expect(kyivRow.acceptedAt).toBe(
         formatMoment(lateMoment, { kind: 'dateTime' }),
       )
-      expect(kyivRow.acceptedAt).toContain('Sep 28, 2026')
+      expect(kyivRow.acceptedAt).toContain('28.09.2026')
 
       h.choose('Asia/Tokyo')
       const tokyoRow = resolveHilosLegalAcceptanceRow(tableRow)
       expect(tokyoRow.acceptedAt).toBe(
         formatMoment(lateMoment, { kind: 'dateTime' }),
       )
-      expect(tokyoRow.acceptedAt).toContain('Sep 28, 2026')
+      expect(tokyoRow.acceptedAt).toContain('28.09.2026')
 
       // DST transition in Europe/Kyiv (2026-10-25)
       // 2026-10-25 00:30:00 UTC (EEST, UTC+3 -> 03:30)
@@ -2042,10 +2042,10 @@ describe('legal table controllers', () => {
       table.controller.focusRow('100')
 
       expect(table.controller.rows.get()[0]?.row?.acceptedAt).toContain(
-        'Sep 27, 2026',
+        '27.09.2026',
       )
       expect(table.controller.focusedRow.get()?.acceptedAt).toContain(
-        'Sep 27, 2026',
+        '27.09.2026',
       )
 
       h.sent.length = 0
@@ -2054,10 +2054,10 @@ describe('legal table controllers', () => {
 
       expect(h.sent).toHaveLength(0)
       expect(table.controller.rows.get()[0]?.row?.acceptedAt).toContain(
-        'Sep 28, 2026',
+        '28.09.2026',
       )
       expect(table.controller.focusedRow.get()?.acceptedAt).toContain(
-        'Sep 28, 2026',
+        '28.09.2026',
       )
 
       table.dispose()

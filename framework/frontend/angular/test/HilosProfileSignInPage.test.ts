@@ -521,7 +521,7 @@ it('redraws a password subtitle from a live identity entity update', async () =>
     subtitleElement,
   )
   expect(subtitle.textContent?.trim()).toBe(
-    'Set · last changed Jan 1, 2026, 1:30:00 AM',
+    'Set · last changed 01.01.2026 01:30:00',
   )
   expect(world.identityList()).toBe(identityList)
   expect(world.scopeUpdateCount()).toBe(scopeUpdates + 1)
@@ -603,7 +603,7 @@ it('reformats a password subtitle when only the reader time zone changes', async
   const dispatches = world.dispatch.mock.calls.length
 
   expect(subtitle.textContent?.trim()).toBe(
-    'Set · last changed Jan 1, 2026, 9:30:00 AM',
+    'Set · last changed 01.01.2026 09:30:00',
   )
   browserZone = 'America/New_York'
   window.dispatchEvent(new Event('focus'))
@@ -614,7 +614,7 @@ it('reformats a password subtitle when only the reader time zone changes', async
     subtitleElement,
   )
   expect(subtitle.textContent?.trim()).toBe(
-    'Set · last changed Dec 31, 2025, 7:30:00 PM',
+    'Set · last changed 31.12.2025 19:30:00',
   )
   expect(world.identityList()).toBe(identityList)
   expect(world.identityFields(1)).toBe(identityFields)

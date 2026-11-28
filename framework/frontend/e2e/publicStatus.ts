@@ -164,29 +164,29 @@ export async function expectPublicStatusArchive(
       throw new Error(
         'Silence assertions require the independently accepted archive.',
       )
-    const days = await page.evaluate((aliveAt) => {
+    const { timeZone, bounds } = await page.evaluate((aliveAt) => {
       const today = new Date(aliveAt)
-      const formatter = new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-      })
-      return Array.from({ length: 90 }, (_, index) => {
-        const start = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          today.getDate() - 89 + index,
-        )
-        const end = new Date(
-          start.getFullYear(),
-          start.getMonth(),
-          start.getDate() + 1,
-        )
-        return {
-          start: start.getTime(),
-          end: end.getTime(),
-          label: formatter.format(start),
-        }
-      })
+      return {
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        bounds: Array.from({ length: 90 }, (_, index) => {
+          const start = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate() - 89 + index,
+          )
+          const end = new Date(
+            start.getFullYear(),
+            start.getMonth(),
+            start.getDate() + 1,
+          )
+          return { start: start.getTime(), end: end.getTime() }
+        }),
+      }
     }, archive.accepted.heartbeat.aliveAt)
+    const days = bounds.map((day) => ({
+      ...day,
+      label: readerMillisecondMoment(day.start, timeZone, { kind: 'date' }),
+    }))
     expected = expectedPublicStatusArchiveDays(
       archive.days,
       archive.accepted.status,
@@ -251,7 +251,7 @@ export async function expectPublicStatusSilenceDay(
   silence: PublicStatusSilenceFact,
   select = false,
 ): Promise<void> {
-  const day = await page.evaluate((at) => {
+  const { timeZone, ...bounds } = await page.evaluate((at) => {
     const date = new Date(at)
     const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
     const end = new Date(
@@ -260,13 +260,15 @@ export async function expectPublicStatusSilenceDay(
       date.getDate() + 1,
     )
     return {
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       start: start.getTime(),
       end: end.getTime(),
-      label: new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-      }).format(start),
     }
   }, silence.startedAt)
+  const day = {
+    ...bounds,
+    label: readerMillisecondMoment(bounds.start, timeZone, { kind: 'date' }),
+  }
   const labels = expectedPublicStatusArchiveDays(
     [],
     status,
@@ -371,11 +373,7 @@ export async function expectPublicStatusStale(
   const zone = await page.evaluate(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone,
   )
-  const label = await readerMillisecondMoment(
-    page,
-    pair.heartbeat.aliveAt,
-    zone,
-  )
+  const label = readerMillisecondMoment(pair.heartbeat.aliveAt, zone)
   await expect(page.getByTestId('public-status-banner')).toHaveText(
     `The system is not responding since ${label}`,
   )
@@ -402,11 +400,7 @@ export async function expectPublicStatusPair(
     .poll(async () => {
       const pair = log.pairs().filter(matches).at(-1)
       if (!pair) return false
-      const label = await readerMillisecondMoment(
-        page,
-        pair.heartbeat.aliveAt,
-        zone,
-      )
+      const label = readerMillisecondMoment(pair.heartbeat.aliveAt, zone)
       const lastUpdate = `Last update from the system: ${label}`
       if (
         (await page.getByTestId('public-status-last-update').innerText()) !==

@@ -32,6 +32,7 @@ import {
   SIGNAL_TYPE_TABLE_ROW_FOCUS,
   SIGNAL_TYPE_TABLE_VIEWPORT,
   SESSION_ROTATE_COOKIE_SUFFIX,
+  SIGNAL_HANDSHAKE_RESPONSE,
 } from '../protocol/constants.js'
 import { assertNever } from '../protocol/assertNever.js'
 import {
@@ -90,7 +91,6 @@ import { isReconnectDragging } from './reconnectDragging.js'
 import { Emitter } from './events.js'
 import { type TablePresentationChange } from '../table/tableViewportGeometry.js'
 import { readBrowserTimeZone } from '../timeZone/timeZoneBrowser.js'
-import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
 
 export type ConnectionState =
   'connecting' | 'connected' | 'reconnecting' | 'disconnected'

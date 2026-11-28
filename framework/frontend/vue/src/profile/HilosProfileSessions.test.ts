@@ -11,6 +11,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
+import { bindReader } from '../../../core/test/format/readerFixture.js'
 import HilosProfileSessions from './HilosProfileSessions.vue'
 
 let releaseTimeZone: (() => void) | undefined
@@ -169,14 +170,14 @@ describe('HilosProfileSessions (Vue)', () => {
       )
       const originalSessions = wrapper.props('sessions')
       const rows = wrapper.findAll('[data-id="profile-session-row"]')
-      expect(rows[0]!.text()).toContain('created 1/1/2026, 9:30:00 AM')
+      expect(rows[0]!.text()).toContain('created 01.01.2026 09:30:00')
       expect(rows[0]!.text()).toContain('last seen now')
-      expect(rows[0]!.text()).toContain('expires 1/2/2026, 9:30:00 AM')
-      expect(rows[1]!.text()).toContain('last seen 1/1/2026, 9:31:00 AM')
+      expect(rows[0]!.text()).toContain('expires 02.01.2026 09:30:00')
+      expect(rows[1]!.text()).toContain('last seen 01.01.2026 09:31:00')
       expect(rows[1]!.text()).toContain('expires never')
       await rows[0]!.get('[data-id="profile-session-tabs"]').trigger('click')
       const tab = byId('profile-session-tab')
-      expect(tab.textContent).toContain('opened 1/1/2026, 9:32:00 AM')
+      expect(tab.textContent).toContain('opened 01.01.2026 09:32:00')
       byId(open).click()
       await nextTick()
       const modal = byId('modal')
@@ -189,11 +190,11 @@ describe('HilosProfileSessions (Vue)', () => {
       await nextTick()
 
       expect(wrapper.props('sessions')).toBe(originalSessions)
-      expect(rows[0]!.text()).toContain('created 12/31/2025, 7:30:00 PM')
-      expect(rows[0]!.text()).toContain('expires 1/1/2026, 7:30:00 PM')
-      expect(rows[1]!.text()).toContain('last seen 12/31/2025, 7:31:00 PM')
+      expect(rows[0]!.text()).toContain('created 31.12.2025 19:30:00')
+      expect(rows[0]!.text()).toContain('expires 01.01.2026 19:30:00')
+      expect(rows[1]!.text()).toContain('last seen 31.12.2025 19:31:00')
       expect(byId('profile-session-tab')).toBe(tab)
-      expect(tab.textContent).toContain('opened 12/31/2025, 7:32:00 PM')
+      expect(tab.textContent).toContain('opened 31.12.2025 19:32:00')
       expect(
         rows[0]!
           .get('[data-id="profile-session-tabs"]')
@@ -215,6 +216,53 @@ describe('HilosProfileSessions (Vue)', () => {
       expect(document.querySelector('[data-id="modal"]')).toBeNull()
     },
   )
+
+  it('redraws session moments in the formats of a new region without remounting', async () => {
+    const reader = bindReader()
+    releaseTimeZone = () => {
+      reader.region(null)
+      reader.release()
+    }
+    reader.choose('UTC')
+    const { wrapper } = setup([
+      {
+        ...makeSession(1, { current: true }),
+        createdAt: 1767227400000,
+        expiresAt: 1767313800000,
+        tabs: [
+          makeTab('tab-current', { connectedAt: 1767227520000, current: true }),
+        ],
+      },
+      { ...makeSession(2), lastSeenAt: 1767227460000 },
+    ])
+    const rows = wrapper.findAll('[data-id="profile-session-row"]')
+    expect(rows[0]!.text()).toContain('created 01.01.2026 00:30:00')
+    expect(rows[0]!.text()).toContain('expires 02.01.2026 00:30:00')
+    expect(rows[1]!.text()).toContain('last seen 01.01.2026 00:31:00')
+    await rows[0]!.get('[data-id="profile-session-tabs"]').trigger('click')
+    const tab = byId('profile-session-tab')
+    expect(tab.textContent).toContain('opened 01.01.2026 00:32:00')
+    await rows[1]!.get('[data-id="profile-session-revoke"]').trigger('click')
+    const modal = byId('modal')
+
+    reader.region({ date: 'MM/DD/YYYY', time: 'hh:mm:ss a' })
+    await nextTick()
+
+    const redrawn = wrapper.findAll('[data-id="profile-session-row"]')
+    expect(redrawn[0]!.element).toBe(rows[0]!.element)
+    expect(redrawn[1]!.element).toBe(rows[1]!.element)
+    expect(rows[0]!.text()).toContain('created 01/01/2026 12:30:00 AM')
+    expect(rows[0]!.text()).toContain('expires 01/02/2026 12:30:00 AM')
+    expect(rows[1]!.text()).toContain('last seen 01/01/2026 12:31:00 AM')
+    expect(byId('profile-session-tab')).toBe(tab)
+    expect(tab.textContent).toContain('opened 01/01/2026 12:32:00 AM')
+    expect(
+      rows[0]!
+        .get('[data-id="profile-session-tabs"]')
+        .attributes('aria-expanded'),
+    ).toBe('true')
+    expect(byId('modal')).toBe(modal)
+  })
 
   it('opens confirmation modal without calling endOtherSessions on button click', async () => {
     const { endOtherSessions } = setup()
@@ -818,10 +866,10 @@ describe('HilosProfileSessions (Vue)', () => {
     expect(tabs[3]!.get('code').text()).toBe(eight)
     expect(tabs[0]!.get('code').text()).not.toContain('2026')
     expect(tabs[0]!.findAll('span.small.text-body-secondary')[0]!.text()).toBe(
-      'opened 1/1/2026, 9:32:00 AM',
+      'opened 01.01.2026 09:32:00',
     )
     expect(tabs[1]!.findAll('span.small.text-body-secondary')[0]!.text()).toBe(
-      'opened 1/1/2026, 9:33:00 AM',
+      'opened 01.01.2026 09:33:00',
     )
 
     const plug = tabs[0]!.get('i')
@@ -844,7 +892,7 @@ describe('HilosProfileSessions (Vue)', () => {
     const thisTab = tabs[0]!.get('[data-id="profile-session-tab-this"]')
     expect(thisTab.text()).toBe('this tab')
     expect(tabs[0]!.element.textContent?.replace(/\s+/g, ' ').trim()).toContain(
-      'opened 1/1/2026, 9:32:00 AM this tab',
+      'opened 01.01.2026 09:32:00 this tab',
     )
     expect(thisTab.classes()).toEqual(['small', 'text-body-secondary'])
     expect(thisTab.classes()).not.toContain('badge')

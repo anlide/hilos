@@ -30,14 +30,14 @@ describe('runtime staleness moment', () => {
           since: Date.parse('2026-01-01T00:30:05Z'),
         }),
       ).toBe(
-        'Some data here may be out of date - the link to its source was lost at 4:30:05 PM.',
+        'Some data here may be out of date - the link to its source was lost at 16:30:05.',
       )
       expect(
         rtStalenessCompactLabel({
           stale: true,
           since: Date.parse('2026-01-01T00:30:05Z'),
         }),
-      ).toBe('Some data may be out of date since 4:30:05 PM')
+      ).toBe('Some data may be out of date since 16:30:05')
       expect(rtStalenessLabel({ stale: true, since: undefined })).toBe(
         'Some data here may be out of date - the link to its source was lost at an unknown time.',
       )

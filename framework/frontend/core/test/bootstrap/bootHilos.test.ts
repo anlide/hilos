@@ -13,6 +13,7 @@ import {
 } from '../../src/connection/HilosConnection.js'
 import { UPLOAD_ACTION_INIT } from '../../src/uploads/uploadProtocol.js'
 import {
+  SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_GROUP_SUBSCRIBE,
   SIGNAL_TYPE_HANDSHAKE,
   SIGNAL_TYPE_PAGE_MOVED,
@@ -69,7 +70,6 @@ import {
 } from '../../src/base/index.js'
 import {
   SESSION_ACK_REGISTERED,
-  SIGNAL_HANDSHAKE_RESPONSE,
   sessionPendingAck,
   sessionUserId,
 } from '../../src/session/sessionScope.js'

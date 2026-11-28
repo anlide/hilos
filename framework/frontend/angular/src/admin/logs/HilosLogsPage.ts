@@ -48,7 +48,11 @@ import {
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
 } from '@hilos/core/admin/logs'
-import { HilosPages, hilosTimeZone, subscribeSignal } from '@hilos/core/base'
+import {
+  HilosPages,
+  hilosReaderDisplay,
+  subscribeSignal,
+} from '@hilos/core/base'
 import type {
   HilosLogsOverview,
   HilosLogsOverviewRecentEntry,
@@ -458,7 +462,11 @@ export class HilosLogsPage {
 
   protected readonly page = HilosPages.LOGS
   protected readonly rotationsPath = logRotationsPath(HILOS_ROTATION_STATE_DUE)
-  protected readonly formatBytes = formatLogsOverviewBytes
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly formatBytes = (bytes: number | null): string => {
+    this.readerDisplay()
+    return formatLogsOverviewBytes(bytes)
+  }
   protected readonly formatCount = formatLogsOverviewCount
   protected readonly nodeIdField = NODE_ID_FIELD
   protected readonly nodeLastRotationAtField = NODE_LAST_ROTATION_AT_FIELD
@@ -468,13 +476,12 @@ export class HilosLogsPage {
     NODE_GROWTH_BYTES_PER_DAY_FIELD
   protected readonly nodeBatchesDueForTakeoutField =
     NODE_BATCHES_DUE_FOR_TAKEOUT_FIELD
-  private readonly timeZone = hilosSignal(hilosTimeZone)
   protected readonly formatRotationAt = (moment: string | null): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatLogsOverviewRotationAt(moment)
   }
   protected readonly formatNodeRotationAt = (moment: number | null): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatLogsOverviewRotationAt(moment)
   }
 
@@ -515,15 +522,17 @@ export class HilosLogsPage {
   protected readonly batchesNote = computed(() =>
     logsOverviewBatchesNote(this.overview()),
   )
-  protected readonly growth = computed(() =>
-    formatLogsOverviewGrowth(this.overview()),
-  )
+  protected readonly growth = computed(() => {
+    this.readerDisplay()
+    return formatLogsOverviewGrowth(this.overview())
+  })
   protected readonly growthNote = computed(() =>
     logsOverviewGrowthNote(this.overview()),
   )
-  protected readonly growthForecast = computed(() =>
-    logsOverviewForecastNote(this.overview()),
-  )
+  protected readonly growthForecast = computed(() => {
+    this.readerDisplay()
+    return logsOverviewForecastNote(this.overview())
+  })
 
   // The panel of last failures. It is drawn only where there ARE figures: saying
   // "nothing has gone wrong" about a picture that has not arrived would be good news
@@ -557,7 +566,7 @@ export class HilosLogsPage {
   protected readonly recentTabLabel = logsOverviewRecentTabLabel
   protected readonly levelVariant = logLevelVariant
   protected readonly formatRecentAt = (moment: string): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatLogsOverviewRecentAt(moment)
   }
   protected readonly recentPath = logsOverviewRecentPath

@@ -12,7 +12,7 @@
 // render leaves no listener behind. An unavailable catalog is said, never drawn
 // as an empty list. Bootstrap classes only.
 import { useEffect, useState } from 'react'
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import {
   createHilosStatusHistoryState,
   createHilosStatusHistoryTable,
@@ -51,19 +51,7 @@ interface HistoryGeneration {
  * @param at The moment in epoch milliseconds.
  */
 function moment(at: number): string {
-  return (
-    formatMoment(at, {
-      format: {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short',
-      },
-    }) ?? '—'
-  )
+  return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
 }
 
 /**
@@ -151,7 +139,7 @@ export function HilosStatusHistoryPage({
 function StatusHistory({ generation }: { generation: HistoryGeneration }) {
   const { state, table } = generation
   const data = useSignal(state.data)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
 
   return (
     <>

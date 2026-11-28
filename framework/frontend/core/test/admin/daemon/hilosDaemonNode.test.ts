@@ -437,7 +437,7 @@ describe('daemon node labels and diagram path', () => {
       vi.spyOn(Date, 'now').mockReturnValue(browserNow)
       applyServerTime(serverNow)
       expect(formatDaemonNodeSilentSince(heading, browserNow)).toBe(
-        'yesterday, 11:59 PM',
+        'yesterday, 23:59',
       )
       expect(
         formatDaemonNodeClock(
@@ -450,7 +450,7 @@ describe('daemon node labels and diagram path', () => {
           },
           browserNow,
         ),
-      ).toBe('Clock: +400 ms to the leader, measured yesterday, 11:59 PM')
+      ).toBe('Clock: +400 ms to the leader, measured yesterday, 23:59')
       expect(
         formatDaemonNodeSilentSince(
           { ...heading, silentSince: NaN },

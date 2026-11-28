@@ -1,6 +1,6 @@
 <!-- The standard viewport owns search, order, facets, Apply and narrow cards. -->
 <script setup lang="ts">
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, HilosPages } from '@hilos/core/base'
 import {
   createHilosStatusWorksTable,
   createHilosStatusWorksState,
@@ -37,7 +37,7 @@ const create = createHilosStatusWorkCreate(props.context, state)
 const edit = createHilosStatusWorkEdit(props.context, table, state)
 const cancel = createHilosStatusWorkCancel(props.context, table)
 const data = useSignal(state.data)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const opened = useSignal({ get: dialogOpen })
 
 /** One table focus belongs to one dialog; opening again never drops a draft. */
@@ -46,21 +46,9 @@ function dialogOpen(): boolean {
 }
 
 function moment(at: number | null): string {
-  void timeZone.value
+  void readerDisplay.value
   if (at === null) return '—'
-  return (
-    formatMoment(at, {
-      format: {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short',
-      },
-    }) ?? '—'
-  )
+  return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
 }
 
 function componentNames(keys: readonly string[]): string {

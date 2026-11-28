@@ -11,7 +11,8 @@ import {
   expectLogEpochMoment,
   expectLogUtcMoment,
   logBatchDirectory,
-  logMomentLabel,
+  readerMillisecondMoment,
+  readerMoment,
   watchLogFrames,
   type LogFrameLog,
   expectPageReady,
@@ -622,7 +623,7 @@ test('shows the configured rotation threshold, carries a batch off on the operat
       [...rotationFrames.rotations().values()].map((row) => row.batchAt),
     ).toContain(Date.parse(lastRotationAt))
     await expect(overview.getByTestId('hilos-logs-tile-rotation')).toHaveText(
-      await logMomentLabel(overview, lastRotationAt, READER_ZONE, 'overview'),
+      readerMoment(lastRotationAt, READER_ZONE),
     )
 
     await gotoPage(
@@ -639,7 +640,7 @@ test('shows the configured rotation threshold, carries a batch off on the operat
     const rowA = page.getByTestId(`${ROW_ID_PREFIX}${batchA}`)
     const rowB = page.getByTestId(`${ROW_ID_PREFIX}${batchB}`)
     await expect(rowA).toContainText(
-      await logMomentLabel(page, batchAt, READER_ZONE),
+      readerMillisecondMoment(batchAt, READER_ZONE),
     )
     await expect(rowA).toContainText(directory)
     await expect(rowA).toContainText('Awaiting carry-off')
@@ -750,7 +751,7 @@ test('shows the configured rotation threshold, carries a batch off on the operat
       .poll(() => rotationFrames.rotations().get(batchA)?.pruneNotBefore)
       .toBe(deadline)
     await expect(page.getByTestId('hilos-rotation-undo-deadline')).toHaveText(
-      `The cleaner may delete this batch after ${await logMomentLabel(page, deadline, READER_ZONE)}.`,
+      `The cleaner may delete this batch after ${readerMillisecondMoment(deadline, READER_ZONE)}.`,
     )
     await setSetting(tabB, TAKEOUT_UNDO_WINDOW, '0')
     // A policy-only change changes no file, so no walk of the node's own would

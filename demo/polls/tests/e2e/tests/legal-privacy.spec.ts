@@ -58,7 +58,7 @@ test('an open policy follows a hold and accepts only Privacy through its compari
   expect(held.frozen).toBe(true)
   await expect(reader).toHaveAttribute('data-state', 'due')
   await expect(reader.getByTestId('legal-document-reader-plate')).toContainText(
-    'account frozen · deadline passed 9 October 2026',
+    'account frozen · deadline passed 09.10.2026',
   )
   await expect
     .poll(() => snapshots.at(-1)?.documents)

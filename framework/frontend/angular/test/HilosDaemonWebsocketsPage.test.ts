@@ -38,7 +38,7 @@ describe('HilosDaemonWebsocketsPage', () => {
         websockets: { connections: 1284, dataNode: false },
       }),
     )
-    expect(h.text('count')).toBe((1284).toLocaleString())
+    expect(h.text('count')).toBe('1,284')
     expect(h.text('note')).toBe(LIVE)
     expect(h.el('tile')?.textContent).toContain('WebSocket connections now')
     expect(h.el('tile')?.textContent).not.toMatch(/sessions/i)

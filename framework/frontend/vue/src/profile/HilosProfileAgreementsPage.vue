@@ -5,10 +5,12 @@ import {
   describeHilosLegalAgreement,
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
+  hilosReaderDisplay,
   type HilosLegalAgreement,
   type HilosLegalChange,
   type HilosLegalClause,
   type HilosLegalContext,
+  type HilosLegalDocumentKey,
 } from '@hilos/core/base'
 import HilosModal from '../HilosModal.vue'
 import HilosProfileHead from './HilosProfileHead.vue'
@@ -21,27 +23,54 @@ const props = defineProps<{ context: HilosLegalContext }>()
 const store = createHilosLegalAgreementsStore(props.context)
 const state = useSignal(store.state)
 const texts = useSignal(store.texts)
+const readerDisplay = useSignal(hilosReaderDisplay)
 let stop: (() => void) | null = null
 onMounted(() => {
   stop = store.start()
 })
 onUnmounted(() => stop?.())
-const rows = computed(
-  () =>
+const rows = computed(() => {
+  void readerDisplay.value
+  return (
     state.value?.documents.map((agreement) => ({
       agreement,
       ...describeHilosLegalAgreement(agreement),
-    })) ?? [],
-)
-const textDialog = ref<{ title: string; clauses: HilosLegalClause[] } | null>(
-  null,
-)
-const changesDialog = ref<{
-  title: string
-  changes: HilosLegalChange[]
-  from: string
-  to: string
+    })) ?? []
+  )
+})
+// The windows keep the revision days and write them when drawn, so an open
+// window follows the reader's formats like the rows behind it.
+const textDialog = ref<{
+  document: HilosLegalDocumentKey
+  publishedOn: string
+  clauses: HilosLegalClause[]
 } | null>(null)
+const changesDialog = ref<{
+  document: HilosLegalDocumentKey
+  changes: HilosLegalChange[]
+  fromOn: string
+  toOn: string
+} | null>(null)
+const textTitle = computed(() => {
+  void readerDisplay.value
+  const dialog = textDialog.value
+  return dialog
+    ? `${hilosLegalDocumentLabel(dialog.document)} · ${formatHilosLegalDate(dialog.publishedOn)}`
+    : ''
+})
+const changesTitle = computed(() =>
+  changesDialog.value
+    ? `${hilosLegalDocumentLabel(changesDialog.value.document)} — what changed`
+    : '',
+)
+const changesLabels = computed(() => {
+  void readerDisplay.value
+  const dialog = changesDialog.value
+  return {
+    from: dialog ? formatHilosLegalDate(dialog.fromOn) : '',
+    to: dialog ? formatHilosLegalDate(dialog.toOn) : '',
+  }
+})
 
 function openText(agreement: HilosLegalAgreement): void {
   const text = texts.value?.documents.find(
@@ -50,7 +79,8 @@ function openText(agreement: HilosLegalAgreement): void {
   if (!text) return
   const held = agreement.held
   textDialog.value = {
-    title: `${hilosLegalDocumentLabel(agreement.document)} · ${formatHilosLegalDate((held ?? agreement.current).publishedOn)}`,
+    document: agreement.document,
+    publishedOn: (held ?? agreement.current).publishedOn,
     clauses:
       held && held.revisionId !== agreement.current.revisionId
         ? (text.held ?? text.current)
@@ -63,10 +93,10 @@ function openChanges(agreement: HilosLegalAgreement): void {
   )
   if (!text || !agreement.held) return
   changesDialog.value = {
-    title: `${hilosLegalDocumentLabel(agreement.document)} — what changed`,
+    document: agreement.document,
     changes: text.changes,
-    from: formatHilosLegalDate(agreement.held.publishedOn),
-    to: formatHilosLegalDate(agreement.current.publishedOn),
+    fromOn: agreement.held.publishedOn,
+    toOn: agreement.current.publishedOn,
   }
 }
 </script>
@@ -143,7 +173,7 @@ function openChanges(agreement: HilosLegalAgreement): void {
     <p v-else class="text-body-secondary">Loading agreements…</p>
     <HilosModal
       :model-value="textDialog !== null"
-      :title="textDialog?.title ?? ''"
+      :title="textTitle"
       initial-focus="dialog"
       size="wide"
       @update:model-value="
@@ -168,7 +198,7 @@ function openChanges(agreement: HilosLegalAgreement): void {
     </HilosModal>
     <HilosModal
       :model-value="changesDialog !== null"
-      :title="changesDialog?.title ?? ''"
+      :title="changesTitle"
       initial-focus="dialog"
       size="wide"
       @update:model-value="
@@ -180,8 +210,8 @@ function openChanges(agreement: HilosLegalAgreement): void {
       <div v-if="changesDialog" data-id="legal-changes-modal">
         <HilosLegalChanges
           :changes="changesDialog.changes"
-          :from-label="changesDialog.from"
-          :to-label="changesDialog.to"
+          :from-label="changesLabels.from"
+          :to-label="changesLabels.to"
         />
       </div>
       <template #actions="{ requestClose }"

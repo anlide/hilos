@@ -215,7 +215,7 @@ describe('HilosDaemonHttpServerPage', () => {
       '0.0.0.0:8080',
     )
     expect(h.view.find('[data-id="hilos-daemon-http-requests"]').text()).toBe(
-      (1284).toLocaleString(),
+      '1,284',
     )
     expect(h.view.find('[data-id="hilos-daemon-http-errors"]').text()).toBe('2')
     expect(h.view.find('[data-id="hilos-daemon-http-slow"]').text()).toBe('3')
@@ -371,7 +371,7 @@ describe('HilosDaemonHttpServerPage', () => {
       'Since start, 23 h',
     )
     expect(h.view.find('[data-id="hilos-daemon-http-requests"]').text()).toBe(
-      (1284).toLocaleString(),
+      '1,284',
     )
     const replacement = h.view.find('[data-id="hilos-table-row-GET /status"]')
     expect(replacement.element).not.toBe(row.element)
@@ -445,7 +445,7 @@ describe('HilosDaemonHttpServerPage', () => {
     await nextTick()
     const get = h.view.find('[data-id="hilos-table-row-GET /status"]')
     expect(get.find('code').text()).toBe('/status')
-    expect(get.findAll('td')[1]?.text()).toBe((1240).toLocaleString())
+    expect(get.findAll('td')[1]?.text()).toBe('1,240')
     expect(get.findAll('td')[2]?.find('span').classes()).toContain(
       'text-body-secondary',
     )
@@ -455,7 +455,7 @@ describe('HilosDaemonHttpServerPage', () => {
     expect(agent.find('.badge.font-monospace').text()).toBe(
       'hilos_files_library',
     )
-    expect(agent.findAll('td')[3]?.text()).toBe(`${(1240).toLocaleString()} ms`)
+    expect(agent.findAll('td')[3]?.text()).toBe('1,240 ms')
     const unrouted = h.view.find('[data-id="hilos-table-row-unrouted"]')
     expect(unrouted.find('code').text()).toBe('No route')
     expect(unrouted.findAll('td')[1]?.find('span').classes()).toContain(

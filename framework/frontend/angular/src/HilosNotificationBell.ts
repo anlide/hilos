@@ -27,7 +27,7 @@ import {
 import {
   formatMoment,
   hilosNotifications,
-  hilosTimeZone,
+  hilosReaderDisplay,
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
   type HilosConnection,
@@ -178,7 +178,7 @@ export class HilosNotificationBell {
   private readonly boundStore = this.store()
   protected readonly notifications = hilosSignal(this.boundStore.notifications)
   protected readonly unreadCount = hilosSignal(this.boundStore.unreadCount)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   // The badge caps its label so a runaway count never breaks the bell's layout.
   protected readonly badgeLabel = computed(() =>
     this.unreadCount() > 99 ? '99+' : String(this.unreadCount()),
@@ -250,7 +250,7 @@ export class HilosNotificationBell {
   // A notification's timestamp, formatted for the reader's locale; the wire value
   // is UTC epoch milliseconds, absent only on a malformed row.
   protected formatTime(row: HilosNotification): string {
-    this.timeZone()
+    this.readerDisplay()
     if (row.createdAt == null) {
       return ''
     }

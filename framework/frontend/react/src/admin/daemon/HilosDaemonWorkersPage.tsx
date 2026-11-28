@@ -20,7 +20,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonWorkersContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
@@ -54,6 +54,7 @@ export function HilosDaemonWorkersPage({
     useMemo(() => readDaemonProcessesReported(context.scopes), [context]),
   )
   const rows = useSignal(workers.controller.rows)
+  useSignal(hilosReaderDisplay)
   const emptyState = daemonProcessesEmptyState(heading, reported)
   const silentSince = formatDaemonNodeSilentSince(heading, Date.now())
   const clustered = heading?.clustered === true

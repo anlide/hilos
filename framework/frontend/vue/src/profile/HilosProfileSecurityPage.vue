@@ -26,7 +26,7 @@ import {
   createHilosStepUpStep,
   focusInitial,
   formatCalendarDate,
-  hilosTimeZone,
+  hilosReaderDisplay,
   HILOS_STEP_UP_COPY,
   sendProgressLine,
   type HilosBackupCodeEntry,
@@ -72,7 +72,7 @@ onMounted(() => store.start())
 onUnmounted(() => store.dispose())
 
 const state = useSignal(store.state)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const view = useSignal(store.view)
 const apps = computed(() => state.value?.authenticators ?? [])
 const factorOn = computed(() => apps.value.length > 0)
@@ -87,7 +87,7 @@ const removalLocked = computed(
  * @param moment The absolute server epoch-ms moment.
  */
 function day(moment: number): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatCalendarDate(moment)
 }
 

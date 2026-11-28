@@ -60,13 +60,11 @@ export function registerLegalReconsentPresentationCases(
             '[data-id="legal-reconsent-badge"]',
           )
           expect(badges[0]!.textContent).toContain('9 days left')
-          expect(badges[0]!.textContent).toContain('until 10 November 2026')
-          expect(badges[1]!.textContent).toContain(
-            'deadline passed 27 September 2026',
-          )
+          expect(badges[0]!.textContent).toContain('until 10.11.2026')
+          expect(badges[1]!.textContent).toContain('deadline passed 27.09.2026')
 
           expect(documents[0]!.textContent).toContain(
-            'You accepted the revision of 17 September 2026. Since then 2 clauses changed',
+            'You accepted the revision of 17.09.2026. Since then 2 clauses changed',
           )
           const termsChanges = Array.from(
             documents[0]!.querySelectorAll<HTMLElement>(

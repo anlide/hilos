@@ -79,16 +79,6 @@ export function expectProfileSessionNumericMoments(
   }
 }
 
-/** Numeric profile date options, independent of the production formatter. */
-const PROFILE_DATE_FORMAT: Intl.DateTimeFormatOptions = {
-  year: 'numeric',
-  month: 'numeric',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: 'numeric',
-  second: 'numeric',
-}
-
 /** Match one browser's real session and expanded tabs to their captured moments. */
 export async function expectProfileSessionMoments(
   expect: Expect,
@@ -113,8 +103,7 @@ export async function expectProfileSessionMoments(
     session.expiresAt === null
       ? null
       : expectMillisecondMoment(expect, session.expiresAt)
-  const format = (moment: number) =>
-    readerMillisecondMoment(page, moment, timeZone, PROFILE_DATE_FORMAT)
+  const format = (moment: number) => readerMillisecondMoment(moment, timeZone)
   const row = page.getByTestId('profile-session-row')
   await expect(row).toHaveCount(1)
   await expect(row.getByTestId('profile-session-this')).toHaveText('this one')
@@ -122,7 +111,7 @@ export async function expectProfileSessionMoments(
     `${session.deviceName ?? 'Unknown device'} · ${browserTimeZone}`,
   )
   await expect(row).toContainText(
-    `created ${await format(createdAt)} · last seen now · expires ${expiresAt === null ? 'never' : await format(expiresAt)}`,
+    `created ${format(createdAt)} · last seen now · expires ${expiresAt === null ? 'never' : format(expiresAt)}`,
   )
   await expect(row.getByTestId('profile-session-tabs')).toHaveText(
     `tabs: ${tabCount}`,
@@ -151,7 +140,7 @@ export async function expectProfileSessionMoments(
       .sort((left, right) => right.connectedAt - left.connectedAt)
       .map(async ({ acceptKey, connectedAt }) => ({
         key: shortKey(acceptKey),
-        opened: `opened ${await format(connectedAt)}`,
+        opened: `opened ${format(connectedAt)}`,
       })),
   )
   const tabRows = row.getByTestId('profile-session-tab')

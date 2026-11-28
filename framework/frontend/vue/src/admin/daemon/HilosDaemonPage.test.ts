@@ -24,6 +24,7 @@ import { nextTick } from 'vue'
 
 import HilosDaemonPage from './HilosDaemonPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 function node(
   nodeId: string,
@@ -310,15 +311,8 @@ describe('HilosDaemonPage', () => {
         ]),
       )
       await nextTick()
-      const date = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'UTC',
-        dateStyle: 'medium',
-      }).format(at)
-      const time = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'UTC',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(at)
+      const date = readerMomentText(at, 'UTC', { kind: 'date' })
+      const time = readerMomentText(at, 'UTC', { kind: 'time', seconds: false })
       expect(h.view.get('[data-id="hilos-daemon-clock-n1"]').text()).toBe(
         'Clock: reference',
       )
@@ -561,15 +555,11 @@ describe('HilosDaemonPage', () => {
           data: { entities: { currentUser: { id: 3, timeZone: own } } },
         })
         await nextTick()
-        const date = new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          dateStyle: 'medium',
-        }).format(at)
-        const time = new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(at)
+        const date = readerMomentText(at, zone, { kind: 'date' })
+        const time = readerMomentText(at, zone, {
+          kind: 'time',
+          seconds: false,
+        })
         expect(hilosTimeZone.get()).toBe(zone)
         expect(line.text()).toBe(`Silent since ${date}, ${time}`)
         expect(clockLine.text()).toBe(

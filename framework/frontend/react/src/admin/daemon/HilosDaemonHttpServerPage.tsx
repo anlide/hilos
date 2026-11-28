@@ -18,7 +18,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonHttpContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
 import { useSignal } from '../../useSignal.js'
@@ -52,6 +52,7 @@ export function HilosDaemonHttpServerPage({
   const summary = useSignal(
     useMemo(() => readHilosDaemonHttpSummary(context.scopes), [context]),
   )
+  useSignal(hilosReaderDisplay)
   const emptyState = daemonHttpEmptyState(heading, summary)
   const silent = heading?.state === DAEMON_NODE_STATE_SILENT
   const silentSince = formatDaemonNodeSilentSince(heading, Date.now())

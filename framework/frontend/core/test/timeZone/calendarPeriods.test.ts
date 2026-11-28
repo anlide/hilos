@@ -171,8 +171,8 @@ describe('calendar period starts', () => {
     const starts = calendarPeriodStarts(Date.parse(now), zone)
     expect(
       formatSnapshotMoment(starts.hourStartTs, zone, {
-        locale: 'en-GB',
-        format: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
+        kind: 'time',
+        seconds: false,
       }),
     ).toBe(label)
   })

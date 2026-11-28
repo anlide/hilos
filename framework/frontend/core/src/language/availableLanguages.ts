@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
+  SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_GROUP_RESPONSE,
   SIGNAL_TYPE_GROUP_SUBSCRIPTION_ERROR,
 } from '../protocol/constants.js'
@@ -8,7 +9,6 @@ import {
   type GroupResponse,
   type GroupSubscriptionError,
 } from '../protocol/groupError.js'
-import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
 import {
   createSignal,
   subscribeSignal,

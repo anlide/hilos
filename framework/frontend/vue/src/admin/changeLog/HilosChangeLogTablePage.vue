@@ -9,7 +9,7 @@ import {
   formatChangeLogTableLastChange,
   type HilosChangeLogReceiptContext,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTabLinks, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosTabLinks, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, inject } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'
@@ -23,9 +23,9 @@ const pageTable = useSignal(
 )
 const table = computed(() => readHilosChangeLogTable(pageTable.value))
 const router = inject(hilosRouterKey)!
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 function lastChange(at: string | null): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatChangeLogTableLastChange(at)
 }
 const identity = useSignal(router.pageIdentity)

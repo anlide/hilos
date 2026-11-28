@@ -69,7 +69,7 @@ import {
   formatMoment,
   formatBackupProgressLabel,
   formatRestoreOutcomeLine,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -750,7 +750,7 @@ export class HilosBackupPage {
   readonly context = input.required<HilosBackupsContext>()
 
   protected readonly page = HilosPages.BACKUP
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly circleTabPointerCopy = HILOS_BACKUP_CIRCLE_TAB_POINTER_COPY
   protected readonly circleTabPointerPath = HILOS_BACKUP_CIRCLE_TAB_POINTER_PATH
   protected readonly maintenancePath = HILOS_BACKUP_MAINTENANCE_PATH
@@ -771,7 +771,7 @@ export class HilosBackupPage {
 
   /** Format an absolute backup moment in the reader's current time zone. */
   protected formatTime(moment: string | null | undefined): string {
-    this.timeZone()
+    this.readerDisplay()
 
     return formatMoment(moment ?? '', { kind: 'dateTime' }) ?? '—'
   }
@@ -1147,6 +1147,8 @@ export class HilosBackupPage {
 
   /** Human-readable archive size, shared with the other view layers. */
   protected formatSize(row: HilosBackupRow): string {
+    this.readerDisplay()
+
     return formatBackupSize(row)
   }
 
@@ -1157,7 +1159,7 @@ export class HilosBackupPage {
 
   /** The checksum cell text, shared with the other view layers. */
   protected formatChecksum(row: HilosBackupRow): string {
-    this.timeZone()
+    this.readerDisplay()
 
     return formatBackupChecksum(row)
   }
@@ -1169,7 +1171,7 @@ export class HilosBackupPage {
 
   /** The copy cell text, shared with the other view layers. */
   protected formatShipping(row: HilosBackupRow): string {
-    this.timeZone()
+    this.readerDisplay()
 
     return formatBackupShipping(row)
   }

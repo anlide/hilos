@@ -512,7 +512,7 @@ describe('HilosStatusWorkModal with real creation and row-edit controllers', () 
       version: 4,
     })
     act(() => zone.choose('Asia/Tokyo'))
-    expect(notice()).toContain('Keep mine: 02/01/2031, 04:06:03 (UTC)')
+    expect(notice()).toContain('Keep mine: 02.01.2031, 04:06:03 (UTC)')
     expect(notice()).toContain('(Asia/Tokyo)')
     expect(workSave().disabled).toBe(true)
     fireEvent.click(get('conflict-accept-theirs'))

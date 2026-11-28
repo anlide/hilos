@@ -54,7 +54,7 @@ import {
   formatMoment,
   HilosPages,
   createSignal,
-  hilosTimeZone,
+  hilosReaderDisplay,
   hilosAdminAccess,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   subscribeSignal,
@@ -560,7 +560,7 @@ export class HilosLogsViewPage {
   // HilosAdminPage is this component's child; its provider is not visible here.
   private readonly adminAccess = hilosSignal(hilosAdminAccess)
   protected readonly viewMode = computed(() => this.adminAccess() === 'view')
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   private readonly router = inject(HILOS_ROUTER, { optional: true })
 
@@ -726,7 +726,7 @@ export class HilosLogsViewPage {
   }
 
   protected batchLabel(batch: number): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatMoment(batch, { kind: 'dateTime' }) ?? '—'
   }
 

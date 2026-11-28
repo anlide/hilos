@@ -34,7 +34,7 @@ import {
 import type { TemplateRef, WritableSignal } from '@angular/core'
 import {
   TABLE_FROZEN_COPY,
-  hilosTimeZone,
+  hilosReaderDisplay,
   hilosTableFrozenLabel,
   hilosTableStaleColumns,
   hilosTableStaleLabel,
@@ -403,11 +403,11 @@ export class HilosTableLive<R> {
     )
   })
 
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   // The moment the table froze, on the reader's own clock.
   protected readonly frozenLabel = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return hilosTableFrozenLabel(this.frozenSince())
   })
 

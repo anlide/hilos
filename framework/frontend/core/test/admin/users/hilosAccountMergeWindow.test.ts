@@ -20,6 +20,7 @@ import {
 } from '../../../src/connection/HilosConnection.js'
 import { ACCOUNT_STANDING_SIGNAL_SCHEMAS } from '../../../src/protocol/accountStandingSignals.js'
 import {
+  SIGNAL_HANDSHAKE_RESPONSE,
   SIGNAL_TYPE_ACTION_ERROR,
   SIGNAL_TYPE_ACTION_SUCCESS,
   SIGNAL_TYPE_HANDSHAKE,
@@ -32,7 +33,6 @@ import {
 import {
   bindSessionScope,
   SESSION_SIGNAL_SCHEMAS,
-  SIGNAL_HANDSHAKE_RESPONSE,
 } from '../../../src/session/sessionScope.js'
 import { USER_ENTITY_TYPE, userFromFields } from '../../../src/state/entity.js'
 import { entityCollection } from '../../../src/state/EntityCollection.js'

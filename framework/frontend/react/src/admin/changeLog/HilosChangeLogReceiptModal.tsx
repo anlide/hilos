@@ -20,7 +20,7 @@ import {
   formatChangeLogReceiptTitle,
   formatChangeLogTime,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTimeZone, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 import type {
   HilosChangeLogEntry,
   HilosChangeLogReceiptDialog,
@@ -94,7 +94,7 @@ export function HilosChangeLogReceiptModal({
   dialog,
   reader,
 }: HilosChangeLogReceiptModalProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const router = useContext(HilosRouterContext)
   const attribution = dialog?.header
     ? changeLogReceiptAttribution(dialog.header)

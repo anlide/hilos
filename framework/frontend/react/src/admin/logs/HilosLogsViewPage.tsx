@@ -49,8 +49,8 @@ import {
   createSignal,
   formatMoment,
   hilosAdminAccess,
-  hilosTimeZone,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
 import type {
@@ -109,7 +109,7 @@ function batchLabel(batch: number): string {
 export function HilosLogsViewPage({ context }: HilosLogsViewPageProps) {
   // HilosAdminPage provides the context to its children, not to this parent.
   const viewMode = useSignal(hilosAdminAccess) === 'view'
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const router = useContext(HilosRouterContext)
   // The address IS what this screen is showing, so the navigator is what it reads
   // and writes. A router-less mount (none in practice) still reads files — it just

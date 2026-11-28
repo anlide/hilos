@@ -101,7 +101,7 @@ import {
   PROTECTED_MODE_INACTIVE,
   RT_STALENESS_FRESH,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   hilosAccountBlocked,
   hilosAdminAccess,
   hilosAccountStanding,
@@ -735,13 +735,13 @@ export class HilosLayout {
   // no longer carries the deletion. The days left are counted again once a
   // minute while it stands (the constructor's tick).
   protected readonly deletionStrip = hilosSignal(hilosDeletionStrip)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   private readonly deletionStanding = computed(
     () => this.deletionStrip() !== null,
   )
   private readonly deletionNow = signal(Date.now())
   protected readonly deletionStripText = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const strip = this.deletionStrip()
 
     return strip === null
@@ -786,7 +786,7 @@ export class HilosLayout {
     () => this.connState() === 'connected' && this.rtStaleness().stale,
   )
   protected readonly compactStalenessLabel = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return rtStalenessCompactLabel(this.rtStaleness())
   })
   protected readonly connIconClass = computed(() =>
@@ -804,7 +804,7 @@ export class HilosLayout {
     () => this.connState() === 'reconnecting' && this.reconnectDragging(),
   )
   protected readonly connLabel = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const label = rtStalenessLabel(this.rtStaleness())
 
     if (this.showsFrozenData() && label !== undefined) {
@@ -893,7 +893,7 @@ export class HilosLayout {
     () => this.reconsentDue() !== null || this.frozen(),
   )
   protected readonly reconsentBadge = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const due = this.reconsentDue()
     return due === null
       ? ''

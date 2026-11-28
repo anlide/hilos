@@ -46,21 +46,8 @@ describe('change-log overview', () => {
     expect(CHANGE_LOG_SECTION_NOTE).toContain(
       'there is nothing to switch on or off here.',
     )
-    expect(formatChangeLogEntries(overview.journalEntries)).toBe(
-      new Intl.NumberFormat(undefined, {
-        notation: 'compact',
-        maximumFractionDigits: 1,
-      }).format(1234),
-    )
-    expect(changeLogJournalNote(overview)).toBe(
-      `2.0 KB · since ${new Date('2026-01-15T12:00:00.000Z').toLocaleDateString(
-        undefined,
-        {
-          month: 'long',
-          year: 'numeric',
-        },
-      )}`,
-    )
+    expect(formatChangeLogEntries(overview.journalEntries)).toBe('1.2K')
+    expect(changeLogJournalNote(overview)).toBe('2.0 KB · since January 2026')
     expect(formatChangeLogCoverage(overview)).toBe('2 of 10')
   })
 

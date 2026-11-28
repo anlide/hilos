@@ -26,7 +26,12 @@ import {
   readHilosDaemonNodeOverview,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages, subscribeSignal } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosReaderDisplay,
+  subscribeSignal,
+} from '@hilos/core/base'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosLongText } from '../../HilosLongText.js'
 import { HilosModal } from '../../HilosModal.js'
@@ -69,6 +74,7 @@ export function HilosDaemonNodePage({
     })
   }, [context, router])
   const current = useSignal(currentSource)
+  useSignal(hilosReaderDisplay)
   const [noticeOpen, setNoticeOpen] = useState(false)
   useEffect(() => {
     setNoticeOpen(false)

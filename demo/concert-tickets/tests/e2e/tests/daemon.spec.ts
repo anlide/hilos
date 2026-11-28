@@ -1093,9 +1093,10 @@ test.describe('daemon node pages', () => {
 
   test.describe('Workers and Cron', () => {
     // The admin branch reads the Cron run times in delivered reader zones, so
-    // the browser zone is known and differs from the project zone; the expected
-    // run texts are composed in en-US. Only this journey is pinned (HIL-1863
-    // owns the explicit zones of the rest).
+    // the browser zone is known and differs from the project zone; the browser
+    // reads en-US, and the run texts follow the built-in formats of a project
+    // without I18N. Only this journey is pinned (HIL-1863 owns the explicit
+    // zones of the rest).
     test.use({
       timezoneId: 'America/Los_Angeles',
       locale: 'en-US',
@@ -1130,7 +1131,10 @@ test.describe('daemon node pages', () => {
               browserTimeZone: browserZone,
               projectTimeZone: projectZone,
             })
-            // The expected run texts are composed in en-US, so the browser must read so.
+            // The browser asks for en-US, whose own formats differ from the
+            // region's. The client never formats by the browser's locale, and
+            // without the I18N feature the tab writes in the built-in en
+            // formats: the run texts follow them.
             expect(await page.evaluate(() => navigator.language)).toBe('en-US')
             expect(browserZone).not.toBe(projectZone)
           }

@@ -545,9 +545,7 @@ describe('formatLogsOverviewRecentAt', () => {
   it('prints the time of day and leaves the date out, since every row shares it', () => {
     const printed = formatLogsOverviewRecentAt('2026-09-06T10:00:02.125Z')
 
-    expect(printed).toBe(
-      new Date('2026-09-06T10:00:02.125Z').toLocaleTimeString(),
-    )
+    expect(printed).toBe('10:00:02')
     expect(printed).not.toContain('2026')
   })
 
@@ -1212,8 +1210,8 @@ it.each([-300_000, 300_000])(
     applyServerTime(Date.now() + drift)
     try {
       for (const at of ['2026-01-01T00:30:05.123Z']) {
-        expect(formatLogsOverviewRotationAt(at)).toBe('12/31/2025, 4:30:05 PM')
-        expect(formatLogsOverviewRecentAt(at)).toBe('4:30:05 PM')
+        expect(formatLogsOverviewRotationAt(at)).toBe('31.12.2025 16:30:05')
+        expect(formatLogsOverviewRecentAt(at)).toBe('16:30:05')
       }
       for (const at of [
         '2026-01-01T00:30:05',

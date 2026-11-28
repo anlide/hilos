@@ -254,12 +254,7 @@ describe('change-log table labels', () => {
 
   it('formats the last write in local date and time', () => {
     const at = '2026-10-09T10:11:12.123Z'
-    expect(formatChangeLogTableLastChange(at)).toBe(
-      new Date(at).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }),
-    )
+    expect(formatChangeLogTableLastChange(at)).toBe('09.10.2026 10:11:12')
   })
 
   it('lines the activity under the column labels, keeping a zero', () => {

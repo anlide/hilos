@@ -1,6 +1,11 @@
 <!-- A new announcement and a live row edit share the form, never the merge. -->
 <script setup lang="ts">
-import { formatMoment, hilosTimeZone, hilosToasts } from '@hilos/core/base'
+import {
+  formatMoment,
+  hilosReaderDisplay,
+  hilosTimeZone,
+  hilosToasts,
+} from '@hilos/core/base'
 import type {
   HilosStatusWorkCreate,
   HilosStatusWorkEdit,
@@ -31,6 +36,7 @@ const form = useSignal(props.controller.form)
 const dirty = useSignal(props.controller.dirty)
 const timeZone = useSignal(props.controller.timeZone)
 const readerTimeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const windowPicker = useSignal(props.controller.windowPicker)
 const windowState = useSignal({
   get: () => props.controller.windowPicker.get()?.state.get() ?? null,
@@ -67,6 +73,7 @@ const noticeKind = computed(() =>
 const noticeText = computed(() => {
   if (blockedReason.value) return blockedReason.value
   if (!editState.value?.conflict) return editNoticeText.value
+  void readerDisplay.value
   const values = editState.value.fields
   const labels: Record<keyof HilosStatusWorkEditFields, string> = {
     title: 'Title',

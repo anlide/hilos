@@ -17,7 +17,7 @@ import {
   type HilosDaemonAgentRow,
   type HilosDaemonAgentsContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosActionError from '../../HilosActionError.vue'
@@ -84,9 +84,9 @@ const restartCommand = computed(
 const emptyState = computed(() =>
   daemonProcessesEmptyState(heading.value, reported.value),
 )
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const silentSince = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeSilentSince(heading.value, Date.now())
 })
 

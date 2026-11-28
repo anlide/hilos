@@ -40,7 +40,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
   subscribeSignal,
   type HilosRouter,
@@ -290,9 +290,9 @@ export class HilosChangeLogTableHistoryPage {
   protected readonly recordKey = formatChangeLogRecordKey
   protected readonly mutationBadge = changeLogMutationBadge
   protected readonly historyChanges = changeLogHistoryChangeLines
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly time = (moment: string): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatChangeLogTime(moment)
   }
   protected readonly who = formatChangeLogWho

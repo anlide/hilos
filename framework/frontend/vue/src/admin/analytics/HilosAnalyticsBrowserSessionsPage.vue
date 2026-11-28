@@ -17,7 +17,7 @@ import {
   type HilosAnalyticsBrowserSessionListRow,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 import { inject, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -25,6 +25,7 @@ import HilosHideable from '../../HilosHideable.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{ context: HilosAnalyticsContext }>()
 const router = inject(hilosRouterKey)
@@ -40,6 +41,12 @@ const sessions = createHilosAnalyticsBrowserSessionListTable(props.context, {
 })
 sessions.start()
 onUnmounted(() => sessions.dispose())
+
+const readerDisplay = useSignal(hilosReaderDisplay)
+function time(ms: number): string {
+  void readerDisplay.value
+  return formatAnalyticsBrowserSessionListTime(ms, sessions.periodContext)
+}
 
 const sessionPath = (rowKey: number): string | undefined =>
   router.resolvePath(HilosPages.ANALYTICS_BROWSER_SESSION, {
@@ -140,12 +147,7 @@ const personPath = (
           :data-record="row.rowKey"
         >
           <HilosHideable :value="row.firstSeenTs">
-            <template #default="{ value }">{{
-              formatAnalyticsBrowserSessionListTime(
-                value,
-                sessions.periodContext,
-              )
-            }}</template>
+            <template #default="{ value }">{{ time(value) }}</template>
           </HilosHideable>
         </span>
       </template>
@@ -158,12 +160,7 @@ const personPath = (
           :data-record="row.rowKey"
         >
           <HilosHideable :value="row.lastSeenTs">
-            <template #default="{ value }">{{
-              formatAnalyticsBrowserSessionListTime(
-                value,
-                sessions.periodContext,
-              )
-            }}</template>
+            <template #default="{ value }">{{ time(value) }}</template>
           </HilosHideable>
         </span>
       </template>

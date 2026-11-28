@@ -11,6 +11,7 @@ import {
   describeHilosLegalAgreement,
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
+  hilosReaderDisplay,
   subscribeSignal,
   type HilosLegalAgreement,
   type HilosLegalAgreementsState,
@@ -18,8 +19,10 @@ import {
   type HilosLegalChange,
   type HilosLegalClause,
   type HilosLegalContext,
+  type HilosLegalDocumentKey,
 } from '@hilos/core/base'
 import { HilosModal } from '../HilosModal.js'
+import { hilosSignal } from '../hilosSignal.js'
 import { HilosProfileHead } from './HilosProfileHead.js'
 import { HilosLegalChanges } from '../legal/HilosLegalChanges.js'
 import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
@@ -111,7 +114,7 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
       }
       <hilos-modal
         [open]="textDialog() !== null"
-        [title]="textDialog()?.title ?? ''"
+        [title]="textTitle()"
         initialFocus="dialog"
         size="wide"
         (openChange)="textDialog.set($event ? textDialog() : null)"
@@ -134,12 +137,12 @@ import { HilosLegalRevisionText } from '../legal/HilosLegalRevisionText.js'
       </hilos-modal>
       <hilos-modal
         [open]="changesDialog() !== null"
-        [title]="changesDialog()?.title ?? ''"
+        [title]="changesView()?.title ?? ''"
         initialFocus="dialog"
         size="wide"
         (openChange)="changesDialog.set($event ? changesDialog() : null)"
       >
-        @if (changesDialog(); as diff) {
+        @if (changesView(); as diff) {
           <div data-id="legal-changes-modal">
             <hilos-legal-changes
               [changes]="diff.changes"
@@ -166,23 +169,48 @@ export class HilosProfileAgreementsPage {
   readonly context = input.required<HilosLegalContext>()
   protected readonly state = signal<HilosLegalAgreementsState | null>(null)
   protected readonly texts = signal<HilosLegalAgreementTexts | null>(null)
-  protected readonly rows = computed(
-    () =>
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly rows = computed(() => {
+    this.readerDisplay()
+    return (
       this.state()?.documents.map((agreement) => ({
         agreement,
         ...describeHilosLegalAgreement(agreement),
-      })) ?? [],
-  )
+      })) ?? []
+    )
+  })
+  // The windows keep the revision days and write them when drawn, so an open
+  // window follows the reader's formats like the rows behind it.
   protected readonly textDialog = signal<{
-    title: string
+    document: HilosLegalDocumentKey
+    publishedOn: string
     clauses: HilosLegalClause[]
   } | null>(null)
+  protected readonly textTitle = computed(() => {
+    this.readerDisplay()
+    const text = this.textDialog()
+    return text === null
+      ? ''
+      : `${hilosLegalDocumentLabel(text.document)} · ${formatHilosLegalDate(text.publishedOn)}`
+  })
   protected readonly changesDialog = signal<{
-    title: string
+    document: HilosLegalDocumentKey
     changes: HilosLegalChange[]
-    from: string
-    to: string
+    fromOn: string
+    toOn: string
   } | null>(null)
+  protected readonly changesView = computed(() => {
+    this.readerDisplay()
+    const diff = this.changesDialog()
+    return diff === null
+      ? null
+      : {
+          title: `${hilosLegalDocumentLabel(diff.document)} — what changed`,
+          changes: diff.changes,
+          from: formatHilosLegalDate(diff.fromOn),
+          to: formatHilosLegalDate(diff.toOn),
+        }
+  })
   protected readonly documentLabel = hilosLegalDocumentLabel
 
   constructor() {
@@ -212,7 +240,8 @@ export class HilosProfileAgreementsPage {
     if (!text) return
     const held = agreement.held
     this.textDialog.set({
-      title: `${hilosLegalDocumentLabel(agreement.document)} · ${formatHilosLegalDate((held ?? agreement.current).publishedOn)}`,
+      document: agreement.document,
+      publishedOn: (held ?? agreement.current).publishedOn,
       clauses:
         held && held.revisionId !== agreement.current.revisionId
           ? (text.held ?? text.current)
@@ -225,10 +254,10 @@ export class HilosProfileAgreementsPage {
     )
     if (!text || !agreement.held) return
     this.changesDialog.set({
-      title: `${hilosLegalDocumentLabel(agreement.document)} — what changed`,
+      document: agreement.document,
       changes: text.changes,
-      from: formatHilosLegalDate(agreement.held.publishedOn),
-      to: formatHilosLegalDate(agreement.current.publishedOn),
+      fromOn: agreement.held.publishedOn,
+      toOn: agreement.current.publishedOn,
     })
   }
 }

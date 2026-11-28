@@ -211,18 +211,10 @@ describe('HilosStatusHistoryPage over the real viewport', () => {
     expect(rendered.querySelector('b, script')).toBeNull()
     expect(query('hilos-table-main-action')).toBeNull()
 
-    const options = {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZoneName: 'short',
-    } as const
+    const options = { kind: 'dateTime', zoneName: true } as const
     h.chooseZone('Asia/Tokyo')
     expect(rendered.textContent).toContain(
-      formatMoment(incident.startedAt, { format: options })!,
+      formatMoment(incident.startedAt, options)!,
     )
     const tokyo = rendered.textContent
     h.chooseZone('America/New_York')

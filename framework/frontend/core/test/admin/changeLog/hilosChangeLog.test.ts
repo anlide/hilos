@@ -150,12 +150,7 @@ describe('change-log attribution and labels', () => {
 
   it('shows local journal time and leaves an invalid timestamp unchanged', () => {
     const at = '2026-10-09T14:30:00.000Z'
-    expect(formatChangeLogTime(at)).toBe(
-      new Date(at).toLocaleString(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }),
-    )
+    expect(formatChangeLogTime(at)).toBe('09.10.2026 14:30:00')
     expect(formatChangeLogTime('not-a-time')).toBe('not-a-time')
   })
 
@@ -189,7 +184,7 @@ it.each([-300_000, 300_000])(
     applyServerTime(Date.now() + drift)
     try {
       expect(formatChangeLogTime('2026-01-01T00:30:05Z')).toBe(
-        'Dec 31, 2025, 4:30:05 PM',
+        '31.12.2025 16:30:05',
       )
       expect(formatChangeLogTime('not-a-time')).toBe('not-a-time')
       expect(formatChangeLogTime('2026-01-01T00:30:05')).toBe(

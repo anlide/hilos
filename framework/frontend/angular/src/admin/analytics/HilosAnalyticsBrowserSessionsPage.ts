@@ -22,9 +22,10 @@ import {
   formatAnalyticsBrowserSessionListPerson,
   formatAnalyticsBrowserSessionListTime,
   type HilosAnalyticsBrowserSessionListRow,
+  type AnalyticsPeriodContext,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 import {
   HilosAdminPage,
   HilosHideable,
@@ -32,6 +33,7 @@ import {
   HilosTableCell,
   HilosViewportTable,
   HILOS_ROUTER,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** Browser sessions overlapping the selected calendar period. */
@@ -147,7 +149,14 @@ export class HilosAnalyticsBrowserSessionsPage {
 
   protected readonly page = HilosPages.ANALYTICS_BROWSER_SESSIONS
   protected readonly person = formatAnalyticsBrowserSessionListPerson
-  protected readonly time = formatAnalyticsBrowserSessionListTime
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly time = (
+    ms: number,
+    periodContext: AnalyticsPeriodContext,
+  ): string => {
+    this.readerDisplay()
+    return formatAnalyticsBrowserSessionListTime(ms, periodContext)
+  }
   protected readonly noValue = ANALYTICS_NO_VALUE
   protected readonly keys = {
     rowKey: ANALYTICS_BROWSER_SESSION_LIST_ROW_KEY_FIELD,

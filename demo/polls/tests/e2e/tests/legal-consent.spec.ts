@@ -75,8 +75,8 @@ test('registers after reading consent and inspects personal agreements history',
     await continueFromDone(expect, page)
     await gotoPage(expect, page, '/profile/agreements')
     await expect(page.getByTestId('legal-agreement-state')).toHaveText([
-      /^\s*Revision of 7 October 2026 · accepted .+\s*$/,
-      /^\s*Revision of 9 October 2026 · accepted .+\s*$/,
+      /^\s*Revision of 07\.10\.2026 · accepted .+\s*$/,
+      /^\s*Revision of 09\.10\.2026 · accepted .+\s*$/,
     ])
   })
 
@@ -95,7 +95,7 @@ test('registers after reading consent and inspects personal agreements history',
       '[data-id="legal-agreement-row"][data-document="terms"]',
     )
     await expect(terms.getByTestId('legal-agreement-state')).toHaveText(
-      /^\s*Revision of 7 October 2026 · accepted /,
+      /^\s*Revision of 07\.10\.2026 · accepted /,
     )
     await clickSubmit(expect, terms.getByTestId('legal-agreement-open'))
     const text = page.getByTestId('legal-revision-text-modal')
@@ -137,12 +137,12 @@ test('registers after reading consent and inspects personal agreements history',
     await expect(current.getByTestId('legal-history-current')).toHaveText(
       'current',
     )
-    await expect(current).toContainText('7 October 2026')
+    await expect(current).toContainText('07.10.2026')
     await expect(current).toContainText(
       'Editorial change · changed by the project',
     )
     await expect(substantial).toContainText(
-      'Substantial change · took effect 1 October 2026 · changed by the project',
+      'Substantial change · took effect 01.10.2026 · changed by the project',
     )
     await expect(first).toContainText('First revision · Hilos standard 1')
     await expect(first.getByTestId('legal-history-compare')).toHaveCount(0)
@@ -236,10 +236,10 @@ test('returns from provider consent before accepting and signing in again', asyn
       '[data-id="legal-agreement-row"][data-document="privacy"]',
     )
     await expect(terms.getByTestId('legal-agreement-state')).toHaveText(
-      /^\s*Revision of 7 October 2026 · accepted /,
+      /^\s*Revision of 07\.10\.2026 · accepted /,
     )
     await expect(privacy.getByTestId('legal-agreement-state')).toHaveText(
-      /^\s*Revision of 9 October 2026 · accepted /,
+      /^\s*Revision of 09\.10\.2026 · accepted /,
     )
 
     await logout(expect, page)

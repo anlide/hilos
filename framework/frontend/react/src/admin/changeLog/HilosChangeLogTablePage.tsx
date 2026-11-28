@@ -8,7 +8,7 @@ import {
   formatChangeLogTableLastChange,
   readHilosChangeLogTable,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTabLinks, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, hilosTabLinks } from '@hilos/core/base'
 import type { HilosChangeLogReceiptContext } from '@hilos/core/admin/change-log'
 
 import { HilosLink } from '../../HilosLink.js'
@@ -29,7 +29,7 @@ export function HilosChangeLogTablePage({
   const router = useContext(HilosRouterContext)
   if (!router)
     throw new Error('HilosChangeLogTablePage requires a provided Hilos router.')
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const tableSection = useMemo(
     () => context.scopes.pageDataSignal(CHANGE_LOG_TABLE_SECTION),
     [context],

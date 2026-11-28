@@ -7,6 +7,7 @@ import {
   SIGNAL_PROFILE_NAME_STATE,
   type HilosProfileNameState,
 } from '../protocol/profileNameStateSignal.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../protocol/constants.js'
 import {
   sessionAccountBlocked,
   sessionAccountStanding,
@@ -15,7 +16,6 @@ import {
   sessionPendingAuthStep,
   sessionHandshakeHeard,
   sessionUserId,
-  SIGNAL_HANDSHAKE_RESPONSE,
   type SessionScopeOptions,
 } from '../session/sessionScope.js'
 import {

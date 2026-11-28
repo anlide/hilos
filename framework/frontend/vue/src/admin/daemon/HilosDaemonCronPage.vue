@@ -14,7 +14,7 @@ import {
   readHilosDaemonNodeHeading,
   type HilosDaemonCronContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
 
 import HilosViewportTable from '../../HilosViewportTable.vue'
@@ -48,14 +48,14 @@ const notice = computed(() => daemonCronIdleNotice(rules.value, heading.value))
 const holdsNotice = computed(() =>
   daemonCronHoldsIdleNotice(rules.value, heading.value),
 )
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const silentSince = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeSilentSince(heading.value, Date.now())
 })
 const clustered = computed(() => heading.value?.clustered === true)
 const runTimes = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   const now = Date.now()
   return new Map(
     rules.value.map((row) => [

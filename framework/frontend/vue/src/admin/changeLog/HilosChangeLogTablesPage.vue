@@ -13,13 +13,14 @@ import {
   type HilosChangeLogContext,
   type HilosChangeLogTablesRow,
 } from '@hilos/core/admin/change-log'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { inject, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
 import HilosLink from '../../HilosLink.vue'
 import HilosViewportTable from '../../HilosViewportTable.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+import { useSignal } from '../../useSignal.js'
 
 const props = defineProps<{
   /** The project's connection and page scope. */
@@ -28,6 +29,12 @@ const props = defineProps<{
 
 const router = inject(hilosRouterKey)
 const tables = createHilosChangeLogTablesTable(props.context)
+const readerDisplay = useSignal(hilosReaderDisplay)
+
+function lastChange(at: string | null): string {
+  void readerDisplay.value
+  return formatChangeLogTableLastChange(at)
+}
 
 /** Resolve the optional detail link once for each drawn actions cell. */
 function tablePaths(row: HilosChangeLogTablesRow): string[] {
@@ -77,7 +84,7 @@ onUnmounted(() => tables.dispose())
       </template>
       <template #cell-lastChangeAt="{ row }">
         <span :class="{ 'text-body-secondary': !row.journaled }">{{
-          formatChangeLogTableLastChange(row.lastChangeAt)
+          lastChange(row.lastChangeAt)
         }}</span>
       </template>
       <template #cell-actions="{ row }">

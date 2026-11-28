@@ -21,7 +21,11 @@ import {
   readHilosDaemonNodeOverview,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages, hilosTimeZone } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import { computed, inject, ref, watch } from 'vue'
 
 import HilosLink from '../../HilosLink.vue'
@@ -68,11 +72,29 @@ const memory = computed(() =>
 const memoryPercent = computed(() =>
   daemonPercentage(memory.value, measurements.value?.memoryCeiling),
 )
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const silentSince = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return formatDaemonNodeSilentSince(heading.value ?? null, Date.now())
 })
+
+/** @param value A core count of the node's measurements. */
+function cores(value: number | null | undefined): string {
+  void readerDisplay.value
+  return formatDaemonCores(value)
+}
+
+/** @param value A memory figure of the node's measurements. */
+function bytes(value: number | null | undefined): string {
+  void readerDisplay.value
+  return formatDaemonBytes(value)
+}
+
+/** @param value A count the node reports. */
+function count(value: number | null | undefined): string {
+  void readerDisplay.value
+  return formatDaemonNumber(value)
+}
 const envPath = computed(() =>
   node.value
     ? router.resolvePath(
@@ -179,7 +201,7 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Node cores</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-cores">
-              {{ formatDaemonCores(measurements?.cores) }}
+              {{ cores(measurements?.cores) }}
             </dd>
             <dd
               class="small mb-0"
@@ -205,7 +227,7 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Daemon CPU</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-daemon-cores">
-              {{ formatDaemonCores(measurements?.daemonCores) }}
+              {{ cores(measurements?.daemonCores) }}
               <span class="small">cores</span>
             </dd>
             <dd class="small mb-0" data-id="hilos-daemon-cpu-percent">
@@ -227,7 +249,7 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Master CPU</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonCores(measurements?.masterCores) }}
+              {{ cores(measurements?.masterCores) }}
               <span class="small">cores</span>
             </dd>
             <dd class="small mb-0">Daemon process without workers</dd>
@@ -250,7 +272,7 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Master</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonBytes(measurements?.masterMemory) }}
+              {{ bytes(measurements?.masterMemory) }}
             </dd>
             <dd class="small mb-0">Daemon process</dd>
           </dl>
@@ -259,12 +281,11 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Workers</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonBytes(measurements?.workersMemory) }}
+              {{ bytes(measurements?.workersMemory) }}
             </dd>
             <dd class="small mb-0" data-id="hilos-daemon-workers-measured">
-              {{ formatDaemonNumber(measurements?.workersMeasured) }} of
-              {{ formatDaemonNumber(node.workers?.length) }} worker processes
-              measured
+              {{ count(measurements?.workersMeasured) }} of
+              {{ count(node.workers?.length) }} worker processes measured
             </dd>
           </dl>
         </div>
@@ -272,7 +293,7 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Measured total</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-total-memory">
-              {{ formatDaemonBytes(memory) }}
+              {{ bytes(memory) }}
             </dd>
             <dd class="small mb-0" data-id="hilos-daemon-memory-percent">
               {{ formatDaemonPercentage(memoryPercent) }} of ceiling
@@ -293,7 +314,7 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Ceiling</dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonBytes(measurements?.memoryCeiling) }}
+              {{ bytes(measurements?.memoryCeiling) }}
             </dd>
             <dd
               class="small mb-0"
@@ -306,7 +327,7 @@ const reportNotice = computed(() => {
       </div>
       <p class="small text-body-secondary">
         PHP memory limit per process:
-        {{ formatDaemonBytes(measurements?.phpMemoryLimit) }}
+        {{ bytes(measurements?.phpMemoryLimit) }}
       </p>
 
       <h2 class="h6">Node</h2>
@@ -324,7 +345,7 @@ const reportNotice = computed(() => {
           <dl class="bg-body-tertiary rounded p-3 h-100 mb-0">
             <dt class="small text-body-secondary fw-normal">Monopolistic</dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-monopolistic-count">
-              {{ formatDaemonNumber(daemonMonopolisticCount(node)) }}
+              {{ count(daemonMonopolisticCount(node)) }}
             </dd>
             <dd class="small mb-0">Pool grows on demand</dd>
           </dl>
@@ -335,7 +356,7 @@ const reportNotice = computed(() => {
               Worker replacements / 24 h
             </dt>
             <dd class="fs-5 mb-1">
-              {{ formatDaemonNumber(node.workerRestarts24h) }}
+              {{ count(node.workerRestarts24h) }}
             </dd>
             <dd class="small mb-0">After unexpected worker loss</dd>
           </dl>
@@ -347,16 +368,14 @@ const reportNotice = computed(() => {
             </dt>
             <dd class="fs-5 mb-1">
               {{
-                heading.role === 'slave'
-                  ? '—'
-                  : formatDaemonNumber(node.standing?.sessions)
+                heading.role === 'slave' ? '—' : count(node.standing?.sessions)
               }}
             </dd>
             <dd class="small mb-0" data-id="hilos-daemon-node-connections">
               {{
                 heading.role === 'slave'
                   ? 'Does not accept browsers'
-                  : `${formatDaemonNumber(node.standing?.connections)} connections`
+                  : `${count(node.standing?.connections)} connections`
               }}
             </dd>
           </dl>
@@ -409,7 +428,7 @@ const reportNotice = computed(() => {
               Requires attention
             </dt>
             <dd class="fs-5 mb-1" data-id="hilos-daemon-environment-attention">
-              {{ formatDaemonNumber(daemonEnvironmentAttention(node)) }}
+              {{ count(daemonEnvironmentAttention(node)) }}
             </dd>
             <dd class="small mb-0">
               Missing, example, disk drift and orphan flags
@@ -425,9 +444,7 @@ const reportNotice = computed(() => {
               class="fs-5 mb-1"
               data-id="hilos-daemon-environment-differences"
             >
-              {{
-                formatDaemonNumber(daemonEnvironmentDifferences(node, heading))
-              }}
+              {{ count(daemonEnvironmentDifferences(node, heading)) }}
             </dd>
             <dd class="small mb-0">
               {{

@@ -26,7 +26,7 @@ import {
   type HilosDaemonContext,
   type HilosDaemonOverviewNode,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosLink } from '../../HilosLink.js'
@@ -45,7 +45,7 @@ export function HilosDaemonPage({ context }: HilosDaemonPageProps) {
   const daemon = useMemo(() => createHilosDaemonOverview(context), [context])
   const overview = useSignal(daemon.overview)
   const database = useSignal(daemon.database)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const router = useContext(HilosRouterContext)
   if (!router)
     throw new Error('HilosDaemonPage requires a provided Hilos router.')

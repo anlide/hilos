@@ -11,6 +11,7 @@ import {
 } from '@angular/core'
 import {
   formatMoment,
+  hilosReaderDisplay,
   hilosTimeZone,
   hilosToasts,
   type ActionError,
@@ -238,7 +239,10 @@ export class HilosStatusWorkModal {
   private readonly windowField =
     viewChild<ElementRef<HTMLElement>>('windowField')
   private readonly editNotice = signal('')
+  // The zone the conflict notice names is data; the moments beside it redraw
+  // on the reader's zone and formats.
   private readonly readerTimeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly editor = computed(() => {
     const controller = this.controller()
     return 'state' in controller ? controller : null
@@ -256,6 +260,7 @@ export class HilosStatusWorkModal {
       : (this.error() ?? '')
   })
   protected readonly noticeText = computed(() => {
+    this.readerDisplay()
     const blocked = this.blockedReason()
     if (blocked) return blocked
     const edit = this.editState()

@@ -557,7 +557,7 @@ describe('profile sign-in page dialogs', () => {
     expect(row.get('[data-id="identity-identifier"]').element).toBe(
       subtitleElement,
     )
-    expect(subtitle.text()).toBe('Set · last changed Jan 1, 2026, 1:30:00 AM')
+    expect(subtitle.text()).toBe('Set · last changed 01.01.2026 01:30:00')
     expect(world.identityList()).toBe(identityList)
     expect(world.scopeUpdateCount()).toBe(scopeUpdates + 1)
     expect(world.dispatch).not.toHaveBeenCalled()
@@ -625,7 +625,7 @@ describe('profile sign-in page dialogs', () => {
     const scopeUpdates = world.scopeUpdateCount()
     const dispatches = world.dispatch.mock.calls.length
 
-    expect(subtitle.text()).toBe('Set · last changed Jan 1, 2026, 9:30:00 AM')
+    expect(subtitle.text()).toBe('Set · last changed 01.01.2026 09:30:00')
     browserZone = 'America/New_York'
     window.dispatchEvent(new Event('focus'))
     await nextTick()
@@ -634,7 +634,7 @@ describe('profile sign-in page dialogs', () => {
     expect(row.get('[data-id="identity-identifier"]').element).toBe(
       subtitleElement,
     )
-    expect(subtitle.text()).toBe('Set · last changed Dec 31, 2025, 7:30:00 PM')
+    expect(subtitle.text()).toBe('Set · last changed 31.12.2025 19:30:00')
     expect(world.identityList()).toBe(identityList)
     expect(world.scopeUpdateCount()).toBe(scopeUpdates)
     expect(world.dispatch).toHaveBeenCalledTimes(dispatches)
@@ -664,7 +664,7 @@ describe('profile sign-in page dialogs', () => {
       const row = world.wrapper.get('[data-identity-key="3"]')
       const subtitle = row.get('[data-id="identity-passkey-added"]')
       expect(row.get('[data-id="identity-type"]').text()).toBe('Laptop key')
-      expect(subtitle.text()).toBe('Passkey · added Jan 1, 2026')
+      expect(subtitle.text()).toBe('Passkey · added 01.01.2026')
       if (dialog === 'unlink') {
         await row.get('[data-id="identity-unlink"]').trigger('click')
       } else {
@@ -687,7 +687,7 @@ describe('profile sign-in page dialogs', () => {
       expect(row.get('[data-id="identity-passkey-added"]').element).toBe(
         subtitle.element,
       )
-      expect(subtitle.text()).toBe('Passkey · added Dec 31, 2025')
+      expect(subtitle.text()).toBe('Passkey · added 31.12.2025')
       expect(byId('modal')).toBe(modal)
       expect(world.dispatch).toHaveBeenCalledTimes(callsBefore)
       if (dialog === 'unlink') {

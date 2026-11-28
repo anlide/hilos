@@ -17,13 +17,18 @@ import {
   formatChangeLogTableLastChange,
   formatChangeLogTableOwner,
 } from '@hilos/core/admin/change-log'
-import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import type { HilosChangeLogContext } from '@hilos/core/admin/change-log'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
+import { useSignal } from '../../useSignal.js'
 
 /** Props for {@link HilosChangeLogTablesPage}. */
 export interface HilosChangeLogTablesPageProps {
@@ -40,6 +45,7 @@ export function HilosChangeLogTablesPage({
   context,
 }: HilosChangeLogTablesPageProps) {
   const router = useContext(HilosRouterContext)
+  useSignal(hilosReaderDisplay)
   const tables = useMemo(
     () => createHilosChangeLogTablesTable(context),
     [context],

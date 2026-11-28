@@ -170,20 +170,20 @@ describe('HilosSessionRow (Vue)', () => {
     const closed = mountRow(makeSession(2, { expiresAt: null }))
     const tab = tabbed.get('[data-id="profile-session-tab"]').element
 
-    expect(tabbed.text()).toContain('created 1/1/2026, 9:30:00 AM')
+    expect(tabbed.text()).toContain('created 01.01.2026 09:30:00')
     expect(tabbed.text()).toContain('last seen now')
-    expect(tabbed.text()).toContain('expires 1/2/2026, 9:30:00 AM')
-    expect(tab.textContent).toContain('opened 1/1/2026, 9:32:00 AM')
-    expect(closed.text()).toContain('last seen 1/1/2026, 9:31:00 AM')
+    expect(tabbed.text()).toContain('expires 02.01.2026 09:30:00')
+    expect(tab.textContent).toContain('opened 01.01.2026 09:32:00')
+    expect(closed.text()).toContain('last seen 01.01.2026 09:31:00')
     expect(closed.text()).toContain('expires never')
 
     await moveReaderTo('America/New_York')
 
-    expect(tabbed.text()).toContain('created 12/31/2025, 7:30:00 PM')
-    expect(tabbed.text()).toContain('expires 1/1/2026, 7:30:00 PM')
-    expect(closed.text()).toContain('last seen 12/31/2025, 7:31:00 PM')
+    expect(tabbed.text()).toContain('created 31.12.2025 19:30:00')
+    expect(tabbed.text()).toContain('expires 01.01.2026 19:30:00')
+    expect(closed.text()).toContain('last seen 31.12.2025 19:31:00')
     expect(tabbed.get('[data-id="profile-session-tab"]').element).toBe(tab)
-    expect(tab.textContent).toContain('opened 12/31/2025, 7:32:00 PM')
+    expect(tab.textContent).toContain('opened 31.12.2025 19:32:00')
     expect(
       tabbed
         .get('[data-id="profile-session-tabs"]')

@@ -203,14 +203,14 @@ describe('HilosLegalAcceptancesPage (HIL-1260)', () => {
       await flushPromises()
 
       const cell = view.get('[data-id="legal-acceptance-accepted-at"]')
-      expect(cell.text()).toContain('Sep 27, 2026')
+      expect(cell.text()).toContain('27.09.2026')
 
       // Emit session zone event
       chooseZone('Europe/Kyiv')
       await flushPromises()
 
       // The DOM signature reformats live in place (+3h -> Sep 28)
-      expect(cell.text()).toContain('Sep 28, 2026')
+      expect(cell.text()).toContain('28.09.2026')
 
       view.unmount()
     } finally {

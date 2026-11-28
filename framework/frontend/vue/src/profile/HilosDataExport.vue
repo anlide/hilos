@@ -6,7 +6,7 @@ import {
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
   hilosImpersonation,
-  hilosTimeZone,
+  hilosReaderDisplay,
   sendProgressLine,
   type HilosDataExportStore,
   type HilosDataExportFlow,
@@ -27,7 +27,7 @@ const props = withDefaults(
   { titled: true, lead: '' },
 )
 const impersonation = useSignal(hilosImpersonation)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const node = useSignal(props.store.state)
 const busy = useSignal(props.flow.busy)
 const refusal = useSignal(props.flow.refusal)
@@ -55,11 +55,11 @@ const sendVoice = computed(() => {
     : ''
 })
 const status = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return dataExportStatusText(node.value)
 })
 const preparingRoom = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return dataExportStatusText({
     state: 'preparing',
     requestedAt: node.value?.requestedAt ?? Date.now(),

@@ -561,7 +561,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
         '[data-id="hilos-table-row-2"] td',
       )[3]?.textContent,
     ).toBe('2Show in full')
-    expect(text).toContain('Oct 21, 2026, 11:00:00 AM')
+    expect(text).toContain('21.10.2026 11:00:00')
   })
 
   it('changes the word in place as the presence changes live, apart from a source gone quiet', async () => {
@@ -630,7 +630,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(presence(fixture, 1).twin?.textContent?.trim()).toBe(
       'probably offline',
     )
-    expect(host.textContent).toContain('Oct 21, 2026, 10:00:00 AM')
+    expect(host.textContent).toContain('21.10.2026 10:00:00')
   })
 })
 

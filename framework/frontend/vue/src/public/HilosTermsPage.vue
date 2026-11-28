@@ -21,6 +21,7 @@ import {
   describeHilosLegalTermsReader,
   formatHilosLegalDate,
   hilosLegalReconsentPerson,
+  hilosReaderDisplay,
   LEGAL_RECONSENT_COPY,
   LEGAL_TERMS_COPY,
   sessionAccountStanding,
@@ -52,17 +53,19 @@ const agreement = useSignal(store.agreement)
 const accepting = useSignal(store.accepting)
 const refusal = useSignal(store.refusal)
 const person = useSignal(hilosLegalReconsentPerson)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const standing = useSignal(sessionAccountStanding(props.context.scopes))
 /** Whether the comparison of the held revision with the one in force is open. */
 const comparing = ref(false)
 
-const line = computed(() =>
-  describeHilosLegalTermsReader(terms.value, agreement.value, {
+const line = computed(() => {
+  void readerDisplay.value
+  return describeHilosLegalTermsReader(terms.value, agreement.value, {
     person: person.value,
     frozen: standing.value?.frozen === true,
     now: Date.now(),
-  }),
-)
+  })
+})
 const changes = computed(() =>
   comparing.value && line.value.canCompare
     ? (terms.value?.changes ?? null)
@@ -94,6 +97,7 @@ onUnmounted(() => {
  * @param revisionId The revision.
  */
 function publishedOf(revisionId: string): string {
+  void readerDisplay.value
   const revision = terms.value?.revisions.find(
     (item) => item.revisionId === revisionId,
   )

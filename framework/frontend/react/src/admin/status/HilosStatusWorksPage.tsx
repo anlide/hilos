@@ -16,8 +16,8 @@ import { useEffect, useState } from 'react'
 import {
   formatMoment,
   HILOS_TABLE_ACTIONS_KEY,
-  hilosTimeZone,
   HilosPages,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import {
   createHilosStatusWorkCancel,
@@ -84,19 +84,7 @@ function dialogOpen(windows: WorksWindows): boolean {
  */
 function moment(at: number | null): string {
   if (at === null) return '—'
-  return (
-    formatMoment(at, {
-      format: {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        timeZoneName: 'short',
-      },
-    }) ?? '—'
-  )
+  return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
 }
 
 /**
@@ -155,7 +143,7 @@ export function HilosStatusWorksPage({ context }: HilosStatusWorksPageProps) {
 function StatusWorks({ generation }: { generation: WorksGeneration }) {
   const { state, table, create, edit, cancel } = generation
   const data = useSignal(state.data)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
 
   /**
    * The names of the catalog's components, in the order of the keys.

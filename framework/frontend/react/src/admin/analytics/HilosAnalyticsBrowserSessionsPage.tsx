@@ -19,13 +19,14 @@ import {
   type HilosAnalyticsBrowserSessionListRow,
   type HilosAnalyticsContext,
 } from '@hilos/core/admin/analytics'
-import { HilosPages, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 
 import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosHideable } from '../../HilosHideable.js'
 import { HilosLink } from '../../HilosLink.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
+import { useSignal } from '../../useSignal.js'
 
 /** Props for {@link HilosAnalyticsBrowserSessionsPage}. */
 export interface HilosAnalyticsBrowserSessionsPageProps {
@@ -47,6 +48,7 @@ export function HilosAnalyticsBrowserSessionsPage({
       'HilosAnalyticsBrowserSessionsPage requires a provided Hilos router.',
     )
   }
+  useSignal(hilosReaderDisplay)
 
   // The factory reads the route the page opened on and rewrites the address
   // of a Period change itself; no React copy of the filter is kept.

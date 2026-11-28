@@ -4,7 +4,7 @@ import {
   HILOS_STEP_UP_COPY,
   dataExportStatusText,
   hilosImpersonation,
-  hilosTimeZone,
+  hilosReaderDisplay,
   sendProgressLine,
   type HilosDataExportStore,
   type HilosDataExportFlow,
@@ -29,7 +29,7 @@ export function HilosDataExport({
   lead,
   titled = true,
 }: HilosDataExportProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const impersonation = useSignal(hilosImpersonation)
   const node = useSignal(store.state)
   const busy = useSignal(flow.busy)

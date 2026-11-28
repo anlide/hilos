@@ -336,9 +336,9 @@ describe.each(['terms', 'privacy'] as const)(
       const row = w.history.controller.rows.get().at(-1)!.row!
       expect(row).toMatchObject({
         revisionId: first.revisionId,
-        publishedLabel: '17 September 2026',
+        publishedLabel: '17.09.2026',
         changeLabel: 'First revision · Hilos standard 1',
-        revisionTitle: `${document === 'terms' ? 'Terms' : 'Privacy'} — revision of 17 September 2026`,
+        revisionTitle: `${document === 'terms' ? 'Terms' : 'Privacy'} — revision of 17.09.2026`,
       })
       w.history.controller.ingestSubscriptionWindow(
         [

@@ -12,7 +12,7 @@
 // unavailable count is a dash, never a zero. Bootstrap classes only.
 import { useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import type { HilosRouter } from '@hilos/core/base'
 import {
   createHilosStatusIncidentController,
@@ -136,7 +136,7 @@ function StatusOverview({
   const cards = useSignal(state.cards)
   const summary = useSignal(state.summary)
   const maintenance = useSignal(state.maintenance)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
 
   return (
     <>

@@ -6,17 +6,13 @@
 import { formatMoment } from './moment.js'
 
 /**
- * A moment as its calendar date, in the reader's own locale and long form —
- * "September 24, 2026" — because the day is the whole of what is being said.
+ * A moment as its calendar date in the reader's zone, written in the date
+ * template of the tab's region — "24.09.2026" — because the day is the whole of
+ * what is being said.
  *
  * @param moment The absolute server epoch-ms moment.
- * @returns The date as the reader's locale writes it.
+ * @returns The date in the region's date template.
  */
 export function formatCalendarDate(moment: number): string {
-  return (
-    formatMoment(moment, {
-      kind: 'date',
-      format: { dateStyle: 'long' },
-    }) ?? '—'
-  )
+  return formatMoment(moment, { kind: 'date' }) ?? '—'
 }

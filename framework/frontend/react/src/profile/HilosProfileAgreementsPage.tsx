@@ -4,10 +4,12 @@ import {
   describeHilosLegalAgreement,
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
+  hilosReaderDisplay,
   type HilosLegalAgreement,
   type HilosLegalChange,
   type HilosLegalClause,
   type HilosLegalContext,
+  type HilosLegalDocumentKey,
 } from '@hilos/core/base'
 import { HilosModal } from '../HilosModal.js'
 import { HilosProfileHead } from './HilosProfileHead.js'
@@ -30,20 +32,24 @@ export function HilosProfileAgreementsPage({
   useEffect(() => store.start(), [store])
   const state = useSignal(store.state)
   const texts = useSignal(store.texts)
+  useSignal(hilosReaderDisplay)
   const rows =
     state?.documents.map((agreement) => ({
       agreement,
       ...describeHilosLegalAgreement(agreement),
     })) ?? []
+  // The windows keep the revision days and write them when drawn, so an open
+  // window follows the reader's formats like the rows behind it.
   const [textDialog, setTextDialog] = useState<{
-    title: string
+    document: HilosLegalDocumentKey
+    publishedOn: string
     clauses: HilosLegalClause[]
   } | null>(null)
   const [changesDialog, setChangesDialog] = useState<{
-    title: string
+    document: HilosLegalDocumentKey
     changes: HilosLegalChange[]
-    from: string
-    to: string
+    fromOn: string
+    toOn: string
   } | null>(null)
   function openText(agreement: HilosLegalAgreement): void {
     const text = texts?.documents.find(
@@ -52,7 +58,8 @@ export function HilosProfileAgreementsPage({
     if (!text) return
     const held = agreement.held
     setTextDialog({
-      title: `${hilosLegalDocumentLabel(agreement.document)} · ${formatHilosLegalDate((held ?? agreement.current).publishedOn)}`,
+      document: agreement.document,
+      publishedOn: (held ?? agreement.current).publishedOn,
       clauses:
         held && held.revisionId !== agreement.current.revisionId
           ? (text.held ?? text.current)
@@ -65,10 +72,10 @@ export function HilosProfileAgreementsPage({
     )
     if (!text || !agreement.held) return
     setChangesDialog({
-      title: `${hilosLegalDocumentLabel(agreement.document)} — what changed`,
+      document: agreement.document,
       changes: text.changes,
-      from: formatHilosLegalDate(agreement.held.publishedOn),
-      to: formatHilosLegalDate(agreement.current.publishedOn),
+      fromOn: agreement.held.publishedOn,
+      toOn: agreement.current.publishedOn,
     })
   }
   return (
@@ -143,7 +150,11 @@ export function HilosProfileAgreementsPage({
       )}
       <HilosModal
         open={textDialog !== null}
-        title={textDialog?.title ?? ''}
+        title={
+          textDialog
+            ? `${hilosLegalDocumentLabel(textDialog.document)} · ${formatHilosLegalDate(textDialog.publishedOn)}`
+            : ''
+        }
         initialFocus="dialog"
         size="wide"
         onClose={() => setTextDialog(null)}
@@ -166,7 +177,11 @@ export function HilosProfileAgreementsPage({
       </HilosModal>
       <HilosModal
         open={changesDialog !== null}
-        title={changesDialog?.title ?? ''}
+        title={
+          changesDialog
+            ? `${hilosLegalDocumentLabel(changesDialog.document)} — what changed`
+            : ''
+        }
         initialFocus="dialog"
         size="wide"
         onClose={() => setChangesDialog(null)}
@@ -185,8 +200,8 @@ export function HilosProfileAgreementsPage({
           <div data-id="legal-changes-modal">
             <HilosLegalChanges
               changes={changesDialog.changes}
-              fromLabel={changesDialog.from}
-              toLabel={changesDialog.to}
+              fromLabel={formatHilosLegalDate(changesDialog.fromOn)}
+              toLabel={formatHilosLegalDate(changesDialog.toOn)}
             />
           </div>
         )}

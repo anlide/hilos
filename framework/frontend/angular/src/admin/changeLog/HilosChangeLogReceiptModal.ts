@@ -33,7 +33,7 @@ import {
   type HilosChangeLogReceiptDialog,
   type HilosChangeLogReceiptReader,
 } from '@hilos/core/admin/change-log'
-import { HilosPages, hilosTimeZone, isHiddenValue } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay, isHiddenValue } from '@hilos/core/base'
 
 import {
   HilosFormError,
@@ -384,9 +384,9 @@ export class HilosChangeLogReceiptModal {
 
   protected readonly copy = CHANGE_LOG_RECEIPT_COPY
   protected readonly isHidden = isHiddenValue
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly time = (moment: string): string => {
-    this.timeZone()
+    this.readerDisplay()
     return formatChangeLogTime(moment)
   }
 
@@ -401,7 +401,7 @@ export class HilosChangeLogReceiptModal {
     formatChangeLogReceiptTitle(this.dialog()),
   )
   protected readonly attribution = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const header = this.dialog()?.header
     return header ? changeLogReceiptAttribution(header) : null
   })

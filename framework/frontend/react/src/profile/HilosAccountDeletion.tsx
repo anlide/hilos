@@ -17,12 +17,12 @@ import {
   focusInitial,
   formatAccountDeletionDays,
   formatCalendarDate,
-  hilosTimeZone,
   HILOS_ACCOUNT_DELETION_COPY as COPY,
   HILOS_STEP_UP_COPY,
   HILOS_DATA_EXPORT_COPY,
   HILOS_PAGE_ROUTES,
   HilosPages,
+  hilosReaderDisplay,
   sendProgressLine,
 } from '@hilos/core/base'
 import type { HilosSecondFactorContext } from '@hilos/core/base'
@@ -47,7 +47,7 @@ export interface HilosAccountDeletionProps {
  * @param props The project's context.
  */
 export function HilosAccountDeletion({ context }: HilosAccountDeletionProps) {
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const store = useMemo(
     () => createHilosAccountDeletionStore(context),
     [context],

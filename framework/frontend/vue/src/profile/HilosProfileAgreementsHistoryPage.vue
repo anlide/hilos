@@ -8,9 +8,10 @@ import {
   formatHilosLegalDate,
   hilosLegalDocumentLabel,
   hilosLegalRevisionHistory,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type HilosLegalContext,
   type HilosLegalDocumentKey,
+  type HilosLegalHistoryRevision,
 } from '@hilos/core/base'
 import HilosFormError from '../HilosFormError.vue'
 import HilosModal from '../HilosModal.vue'
@@ -24,10 +25,18 @@ const props = defineProps<{ context: HilosLegalContext }>()
 const store = createHilosLegalAgreementsStore(props.context)
 const state = useSignal(store.state)
 const history = useSignal(hilosLegalRevisionHistory(props.context))
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 function acceptanceDate(moment: number): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatHilosLegalAcceptanceDate(moment)
+}
+function legalDate(date: string): string {
+  void readerDisplay.value
+  return formatHilosLegalDate(date)
+}
+function revisionChange(revision: HilosLegalHistoryRevision): string {
+  void readerDisplay.value
+  return describeHilosLegalRevision(revision)
 }
 const reader = createHilosLegalRevisionReader(props.context)
 const dialog = useSignal(reader.dialog)
@@ -91,7 +100,7 @@ function current(document: HilosLegalDocumentKey): string | undefined {
           ></i>
           <div class="flex-grow-1 text-break">
             <div class="fw-semibold small">
-              {{ formatHilosLegalDate(revision.publishedOn) }}
+              {{ legalDate(revision.publishedOn) }}
               <span
                 v-if="current(document.document) === revision.revisionId"
                 class="badge text-bg-primary ms-1 text-wrap"
@@ -113,7 +122,7 @@ function current(document: HilosLegalDocumentKey): string | undefined {
               >
             </div>
             <div class="small text-body-secondary">
-              {{ describeHilosLegalRevision(revision) }}
+              {{ revisionChange(revision) }}
             </div>
           </div>
           <div
@@ -183,8 +192,8 @@ function current(document: HilosLegalDocumentKey): string | undefined {
         <HilosLegalChanges
           v-if="dialog.changes"
           :changes="dialog.changes.changes"
-          :from-label="formatHilosLegalDate(dialog.changes.fromRevisionId)"
-          :to-label="formatHilosLegalDate(dialog.changes.toRevisionId)"
+          :from-label="legalDate(dialog.changes.fromRevisionId)"
+          :to-label="legalDate(dialog.changes.toRevisionId)"
         />
       </div>
       <template #actions="{ requestClose }"

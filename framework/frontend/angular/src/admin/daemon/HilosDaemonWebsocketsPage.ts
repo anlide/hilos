@@ -8,7 +8,11 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { HILOS_ROUTER, mirrorHilosSignal } from '@hilos/angular/base'
+import {
+  HILOS_ROUTER,
+  hilosSignal,
+  mirrorHilosSignal,
+} from '@hilos/angular/base'
 import {
   DAEMON_NODE_STATE_SILENT,
   formatDaemonNumber,
@@ -18,7 +22,11 @@ import {
   type HilosDaemonNodeHeading,
   type HilosDaemonWebsocketsData,
 } from '@hilos/core/admin/daemon'
-import { computedSignal, HilosPages } from '@hilos/core/base'
+import {
+  computedSignal,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import { HilosDaemonNodeShell } from './HilosDaemonNodeShell.js'
 
 /** Render the count from this node page's single permitted answer. */
@@ -68,14 +76,18 @@ export class HilosDaemonWebsocketsPage {
   readonly context = input.required<HilosDaemonContext>()
   protected readonly page = HilosPages.DAEMON_WEBSOCKETS
   private readonly router = inject(HILOS_ROUTER)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly current = signal<{
     heading: HilosDaemonNodeHeading
     websockets: HilosDaemonWebsocketsData | null
   } | null>(null)
   protected readonly data = computed(() => this.current()?.websockets)
-  protected readonly count = computed(() =>
-    this.data()?.dataNode ? '—' : formatDaemonNumber(this.data()?.connections),
-  )
+  protected readonly count = computed(() => {
+    this.readerDisplay()
+    return this.data()?.dataNode
+      ? '—'
+      : formatDaemonNumber(this.data()?.connections)
+  })
   protected readonly dataNodeNote = 'Data nodes do not accept browsers'
   protected readonly waitingNote = 'Waiting for the node report'
   protected readonly silentNote = 'At the time of the last report'

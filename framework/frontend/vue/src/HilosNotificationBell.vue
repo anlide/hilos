@@ -18,7 +18,7 @@ accessibility.md). Bootstrap classes only, no CSS of its own. -->
 import {
   formatMoment,
   hilosNotifications,
-  hilosTimeZone,
+  hilosReaderDisplay,
   NOTIFICATION_ACTION_MARK_ALL_READ,
   NOTIFICATION_ACTION_MARK_READ,
   type HilosConnection,
@@ -41,7 +41,7 @@ const props = withDefaults(
 
 const notifications = useSignal(props.store.notifications)
 const unreadCount = useSignal(props.store.unreadCount)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 // The badge caps its label so a runaway count never breaks the bell's layout.
 const badgeLabel = computed(() =>
   unreadCount.value > 99 ? '99+' : String(unreadCount.value),
@@ -142,7 +142,7 @@ function markAllRead(): void {
 // A notification's timestamp, formatted for the reader's locale; the wire value
 // is epoch milliseconds, absent only on a malformed row.
 function formatTime(row: HilosNotification): string {
-  void timeZone.value
+  void readerDisplay.value
   if (row.createdAt == null) {
     return ''
   }

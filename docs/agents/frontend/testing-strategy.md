@@ -464,8 +464,17 @@ names alone do not prove different displayed times or calendar days. Keep a
 fixture that makes the result the scenario asserts distinguishable for the
 chosen zones. If the draw fails that precondition, draw again manually while
 authoring, then save the final literal. Calculate time expectations with the
-toolbox's independent `Intl` oracle from the original UTC timestamps and the
-expected zone, never from the DOM result being checked. Preserve useful actions,
+toolbox's independent oracle from the original UTC timestamps and the
+expected zone, never from the DOM result being checked: `readerMoment()`,
+`readerMillisecondMoment()` and `readerNumber()` in
+[`moments.ts`](../../../framework/frontend/e2e/moments.ts) write the stand
+tab's formats — the built-in English locale without a country, `DD.MM.YYYY`,
+`HH:mm:ss`, `1,000.00` — and never import the core formatter. The two moment
+oracles build the templates from the numeric parts `Intl` gives in the zone,
+with the kinds and flags of the core formatter; `readerNumber()` has
+`Intl.NumberFormat('en-US')` write the figure, which equals the `1,000.00`
+template on the values the specs pass and does not repeat the template's edges
+(-0, the infinities, `compact`). Preserve useful actions,
 records, isolated sessions, Automatic and reload checks; fix UTC assumptions in
 expectations without weakening the proof or changing the product's formatter,
 the stand's project zone or the Node unit process's zone.
@@ -1593,18 +1602,19 @@ advance as time passes without a run. Follow the command contract in
 
 After the report confirms `lastRunAt === firedAt`, compare the displayed pair
 with the row in one current delivered frame. `expectDaemonCronMoments` reads both
-cells together using independent browser `Intl`; if that row's frame changes
-during the DOM read, it discards the observation and repeats within the same
-delivery timeout. Use the current pair on each check because `nextRunAt` may
-advance without a run. In the Binance zone spec, pass the selected display zone
-(`browserZone` for Automatic) and `{ timeOnly: true }`: both moments are checked
-by hour and minute, while component tests cover the full calendar labels. The
-spec also keeps the original `lastRunAt` and every row field other than
+cells together and compares each cell whole with the independent oracle, never a
+substring of it; if that row's frame changes during the DOM read, it discards
+the observation and repeats within the same delivery timeout. Use the current
+pair on each check because `nextRunAt` may advance without a run. In the Roblox
+Cron zone spec, pass the selected display zone (`browserZone` for Automatic) and
+`{ timeOnly: true }`: both moments are checked by hour and minute after any one
+calendar label, while component tests cover the full calendar labels. The spec
+also keeps the original `lastRunAt` and every row field other than
 `nextRunAt` fixed, plus its document, table, row, connection, applied window and
 no-new-request checks.
 
 Collect a test failure and a cleanup failure so cancellation cannot hide the
-original assertion failure. The Binance Cron zone spec uses this shape around
+original assertion failure. The Roblox Cron zone spec uses this shape around
 its fire, report, and zone checks:
 
 ```ts

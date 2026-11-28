@@ -653,7 +653,6 @@ export {
   TAIL_ARRIVAL_TIMEOUT_MS,
   expectLogsPageHead,
   watchLogFrames,
-  logMomentLabel,
   logBatchDirectory,
   expectLogUtcMoment,
   expectLogEpochMoment,
@@ -675,6 +674,8 @@ export {
   readerLocalDateTime,
   readerMillisecondMoment,
   readerMoment,
+  readerNumber,
+  type ReaderMomentOptions,
 } from './moments.js'
 export {
   expectProfileSessionMoments,

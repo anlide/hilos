@@ -8,8 +8,12 @@ import {
   type HilosProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
-import { type ModalController } from '@hilos/core/base'
+import { hilosTimeZone, type ModalController } from '@hilos/core/base'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  bindReader,
+  type ReaderFixture,
+} from '../../core/test/format/readerFixture.js'
 import { HilosProfileSessions } from '../src/profile/HilosProfileSessions.js'
 import { HilosModal } from '../src/HilosModal.js'
 import {
@@ -19,12 +23,18 @@ import {
 
 const BROWSER_TIME_ZONE = new Intl.DateTimeFormat().resolvedOptions().timeZone
 let timeZoneBinding: TimeZoneTestBinding | null = null
+let readerBinding: ReaderFixture | null = null
 
 afterEach(() => {
   if (timeZoneBinding !== null) {
     timeZoneBinding.receive(null)
     timeZoneBinding.release()
     timeZoneBinding = null
+  }
+  if (readerBinding !== null) {
+    readerBinding.region(null)
+    readerBinding.release()
+    readerBinding = null
   }
   vi.restoreAllMocks()
   document.body.innerHTML = ''
@@ -262,6 +272,58 @@ describe('HilosProfileSessions (Angular)', () => {
     expect(deviceZone.textContent).toBe('· Europe/Kyiv')
     expect(byId('profile-session-end-confirm')).toBe(confirm)
     expect(confirm.closest('[role="dialog"]')).toBe(dialog)
+  })
+
+  it('redraws session moments in the formats of a new region without remounting', async () => {
+    readerBinding = bindReader()
+    readerBinding.choose('UTC')
+    const { fixture } = setup([
+      {
+        ...makeSession(1, { current: true }),
+        browserTimeZone: 'Europe/Kyiv',
+        createdAt: 1767227400000,
+        expiresAt: 1767313800000,
+        tabs: [
+          makeTab('tab-current', { connectedAt: 1767227520000, current: true }),
+        ],
+      },
+      { ...makeSession(2), lastSeenAt: 1767227460000 },
+    ])
+    const rows = sessionRows()
+    expect(rows[0]?.textContent).toContain('created 01.01.2026 00:30:00')
+    expect(rows[0]?.textContent).toContain('expires 02.01.2026 00:30:00')
+    expect(rows[1]?.textContent).toContain('last seen 01.01.2026 00:31:00')
+    rows[0]!
+      .querySelector<HTMLButtonElement>('[data-id="profile-session-tabs"]')!
+      .click()
+    rows[1]!
+      .querySelector<HTMLButtonElement>('[data-id="profile-session-revoke"]')!
+      .click()
+    await settle(fixture)
+    const tab = byId('profile-session-tab')
+    const dialog = byId('profile-session-end-confirm')
+    expect(tab.textContent).toContain('opened 01.01.2026 00:32:00')
+
+    readerBinding.region({ date: 'MM/DD/YYYY', time: 'hh:mm:ss a' })
+    await settle(fixture)
+
+    expect(hilosTimeZone.get()).toBe('UTC')
+    expect(sessionRows()[0]).toBe(rows[0])
+    expect(sessionRows()[1]).toBe(rows[1])
+    expect(rows[0]?.textContent).toContain('created 01/01/2026 12:30:00 AM')
+    expect(rows[0]?.textContent).toContain('expires 01/02/2026 12:30:00 AM')
+    expect(rows[1]?.textContent).toContain('last seen 01/01/2026 12:31:00 AM')
+    expect(byId('profile-session-tab')).toBe(tab)
+    expect(tab.textContent).toContain('opened 01/01/2026 12:32:00 AM')
+    expect(
+      rows[0]!
+        .querySelector('[data-id="profile-session-tabs"]')
+        ?.getAttribute('aria-expanded'),
+    ).toBe('true')
+    expect(
+      byId('profile-session-device').textContent?.replace(/\s+/g, ' ').trim(),
+    ).toBe('Device 1 · Europe/Kyiv')
+    expect(byId('profile-session-end-confirm')).toBe(dialog)
   })
 
   it('opens confirmation modal without calling endOtherSessions on button click', async () => {

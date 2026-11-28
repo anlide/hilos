@@ -26,6 +26,7 @@ import { registerTableLiveFrozenCases } from '../../test-support/tableLiveFrozen
 import { registerTableLiveRoomCases } from '../../test-support/tableLiveRoomCases.js'
 
 import HilosTableLive from './HilosTableLive.vue'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -254,10 +255,7 @@ describe('HilosTableLive', () => {
     const element = line.element
     const rows = controller.rows.get()
     const expected = (timeZone: string) =>
-      `This table has not updated since ${new Intl.DateTimeFormat(undefined, {
-        timeStyle: 'medium',
-        timeZone,
-      }).format(since)}. The rows shown may be out of date.`
+      `This table has not updated since ${readerMomentText(since, timeZone, { kind: 'time' })}. The rows shown may be out of date.`
     try {
       expect(line.text()).toBe(expected('UTC'))
       for (const zone of ['Europe/Kyiv', null]) {

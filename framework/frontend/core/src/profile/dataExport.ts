@@ -87,17 +87,7 @@ export function dataExportStatusText(node: DataExportNode | null): string {
     case 'preparing':
       return HILOS_DATA_EXPORT_COPY.preparing.replace(
         '{time}',
-        formatMoment(node.requestedAt, {
-          kind: 'dateTime',
-          format: {
-            year: 'numeric',
-            month: 'numeric',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: 'numeric',
-            second: 'numeric',
-          },
-        }) ?? '—',
+        formatMoment(node.requestedAt, { kind: 'dateTime' }) ?? '—',
       )
     case 'ready':
       return HILOS_DATA_EXPORT_COPY.ready

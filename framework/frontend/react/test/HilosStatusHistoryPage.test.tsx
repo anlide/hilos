@@ -27,15 +27,7 @@ afterEach(() => {
 })
 
 /** The format every moment of a row is drawn in. */
-const MOMENT_FORMAT: Intl.DateTimeFormatOptions = {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZoneName: 'short',
-}
+const MOMENT_FORMAT = { kind: 'dateTime', zoneName: true } as const
 
 function find(
   id: string,
@@ -175,12 +167,12 @@ describe('HilosStatusHistoryPage with real normalized rows and viewport', () => 
     expect(find('hilos-table-main-action')).toBeNull()
     expect(find('hilos-status-history-unavailable')).toBeNull()
     expect(table().textContent).toContain(
-      formatMoment(completedIncident.startedAt, { format: MOMENT_FORMAT })!,
+      formatMoment(completedIncident.startedAt, MOMENT_FORMAT)!,
     )
     const before = table().textContent
     act(() => zone.choose('America/New_York'))
     expect(table().textContent).toContain(
-      formatMoment(completedIncident.startedAt, { format: MOMENT_FORMAT })!,
+      formatMoment(completedIncident.startedAt, MOMENT_FORMAT)!,
     )
     expect(table().textContent).not.toBe(before)
     expect(h.sent).toEqual([])
@@ -234,7 +226,7 @@ describe('HilosStatusHistoryPage with real normalized rows and viewport', () => 
       sentences(
         `Completion observed at ${formatMoment(
           completedMaintenance.completionObservedAt!,
-          { format: MOMENT_FORMAT },
+          MOMENT_FORMAT,
         )}`,
         'The exact end time is unknown.',
       ),

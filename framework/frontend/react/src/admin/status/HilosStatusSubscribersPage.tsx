@@ -14,8 +14,8 @@ import { useEffect, useState } from 'react'
 import {
   formatMoment,
   HILOS_TABLE_ACTIONS_KEY,
-  hilosTimeZone,
   HilosPages,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import {
   createHilosStatusSubscriberController,
@@ -116,7 +116,7 @@ function StatusSubscribers({
 }) {
   const counts = useSignal(state.counts)
   const personalControlsReason = useSignal(table.personalControlsReason)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
 
   return (
     <>

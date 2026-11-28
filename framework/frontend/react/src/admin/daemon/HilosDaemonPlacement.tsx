@@ -16,6 +16,7 @@ import {
   type HilosDaemonPlacementRow,
   type HilosDaemonPlacementView,
 } from '@hilos/core/admin/daemon'
+import { hilosReaderDisplay } from '@hilos/core/base'
 import { HilosSkeleton } from '../../HilosSkeleton.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { useSignal } from '../../useSignal.js'
@@ -33,6 +34,7 @@ export function HilosDaemonPlacement({
 }: HilosDaemonPlacementProps) {
   const nodes = useSignal(view.nodes)
   const selectedCell = useSignal(view.selectedCell)
+  useSignal(hilosReaderDisplay)
   const placement = overview?.placement
   const unplacedTypes = placement?.unplacedTypes ?? null
   const knownNodes = new Set(

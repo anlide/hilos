@@ -10,6 +10,7 @@ import {
 } from './helpers/hilosDaemonNode.js'
 import { readerTimeZone } from './readerTimeZone.js'
 import { readTextWithoutAriaHidden } from '../../test/breadcrumb.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 const el = (name: string) =>
   document.querySelector<HTMLElement>(`[data-id="${name}"]`)
@@ -40,7 +41,8 @@ describe('HilosDaemonNodeShell', () => {
       const releases: ReturnType<typeof vi.fn>[] = []
       vi.spyOn(core, 'subscribeSignal').mockImplementation(
         <T,>(source: core.ReadonlySignal<T>, listener: (value: T) => void) => {
-          if (source !== core.hilosTimeZone) return subscribe(source, listener)
+          if (source !== core.hilosReaderDisplay)
+            return subscribe(source, listener)
           const stop = vi.fn(
             subscribe(source, (value) => {
               deliveries(value)
@@ -76,11 +78,10 @@ describe('HilosDaemonNodeShell', () => {
           [null, 'America/New_York'],
         ] as const) {
           act(() => reader.choose(own))
-          const time = new Intl.DateTimeFormat(undefined, {
-            timeZone: zone,
-            hour: '2-digit',
-            minute: '2-digit',
-          }).format(at)
+          const time = readerMomentText(at, zone, {
+            kind: 'time',
+            seconds: false,
+          })
           expect(node('silent')!.textContent).toBe(
             `Silent since today, ${time}`,
           )

@@ -20,6 +20,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HilosDaemonPage } from '../src/admin/daemon/HilosDaemonPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
 import { readerTimeZone } from './readerTimeZone.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 function node(
   nodeId: string,
@@ -399,15 +400,8 @@ describe('HilosDaemonPage', () => {
         [...h.view.container.querySelectorAll<HTMLElement>('[data-id]')].find(
           (element) => element.getAttribute('data-id') === dataId,
         ) ?? null
-      const date = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'UTC',
-        dateStyle: 'medium',
-      }).format(at)
-      const time = new Intl.DateTimeFormat(undefined, {
-        timeZone: 'UTC',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(at)
+      const date = readerMomentText(at, 'UTC', { kind: 'date' })
+      const time = readerMomentText(at, 'UTC', { kind: 'time', seconds: false })
       expect(h.find('hilos-daemon-clock-n1')?.textContent).toBe(
         'Clock: reference',
       )
@@ -639,15 +633,11 @@ describe('HilosDaemonPage', () => {
         [null, 'America/New_York'],
       ] as const) {
         act(() => reader.choose(own))
-        const date = new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          dateStyle: 'medium',
-        }).format(at)
-        const time = new Intl.DateTimeFormat(undefined, {
-          timeZone: zone,
-          hour: '2-digit',
-          minute: '2-digit',
-        }).format(at)
+        const date = readerMomentText(at, zone, { kind: 'date' })
+        const time = readerMomentText(at, zone, {
+          kind: 'time',
+          seconds: false,
+        })
         expect(clockLine.textContent).toBe(
           `Clock: +120 ms to the leader, measured ${date}, ${time}`,
         )

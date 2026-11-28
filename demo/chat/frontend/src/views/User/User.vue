@@ -13,7 +13,7 @@ framework 404. Shows an entity head and details without a card wrapper.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatMoment, hilosTimeZone } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay } from '@hilos/core/base'
 import { HilosAvatar, HilosLink, useSignal } from '@hilos/vue/base'
 
 import { PAGE_USER } from '../../pages/keys.js'
@@ -26,9 +26,9 @@ defineOptions({ name: 'UserPage' })
 const MERGED_ICON = 'bi-sign-merge-left'
 
 const detail = useSignal(userDetail)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 const lastActivity = computed(() => {
-  void timeZone.value
+  void readerDisplay.value
   return detail.value?.lastActivity == null
     ? null
     : formatMoment(detail.value.lastActivity)

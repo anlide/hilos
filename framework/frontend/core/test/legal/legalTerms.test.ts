@@ -126,7 +126,7 @@ describe('the reader line over the text', () => {
       }),
     ).toMatchObject({
       state: 'guest',
-      line: 'Revision in force since 1 October 2026. Without an account there is nothing to accept.',
+      line: 'Revision in force since 01.10.2026. Without an account there is nothing to accept.',
       canAccept: false,
     })
   })
@@ -140,7 +140,7 @@ describe('the reader line over the text', () => {
       ),
     ).toMatchObject({
       state: 'unrecorded',
-      line: 'The revision of 1 October 2026 is in force. No acceptance of yours is on record.',
+      line: 'The revision of 01.10.2026 is in force. No acceptance of yours is on record.',
       canAccept: false,
       canCompare: false,
     })
@@ -155,7 +155,7 @@ describe('the reader line over the text', () => {
       ),
     ).toMatchObject({
       state: 'covered',
-      line: 'You accepted the revision of 1 October 2026 — it is the one in force.',
+      line: 'You accepted the revision of 01.10.2026 — it is the one in force.',
       canAccept: false,
     })
   })
@@ -169,7 +169,7 @@ describe('the reader line over the text', () => {
       ),
     ).toMatchObject({
       state: 'reworded',
-      line: 'You accepted the revision of 17 September 2026. The one in force since 1 October 2026 changes only the wording — nothing to accept.',
+      line: 'You accepted the revision of 17.09.2026. The one in force since 01.10.2026 changes only the wording — nothing to accept.',
       canAccept: false,
       canCompare: true,
     })
@@ -184,11 +184,11 @@ describe('the reader line over the text', () => {
       ),
     ).toMatchObject({
       state: 'due',
-      line: 'The terms changed on 1 October 2026. You accepted the revision of 17 September 2026.',
+      line: 'The terms changed on 01.10.2026. You accepted the revision of 17.09.2026.',
       plate: {
         tone: 'warning',
         text: '9 days left',
-        detail: 'until 10 November 2026',
+        detail: 'until 10.11.2026',
       },
       canAccept: true,
       canCompare: true,
@@ -201,7 +201,7 @@ describe('the reader line over the text', () => {
     expect(
       describeHilosLegalTermsReader(termsSectionBehind, due, reader).plate
         ?.text,
-    ).toBe('deadline passed 1 October 2026')
+    ).toBe('deadline passed 01.10.2026')
     expect(
       describeHilosLegalTermsReader(termsSectionBehind, due, {
         ...reader,
@@ -211,7 +211,7 @@ describe('the reader line over the text', () => {
       state: 'due',
       plate: {
         tone: 'info',
-        text: 'account frozen · deadline passed 1 October 2026',
+        text: 'account frozen · deadline passed 01.10.2026',
       },
       canAccept: true,
     })

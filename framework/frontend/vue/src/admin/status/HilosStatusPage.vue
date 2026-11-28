@@ -1,6 +1,6 @@
 <!-- Status health and incident facts arrive together in the page answer. -->
 <script setup lang="ts">
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, HilosPages } from '@hilos/core/base'
 import {
   createHilosStatusState,
   createHilosStatusIncidentController,
@@ -32,10 +32,10 @@ const overview = useSignal(state.overview)
 const cards = useSignal(state.cards)
 const summary = useSignal(state.summary)
 const maintenance = useSignal(state.maintenance)
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 function moment(at: number): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatMoment(at) ?? '—'
 }
 

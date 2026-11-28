@@ -13,7 +13,7 @@ import {
   logWorkerViewerPath,
   logWorkersEmptyState,
 } from '@hilos/core/admin/logs'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import type {
   HilosLogWorkerRow,
   HilosLogWorkersContext,
@@ -72,6 +72,7 @@ export function HilosLogsWorkersPage({ context }: HilosLogsWorkersPageProps) {
   )
   const streamsTable = streams.controller
   const header = useSignal(headerHandle.header)
+  useSignal(hilosReaderDisplay)
 
   // Bind the server-windowed table and start listening for the header on mount; the
   // header also arrives once as the answer to the subscription.

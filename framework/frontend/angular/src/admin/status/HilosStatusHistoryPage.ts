@@ -7,7 +7,7 @@ import {
   input,
   signal,
 } from '@angular/core'
-import { formatMoment, hilosTimeZone, HilosPages } from '@hilos/core/base'
+import { formatMoment, hilosReaderDisplay, HilosPages } from '@hilos/core/base'
 import {
   createHilosStatusHistoryState,
   createHilosStatusHistoryTable,
@@ -121,7 +121,7 @@ export class HilosStatusHistoryPage {
   protected readonly outcomeField = STATUS_HISTORY_OUTCOME_FIELD
   protected readonly duration = hilosStatusHistoryDuration
   protected readonly data = signal<HilosStatusHistoryData>(null)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   protected readonly model = computed(() => {
     const context = this.context()
@@ -146,20 +146,8 @@ export class HilosStatusHistoryPage {
 
   /** Format an absolute server moment in the current reader's time zone. */
   protected moment(at: number): string {
-    this.timeZone()
-    return (
-      formatMoment(at, {
-        format: {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZoneName: 'short',
-        },
-      }) ?? '—'
-    )
+    this.readerDisplay()
+    return formatMoment(at, { kind: 'dateTime', zoneName: true }) ?? '—'
   }
 
   /** Return the server-owned severity label for one incident row. */

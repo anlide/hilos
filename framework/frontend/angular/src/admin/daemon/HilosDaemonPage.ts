@@ -28,7 +28,7 @@ import {
   formatHilosNodeLabel,
   type HilosDaemonContext,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 import {
   HilosAdminPage,
   HilosLink,
@@ -515,19 +515,34 @@ import type {
 })
 export class HilosDaemonPage {
   protected readonly router = inject(HILOS_ROUTER)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly pages = HilosPages
   protected readonly daemonMonopolisticCount = daemonMonopolisticCount
   protected readonly daemonPercentage = daemonPercentage
   protected readonly daemonProgressWidth = daemonProgressWidth
   protected readonly daemonTotalMemory = daemonTotalMemory
   protected readonly daemonWorkerOccupancy = daemonWorkerOccupancy
-  protected readonly formatDaemonBytes = formatDaemonBytes
-  protected readonly formatDaemonCores = formatDaemonCores
+  protected readonly formatDaemonBytes = (
+    bytes: number | null | undefined,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonBytes(bytes)
+  }
+  protected readonly formatDaemonCores = (
+    cores: number | null | undefined,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonCores(cores)
+  }
   protected readonly formatDaemonDatabaseAddress = formatDaemonDatabaseAddress
   protected readonly formatDaemonNodeClockWarning = formatDaemonNodeClockWarning
   protected readonly formatDaemonNodeState = formatDaemonNodeState
-  protected readonly formatDaemonNumber = formatDaemonNumber
+  protected readonly formatDaemonNumber = (
+    value: number | null | undefined,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonNumber(value)
+  }
   protected readonly formatDaemonPercentage = formatDaemonPercentage
   protected readonly formatDaemonWorkerName = formatDaemonWorkerName
   protected readonly formatHilosNodeLabel = formatHilosNodeLabel
@@ -561,12 +576,12 @@ export class HilosDaemonPage {
   }
   /** The silent node's own last-known silence boundary. */
   protected formatSilentSince(node: HilosDaemonOverviewNode): string | null {
-    this.timeZone()
+    this.readerDisplay()
     return formatDaemonNodeSilentSince({ ...node, clustered: true }, Date.now())
   }
   /** The server's measured clock in the current reader zone. */
   protected formatClock(node: HilosDaemonOverviewNode): string | null {
-    this.timeZone()
+    this.readerDisplay()
     return formatDaemonNodeClock(node.clock, Date.now())
   }
   /** The diagram warning id referenced by the node link. */

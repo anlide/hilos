@@ -292,12 +292,8 @@ export function formatDaemonCronMoment(atMs: number, nowMs: number): string {
   const day = formatMoment(atMs, {
     kind: 'calendar',
     now: nowMs + offsetMs(),
-    format: { dateStyle: 'medium' },
   })
-  const time = formatMoment(atMs, {
-    kind: 'time',
-    format: { hour: '2-digit', minute: '2-digit' },
-  })
+  const time = formatMoment(atMs, { kind: 'time', seconds: false })
 
   return day === null || time === null ? '—' : `${day}, ${time}`
 }

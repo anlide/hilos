@@ -12,6 +12,7 @@ import {
 import {
   HILOS_PAGE_ROUTES,
   HilosPages,
+  hilosReaderDisplay,
   subscribeSignal,
 } from '@hilos/core/base'
 import {
@@ -36,6 +37,7 @@ import {
   HilosLink,
   HilosTableCell,
   HilosViewportTable,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** The framework by-key page: the stream list with its filters and empty states. */
@@ -254,9 +256,16 @@ export class HilosLogsKeysPage {
 
   protected readonly page = HilosPages.LOGS_KEYS
   protected readonly formatClass = formatLogKeyClass
-  protected readonly formatGrowth = formatLogKeyGrowth
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly formatGrowth = (row: HilosLogKeyRow): string => {
+    this.readerDisplay()
+    return formatLogKeyGrowth(row)
+  }
   protected readonly formatState = formatLogKeyState
-  protected readonly formatWeight = formatLogKeyWeight
+  protected readonly formatWeight = (row: HilosLogKeyRow): string => {
+    this.readerDisplay()
+    return formatLogKeyWeight(row)
+  }
   protected readonly viewerPath = logKeyViewerPath
 
   // Where the split this page folds away is actually shown. HIL-385 left the phrase

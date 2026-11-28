@@ -109,8 +109,22 @@ test.describe('Cron time zones', () => {
         browserTimeZone: browserZone,
         projectTimeZone: projectZone,
       })
-      // The expected run texts are composed in en-US, so the browser must read so.
+      // The browser asks for en-US, whose own formats differ from the
+      // region's. The client never formats by the browser's locale, and the
+      // server's region ladder passes en-US over while the stand keeps the
+      // country us switched off: the tab is told the countryless en locale,
+      // and the run texts follow it.
       expect(await page.evaluate(() => navigator.language)).toBe('en-US')
+      const tabLocales = () =>
+        socket.frames.flatMap((frame) => {
+          const wire = deliveryObject(frame.wire)
+          const data = deliveryObject(deliveryObject(wire.data).data)
+          return wire.type === 'handshake_response' && 'tabLanguage' in data
+            ? [deliveryObject(data.tabLanguage).localeCode]
+            : []
+        })
+      await expect.poll(() => tabLocales().length).toBeGreaterThan(0)
+      expect([...new Set(tabLocales())]).toEqual(['en'])
       expect(browserZone).not.toBe(projectZone)
       await gotoPage(expect, page, `${DAEMON_NODE_PATH}/cron`, PAGE_READY)
       await expectStandaloneCron(expect, page)

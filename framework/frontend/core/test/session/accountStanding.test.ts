@@ -441,9 +441,7 @@ describe('hilosStandingTone', () => {
 describe('formatHilosDeletionStrip', () => {
   it('names the date and the whole days left, never below one', () => {
     const effectiveAt = NOW + 11 * DAY_MS + 1
-    const date = new Date(effectiveAt).toLocaleDateString(undefined, {
-      dateStyle: 'long',
-    })
+    const date = '26.01.2027'
 
     expect(
       formatHilosDeletionStrip({ effectiveAt, deletionGraceDays: null }, NOW),
@@ -513,7 +511,7 @@ it.each([-300_000, 300_000])(
       const effectiveAt = Date.parse('2026-01-01T00:30:05Z')
       expect(
         formatHilosDeletionStrip({ effectiveAt, deletionGraceDays: null }, now),
-      ).toBe('Your account will be deleted on December 31, 2025 — 2 days left')
+      ).toBe('Your account will be deleted on 31.12.2025 — 2 days left')
     } finally {
       zone.mockRestore()
       applyServerTime(Date.now())

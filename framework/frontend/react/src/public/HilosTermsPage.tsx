@@ -19,6 +19,7 @@ import {
   describeHilosLegalTermsReader,
   formatHilosLegalDate,
   hilosLegalReconsentPerson,
+  hilosReaderDisplay,
   LEGAL_RECONSENT_COPY,
   LEGAL_TERMS_COPY,
   sessionAccountStanding,
@@ -63,6 +64,7 @@ export function HilosTermsPage({
     }
   }, [store])
   const terms = useSignal(store.terms)
+  useSignal(hilosReaderDisplay)
   const agreement = useSignal(store.agreement)
   const accepting = useSignal(store.accepting)
   const refusal = useSignal(store.refusal)

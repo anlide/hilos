@@ -26,7 +26,11 @@ import {
   type HilosChangeLogContext,
   type HilosChangeLogTablesRow,
 } from '@hilos/core/admin/change-log'
-import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 
 import {
   HilosAdminPage,
@@ -34,6 +38,7 @@ import {
   HilosTableCell,
   HilosViewportTable,
   HILOS_ROUTER,
+  hilosSignal,
 } from '@hilos/angular/base'
 
 /** The tracked tables viewport and the column-mode reference. */
@@ -141,7 +146,11 @@ export class HilosChangeLogTablesPage {
   protected readonly owner = formatChangeLogTableOwner
   protected readonly columnCounts = formatChangeLogColumnCounts
   protected readonly changes = formatChangeLogTableChanges
-  protected readonly lastChange = formatChangeLogTableLastChange
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
+  protected readonly lastChange = (at: string | null): string => {
+    this.readerDisplay()
+    return formatChangeLogTableLastChange(at)
+  }
 
   // The navigator the Open links resolve through; mounted without one, a table
   // offers no Open, as it does in Vue.

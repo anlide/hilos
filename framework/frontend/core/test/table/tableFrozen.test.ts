@@ -33,12 +33,7 @@ describe('hilosTableFrozenLabel', () => {
 
     const label = hilosTableFrozenLabel(LOCAL_NOW + MINUTE_MS)
 
-    expect(label).toBe(
-      TABLE_FROZEN_COPY.bar.replace(
-        '{time}',
-        new Date(LOCAL_NOW + MINUTE_MS).toLocaleTimeString(),
-      ),
-    )
+    expect(label).toBe(TABLE_FROZEN_COPY.bar.replace('{time}', '22:14:20'))
     expect(label).toContain('This table has not updated since')
     expect(label).not.toContain('{time}')
   })
@@ -53,7 +48,7 @@ it.each([-300_000, 300_000])(
     applyServerTime(Date.now() + drift)
     try {
       expect(hilosTableFrozenLabel(Date.parse('2026-01-01T00:30:05Z'))).toBe(
-        'This table has not updated since 4:30:05 PM. The rows shown may be out of date.',
+        'This table has not updated since 16:30:05. The rows shown may be out of date.',
       )
       expect(hilosTableFrozenLabel(null)).toBeNull()
     } finally {

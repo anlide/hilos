@@ -20,12 +20,13 @@ import {
   type HilosAnalyticsContext,
   type HilosAnalyticsOverviewSnapshot,
 } from '@hilos/core/admin/analytics'
-import { HilosPages } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 
 import {
   HilosAdminPage,
   HilosLink,
   HILOS_ROUTER,
+  hilosSignal,
   mirrorHilosSignal,
 } from '@hilos/angular/base'
 
@@ -129,7 +130,9 @@ export class HilosAnalyticsPage {
   private readonly snapshot = signal<
     HilosAnalyticsOverviewSnapshot | undefined
   >(undefined)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly tiles = computed(() => {
+    this.readerDisplay()
     const snapshot = this.snapshot()
     return snapshot === undefined ? undefined : analyticsOverviewTiles(snapshot)
   })

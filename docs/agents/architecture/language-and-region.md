@@ -234,22 +234,98 @@ Editions on language addresses and `hreflang` — HIL-130.
 
 ## The Formats A Reader Sees
 
-Write a date or a number on a screen in the formats of the tab's region — the
-seven formats of the reference, which an administrator chose — and not by
-handing the locale tag to `Intl`; this is the owner's decision of 2026-11-26
-(not in the code yet — HIL-2303).
-When the region changes, an open screen reformats without a reload
-(not in the code yet — HIL-2303).
+Write a date, a time or a number on a screen in the formats of the tab's
+region — the seven formats of the reference
+([`LocaleTemplates`](../../../framework/backend/I18n/LocaleTemplates.php)),
+which an administrator chose — and never by handing a locale tag to `Intl`;
+this is the owner's decision of 2026-11-26. The client never formats by the
+browser's locale: the formats come from the server, which reads the browser's
+languages, `Accept-Language`, only on the two ladders. Three of the seven are
+written on a screen: the date template (`DD.MM.YYYY` and six others), the time
+template (`HH:mm:ss` or `hh:mm:ss a`) and the number template (`1,000.00`,
+`1 000,00`, `1 000.00` or `1.000,00`).
 
-The date picker starts its week on the first day of the week of the locale; an
-administrator edits that day in the locale window
-(not in the code yet — HIL-2318).
+- `formatMoment()` writes a moment; its kinds and flags are in
+  [One Core Formatter](time-zones.md#one-core-formatter).
+- `formatNumber(value, options?)`, exported from `@hilos/core/base`, writes a
+  number: thousands grouped by three with the template's group separator, the
+  template's decimal separator, rounded half up as the number is written in
+  its shortest decimal (1.005 gives `1.01`), and trailing fraction zeros
+  dropped down to the minimum. A space of a template is printed as a no-break
+  space, so the figure never wraps. The options are `minimumFractionDigits`,
+  `maximumFractionDigits` (0…3 by default) and `compact`, which writes `K`,
+  `M` or `B` with one fraction digit unless a maximum is given — `1.2K`; a
+  figure that rounds up to the next step is written in that step, so 999950
+  is `1M`. A fraction-digit option that is not a non-negative integer, or a
+  maximum below the minimum, throws `RangeError`, as `Intl` would; a figure
+  that rounds to zero carries no minus sign; NaN and the infinities are
+  written as `String(value)`; a template not of the form `1?000?00` gives way
+  to the built-in separators.
+- `formatBytes()` writes a byte figure through `formatNumber()`: `1,023 B`,
+  `1.5 MB`.
+
+Checked automatically: `NUMBER-FORMAT`, see
+[automated-checks.md](../code-style/automated-checks.md) for what it reads and
+what stays with review.
+
+A project without the I18N feature, and every tab before its first handshake
+response, writes in the formats of the built-in English locale without a
+country: `HILOS_DEFAULT_READER_FORMATS`, exported from `@hilos/core/base`, a
+copy of that row of the built-in catalog
+([`BuiltInI18nCatalog`](../../../framework/backend/I18n/Catalog/BuiltInI18nCatalog.php)) —
+`DD.MM.YYYY`, `HH:mm:ss` and `1,000.00`. Another region reaches a tab from the
+browser when a locale of the language it names is
+[available](#what-is-available): the variant it names — only with its locale,
+its language and its country switched on — or the language's countryless
+locale, rungs 3 and 4 of [the region ladder](#the-region-ladder). It also
+reaches a tab from the person's choice
+(not in the code yet — HIL-2298, HIL-2299, HIL-2304). A stand's browser names
+`en-US` or `en-GB`, and the stand keeps the countries `us` and `gb` switched
+off, so a stand's tab writes in the formats of the countryless `en` locale. An
+administrator's edit of a locale's formats reaches an open tab with that tab's
+next handshake response.
+
+The templates are numeric only, so every word inside a written date — the
+names of months and weekdays, `today`, `yesterday` and `tomorrow`, `AM` and
+`PM` — is an interface string: English, like the rest of the interface, until
+the interface is translated (HIL-2280). The words live in one module,
+[`readerWords.ts`](../../../framework/frontend/core/src/format/readerWords.ts),
+which the formatter and the date picker both read.
+
+`hilosTabPickerFactors()`, exported from `@hilos/core/base`, gives a date
+picker the order of the date parts and their separator from the region's date
+template, and its clock from the time template: twelve-hour when the template
+carries the `hh` token, the same token the formatter writes by. A picker takes
+them when it opens, as it takes the zone, and an open picker keeps them; a date
+template that is not three distinct tokens keeps the picker's default order and
+separator. The Works window of the Status section takes its factors this way
+([date-time-picker.md](../frontend/date-time-picker.md)). The date picker
+starts its week on the first day of the week of the locale; an administrator
+edits that day in the locale window (not in the code yet — HIL-2318).
+
+When the region or the reader's zone changes, an open screen reformats without
+a reload. `hilosReaderDisplay`, exported from `@hilos/core/base`, is how the
+tab reads — the zone and the region's formats as one signal — and it is the
+signal to redraw by, not a source: the formatters read the zone from
+`hilosTimeZone` and the formats from the internal `hilosReaderFormats()` on
+every call. Bind the redraw so:
+
+- a component that calls a core formatter itself holds its own binding to
+  `hilosReaderDisplay` — `useSignal()` in Vue and React, `hilosSignal()` in
+  Angular — even under a parent that already holds one;
+- a formatter called straight from a template or a table cell goes through a
+  wrapper or a computed value that reads the signal;
+- a text put together at the moment of an event keeps its moment or its
+  number as data, and is written when it is drawn;
+- under Angular's `OnPush` the read of the signal stands inside the cell's call
+  or the computed value itself: the embedded view of a cell, stamped through
+  `ngTemplateOutlet`, has no reactive consumer of its own;
+- where the zone is data rather than drawing — a picker's zone, the zone a
+  filter sends — read `hilosTimeZone`.
 
 The reader's time zone is another question and lives in
 [time-zones.md](time-zones.md): the zone decides which hour it is, the region
-decides how to write it down. The zone half is in the code —
-[One Core Formatter](time-zones.md#one-core-formatter) supplies the reader's
-zone on every call.
+decides how to write it down.
 
 ## Switching Off
 
@@ -350,8 +426,6 @@ These keys are pointers to later work, not implementation markers:
 
 - What carries a guest's choice in the browser — HIL-2299.
 - Where the menu takes the browser's suggestions from — HIL-2301.
-- Names of months and weekdays on a screen; the reference's date formats are
-  numeric only — HIL-2303.
 - When switching a country off reaches the open tabs — HIL-2315.
 - The region and the translation of letters — HIL-2281.
 - Translation of the interface and a preview of a switched-off language —
@@ -375,9 +449,10 @@ These keys are pointers to later work, not implementation markers:
   browser only.
 - **Wrong:** run a ladder in the master. Run it in the worker, during the
   handshake.
-- **Wrong:** write a date for a reader with the browser's default locale, or
-  with a locale tag handed to `Intl` past the region's formats. Use the seven
-  formats of the tab's region (not in the code yet — HIL-2303).
+- **Wrong:** write a date or a number for a reader with the browser's default
+  locale, or with a locale tag handed to `Intl` past the region's formats.
+  Write it with `formatMoment()` or `formatNumber()`, in the formats of the
+  tab's region.
 - **Wrong:** let a delivery agent resolve the language of a letter. The caller
   that orders the send decides it and passes it in.
 - **Wrong:** offer a language or a locale that is not available — in the

@@ -8,7 +8,7 @@ import {
 import {
   endableProfileSessionCount,
   formatProfileDateTime,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type HilosProfileSession as ProfileSession,
   type HilosProfileSessionActions,
 } from '@hilos/core/base'
@@ -276,15 +276,15 @@ export class HilosProfileSessions {
   protected readonly endTitle = computed(
     () => `End session #${this.endingSessionId() ?? ''}`,
   )
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   protected date(value: number | null): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatProfileDateTime(value)
   }
 
   protected tabDate(connectedAt: number): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatProfileDateTime(connectedAt)
   }
 

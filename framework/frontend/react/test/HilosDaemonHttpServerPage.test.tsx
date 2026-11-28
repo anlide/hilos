@@ -201,9 +201,7 @@ describe('HilosDaemonHttpServerPage', () => {
     expect(h.find('hilos-daemon-http-address')?.textContent).toBe(
       '0.0.0.0:8080',
     )
-    expect(h.find('hilos-daemon-http-requests')?.textContent).toBe(
-      (1284).toLocaleString(),
-    )
+    expect(h.find('hilos-daemon-http-requests')?.textContent).toBe('1,284')
     expect(h.find('hilos-daemon-http-errors')?.textContent).toBe('2')
     expect(h.find('hilos-daemon-http-slow')?.textContent).toBe('3')
     expect(h.find('hilos-daemon-http-period')?.textContent).toBe(
@@ -217,9 +215,7 @@ describe('HilosDaemonHttpServerPage', () => {
     expect(h.find('hilos-daemon-http-status')).toBeNull()
     expect(h.find('hilos-daemon-http-address')?.querySelector('a')).toBeNull()
     h.window([route({ requests: 1 })])
-    expect(h.find('hilos-daemon-http-requests')?.textContent).toBe(
-      (1284).toLocaleString(),
-    )
+    expect(h.find('hilos-daemon-http-requests')?.textContent).toBe('1,284')
     for (const icon of h.view.container.querySelectorAll('.row > .col i'))
       expect(icon.getAttribute('aria-hidden')).toBe('true')
   })
@@ -311,17 +307,13 @@ describe('HilosDaemonHttpServerPage', () => {
     expect(h.find('hilos-daemon-http-period')?.textContent).toBe(
       'Since start, 23 h',
     )
-    expect(h.find('hilos-daemon-http-requests')?.textContent).toBe(
-      (1284).toLocaleString(),
-    )
+    expect(h.find('hilos-daemon-http-requests')?.textContent).toBe('1,284')
     expect(h.find('hilos-table-row-GET /status')).toBe(row)
     expect(h.view.container.textContent).toContain('Last report')
     expect(h.find('hilos-daemon-node-state')?.textContent).toBe('Silent')
     h.response(summary(), LIVE)
     h.window([route({ requests: 1241 })])
-    expect(cells(h, 'GET /status')[1]?.textContent).toBe(
-      (1241).toLocaleString(),
-    )
+    expect(cells(h, 'GET /status')[1]?.textContent).toBe('1,241')
     expect(h.find('hilos-daemon-http-status')).toBeNull()
   })
   it('draws methods, agent routes, known zero, No route and null slowest', () => {
@@ -348,7 +340,7 @@ describe('HilosDaemonHttpServerPage', () => {
     ])
     expect(cells(h, 'GET /status').map((cell) => cell.textContent)).toEqual([
       '/status',
-      (1240).toLocaleString(),
+      '1,240',
       '0',
       '12 ms',
     ])
@@ -363,9 +355,7 @@ describe('HilosDaemonHttpServerPage', () => {
     expect(
       cells(h, 'POST /_hilos/file')[0]?.querySelector('.badge')?.textContent,
     ).toBe('hilos_files_library')
-    expect(cells(h, 'POST /_hilos/file')[3]?.textContent).toBe(
-      `${(1240).toLocaleString()} ms`,
-    )
+    expect(cells(h, 'POST /_hilos/file')[3]?.textContent).toBe('1,240 ms')
     expect(cells(h, 'unrouted').map((cell) => cell.textContent)).toEqual([
       'No route',
       '0',

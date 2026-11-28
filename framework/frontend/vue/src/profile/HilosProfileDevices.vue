@@ -3,7 +3,7 @@ import {
   formatProfileDateTime,
   hilosProfileDeviceKind,
   hilosPushSubscription,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type HilosConnection,
   type HilosProfileDevice,
   type HilosProfileDeviceActions,
@@ -52,7 +52,7 @@ const props = withDefaults(
   { pushStore: () => hilosPushSubscription },
 )
 
-const timeZone = useSignal(hilosTimeZone)
+const readerDisplay = useSignal(hilosReaderDisplay)
 function mirrors() {
   const store = props.pushStore
   return {
@@ -124,9 +124,9 @@ onMounted(() => {
 })
 onBeforeUnmount(() => stopPermission?.())
 
-/** Format a device moment again when the reader's zone changes. */
+/** Format a device moment again when the reader's zone or formats change. */
 function dateTime(moment: number): string {
-  void timeZone.value
+  void readerDisplay.value
   return formatProfileDateTime(moment)
 }
 

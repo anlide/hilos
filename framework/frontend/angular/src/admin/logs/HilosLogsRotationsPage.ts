@@ -33,7 +33,7 @@ import {
   formatMoment,
   HILOS_PAGE_ROUTES,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   subscribeSignal,
 } from '@hilos/core/base'
 import { formatHilosNodeLabel } from '@hilos/core/admin/daemon'
@@ -493,7 +493,10 @@ export class HilosLogsRotationsPage {
   protected readonly formatRetention = formatRetentionRule
   protected readonly formatRule = formatRotationRule
   protected readonly formatState = formatRotationState
-  protected readonly formatWeight = formatRotationWeight
+  protected readonly formatWeight = (row: HilosLogRotationRow): string => {
+    this.readerDisplay()
+    return formatRotationWeight(row)
+  }
 
   // The rule line leads to the Logs section's own settings screen, where the
   // values this bar reports are set.
@@ -552,7 +555,7 @@ export class HilosLogsRotationsPage {
       ? null
       : rotationUndoNotice(this.focusedRow()),
   )
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
 
   protected readonly legendOpen = signal(false)
 
@@ -603,7 +606,7 @@ export class HilosLogsRotationsPage {
   // installation that told it not to wait, and that is said in words too: a blank
   // would read as "we do not know" rather than "at any moment".
   protected readonly undoDeadline = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const pruneNotBefore = this.undoRow()?.pruneNotBefore
 
     if (pruneNotBefore == null) {
@@ -662,7 +665,7 @@ export class HilosLogsRotationsPage {
   // The batch's own name is its rotation time; the archive directory under it is
   // what an operator types into scp, so both are in the cell.
   protected batchTime(row: HilosLogRotationRow): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatMoment(row.batchAt, { kind: 'dateTime' }) ?? '—'
   }
 

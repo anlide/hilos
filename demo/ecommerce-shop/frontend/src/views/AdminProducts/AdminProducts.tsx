@@ -5,7 +5,7 @@ import { useContext, useLayoutEffect, useState } from 'react'
 import {
   HILOS_TABLE_ACTIONS_KEY,
   formatMoment,
-  hilosTimeZone,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import {
   HilosAdminPage,
@@ -38,7 +38,7 @@ export default function AdminProducts() {
   const router = useContext(HilosRouterContext)
   const [products, setProducts] = useState<ProductsTable | null>(null)
   const [adding, setAdding] = useState(false)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
 
   useLayoutEffect(() => {
     // Disposal is permanent; each setup, including StrictMode replay, owns one.

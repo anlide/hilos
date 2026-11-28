@@ -129,7 +129,7 @@ describe('the public Privacy schema and reader', () => {
       }),
     ).toMatchObject({
       state: 'guest',
-      line: 'Revision in force since 14 November 2026. Without an account there is nothing to accept.',
+      line: 'Revision in force since 14.11.2026. Without an account there is nothing to accept.',
       canAccept: false,
     })
     expect(
@@ -140,7 +140,7 @@ describe('the public Privacy schema and reader', () => {
       ),
     ).toMatchObject({
       state: 'unrecorded',
-      line: 'The revision of 5 October 2026 is in force. No acceptance of yours is on record.',
+      line: 'The revision of 05.10.2026 is in force. No acceptance of yours is on record.',
       canAccept: false,
       canCompare: false,
     })
@@ -152,7 +152,7 @@ describe('the public Privacy schema and reader', () => {
       ),
     ).toMatchObject({
       state: 'covered',
-      line: 'You accepted the revision of 5 October 2026 — it is the one in force.',
+      line: 'You accepted the revision of 05.10.2026 — it is the one in force.',
       canAccept: false,
       canCompare: false,
     })
@@ -167,7 +167,7 @@ describe('the public Privacy schema and reader', () => {
       ),
     ).toMatchObject({
       state: 'reworded',
-      line: 'You accepted the revision of 17 September 2026. The one in force since 14 November 2026 changes only the wording — nothing to accept.',
+      line: 'You accepted the revision of 17.09.2026. The one in force since 14.11.2026 changes only the wording — nothing to accept.',
       canAccept: false,
       canCompare: true,
     })
@@ -182,11 +182,11 @@ describe('the public Privacy schema and reader', () => {
       ),
     ).toMatchObject({
       state: 'due',
-      line: 'The privacy policy changed on 5 October 2026. You accepted the revision of 17 September 2026.',
+      line: 'The privacy policy changed on 05.10.2026. You accepted the revision of 17.09.2026.',
       plate: {
         tone: 'warning',
         text: '13 days left',
-        detail: 'until 14 November 2026',
+        detail: 'until 14.11.2026',
       },
       canAccept: true,
       canCompare: true,
@@ -198,7 +198,7 @@ describe('the public Privacy schema and reader', () => {
         ...READER,
         now,
       }).plate,
-    ).toMatchObject({ text: 'deadline passed 14 November 2026' })
+    ).toMatchObject({ text: 'deadline passed 14.11.2026' })
     expect(
       describeHilosLegalPrivacyReader(privacySectionBehind, lapsed, {
         ...READER,
@@ -207,7 +207,7 @@ describe('the public Privacy schema and reader', () => {
       }).plate,
     ).toMatchObject({
       tone: 'info',
-      text: 'account frozen · deadline passed 14 November 2026',
+      text: 'account frozen · deadline passed 14.11.2026',
     })
   })
 

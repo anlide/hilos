@@ -62,15 +62,8 @@ describe('HilosStatusWorksPage with real normalized rows and viewport', () => {
     expect(table.get('[data-id="hilos-status-work-mail-7"]').text()).toBe('—')
     expect(table.text()).toContain(
       formatMoment(announcement.startsAt, {
-        format: {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          timeZoneName: 'short',
-        },
+        kind: 'dateTime',
+        zoneName: true,
       })!,
     )
     const before = table.text()

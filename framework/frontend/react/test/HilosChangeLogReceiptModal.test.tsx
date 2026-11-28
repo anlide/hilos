@@ -3,7 +3,7 @@ import { act, cleanup, render, within } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { HilosPages, createSignal } from '@hilos/core/base'
 import * as core from '@hilos/core/base'
-import { bindTimeZoneState, hilosTimeZone } from '@hilos/core/base'
+import { bindTimeZoneState, hilosReaderDisplay } from '@hilos/core/base'
 import type {
   HilosChangeLogEntry,
   HilosChangeLogReceiptDialog,
@@ -19,6 +19,7 @@ import type {
 
 import { HilosChangeLogReceiptModal } from '../src/admin/changeLog/HilosChangeLogReceiptModal.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
+import { readerMomentText } from '../../test-support/readerMomentText.js'
 
 function header(
   overrides: Partial<HilosChangeLogReceiptHeader> = {},
@@ -194,21 +195,21 @@ describe('HilosChangeLogReceiptModal', () => {
     const subscribe = core.subscribeSignal
     const callbacks = vi.fn()
     const releases = vi.fn()
-    let activeZoneSubscriptions = 0
+    let activeRedrawSubscriptions = 0
     const subscriptions = vi
       .spyOn(core, 'subscribeSignal')
       .mockImplementation(
         <T,>(source: ReadonlySignal<T>, listener: (value: T) => void) => {
           let active = true
           const stop = subscribe(source, (value) => {
-            if (source === hilosTimeZone) callbacks(value)
+            if (source === hilosReaderDisplay) callbacks(value)
             listener(value)
           })
-          if (source === hilosTimeZone) activeZoneSubscriptions++
+          if (source === hilosReaderDisplay) activeRedrawSubscriptions++
           return () => {
             if (!active) return
             active = false
-            if (source === hilosTimeZone) activeZoneSubscriptions--
+            if (source === hilosReaderDisplay) activeRedrawSubscriptions--
             releases()
             stop()
           }
@@ -237,22 +238,18 @@ describe('HilosChangeLogReceiptModal', () => {
     ) as HTMLElement
     const when = detail.querySelector('dd')!
     const expected = (timeZone: string) =>
-      new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-        timeZone,
-      }).format(new Date('2026-10-09T10:11:12.123Z'))
+      readerMomentText(new Date('2026-10-09T10:11:12.123Z'), timeZone)
 
     try {
       expect(when.textContent?.trim()).toBe(expected('UTC'))
-      expect(activeZoneSubscriptions).toBe(1)
+      expect(activeRedrawSubscriptions).toBe(1)
       expect(connection.listenerCount()).toBe(2)
 
       receive('Europe/Kyiv')
       expect(when.textContent?.trim()).toBe(expected('Europe/Kyiv'))
       expect(document.querySelector('[role="dialog"]')).toBe(element)
       expect(reader.dialog.get()).toBe(snapshot)
-      expect(activeZoneSubscriptions).toBe(1)
+      expect(activeRedrawSubscriptions).toBe(1)
       expect(callbacks).toHaveBeenCalledTimes(1)
 
       receive('Europe/Kyiv')
@@ -266,7 +263,7 @@ describe('HilosChangeLogReceiptModal', () => {
       expect(reader.openEntry).not.toHaveBeenCalled()
 
       mounted.unmount()
-      expect(activeZoneSubscriptions).toBe(0)
+      expect(activeRedrawSubscriptions).toBe(0)
       receive('UTC')
       expect(callbacks).toHaveBeenCalledTimes(2)
       expect(connection.listenerCount()).toBe(2)
@@ -289,7 +286,7 @@ describe('HilosChangeLogReceiptModal', () => {
             ?.querySelector('dd')
             ?.textContent?.trim(),
         ).toBe(expected('UTC'))
-        expect(activeZoneSubscriptions).toBe(1)
+        expect(activeRedrawSubscriptions).toBe(1)
         receiveRebound('Europe/Kyiv')
         expect(
           document
@@ -299,7 +296,7 @@ describe('HilosChangeLogReceiptModal', () => {
         ).toBe(expected('Europe/Kyiv'))
         expect(callbacks).toHaveBeenCalledTimes(3)
         reboundMount.unmount()
-        expect(activeZoneSubscriptions).toBe(0)
+        expect(activeRedrawSubscriptions).toBe(0)
         receiveRebound(null)
         expect(callbacks).toHaveBeenCalledTimes(3)
       } finally {

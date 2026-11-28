@@ -9,7 +9,7 @@ import {
 } from '@angular/core'
 import {
   formatMoment,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type HilosConnection,
   type ActionLifecycle,
 } from '@hilos/core/base'
@@ -551,7 +551,7 @@ export class HilosStatusPage {
           ? 'bi-check-circle'
           : null,
   )
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly detailId = `public-status-day-${publicStatusSequence++}`
   protected readonly dayCounts = [90, 30] as const
   private readonly selectedDay = signal<{
@@ -638,12 +638,12 @@ export class HilosStatusPage {
 
   /** Format in the live reader zone, without rereading files. */
   protected moment(at: number): string {
-    this.timeZone()
+    this.readerDisplay()
     return formatMoment(at) ?? '—'
   }
   /** Give each calendar button a textual date and verdict. */
   protected dayLabel(day: PublicStatusDay): string {
-    this.timeZone()
+    this.readerDisplay()
     return publicStatusDayLabel(day)
   }
   /** Keep the last day selected by either keyboard focus or activation. */

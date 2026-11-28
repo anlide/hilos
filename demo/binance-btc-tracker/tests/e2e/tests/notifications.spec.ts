@@ -18,6 +18,7 @@ import {
   typeInto,
   gotoPage,
   createTestUserJoined,
+  readerMillisecondMoment,
   tableRowKeys,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
@@ -666,11 +667,7 @@ test.describe('notifications in Pacific/Honolulu', () => {
     expect(createdAtMs).toBeGreaterThan(0)
 
     const formatHonolulu = (moment: number): string =>
-      new Intl.DateTimeFormat(undefined, {
-        timeZone: 'Pacific/Honolulu',
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }).format(moment)
+      readerMillisecondMoment(moment, 'Pacific/Honolulu')
 
     const expectedHonoluluTime = formatHonolulu(createdAtMs)
 

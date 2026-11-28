@@ -45,8 +45,8 @@ describe('legal agreement contracts', () => {
     ).toBeNull()
   })
   it('formats calendar dates without moving them across time zones', () => {
-    expect(formatHilosLegalDate('2026-09-17')).toBe('17 September 2026')
-    expect(formatHilosLegalDate('2026-01-01')).toBe('1 January 2026')
+    expect(formatHilosLegalDate('2026-09-17')).toBe('17.09.2026')
+    expect(formatHilosLegalDate('2026-01-01')).toBe('01.01.2026')
   })
   it("formats an acceptance moment on the reader's day, not the UTC one", () => {
     const zone = vi.spyOn(hilosTimeZone, 'get').mockReturnValue('Europe/Warsaw')
@@ -54,7 +54,7 @@ describe('legal agreement contracts', () => {
       // 22:30 UTC on 17 September is 00:30 on 18 September in Warsaw
       expect(
         formatHilosLegalAcceptanceDate(Date.UTC(2026, 8, 17, 22, 30)),
-      ).toBe('18 September 2026')
+      ).toBe('18.09.2026')
     } finally {
       zone.mockRestore()
     }
@@ -93,7 +93,7 @@ describe('legal agreement contracts', () => {
       deadline: '2026-10-01',
     }
     expect(describeHilosLegalAgreements({ documents: [none, window] })).toBe(
-      'Terms of use updated — until 1 October 2026',
+      'Terms of use updated — until 01.10.2026',
     )
     expect(
       describeHilosLegalAgreements({
@@ -110,7 +110,7 @@ describe('legal agreement contracts', () => {
           { ...window, document: 'privacy', deadline: '2026-09-30' },
         ],
       }),
-    ).toContain('until 30 September 2026')
+    ).toContain('until 30.09.2026')
   })
   it('distinguishes absent acceptance, wording coverage, a window and an expired deadline', () => {
     expect(
@@ -119,7 +119,7 @@ describe('legal agreement contracts', () => {
         standing: 'none',
         held: null,
       }).summary,
-    ).toBe('No acceptance on record · revision of 27 September 2026 in force')
+    ).toBe('No acceptance on record · revision of 27.09.2026 in force')
     expect(describeHilosLegalAgreement(agreement).notice).toContain(
       'wording only, your acceptance still covers it',
     )
@@ -129,7 +129,7 @@ describe('legal agreement contracts', () => {
         standing: 'window',
         deadline: '2026-10-01',
       }).notice,
-    ).toContain('You have until 1 October 2026')
+    ).toContain('You have until 01.10.2026')
     expect(
       describeHilosLegalAgreement({
         ...agreement,
@@ -222,10 +222,10 @@ it.each([-300_000, 300_000])(
       .mockReturnValue('America/Los_Angeles')
     applyServerTime(Date.now() + drift)
     try {
-      expect(formatHilosLegalDate('2026-01-01')).toBe('1 January 2026')
+      expect(formatHilosLegalDate('2026-01-01')).toBe('01.01.2026')
       expect(
         formatHilosLegalAcceptanceDate(Date.parse('2026-01-01T00:30:05Z')),
-      ).toBe('31 December 2025')
+      ).toBe('31.12.2025')
     } finally {
       zone.mockRestore()
       applyServerTime(Date.now())

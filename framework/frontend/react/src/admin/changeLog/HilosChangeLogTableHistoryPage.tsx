@@ -28,7 +28,7 @@ import {
   HILOS_TABLE_ACTIONS_KEY,
   HilosPages,
   computedSignal,
-  hilosTimeZone,
+  hilosReaderDisplay,
   isHiddenValue,
   subscribeSignal,
 } from '@hilos/core/base'
@@ -75,7 +75,7 @@ export function HilosChangeLogTableHistoryPage({
   }
 
   const route = useSignal(router.currentRoute)
-  useSignal(hilosTimeZone)
+  useSignal(hilosReaderDisplay)
   const tableId = route.params[CHANGE_LOG_TABLE_ROUTE_PARAM] ?? ''
   const recordParam = route.params[CHANGE_LOG_RECORD_ROUTE_PARAM]
   const record = readChangeLogRecordRouteParam(recordParam)

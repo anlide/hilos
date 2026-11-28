@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { formatBytes } from '../../format/bytes.js'
 import { formatMoment } from '../../format/moment.js'
+import { formatNumber } from '../../format/number.js'
 
 /** Page-data section containing the opening journal snapshot. */
 export const CHANGE_LOG_OVERVIEW_SECTION = 'changeLogOverview'
@@ -44,15 +45,13 @@ export function readHilosChangeLogOverview(
 }
 
 /**
- * Format the exact journal-entry count compactly in the reader's locale.
+ * Format the exact journal-entry count compactly in the separators of the
+ * tab's region.
  *
  * @param entries Number of journal rows.
  */
 export function formatChangeLogEntries(entries: number): string {
-  return new Intl.NumberFormat(undefined, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(entries)
+  return formatNumber(entries, { compact: true })
 }
 
 /**
@@ -63,10 +62,7 @@ export function formatChangeLogEntries(entries: number): string {
 export function changeLogJournalNote(overview: HilosChangeLogOverview): string {
   if (overview.oldestAt === null) return 'nothing recorded yet'
   const since =
-    formatMoment(overview.oldestAt, {
-      kind: 'date',
-      format: { month: 'long', year: 'numeric' },
-    }) ?? 'Invalid Date'
+    formatMoment(overview.oldestAt, { kind: 'monthYear' }) ?? 'Invalid Date'
   return `${formatBytes(overview.journalBytes)} · since ${since}`
 }
 

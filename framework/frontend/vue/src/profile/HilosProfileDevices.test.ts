@@ -716,9 +716,9 @@ describe('HilosProfileDevices (Vue)', () => {
     await flushPromises()
     const originalDevices = wrapper.props('devices')
     const rows = wrapper.findAll('[data-id="profile-device-row"]')
-    expect(rows[0]!.text()).toContain('Registered · added 1/1/2026, 9:30:00 AM')
+    expect(rows[0]!.text()).toContain('Registered · added 01.01.2026 09:30:00')
     expect(rows[1]!.text()).toContain('Unknown device')
-    expect(rows[1]!.text()).toContain('Registered · added 1/1/2026, 9:31:00 AM')
+    expect(rows[1]!.text()).toContain('Registered · added 01.01.2026 09:31:00')
     const expired = rows[2]!.get('[data-id="profile-device-expired"]')
     expect(expired.text()).toBe('Subscription expired')
     expect(rows[2]!.text()).not.toContain('added')
@@ -749,12 +749,8 @@ describe('HilosProfileDevices (Vue)', () => {
     await nextTick()
 
     expect(wrapper.props('devices')).toBe(originalDevices)
-    expect(rows[0]!.text()).toContain(
-      'Registered · added 12/31/2025, 7:30:00 PM',
-    )
-    expect(rows[1]!.text()).toContain(
-      'Registered · added 12/31/2025, 7:31:00 PM',
-    )
+    expect(rows[0]!.text()).toContain('Registered · added 31.12.2025 19:30:00')
+    expect(rows[1]!.text()).toContain('Registered · added 31.12.2025 19:31:00')
     expect(
       rows[0]!.get('[data-id="hilos-notification-preference-toggle-push"]')
         .element,

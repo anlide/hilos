@@ -1,67 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type HilosConnection } from '../../src/connection/HilosConnection.js'
-import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import {
+  formatCalendarDay,
   formatMoment,
   formatSnapshotMoment,
   formatTimeZoneChoiceMoment,
   type MomentFormatOptions,
 } from '../../src/format/moment.js'
 import { applyServerTime, offsetMs } from '../../src/session/serverClock.js'
-import {
-  bindTimeZoneState,
-  hilosTimeZone,
-} from '../../src/timeZone/timeZoneState.js'
+import { computedSignal } from '../../src/state/signal.js'
+import { hilosTimeZone } from '../../src/timeZone/timeZoneState.js'
+import { bindReader, type ReaderFixture } from './readerFixture.js'
 
-/** The real binding receives the same session frame as an application's socket. */
-function fakeConnection() {
-  const listeners = new Set<(signal: ProjectSignal) => void>()
-
-  return {
-    projectTimeZone: 'UTC',
-    on(event: string, listener: (payload: never) => void): () => void {
-      const projectListener = listener as (signal: ProjectSignal) => void
-      if (event === 'projectSignal') listeners.add(projectListener)
-
-      return () => {
-        listeners.delete(projectListener)
-      }
-    },
-    choose(timeZone: string): void {
-      for (const listener of listeners) {
-        listener({
-          type: 'handshake_response',
-          data: { entities: { currentUser: { id: 1, timeZone } } },
-        } as ProjectSignal)
-      }
-    },
-  }
-}
-
-const explicit: MomentFormatOptions = {
-  locale: 'en-GB',
-  format: {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  },
-}
-let connection: ReturnType<typeof fakeConnection>
-let release: () => void
+let reader: ReaderFixture
 
 beforeEach(() => {
-  connection = fakeConnection()
-  release = bindTimeZoneState(connection as unknown as HilosConnection)
-  connection.choose('UTC')
+  reader = bindReader()
+  reader.choose('UTC')
   applyServerTime(Date.now())
 })
 
 afterEach(() => {
-  release()
+  reader.release()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   applyServerTime(Date.now())
@@ -69,7 +28,7 @@ afterEach(() => {
 
 describe('Time zone choice preview', () => {
   it('reads explicit zones without changing the live reader or correcting the moment', () => {
-    connection.choose('Europe/Warsaw')
+    reader.choose('Europe/Warsaw')
     applyServerTime(Date.now() + 300000)
     const moment = '2026-01-01T00:00:00Z'
     expect(formatTimeZoneChoiceMoment(moment, 'UTC')).toBe('00:00')
@@ -78,7 +37,17 @@ describe('Time zone choice preview', () => {
     ).toBe('05:45')
     expect(formatTimeZoneChoiceMoment(moment, 'America/New_York')).toBe('19:00')
     expect(hilosTimeZone.get()).toBe('Europe/Warsaw')
-    expect(formatMoment(moment, explicit)).toBe('01/01/2026, 01:00:00')
+    expect(formatMoment(moment)).toBe('01.01.2026 01:00:00')
+  })
+
+  it('writes the hour and minute in the region time template', () => {
+    reader.region({ time: 'hh:mm:ss a' })
+    expect(
+      formatTimeZoneChoiceMoment('2026-01-01T00:00:00Z', 'America/New_York'),
+    ).toBe('07:00 PM')
+    expect(formatTimeZoneChoiceMoment('2026-01-01T00:00:00Z', 'UTC')).toBe(
+      '12:00 AM',
+    )
   })
 
   it.each([
@@ -117,10 +86,13 @@ describe('Time zone choice preview', () => {
     expect(formatTimeZoneChoiceMoment(0, 'UTC')).toBeNull()
   })
 
-  it('returns null when Intl cannot format after accepting the zone', () => {
+  it('returns null when Intl cannot read the parts after accepting the zone', () => {
     const prototype = Intl.DateTimeFormat.prototype
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'format')!
-    Object.defineProperty(prototype, 'format', {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      prototype,
+      'formatToParts',
+    )!
+    Object.defineProperty(prototype, 'formatToParts', {
       configurable: true,
       get: () => () => {
         throw new RangeError('unavailable formatter')
@@ -129,38 +101,38 @@ describe('Time zone choice preview', () => {
     try {
       expect(formatTimeZoneChoiceMoment(0, 'UTC')).toBeNull()
     } finally {
-      Object.defineProperty(prototype, 'format', descriptor)
+      Object.defineProperty(prototype, 'formatToParts', descriptor)
     }
   })
 })
 
 describe('absolute moments', () => {
   it.each([
-    ['UTC', '2025-12-31T23:30:00.000Z', '31/12/2025, 23:30:00'],
-    ['Europe/Kyiv', '2025-12-31T23:30:00.000Z', '01/01/2026, 01:30:00'],
-    ['UTC', '2026-01-31T22:30:00Z', '31/01/2026, 22:30:00'],
-    ['Europe/Kyiv', '2026-01-31T22:30:00Z', '01/02/2026, 00:30:00'],
-    ['Europe/Kyiv', '2026-03-29T00:59:59Z', '29/03/2026, 02:59:59'],
-    ['Europe/Kyiv', '2026-03-29T01:00:00Z', '29/03/2026, 04:00:00'],
-    ['Europe/Kyiv', '2026-10-25T00:59:59Z', '25/10/2026, 03:59:59'],
-    ['Europe/Kyiv', '2026-10-25T01:00:00Z', '25/10/2026, 03:00:00'],
+    ['UTC', '2025-12-31T23:30:00.000Z', '31.12.2025 23:30:00'],
+    ['Europe/Kyiv', '2025-12-31T23:30:00.000Z', '01.01.2026 01:30:00'],
+    ['UTC', '2026-01-31T22:30:00Z', '31.01.2026 22:30:00'],
+    ['Europe/Kyiv', '2026-01-31T22:30:00Z', '01.02.2026 00:30:00'],
+    ['Europe/Kyiv', '2026-03-29T00:59:59Z', '29.03.2026 02:59:59'],
+    ['Europe/Kyiv', '2026-03-29T01:00:00Z', '29.03.2026 04:00:00'],
+    ['Europe/Kyiv', '2026-10-25T00:59:59Z', '25.10.2026 03:59:59'],
+    ['Europe/Kyiv', '2026-10-25T01:00:00Z', '25.10.2026 03:00:00'],
   ])(
     'formats %s at %s identically from epoch-ms and ISO Z',
     (zone, iso, expected) => {
-      connection.choose(zone)
+      reader.choose(zone)
       expect(hilosTimeZone.get()).toBe(zone)
-      expect(formatMoment(iso, explicit)).toBe(expected)
-      expect(formatMoment(Date.parse(iso), explicit)).toBe(expected)
+      expect(formatMoment(iso)).toBe(expected)
+      expect(formatMoment(Date.parse(iso))).toBe(expected)
     },
   )
 
   it('reads a changed zone after its first call', () => {
     const moment = '2025-12-31T23:30:00Z'
-    expect(formatMoment(moment, explicit)).toBe('31/12/2025, 23:30:00')
-    connection.choose('Europe/Kyiv')
-    expect(formatMoment(moment, explicit)).toBe('01/01/2026, 01:30:00')
-    connection.choose('UTC')
-    expect(formatMoment(moment, explicit)).toBe('31/12/2025, 23:30:00')
+    expect(formatMoment(moment)).toBe('31.12.2025 23:30:00')
+    reader.choose('Europe/Kyiv')
+    expect(formatMoment(moment)).toBe('01.01.2026 01:30:00')
+    reader.choose('UTC')
+    expect(formatMoment(moment)).toBe('31.12.2025 23:30:00')
   })
 
   it.each([-300000, 300000])(
@@ -169,16 +141,23 @@ describe('absolute moments', () => {
       vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-01-01T00:00:00Z'))
       applyServerTime(Date.now() + offset)
       expect(offsetMs()).toBe(offset)
-      expect(formatMoment('2025-12-31T23:59:00Z', explicit)).toBe(
-        '31/12/2025, 23:59:00',
-      )
+      expect(formatMoment('2025-12-31T23:59:00Z')).toBe('31.12.2025 23:59:00')
     },
   )
 
   it('treats small numbers as milliseconds, with no seconds heuristic', () => {
-    expect(formatMoment(1767225600, explicit)).toBe('21/01/1970, 10:53:45')
-    expect(formatMoment(0, explicit)).toBe('01/01/1970, 00:00:00')
-    expect(formatMoment(-1, explicit)).toBe('31/12/1969, 23:59:59')
+    expect(formatMoment(1767225600)).toBe('21.01.1970 10:53:45')
+    expect(formatMoment(0)).toBe('01.01.1970 00:00:00')
+    expect(formatMoment(-1)).toBe('31.12.1969 23:59:59')
+  })
+
+  it.each([
+    ['0099-01-01T00:00:00.1Z', '01.01.0099'],
+    ['0000-02-29T00:00:00Z', '29.02.0000'],
+    ['-000001-01-01T00:00:00.000Z', '01.01.-0001'],
+    ['+010000-01-01T00:00:00.000Z', '01.01.10000'],
+  ])('writes the year of %s with four digits at least', (iso, expected) => {
+    expect(formatMoment(iso, { kind: 'date' })).toBe(expected)
   })
 
   it.each([
@@ -192,13 +171,9 @@ describe('absolute moments', () => {
     '-271821-04-20T00:00:00.000Z',
     '+275760-09-13T00:00:00.000Z',
   ])('accepts a valid complete UTC timestamp %s', (iso) => {
-    expect(formatMoment(iso, explicit)).not.toBeNull()
-    expect(formatMoment(iso, explicit)).toBe(
-      formatMoment(Date.parse(iso), explicit),
-    )
-    expect(formatSnapshotMoment(iso, 'UTC', explicit)).toBe(
-      formatMoment(iso, explicit),
-    )
+    expect(formatMoment(iso)).not.toBeNull()
+    expect(formatMoment(iso)).toBe(formatMoment(Date.parse(iso)))
+    expect(formatSnapshotMoment(iso, 'UTC')).toBe(formatMoment(iso))
   })
 
   it.each([-8640000000000000, 8640000000000000, 1.5])(
@@ -210,104 +185,186 @@ describe('absolute moments', () => {
   )
 })
 
-describe('presentation options', () => {
-  const moment = Date.parse('2026-07-15T12:34:56Z')
+describe('region templates', () => {
+  const moment = '2026-07-05T08:04:06.789Z'
 
   it.each([
-    ['date', { dateStyle: 'medium' }],
-    ['time', { timeStyle: 'medium' }],
-    ['dateTime', { dateStyle: 'medium', timeStyle: 'medium' }],
-  ] as const)('uses the %s preset', (kind, format) => {
-    connection.choose('Europe/Kyiv')
-    expect(formatMoment(moment, { kind, locale: 'en-GB' })).toBe(
-      new Intl.DateTimeFormat('en-GB', {
-        ...format,
-        timeZone: 'Europe/Kyiv',
-      }).format(moment),
+    ['DD.MM.YYYY', '05.07.2026'],
+    ['DD/MM/YYYY', '05/07/2026'],
+    ['DD-MM-YYYY', '05-07-2026'],
+    ['YYYY.MM.DD', '2026.07.05'],
+    ['YYYY/MM/DD', '2026/07/05'],
+    ['YYYY-MM-DD', '2026-07-05'],
+    ['MM/DD/YYYY', '07/05/2026'],
+  ])('writes a date in the %s template', (date, expected) => {
+    reader.region({ date })
+    expect(formatMoment(moment, { kind: 'date' })).toBe(expected)
+    expect(formatMoment(moment)).toBe(`${expected} 08:04:06`)
+  })
+
+  it.each([
+    ['HH:mm:ss', '2026-07-05T08:04:06Z', '08:04:06'],
+    ['HH:mm:ss', '2026-07-05T00:00:00Z', '00:00:00'],
+    ['HH:mm:ss', '2026-07-05T23:59:59Z', '23:59:59'],
+    ['hh:mm:ss a', '2026-07-05T08:04:06Z', '08:04:06 AM'],
+    ['hh:mm:ss a', '2026-07-05T00:00:00Z', '12:00:00 AM'],
+    ['hh:mm:ss a', '2026-07-05T11:59:59Z', '11:59:59 AM'],
+    ['hh:mm:ss a', '2026-07-05T12:00:00Z', '12:00:00 PM'],
+    ['hh:mm:ss a', '2026-07-05T13:05:00Z', '01:05:00 PM'],
+  ])('writes a time in the %s template at %s', (time, at, expected) => {
+    reader.region({ time })
+    expect(formatMoment(at, { kind: 'time' })).toBe(expected)
+  })
+
+  it('joins the date and the time with a space', () => {
+    reader.region({ date: 'MM/DD/YYYY', time: 'hh:mm:ss a' })
+    expect(formatMoment('2026-07-05T20:04:06Z')).toBe('07/05/2026 08:04:06 PM')
+    expect(formatMoment('2026-07-05T20:04:06Z', { kind: 'dateTime' })).toBe(
+      '07/05/2026 08:04:06 PM',
     )
   })
 
-  it('defaults to dateTime and the browser locale', () => {
-    expect(formatMoment(moment)).toBe(
-      new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-        timeZone: 'UTC',
-      }).format(moment),
-    )
-  })
-
-  it.each(['date', 'time', 'dateTime', 'calendar'] as const)(
-    'replaces the whole %s preset with custom components',
-    (kind) => {
-      expect(
-        formatMoment(moment, {
-          kind,
-          locale: ['en-GB'],
-          format: { year: 'numeric' },
-          now: 0,
-        }),
-      ).toBe('2026')
+  it.each([
+    ['HH:mm:ss', { seconds: false }, '08:04'],
+    ['hh:mm:ss a', { seconds: false }, '08:04 AM'],
+    ['HH:mm:ss', { milliseconds: true }, '08:04:06.789'],
+    ['hh:mm:ss a', { milliseconds: true }, '08:04:06.789 AM'],
+    ['HH:mm:ss', { seconds: false, milliseconds: true }, '08:04'],
+  ] as const)(
+    'drops or extends the seconds of %s with %o',
+    (time, flags, expected) => {
+      reader.region({ time })
+      expect(formatMoment(moment, { kind: 'time', ...flags })).toBe(expected)
     },
   )
 
-  it('does not let an unsafe JavaScript options object override the effective zone', () => {
-    connection.choose('Europe/Kyiv')
-    const unsafe = {
-      ...explicit,
-      format: { ...explicit.format, timeZone: 'America/New_York' },
-    }
-    expect(formatMoment(moment, unsafe)).toBe('15/07/2026, 15:34:56')
+  it('writes whole seconds as .000 when milliseconds are asked for', () => {
+    expect(
+      formatMoment('2026-07-05T08:04:06Z', {
+        kind: 'time',
+        milliseconds: true,
+      }),
+    ).toBe('08:04:06.000')
   })
 
-  it('leaves developer locale and format errors visible, including on a calendar label', () => {
-    expect(() => formatMoment(moment, { locale: 'invalid_locale' })).toThrow(
-      RangeError,
+  it('drops the seconds of a date and time too', () => {
+    expect(formatMoment(moment, { seconds: false })).toBe('05.07.2026 08:04')
+  })
+
+  it('appends the short English zone name after the text', () => {
+    expect(formatMoment(moment, { zoneName: true })).toBe(
+      '05.07.2026 08:04:06 UTC',
     )
-    for (const kind of ['dateTime', 'calendar'] as const) {
-      expect(() =>
-        formatMoment(moment, {
-          kind,
-          now: moment,
-          format: { dateStyle: 'long', year: 'numeric' },
-        }),
-      ).toThrow(TypeError)
-    }
+    reader.choose('America/New_York')
+    expect(formatMoment(moment, { zoneName: true })).toBe(
+      '05.07.2026 04:04:06 EDT',
+    )
+    expect(
+      formatMoment('2026-01-05T08:04:06Z', { kind: 'date', zoneName: true }),
+    ).toBe('05.01.2026 EST')
+  })
+
+  it.each([
+    ['UTC', '2026-11-30T22:30:00Z', 'November 2026'],
+    ['Europe/Kyiv', '2026-11-30T22:30:00Z', 'December 2026'],
+    ['UTC', '2026-01-15T12:00:00Z', 'January 2026'],
+  ])('writes the month and year in %s at %s', (zone, at, expected) => {
+    reader.choose(zone)
+    expect(formatMoment(at, { kind: 'monthYear' })).toBe(expected)
+  })
+
+  it.each([
+    ['UTC', '2026-11-23T12:00:00Z', 'Monday'],
+    ['UTC', '2026-11-28T12:00:00Z', 'Saturday'],
+    ['UTC', '2026-11-22T22:30:00Z', 'Sunday'],
+    ['Europe/Kyiv', '2026-11-22T22:30:00Z', 'Monday'],
+    ['UTC', '1970-01-01T00:00:00Z', 'Thursday'],
+    ['UTC', '0001-01-01T12:00:00Z', 'Monday'],
+    ['UTC', '0000-01-01T12:00:00Z', 'Saturday'],
+  ])('writes the weekday in %s at %s', (zone, at, expected) => {
+    reader.choose(zone)
+    expect(formatMoment(at, { kind: 'weekday' })).toBe(expected)
+  })
+
+  it('ignores the removed locale and format options of an unsafe JavaScript caller', () => {
+    reader.choose('Europe/Kyiv')
+    const unsafe = {
+      locale: 'ar-SA',
+      format: { timeZone: 'America/New_York', dateStyle: 'long' },
+    } as MomentFormatOptions
+    expect(formatMoment(moment, unsafe)).toBe('05.07.2026 11:04:06')
   })
 
   it('ignores a calendar reference for other kinds', () => {
-    expect(formatMoment(moment, { kind: 'date', now: NaN })).not.toBeNull()
+    expect(formatMoment(moment, { kind: 'date', now: NaN })).toBe('05.07.2026')
+  })
+})
+
+describe('formats of the tab region', () => {
+  const moment = '2026-07-05T08:04:06Z'
+
+  it('writes in the built-in English formats until the tab knows a region', () => {
+    expect(formatMoment(moment)).toBe('05.07.2026 08:04:06')
+  })
+
+  it('reads the region on every call and falls back when the node is null', () => {
+    reader.region({ date: 'YYYY-MM-DD', time: 'hh:mm:ss a' })
+    expect(formatMoment(moment)).toBe('2026-07-05 08:04:06 AM')
+    reader.region({ date: 'DD/MM/YYYY' })
+    expect(formatMoment(moment)).toBe('05/07/2026 08:04:06')
+    reader.region(null)
+    expect(formatMoment(moment)).toBe('05.07.2026 08:04:06')
+  })
+
+  it('recomputes a derived label when the region changes', () => {
+    const label = computedSignal(() => formatMoment(moment, { kind: 'date' }))
+    expect(label.get()).toBe('05.07.2026')
+    reader.region({ date: 'MM/DD/YYYY' })
+    expect(label.get()).toBe('07/05/2026')
+    reader.choose('Pacific/Kiritimati')
+    expect(label.get()).toBe('07/05/2026')
+    reader.choose('Pacific/Pago_Pago')
+    expect(label.get()).toBe('07/04/2026')
   })
 })
 
 describe('historical snapshot labels', () => {
   it('keeps the captured zone while the ordinary formatter follows the live zone', () => {
-    connection.choose('Asia/Kathmandu')
+    reader.choose('Asia/Kathmandu')
     const zone = hilosTimeZone.get()
     const moment = '2025-12-31T23:30:00Z'
-    expect(formatSnapshotMoment(moment, zone, explicit)).toBe(
-      '01/01/2026, 05:15:00',
+    expect(formatSnapshotMoment(moment, zone)).toBe('01.01.2026 05:15:00')
+    reader.choose('America/New_York')
+    expect(formatSnapshotMoment(moment, zone)).toBe('01.01.2026 05:15:00')
+    expect(formatSnapshotMoment(Date.parse(moment), zone)).toBe(
+      '01.01.2026 05:15:00',
     )
-    connection.choose('America/New_York')
-    expect(formatSnapshotMoment(moment, zone, explicit)).toBe(
-      '01/01/2026, 05:15:00',
+    expect(formatMoment(moment)).toBe('31.12.2025 18:30:00')
+  })
+
+  it('writes the captured zone in the current formats of the region', () => {
+    const moment = '2025-12-31T23:30:00Z'
+    expect(formatSnapshotMoment(moment, 'Asia/Kathmandu')).toBe(
+      '01.01.2026 05:15:00',
     )
-    expect(formatSnapshotMoment(Date.parse(moment), zone, explicit)).toBe(
-      '01/01/2026, 05:15:00',
+    reader.region({ date: 'MM/DD/YYYY', time: 'hh:mm:ss a' })
+    expect(formatSnapshotMoment(moment, 'Asia/Kathmandu')).toBe(
+      '01/01/2026 05:15:00 AM',
     )
-    expect(formatMoment(moment, explicit)).toBe('31/12/2025, 18:30:00')
+    expect(
+      formatSnapshotMoment(moment, 'Asia/Kathmandu', {
+        kind: 'time',
+        seconds: false,
+      }),
+    ).toBe('05:15 AM')
   })
 
   it('compares calendar days in the snapshot zone with its fixed asOf reference', () => {
     const now = Date.parse('2026-01-01T00:01:00Z')
-    const options: MomentFormatOptions = {
-      kind: 'calendar',
-      locale: 'en-GB',
-      now,
-    }
+    const options: MomentFormatOptions = { kind: 'calendar', now }
     const moment = '2025-12-31T23:59:00Z'
     expect(formatSnapshotMoment(moment, 'Europe/Warsaw', options)).toBe('today')
-    connection.choose('America/New_York')
+    reader.choose('America/New_York')
     vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-06-01T00:00:00Z'))
     applyServerTime(Date.now() + 300000)
     expect(formatSnapshotMoment(moment, 'Europe/Warsaw', options)).toBe('today')
@@ -327,30 +384,6 @@ describe('historical snapshot labels', () => {
     '-0500',
   ])('returns null for an unusable snapshot zone %s', (zone) => {
     expect(formatSnapshotMoment(0, zone)).toBeNull()
-  })
-
-  it('keeps locale and format errors visible after validating the snapshot zone', () => {
-    expect(() =>
-      formatSnapshotMoment(0, 'UTC', { locale: 'invalid_locale' }),
-    ).toThrow(RangeError)
-    for (const kind of ['dateTime', 'calendar'] as const) {
-      expect(() =>
-        formatSnapshotMoment(0, 'UTC', {
-          kind,
-          now: 0,
-          format: { dateStyle: 'long', year: 'numeric' },
-        }),
-      ).toThrow(TypeError)
-    }
-  })
-
-  it('supplies the snapshot zone after unsafe JavaScript format overrides', () => {
-    expect(
-      formatSnapshotMoment('2026-01-01T00:00:00Z', 'Asia/Kathmandu', {
-        ...explicit,
-        format: { ...explicit.format, timeZone: 'UTC' },
-      } as MomentFormatOptions),
-    ).toBe('01/01/2026, 05:45:00')
   })
 })
 
@@ -388,13 +421,13 @@ describe('calendar labels', () => {
       'Europe/Kyiv',
       '2026-03-29T21:01:00Z',
       '2026-03-28T21:59:00Z',
-      '28 Mar 2026',
+      '28.03.2026',
     ],
     [
       'Europe/Kyiv',
       '2026-03-28T21:59:00Z',
       '2026-03-29T21:01:00Z',
-      '30 Mar 2026',
+      '30.03.2026',
     ],
     ['Europe/Kyiv', '2026-03-28T22:01:00Z', '2026-03-29T20:59:00Z', 'today'],
     ['UTC', '0000-01-01T00:01:00Z', '-000001-12-31T23:59:00Z', 'yesterday'],
@@ -402,32 +435,20 @@ describe('calendar labels', () => {
   ])(
     'compares local days in %s: reference %s, moment %s',
     (zone, reference, moment, expected) => {
-      connection.choose(zone)
+      reader.choose(zone)
       expect(
-        formatMoment(moment, {
-          kind: 'calendar',
-          locale: 'en-GB',
-          now: Date.parse(reference),
-        }),
+        formatMoment(moment, { kind: 'calendar', now: Date.parse(reference) }),
       ).toBe(expected)
     },
   )
 
-  it('uses the selected presentation locale with Gregorian Latin-digit day comparison', () => {
-    connection.choose('Europe/Kyiv')
-    const now = Date.parse('2026-01-01T22:01:00Z')
+  it('keeps the calendar words English in any region and writes other days by its template', () => {
+    reader.region({ date: 'YYYY/MM/DD', time: 'hh:mm:ss a' })
+    const now = Date.parse('2026-01-01T12:00:00Z')
+    expect(formatMoment(now, { kind: 'calendar', now })).toBe('today')
     expect(
-      formatMoment('2026-01-01T21:59:00Z', {
-        kind: 'calendar',
-        locale: 'ar-SA',
-        now,
-      }),
-    ).toBe(
-      new Intl.RelativeTimeFormat('ar-SA', { numeric: 'auto' }).format(
-        -1,
-        'day',
-      ),
-    )
+      formatMoment('2026-01-05T00:00:00Z', { kind: 'calendar', now }),
+    ).toBe('2026/01/05')
   })
 
   it.each([-300000, 300000])(
@@ -439,16 +460,12 @@ describe('calendar labels', () => {
       vi.spyOn(Date, 'now').mockReturnValue(localNow)
       applyServerTime(localNow + offset)
       const moment = '2026-01-02T00:01:00Z'
-      expect(formatMoment(moment, { kind: 'calendar', locale: 'en-GB' })).toBe(
+      expect(formatMoment(moment, { kind: 'calendar' })).toBe(
         offset > 0 ? 'today' : 'tomorrow',
       )
-      expect(
-        formatMoment(moment, {
-          kind: 'calendar',
-          locale: 'en-GB',
-          now: localNow,
-        }),
-      ).toBe(offset > 0 ? 'tomorrow' : 'today')
+      expect(formatMoment(moment, { kind: 'calendar', now: localNow })).toBe(
+        offset > 0 ? 'tomorrow' : 'today',
+      )
     },
   )
 
@@ -457,48 +474,66 @@ describe('calendar labels', () => {
     vi.spyOn(Date, 'now').mockReturnValue(now)
     applyServerTime(now + 300000)
     expect(
-      formatMoment('2026-01-02T00:01:00Z', {
-        kind: 'calendar',
-        locale: 'en-GB',
-        now,
-      }),
+      formatMoment('2026-01-02T00:01:00Z', { kind: 'calendar', now }),
     ).toBe('tomorrow')
   })
 
   it.each([-8640000000000000, 8640000000000000])(
     'labels the same day at Date range edge %s',
     (now) => {
-      connection.choose('Europe/Kyiv')
-      expect(
-        formatMoment(now, { kind: 'calendar', locale: 'en-GB', now }),
-      ).toBe('today')
+      reader.choose('Europe/Kyiv')
+      expect(formatMoment(now, { kind: 'calendar', now })).toBe('today')
     },
   )
 
-  it('falls back to a medium date outside the three named days', () => {
+  it('falls back to the region date outside the three named days', () => {
     expect(
       formatMoment('2026-01-05T00:00:00Z', {
         kind: 'calendar',
-        locale: 'en-GB',
         now: Date.parse('2026-01-01T00:00:00Z'),
       }),
-    ).toBe('5 Jan 2026')
+    ).toBe('05.01.2026')
   })
 
-  it('falls back to the requested date format without RelativeTimeFormat', () => {
+  it('names the day without Intl.RelativeTimeFormat', () => {
     vi.stubGlobal('Intl', { DateTimeFormat: Intl.DateTimeFormat })
     const now = Date.parse('2026-01-01T00:00:00Z')
-    expect(formatMoment(now, { kind: 'calendar', locale: 'en-GB', now })).toBe(
-      '1 Jan 2026',
-    )
-    expect(
-      formatMoment(now, {
-        kind: 'calendar',
-        locale: 'en-GB',
-        now,
-        format: { dateStyle: 'long' },
-      }),
-    ).toBe('1 January 2026')
+    expect(formatMoment(now, { kind: 'calendar', now })).toBe('today')
+  })
+})
+
+describe('calendar days', () => {
+  it.each([
+    ['DD.MM.YYYY', '2026-11-26', '26.11.2026'],
+    ['MM/DD/YYYY', '2026-11-26', '11/26/2026'],
+    ['YYYY-MM-DD', '2024-02-29', '2024-02-29'],
+    ['DD.MM.YYYY', '0000-01-01', '01.01.0000'],
+  ])('writes a calendar day in the %s template: %s', (date, day, expected) => {
+    reader.region({ date })
+    expect(formatCalendarDay(day)).toBe(expected)
+  })
+
+  it.each(['Pacific/Kiritimati', 'Pacific/Pago_Pago', 'UTC'])(
+    'keeps the recorded day in reader zone %s',
+    (zone) => {
+      reader.choose(zone)
+      expect(formatCalendarDay('2026-01-01')).toBe('01.01.2026')
+    },
+  )
+
+  it.each([
+    '2026-02-30',
+    '2026-02-29',
+    '2026-13-01',
+    '2026-00-10',
+    '2026-04-31',
+    '2026-1-1',
+    '2026-01-01T00:00:00Z',
+    ' 2026-01-01',
+    '+002026-01-01',
+    '',
+  ])('returns null for %s', (day) => {
+    expect(formatCalendarDay(day)).toBeNull()
   })
 })
 

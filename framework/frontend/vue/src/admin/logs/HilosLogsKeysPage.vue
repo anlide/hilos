@@ -15,7 +15,11 @@ import {
   type HilosLogKeyRow,
   type HilosLogKeysContext,
 } from '@hilos/core/admin/logs'
-import { HILOS_PAGE_ROUTES, HilosPages } from '@hilos/core/base'
+import {
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  hilosReaderDisplay,
+} from '@hilos/core/base'
 import { computed, onMounted, onUnmounted } from 'vue'
 
 import HilosAdminPage from '../../HilosAdminPage.vue'
@@ -48,6 +52,7 @@ onUnmounted(() => {
 const rows = useSignal(streamsTable.rows)
 const search = useSignal(streamsTable.search)
 const filter = useSignal(streamsTable.filter)
+const readerDisplay = useSignal(hilosReaderDisplay)
 
 // The node column and the node filter exist only where nodes have names: in a
 // single-node installation a column repeating one name and a filter offering one
@@ -70,6 +75,16 @@ function stateClass(row: HilosLogKeyRow): string {
   return row.live
     ? 'text-bg-success'
     : 'bg-body-tertiary text-body-secondary border'
+}
+
+function weight(row: HilosLogKeyRow): string {
+  void readerDisplay.value
+  return formatLogKeyWeight(row)
+}
+
+function growth(row: HilosLogKeyRow): string {
+  void readerDisplay.value
+  return formatLogKeyGrowth(row)
 }
 
 function clearFilters(): void {
@@ -115,10 +130,8 @@ const workersPath = HILOS_PAGE_ROUTES[HilosPages.LOGS_WORKERS]
         }}</span>
       </template>
       <template #cell-batchCount="{ row }">{{ row.batchCount }}</template>
-      <template #cell-bytes="{ row }">{{ formatLogKeyWeight(row) }}</template>
-      <template #cell-growthPerDay="{ row }">{{
-        formatLogKeyGrowth(row)
-      }}</template>
+      <template #cell-bytes="{ row }">{{ weight(row) }}</template>
+      <template #cell-growthPerDay="{ row }">{{ growth(row) }}</template>
       <template #cell-actions="{ row }">
         <HilosLink
           v-if="logKeyViewerPath(row) !== ''"

@@ -758,7 +758,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(wrapper.text()).not.toContain('probably_offline')
     // The doubted connections are still registered, so the count keeps them.
     expect(cell(wrapper, 2, 'Sessions').text()).toBe('2Show in full')
-    expect(wrapper.text()).toContain('Oct 21, 2026, 11:00:00 AM')
+    expect(wrapper.text()).toContain('21.10.2026 11:00:00')
   })
 
   it('changes the word in place as the presence changes live, apart from a source gone quiet', async () => {
@@ -807,7 +807,7 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     live.update({ ...alice, presence: 'offline', onlineSessionCount: 0 })
     await settle()
     expect(presence(wrapper, 1).text()).toBe('offline')
-    expect(wrapper.text()).toContain('Oct 21, 2026, 10:00:00 AM')
+    expect(wrapper.text()).toContain('21.10.2026 10:00:00')
   })
 })
 

@@ -33,10 +33,11 @@ import {
   formatDaemonHttpRoute,
   formatDaemonHttpSlowest,
   type HilosDaemonHttpContext,
+  type HilosDaemonHttpRouteRow,
   type HilosDaemonNodeHeading,
   type HilosDaemonHttpSummary,
 } from '@hilos/core/admin/daemon'
-import { HilosPages, hilosTimeZone } from '@hilos/core/base'
+import { HilosPages, hilosReaderDisplay } from '@hilos/core/base'
 
 /** Angular view of the Daemon HttpServerPage. */
 @Component({
@@ -233,7 +234,7 @@ import { HilosPages, hilosTimeZone } from '@hilos/core/base'
 export class HilosDaemonHttpServerPage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly nodeId = computed(
     () => this.route().params['nodeId'] ?? '',
   )
@@ -253,10 +254,11 @@ export class HilosDaemonHttpServerPage {
     () => this.heading()?.state === DAEMON_NODE_STATE_SILENT,
   )
   protected readonly silentSince = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     return formatDaemonNodeSilentSince(this.heading(), Date.now())
   })
   protected readonly period = computed(() => {
+    this.readerDisplay()
     const summary = this.summary()
     return summary === null ? '—' : formatDaemonHttpPeriod(summary)
   })
@@ -305,7 +307,15 @@ export class HilosDaemonHttpServerPage {
   protected readonly DAEMON_HTTP_ROUTE_SLOWEST_FIELD =
     DAEMON_HTTP_ROUTE_SLOWEST_FIELD
   protected readonly formatDaemonHttpAddress = formatDaemonHttpAddress
-  protected readonly formatDaemonHttpCount = formatDaemonHttpCount
+  protected readonly formatDaemonHttpCount = (count: number): string => {
+    this.readerDisplay()
+    return formatDaemonHttpCount(count)
+  }
   protected readonly formatDaemonHttpRoute = formatDaemonHttpRoute
-  protected readonly formatDaemonHttpSlowest = formatDaemonHttpSlowest
+  protected readonly formatDaemonHttpSlowest = (
+    row: HilosDaemonHttpRouteRow,
+  ): string => {
+    this.readerDisplay()
+    return formatDaemonHttpSlowest(row)
+  }
 }

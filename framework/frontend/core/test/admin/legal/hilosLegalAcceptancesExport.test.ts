@@ -421,10 +421,10 @@ describe('the lines of the export', () => {
   it('says the state of the export in the reader’s words', () => {
     expect(hilosLegalAcceptancesExportStatus(null)).toBe('')
     expect(hilosLegalAcceptancesExportStatus(preparing)).toBe(
-      `Preparing the export… Started at ${new Date(1000).toLocaleString()}.`,
+      'Preparing the export… Started at 01.01.1970 00:00:01.',
     )
     expect(hilosLegalAcceptancesExportStatus(ready)).toBe(
-      `Export ready · ${(1234).toLocaleString()} records · ${formatBytes(4567)} · available until ${new Date(3000).toLocaleString()}`,
+      `Export ready · 1,234 records · ${formatBytes(4567)} · available until 01.01.1970 00:00:03`,
     )
     expect(hilosLegalAcceptancesExportStatus(failed)).toBe(
       'We could not prepare the export.',
@@ -444,11 +444,11 @@ it.each([-300_000, 300_000])(
       const at = Date.parse('2026-01-01T00:30:05Z')
       expect(
         hilosLegalAcceptancesExportStatus({ ...preparing, requestedAt: at }),
-      ).toBe('Preparing the export… Started at 12/31/2025, 4:30:05 PM.')
+      ).toBe('Preparing the export… Started at 31.12.2025 16:30:05.')
       expect(
         hilosLegalAcceptancesExportStatus({ ...ready, expiresAt: at }),
       ).toBe(
-        'Export ready · 1,234 records · 4.5 KB · available until 12/31/2025, 4:30:05 PM',
+        'Export ready · 1,234 records · 4.5 KB · available until 31.12.2025 16:30:05',
       )
       const w = world()
       w.page.data.set('legalAcceptancesExport', {

@@ -29,7 +29,7 @@ import {
   bindPageInstanceName,
   computedSignal,
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
 } from '@hilos/core/base'
 import {
   HilosAdminPage,
@@ -175,7 +175,7 @@ export class HilosDaemonNodeShell {
   readonly page = input.required<string>()
 
   private readonly router = inject(HILOS_ROUTER)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   private readonly roleBadge =
     viewChild<ElementRef<HTMLSpanElement>>('roleBadge')
   private readonly clockScrollport =
@@ -211,7 +211,7 @@ export class HilosDaemonNodeShell {
       : undefined
   })
   protected readonly silentSince = computed(() => {
-    this.timeZone()
+    this.readerDisplay()
     const heading = this.current()?.heading
     return heading?.clustered
       ? formatDaemonNodeSilentSince(heading, Date.now())

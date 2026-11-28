@@ -16,6 +16,7 @@ import {
   nodeOverview,
   nodeTabs,
 } from '../../../test/helpers/hilosDaemonNode.js'
+import { readerMomentText } from '../../../../test-support/readerMomentText.js'
 
 const id = (name: string) => `[data-id="hilos-daemon-node-${name}"]`
 enableAutoUnmount(afterEach)
@@ -702,15 +703,11 @@ describe('actual node child pages', () => {
             data: { entities: { currentUser: { id: 3, timeZone: own } } },
           })
           await nextTick()
-          const date = new Intl.DateTimeFormat(undefined, {
-            timeZone: zone,
-            dateStyle: 'medium',
-          }).format(at)
-          const time = new Intl.DateTimeFormat(undefined, {
-            timeZone: zone,
-            hour: '2-digit',
-            minute: '2-digit',
-          }).format(at)
+          const date = readerMomentText(at, zone, { kind: 'date' })
+          const time = readerMomentText(at, zone, {
+            kind: 'time',
+            seconds: false,
+          })
           expect(hilosTimeZone.get()).toBe(zone)
           expect(h.view.get(id('silent')).text()).toBe(
             `Silent since ${date}, ${time}`,

@@ -38,7 +38,7 @@ import {
 } from '@hilos/core/admin/daemon'
 import {
   HilosPages,
-  hilosTimeZone,
+  hilosReaderDisplay,
   type TableViewportRow,
 } from '@hilos/core/base'
 
@@ -192,7 +192,7 @@ import {
 export class HilosDaemonCronPage {
   private readonly router = inject(HILOS_ROUTER)
   private readonly route = hilosSignal(this.router.currentRoute)
-  private readonly timeZone = hilosSignal(hilosTimeZone)
+  private readonly readerDisplay = hilosSignal(hilosReaderDisplay)
   protected readonly nodeId = computed(
     () => this.route().params['nodeId'] ?? '',
   )
@@ -221,11 +221,11 @@ export class HilosDaemonCronPage {
     daemonCronHoldsIdleNotice(this.rules(), this.heading()),
   )
   protected readonly silentSince = computed(() => {
-    void this.timeZone()
+    void this.readerDisplay()
     return formatDaemonNodeSilentSince(this.heading(), Date.now())
   })
   protected readonly runTimes = computed(() => {
-    void this.timeZone()
+    void this.readerDisplay()
     const now = Date.now()
     return new Map(
       this.rules().map(

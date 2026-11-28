@@ -301,7 +301,7 @@ describe('HilosUserPageShell', () => {
     expect(t.navigation.currentTitle.get()).toBe('Alice · Test app')
     expect(view.get('[data-id="hilos-avatar"]').text()).toBe('A')
     expect(view.get('[data-id="hilos-page-head-block"] p').text()).toBe(
-      '#1 · Last seen Oct 23, 2026, 12:34:56 PM',
+      '#1 · Last seen 23.10.2026 12:34:56',
     )
     expect(view.find('[data-id="hilos-page-tabs"]').exists()).toBe(false)
     expect(view.find('[data-id="hilos-admin-children"]').exists()).toBe(false)

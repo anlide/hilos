@@ -25,6 +25,7 @@ import {
 import { type HilosConnection } from '../../connection/HilosConnection.js'
 import { formatBytes } from '../../format/bytes.js'
 import { formatMoment } from '../../format/moment.js'
+import { formatNumber } from '../../format/number.js'
 import {
   HIDDEN_VALUE,
   isHiddenValue,
@@ -245,19 +246,7 @@ export function formatLogsOverviewRotationAt(
     return NOTHING_KNOWN
   }
 
-  return (
-    formatMoment(at, {
-      kind: 'dateTime',
-      format: {
-        year: 'numeric',
-        month: 'numeric',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: 'numeric',
-        second: 'numeric',
-      },
-    }) ?? NOTHING_KNOWN
-  )
+  return formatMoment(at, { kind: 'dateTime' }) ?? NOTHING_KNOWN
 }
 
 /**
@@ -511,10 +500,10 @@ function logsOverviewForecastWhen(daysAway: number): string {
 /** Format a measured free share without rounding a positive remainder to zero. */
 function logsOverviewFreePercent(percent: number): string {
   if (percent > 0 && percent < 0.1) {
-    return '<0.1%'
+    return `<${formatNumber(0.1)}%`
   }
 
-  return `${percent.toFixed(1).replace(/\.0$/, '')}%`
+  return `${formatNumber(percent, { maximumFractionDigits: 1 })}%`
 }
 
 /**
@@ -716,12 +705,7 @@ export function logsOverviewRecentEmptyLead(tab: HilosLogsRecentTab): string {
  * @param at The instant as ISO UTC with milliseconds and Z.
  */
 export function formatLogsOverviewRecentAt(at: string): string {
-  return (
-    formatMoment(at, {
-      kind: 'time',
-      format: { hour: 'numeric', minute: 'numeric', second: 'numeric' },
-    }) ?? NOTHING_KNOWN
-  )
+  return formatMoment(at, { kind: 'time' }) ?? NOTHING_KNOWN
 }
 
 /**
